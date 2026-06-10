@@ -72,6 +72,7 @@ export default function OrgPage() {
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState<FormState | null>(null);
   const [view, setView] = useState<OrgView>("tree");
+  const [showAllMembers, setShowAllMembers] = useState(false);
 
   // editing only allowed on one's OWN tribe (admin: any tribe they select)
   const isOwnTribe = tribeId !== null && tribeId === user?.tribe_id;
@@ -141,6 +142,14 @@ export default function OrgPage() {
       onTab: (k) => setView(k as OrgView),
       actions: (
         <>
+          {view === "tree" && (
+            <button
+              className={showAllMembers ? "btn-secondary btn-sm" : "btn-ghost btn-sm"}
+              onClick={() => setShowAllMembers((v) => !v)}
+            >
+              {showAllMembers ? t("org.hide_members") : t("org.show_members")}
+            </button>
+          )}
           {tribes.length > 1 && (
             <select
               className="w-auto"
@@ -169,7 +178,7 @@ export default function OrgPage() {
         </>
       ),
     },
-    [view, tribes, tribeId, editable, isOwnTribe, t]
+    [view, tribes, tribeId, editable, isOwnTribe, showAllMembers, t]
   );
 
   if (error) return <ErrorBanner message={error} />;
@@ -195,7 +204,7 @@ export default function OrgPage() {
         <div className="card" style={{ overflowX: "auto" }}>
           <div className="row" style={{ justifyContent: "center", alignItems: "flex-start", gap: 24 }}>
             {tree.map((n) => (
-              <NodeView key={n.id} node={n} editable={editable} linkSquads={isAdmin || isOwnTribe} onAdd={openCreate} onEdit={openEdit} onDelete={remove} />
+              <NodeView key={n.id} node={n} editable={editable} linkSquads={isAdmin || isOwnTribe} forceShowTeam={showAllMembers} onAdd={openCreate} onEdit={openEdit} onDelete={remove} />
             ))}
           </div>
         </div>
@@ -237,6 +246,7 @@ function NodeView({
   node,
   editable,
   linkSquads,
+  forceShowTeam,
   onAdd,
   onEdit,
   onDelete,
@@ -244,12 +254,14 @@ function NodeView({
   node: OrgNode;
   editable: boolean;
   linkSquads: boolean;
+  forceShowTeam: boolean;
   onAdd: (parentId: number) => void;
   onEdit: (n: OrgNode) => void;
   onDelete: (n: OrgNode) => void;
 }) {
   const { t } = useI18n();
   const [showTeam, setShowTeam] = useState(false);
+  const teamVisible = forceShowTeam || showTeam;
   return (
     <div className="org-subtree">
       <div className="org-box org-node">
@@ -257,9 +269,11 @@ function NodeView({
         {node.person_name && <div className="small muted">{node.person_name}</div>}
         {node.squad_id && linkSquads && (
           <div className="inline" style={{ gap: 8, marginTop: 4, justifyContent: "center", flexWrap: "wrap" }}>
-            <button className="btn-ghost btn-sm" onClick={() => setShowTeam((v) => !v)}>
-              {showTeam ? t("org.hide_team") : t("org.see_team")}
-            </button>
+            {!forceShowTeam && (
+              <button className="btn-ghost btn-sm" onClick={() => setShowTeam((v) => !v)}>
+                {showTeam ? t("org.hide_team") : t("org.see_team")}
+              </button>
+            )}
             <Link className="small" to={`/squads/${node.squad_id}`}>
               {t("org.open_squad")}
             </Link>
@@ -279,13 +293,13 @@ function NodeView({
           </div>
         )}
       </div>
-      {showTeam && node.squad_id && <SquadTeam squadId={node.squad_id} />}
+      {teamVisible && node.squad_id && <SquadTeam squadId={node.squad_id} />}
       {node.children.length > 0 && (
         <>
           <div className="org-connector" />
           <div className="org-children">
             {node.children.map((c) => (
-              <NodeView key={c.id} node={c} editable={editable} linkSquads={linkSquads} onAdd={onAdd} onEdit={onEdit} onDelete={onDelete} />
+              <NodeView key={c.id} node={c} editable={editable} linkSquads={linkSquads} forceShowTeam={forceShowTeam} onAdd={onAdd} onEdit={onEdit} onDelete={onDelete} />
             ))}
           </div>
         </>
