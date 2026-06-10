@@ -1,0 +1,85 @@
+import { Freshness, QuarterHealth, Rag } from "../types";
+import { badgeClass, dotClass, qhToRag, ragClass } from "../labels";
+import { useI18n } from "../i18n";
+
+export function Dot({ status }: { status: Rag }) {
+  return <span className={`dot ${dotClass(status)}`} aria-hidden />;
+}
+
+export function StatusBadge({ status }: { status: Rag }) {
+  const { rag } = useI18n();
+  return (
+    <span className={`badge ${badgeClass(status)}`}>
+      <Dot status={status} />
+      {rag(status)}
+    </span>
+  );
+}
+
+/** Badge for a quarter-scoped health (on_track | at_risk | blocked). */
+export function HealthBadge({ status }: { status: QuarterHealth }) {
+  const { roadmap } = useI18n();
+  const r = qhToRag(status);
+  return (
+    <span className={`badge ${badgeClass(r)}`}>
+      <Dot status={r} />
+      {roadmap(status)}
+    </span>
+  );
+}
+
+export function FreshnessBadge({ freshness }: { freshness: Freshness }) {
+  const { freshness: ft, t } = useI18n();
+  const text = ft(freshness);
+  if (freshness.is_stale) {
+    return (
+      <span className="badge badge-grey">
+        <span className="dot dot-grey" aria-hidden />
+        {text} · {t("fresh.stale_suffix")}
+      </span>
+    );
+  }
+  return (
+    <span className="badge badge-navy">
+      <span className="dot" style={{ background: "var(--accent)" }} aria-hidden />
+      {text}
+    </span>
+  );
+}
+
+export function ProgressBar({ pct, tone }: { pct: number; tone?: Rag }) {
+  const cls = tone ? ragClass(tone) : "";
+  return (
+    <div className={`progress ${cls}`}>
+      <div style={{ width: `${Math.max(0, Math.min(100, pct))}%` }} />
+    </div>
+  );
+}
+
+export function QuarterBars({ progress, currentQuarter }: { progress: Record<string, number>; currentQuarter?: number }) {
+  return (
+    <div className="quarters">
+      {[1, 2, 3, 4].map((q) => {
+        const pct = progress[String(q)] ?? 0;
+        return (
+          <div key={q} className={`q ${currentQuarter === q ? "current" : ""}`}>
+            <div className="qlabel">Q{q}</div>
+            <div className="qbar">
+              <div style={{ width: `${pct}%` }} />
+            </div>
+            <div className="qpct">{pct}%</div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+export function Spinner({ label }: { label?: string }) {
+  const { t } = useI18n();
+  return <div className="spinner">{label ?? t("common.loading")}</div>;
+}
+
+export function ErrorBanner({ message }: { message: string }) {
+  return <div className="banner banner-red">{message}</div>;
+}
