@@ -133,3 +133,52 @@ def test_smtp(payload: dict = Body(...), db: Session = Depends(get_db), admin: U
                     "Ceci est un email de test envoyé depuis Tribe Cockpit. Si vous le recevez, la configuration SMTP fonctionne.")
     return {"ok": ok, "to": to}
 
+
+@router.get("/log-export-config")
+def read_log_export_config(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    from ..logexportconfig import get_log_export
+    return get_log_export(db)
+
+
+@router.put("/log-export-config")
+def update_log_export_config(payload: dict = Body(...), db: Session = Depends(get_db),
+                             admin: User = Depends(require_admin)):
+    from ..logexportconfig import set_log_export
+    cfg = set_log_export(db, payload)
+    record_audit(db, admin.id, "log_export_config.update", entity="log_export",
+                 detail={"enabled": cfg["enabled"], "destination": cfg["destination"]})
+    db.commit()
+    return cfg
+
+
+@router.post("/log-export-config/test")
+def test_log_export(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    from ..logexportconfig import get_log_export
+    from ..logexport import export_entries, sample_entry
+    cfg = get_log_export(db, reveal_secrets=True)
+    if not cfg.get("enabled"):
+        raise HTTPException(status_code=400, detail="Export des logs désactivé")
+    ok, message = export_entries(cfg, [sample_entry()])
+    record_audit(db, admin.id, "log_export.test", entity="log_export",
+                 detail={"destination": cfg["destination"], "ok": ok})
+    db.commit()
+    return {"ok": ok, "message": message, "destination": cfg["destination"]}
+
+
+@router.post("/log-export-config/flush")
+def flush_log_export(payload: dict = Body(default=None), db: Session = Depends(get_db),
+                     admin: User = Depends(require_admin)):
+    from ..logexportconfig import get_log_export
+    from ..logexport import export_entries, serialize_entries
+    cfg = get_log_export(db, reveal_secrets=True)
+    if not cfg.get("enabled"):
+        raise HTTPException(status_code=400, detail="Export des logs désactivé")
+    limit = int((payload or {}).get("limit") or 200)
+    limit = max(1, min(limit, 1000))
+    entries = serialize_entries(db, limit=limit)
+    ok, message = export_entries(cfg, entries)
+    record_audit(db, admin.id, "log_export.flush", entity="log_export",
+                 detail={"destination": cfg["destination"], "count": len(entries), "ok": ok})
+    db.commit()
+    return {"ok": ok, "message": message, "count": len(entries), "destination": cfg["destination"]}
+

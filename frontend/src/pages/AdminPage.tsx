@@ -6,7 +6,7 @@ import { ErrorBanner } from "../components/ui";
 import { ALL_ROLES } from "../perms";
 import { useSetPageChrome } from "../components/pageChrome";
 
-type Tab = "tribes" | "squads" | "users" | "moderation" | "auth" | "smtp" | "settings" | "audit";
+type Tab = "tribes" | "squads" | "users" | "moderation" | "auth" | "smtp" | "logs" | "settings" | "audit";
 
 export default function AdminPage() {
   const { t } = useI18n();
@@ -18,6 +18,7 @@ export default function AdminPage() {
     ["moderation", t("admin.tab.moderation")],
     ["auth", t("admin.tab.auth")],
     ["smtp", t("admin.tab.smtp")],
+    ["logs", t("admin.tab.logs")],
     ["settings", t("admin.tab.settings")],
     ["audit", t("admin.tab.audit")],
   ];
@@ -40,6 +41,7 @@ export default function AdminPage() {
       {tab === "moderation" && <ModerationAdmin />}
       {tab === "auth" && <AuthAdmin />}
       {tab === "smtp" && <SmtpAdmin />}
+      {tab === "logs" && <LogExportAdmin />}
       {tab === "settings" && <SettingsAdmin />}
       {tab === "audit" && <AuditAdmin />}
     </div>
@@ -113,6 +115,128 @@ function SmtpAdmin() {
         <button className="btn-secondary" onClick={test} disabled={!cfg.enabled}>{t("smtp.test")}</button>
         {saved && <span style={{ color: "var(--green)" }}>{t("admin.saved")}</span>}
         {testMsg && <span className="small muted">{testMsg}</span>}
+      </div>
+    </div>
+  );
+}
+
+function LogExportAdmin() {
+  const { t } = useI18n();
+  const [cfg, setCfg] = useState<any | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const { error, wrap } = useErr();
+
+  useEffect(() => { api.get<any>("/api/admin/log-export-config").then(setCfg); }, []);
+  if (!cfg) return <div className="spinner">{t("common.loading")}</div>;
+  const set = (k: string, v: any) => setCfg({ ...cfg, [k]: v });
+  const dest = cfg.destination as string;
+
+  const fld = (label: string, key: string, type = "text", placeholder = "") => (
+    <div style={{ flex: 1, minWidth: 200 }}>
+      <label>{label}</label>
+      <input type={type} value={cfg[key] ?? ""} placeholder={placeholder} onChange={(e) => set(key, e.target.value)} />
+    </div>
+  );
+
+  async function save() {
+    await wrap(async () => {
+      const out = await api.put<any>("/api/admin/log-export-config", cfg);
+      setCfg(out);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    });
+  }
+  async function run(action: "test" | "flush") {
+    setMsg(null);
+    try {
+      const r = await api.post<any>(`/api/admin/log-export-config/${action}`, {});
+      setMsg({ ok: !!r.ok, text: r.message || (r.ok ? t("logs.run_ok") : t("logs.run_fail")) });
+    } catch (e: any) {
+      setMsg({ ok: false, text: e.message });
+    }
+  }
+
+  return (
+    <div className="stack" style={{ maxWidth: 680 }}>
+      {error && <ErrorBanner message={error} />}
+      <div className="banner">{t("logs.intro")}</div>
+      <div className="card stack" style={{ gap: 12 }}>
+        <label className="switch">
+          <input type="checkbox" checked={!!cfg.enabled} onChange={(e) => set("enabled", e.target.checked)} />
+          <span className="track"><span className="knob" /></span>
+          <span className="strong">{t("logs.enabled")}</span>
+        </label>
+
+        <div style={{ maxWidth: 280 }}>
+          <label>{t("logs.destination")}</label>
+          <select value={dest} onChange={(e) => set("destination", e.target.value)}>
+            <option value="syslog">{t("logs.dest.syslog")}</option>
+            <option value="gcs">{t("logs.dest.gcs")}</option>
+            <option value="bigquery">{t("logs.dest.bigquery")}</option>
+          </select>
+        </div>
+
+        {dest === "syslog" && (
+          <>
+            <div className="row">
+              {fld(t("logs.syslog_host"), "syslog_host", "text", "logs.example.com")}
+              <div style={{ width: 110 }}>
+                <label>{t("logs.port")}</label>
+                <input type="number" value={cfg.syslog_port ?? 514} onChange={(e) => set("syslog_port", Number(e.target.value))} />
+              </div>
+            </div>
+            <div className="row">
+              <div style={{ width: 160 }}>
+                <label>{t("logs.protocol")}</label>
+                <select value={cfg.syslog_protocol} onChange={(e) => set("syslog_protocol", e.target.value)}>
+                  <option value="udp">UDP</option>
+                  <option value="tcp">TCP</option>
+                </select>
+              </div>
+              {fld(t("logs.app_name"), "syslog_app_name")}
+            </div>
+          </>
+        )}
+
+        {dest === "gcs" && (
+          <div className="row">
+            {fld(t("logs.gcs_bucket"), "gcs_bucket", "text", "mon-bucket-logs")}
+            {fld(t("logs.gcs_prefix"), "gcs_prefix", "text", "audit-logs")}
+          </div>
+        )}
+
+        {dest === "bigquery" && (
+          <div className="row">
+            {fld(t("logs.bq_project"), "bq_project", "text", "mon-projet-gcp")}
+            {fld(t("logs.bq_dataset"), "bq_dataset", "text", "observability")}
+            {fld(t("logs.bq_table"), "bq_table", "text", "audit_log")}
+          </div>
+        )}
+
+        {(dest === "gcs" || dest === "bigquery") && (
+          <div>
+            <label>
+              {t("logs.gcp_creds")}
+              {cfg.gcp_credentials_json_set && <span className="badge badge-green" style={{ marginLeft: 8 }}>{t("logs.creds_set")}</span>}
+            </label>
+            <textarea
+              rows={4}
+              placeholder={t("logs.gcp_creds_ph")}
+              value={cfg.gcp_credentials_json ?? ""}
+              onChange={(e) => set("gcp_credentials_json", e.target.value)}
+            />
+            <div className="small muted" style={{ marginTop: 4 }}>{t("logs.gcp_creds_hint")}</div>
+          </div>
+        )}
+      </div>
+
+      <div className="inline">
+        <button onClick={save}>{t("action.save")}</button>
+        <button className="btn-secondary" onClick={() => run("test")} disabled={!cfg.enabled}>{t("logs.test")}</button>
+        <button className="btn-secondary" onClick={() => run("flush")} disabled={!cfg.enabled}>{t("logs.flush")}</button>
+        {saved && <span style={{ color: "var(--green)" }}>{t("admin.saved")}</span>}
+        {msg && <span className="small" style={{ color: msg.ok ? "var(--green)" : "var(--red)" }}>{msg.text}</span>}
       </div>
     </div>
   );
