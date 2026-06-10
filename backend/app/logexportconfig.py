@@ -35,6 +35,10 @@ def _defaults() -> dict:
         "bq_dataset": "",
         "bq_table": "audit_log",
 
+        # Google Cloud universe domain. Empty = auto (read from the service-account
+        # key, else "googleapis.com"). For S3NS / Cloud de Confiance: "s3nsapis.fr".
+        "universe_domain": "",
+
         # Service-account key JSON, used for both GCS and BigQuery.
         "gcp_credentials_json": "",
     }

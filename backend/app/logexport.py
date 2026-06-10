@@ -18,12 +18,39 @@ from sqlalchemy.orm import Session
 
 from .models import AuditLog, User
 
-GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+DEFAULT_UNIVERSE = "googleapis.com"
+# OAuth scopes are universe-independent identifiers (NOT endpoints), kept as-is.
 SCOPE_GCS = "https://www.googleapis.com/auth/devstorage.read_write"
 SCOPE_BQ = "https://www.googleapis.com/auth/bigquery.insertdata"
 
 # RFC 5424 severity/facility for an informational app log: local0.info -> 16*8+6
 SYSLOG_PRI = 134
+
+
+def _universe_domain(cfg: dict, creds: dict) -> str:
+    """Resolve the Google Cloud universe domain.
+
+    Precedence: explicit admin config > the service-account key's
+    `universe_domain` > the public Google Cloud default (`googleapis.com`).
+    For S3NS / Cloud de Confiance this is `s3nsapis.fr`, so endpoints become
+    e.g. `storage.s3nsapis.fr` instead of `storage.googleapis.com`.
+    """
+    return (
+        (cfg.get("universe_domain") or "").strip()
+        or (creds.get("universe_domain") or "").strip()
+        or DEFAULT_UNIVERSE
+    )
+
+
+def _service_endpoint(service: str, universe: str) -> str:
+    """e.g. ("storage", "s3nsapis.fr") -> "https://storage.s3nsapis.fr"."""
+    return f"https://{service}.{universe}"
+
+
+def _token_endpoint(creds: dict, universe: str) -> str:
+    # A key issued for a given universe already carries the right token_uri;
+    # honour it, otherwise build it from the universe domain.
+    return creds.get("token_uri") or f"https://oauth2.{universe}/token"
 
 
 class LogExportError(Exception):
@@ -142,12 +169,12 @@ def _load_credentials(cfg: dict) -> dict:
     return creds
 
 
-def _access_token(creds: dict, scope: str) -> str:
+def _access_token(creds: dict, scope: str, token_uri: str) -> str:
     now = int(time.time())
     claim = {
         "iss": creds["client_email"],
         "scope": scope,
-        "aud": creds.get("token_uri", GOOGLE_TOKEN_URL),
+        "aud": token_uri,
         "iat": now,
         "exp": now + 3600,
     }
@@ -156,7 +183,7 @@ def _access_token(creds: dict, scope: str) -> str:
     except Exception as e:
         raise LogExportError(f"Impossible de signer le jeton (clé privée invalide ?): {e}")
     resp = httpx.post(
-        creds.get("token_uri", GOOGLE_TOKEN_URL),
+        token_uri,
         data={
             "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
             "assertion": assertion,
@@ -164,7 +191,7 @@ def _access_token(creds: dict, scope: str) -> str:
         timeout=20,
     )
     if resp.status_code != 200:
-        raise LogExportError(f"Échec de l'authentification Google ({resp.status_code}): {resp.text[:200]}")
+        raise LogExportError(f"Échec de l'authentification ({resp.status_code}): {resp.text[:200]}")
     return resp.json()["access_token"]
 
 
@@ -177,14 +204,15 @@ def _upload_gcs(cfg: dict, entries: list[dict]) -> tuple[bool, str]:
     if not bucket:
         raise LogExportError("Nom du bucket GCS manquant.")
     creds = _load_credentials(cfg)
-    token = _access_token(creds, SCOPE_GCS)
+    universe = _universe_domain(cfg, creds)
+    token = _access_token(creds, SCOPE_GCS, _token_endpoint(creds, universe))
 
     ndjson = "\n".join(json.dumps(e, ensure_ascii=False, default=str) for e in entries) + "\n"
     stamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
     name = f"{prefix + '/' if prefix else ''}audit-{stamp}.ndjson"
 
     resp = httpx.post(
-        f"https://storage.googleapis.com/upload/storage/v1/b/{bucket}/o",
+        f"{_service_endpoint('storage', universe)}/upload/storage/v1/b/{bucket}/o",
         params={"uploadType": "media", "name": name},
         headers={"Authorization": f"Bearer {token}", "Content-Type": "application/x-ndjson"},
         content=ndjson.encode("utf-8"),
@@ -192,7 +220,7 @@ def _upload_gcs(cfg: dict, entries: list[dict]) -> tuple[bool, str]:
     )
     if resp.status_code not in (200, 201):
         raise LogExportError(f"Échec de l'envoi GCS ({resp.status_code}): {resp.text[:200]}")
-    return True, f"{len(entries)} entrée(s) écrite(s) dans gs://{bucket}/{name}."
+    return True, f"{len(entries)} entrée(s) écrite(s) dans gs://{bucket}/{name} (univers {universe})."
 
 
 # --------------------------------------------------------------------------- #
@@ -205,7 +233,8 @@ def _insert_bigquery(cfg: dict, entries: list[dict]) -> tuple[bool, str]:
     if not (project and dataset and table):
         raise LogExportError("Projet, dataset et table BigQuery sont requis.")
     creds = _load_credentials(cfg)
-    token = _access_token(creds, SCOPE_BQ)
+    universe = _universe_domain(cfg, creds)
+    token = _access_token(creds, SCOPE_BQ, _token_endpoint(creds, universe))
 
     rows = []
     for e in entries:
@@ -217,7 +246,7 @@ def _insert_bigquery(cfg: dict, entries: list[dict]) -> tuple[bool, str]:
         rows.append({"insertId": insert_id, "json": row} if insert_id else {"json": row})
 
     url = (
-        f"https://bigquery.googleapis.com/bigquery/v2/projects/{project}"
+        f"{_service_endpoint('bigquery', universe)}/bigquery/v2/projects/{project}"
         f"/datasets/{dataset}/tables/{table}/insertAll"
     )
     resp = httpx.post(
@@ -231,4 +260,4 @@ def _insert_bigquery(cfg: dict, entries: list[dict]) -> tuple[bool, str]:
     body = resp.json()
     if body.get("insertErrors"):
         return False, f"BigQuery a refusé certaines lignes: {json.dumps(body['insertErrors'])[:200]}"
-    return True, f"{len(rows)} ligne(s) insérée(s) dans {project}.{dataset}.{table}."
+    return True, f"{len(rows)} ligne(s) insérée(s) dans {project}.{dataset}.{table} (univers {universe})."

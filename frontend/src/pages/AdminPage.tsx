@@ -215,6 +215,15 @@ function LogExportAdmin() {
         )}
 
         {(dest === "gcs" || dest === "bigquery") && (
+          <div className="row">
+            {fld(t("logs.universe"), "universe_domain", "text", "googleapis.com")}
+          </div>
+        )}
+        {(dest === "gcs" || dest === "bigquery") && (
+          <div className="small muted" style={{ marginTop: -4 }}>{t("logs.universe_hint")}</div>
+        )}
+
+        {(dest === "gcs" || dest === "bigquery") && (
           <div>
             <label>
               {t("logs.gcp_creds")}
