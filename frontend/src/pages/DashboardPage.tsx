@@ -7,6 +7,7 @@ import { useAuth } from "../auth";
 import { DashboardOut, SquadCard, Tribe } from "../types";
 import { Dot, FreshnessBadge, ProgressBar, Spinner, ErrorBanner } from "../components/ui";
 import EmailExport from "../components/EmailExport";
+import { useSetPageChrome } from "../components/pageChrome";
 
 type SortKey = "risk" | "progress" | "name" | "fresh";
 type Health = "all" | "blocked" | "at_risk" | "on_track";
@@ -61,30 +62,42 @@ export default function DashboardPage() {
     return r;
   }, [data, health, freshFilter, sort]);
 
+  useSetPageChrome(
+    data
+      ? {
+          tabs: [
+            { key: "all", label: t("dash.filter.all_f") },
+            { key: "blocked", label: roadmap("blocked") },
+            { key: "at_risk", label: roadmap("at_risk") },
+            { key: "on_track", label: roadmap("on_track") },
+          ],
+          activeTab: health,
+          onTab: (k) => setHealth(k as Health),
+          actions: (
+            <>
+              <div className="seg">
+                {[data.current_year - 1, data.current_year, data.current_year + 1].map((y) => (
+                  <button key={y} className={y === data.year ? "active" : ""} onClick={() => setYear(y)}>{y}</button>
+                ))}
+              </div>
+              <a className="btn btn-secondary btn-sm" href={`/api/exports/dashboard.csv?year=${data.year}`}>{t("action.csv")}</a>
+              <Link className="btn btn-secondary btn-sm" to="/print/dashboard" target="_blank">{t("action.report")}</Link>
+              <EmailExport endpoint="/api/exports/dashboard/email" year={data.year} />
+            </>
+          ),
+        }
+      : {},
+    [data?.year, health]
+  );
+
   if (error) return <ErrorBanner message={error} />;
   if (!data) return <Spinner />;
 
-  const displayYear = data.year;
-  const years = [data.current_year - 1, data.current_year, data.current_year + 1];
   const focusQ = data.year === data.current_year ? data.current_quarter : undefined;
   const s = data.summary;
 
   return (
     <div className="stack" style={{ gap: 20 }}>
-      <div className="between">
-        <div className="muted small">{t("dash.year_view", { year: displayYear })}</div>
-        <div className="inline">
-          <div className="seg">
-            {years.map((y) => (
-              <button key={y} className={y === displayYear ? "active" : ""} onClick={() => setYear(y)}>{y}</button>
-            ))}
-          </div>
-          <a className="btn btn-secondary btn-sm" href={`/api/exports/dashboard.csv?year=${displayYear}`}>{t("action.csv")}</a>
-          <Link className="btn btn-secondary btn-sm" to="/print/dashboard" target="_blank">{t("action.report")}</Link>
-          <EmailExport endpoint="/api/exports/dashboard/email" year={displayYear} />
-        </div>
-      </div>
-
       {/* Concrete health band */}
       <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))" }}>
         <div className="kpi"><div className="v">{s.avg_progress}%</div><div className="l">{t("dash.avg")}</div></div>
@@ -112,15 +125,6 @@ export default function DashboardPage() {
               <option value="progress">{t("dash.sort.progress")}</option>
               <option value="name">{t("dash.sort.name")}</option>
               <option value="fresh">{t("dash.sort.fresh")}</option>
-            </select>
-          </div>
-          <div style={{ width: 190 }}>
-            <label>{t("dash.filter.status")}</label>
-            <select value={health} onChange={(e) => setHealth(e.target.value as Health)}>
-              <option value="all">{t("dash.filter.all_f")}</option>
-              <option value="blocked">{roadmap("blocked")}</option>
-              <option value="at_risk">{roadmap("at_risk")}</option>
-              <option value="on_track">{roadmap("on_track")}</option>
             </select>
           </div>
           <div style={{ width: 190 }}>

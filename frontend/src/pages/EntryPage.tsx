@@ -6,6 +6,7 @@ import { useConfig } from "../config";
 import { Kpi, Member, Objective, Rag, RoadmapItem, RoadmapStatus, Squad, SquadDetail, Trend, Role } from "../types";
 import { Dot, FreshnessBadge, Spinner, ErrorBanner } from "../components/ui";
 import { canEditSquad, canManageObjectives } from "../perms";
+import { useSetPageChrome } from "../components/pageChrome";
 import { roadmapRag } from "../labels";
 
 const ROADMAP_STATUSES: RoadmapStatus[] = ["on_track", "at_risk", "blocked", "done"];
@@ -60,32 +61,40 @@ export default function EntryPage() {
     }
   }
 
+  const writeAllowed = squad ? canEditSquad(role, user?.id, squad) : false;
+
+  useSetPageChrome(
+    editable.length
+      ? {
+          actions: (
+            <>
+              <select className="w-auto" value={squadId ?? ""} onChange={(e) => setSquadId(Number(e.target.value))}>
+                {editable.map((s) => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
+              <div className="seg">
+                {[year - 1, year, year + 1].map((y) => (
+                  <button key={y} className={y === year ? "active" : ""} onClick={() => { setYear(y); setYearTouched(true); }}>{y}</button>
+                ))}
+              </div>
+              <button className="btn-sm" onClick={() => setRecap(true)} disabled={!writeAllowed}>{t("action.submit")}</button>
+            </>
+          ),
+        }
+      : {},
+    [editable, squadId, year, writeAllowed, t]
+  );
+
   if (error) return <ErrorBanner message={error} />;
   if (editable.length === 0) return <div className="card muted">{t("entry.no_squad")}</div>;
 
-  const years = [year - 1, year, year + 1];
-  const writeAllowed = squad ? canEditSquad(role, user?.id, squad) : false;
   const objAllowed = canManageObjectives(role);
   const steps = [t("entry.gs.s1"), t("entry.gs.s2"), t("entry.gs.s3"), t("entry.gs.s4")];
 
   return (
     <div className="stack" style={{ gap: 18 }}>
-      <div className="between">
-        <div className="muted small">{t("entry.subtitle")}</div>
-        <div className="inline">
-          <select className="w-auto" value={squadId ?? ""} onChange={(e) => setSquadId(Number(e.target.value))}>
-            {editable.map((s) => (
-              <option key={s.id} value={s.id}>{s.name}</option>
-            ))}
-          </select>
-          <div className="seg">
-            {years.map((y) => (
-              <button key={y} className={y === year ? "active" : ""} onClick={() => { setYear(y); setYearTouched(true); }}>{y}</button>
-            ))}
-          </div>
-          <button onClick={() => setRecap(true)} disabled={!writeAllowed}>{t("action.submit")}</button>
-        </div>
-      </div>
+      <div className="muted small">{t("entry.subtitle")}</div>
 
       <div className="card">
         <h3 style={{ marginBottom: 12 }}>{t("entry.gs.title")}</h3>

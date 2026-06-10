@@ -147,17 +147,24 @@ export default function Layout() {
             </div>
           </div>
 
-          {chrome.tabs && chrome.tabs.length > 0 && (
-            <div className="tabs topbar-tabs">
-              {chrome.tabs.map((tab) => (
-                <button
-                  key={tab.key}
-                  className={chrome.activeTab === tab.key ? "active" : ""}
-                  onClick={() => chrome.onTab?.(tab.key)}
-                >
-                  {tab.label}
-                </button>
-              ))}
+          {((chrome.tabs && chrome.tabs.length > 0) || chrome.actions) && (
+            <div className="topbar-subbar">
+              {chrome.tabs && chrome.tabs.length > 0 ? (
+                <div className="tabs topbar-tabs">
+                  {chrome.tabs.map((tab) => (
+                    <button
+                      key={tab.key}
+                      className={chrome.activeTab === tab.key ? "active" : ""}
+                      onClick={() => chrome.onTab?.(tab.key)}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <span />
+              )}
+              {chrome.actions && <div className="topbar-page-actions">{chrome.actions}</div>}
             </div>
           )}
         </header>
