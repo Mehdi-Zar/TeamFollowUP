@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { api } from "../api";
 import { useI18n } from "../i18n";
-import { Member, RoadmapItem, SnapshotMeta, SquadDetail } from "../types";
+import { Member, RoadmapItem, RoadmapStatus, SnapshotMeta, SquadDetail } from "../types";
 import { Dot, FreshnessBadge, ProgressBar, Spinner, ErrorBanner } from "../components/ui";
 import EmailExport from "../components/EmailExport";
 import { useSetPageChrome } from "../components/pageChrome";
@@ -18,6 +18,7 @@ export default function SquadDetailPage() {
   const [snapshots, setSnapshots] = useState<SnapshotMeta[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [openJalon, setOpenJalon] = useState<RoadmapItem | null>(null);
+  const [zoomQuarter, setZoomQuarter] = useState<number | null>(null);
 
   useEffect(() => {
     const q = yearParam ? `?year=${yearParam}` : "";
@@ -49,6 +50,36 @@ export default function SquadDetailPage() {
 
   if (error) return <ErrorBanner message={error} />;
   if (!squad) return <Spinner />;
+
+  // Quarter "courant" : trimestre calendaire si on regarde l'année en cours,
+  // sinon le dernier quarter qui contient des jalons (fallback Q1).
+  const now = new Date();
+  const calQuarter = Math.floor(now.getMonth() / 3) + 1;
+  const latestWithItems = [4, 3, 2, 1].find((q) => squad.roadmap_items.some((r) => r.quarter === q)) ?? 1;
+  const defaultQuarter = squad.year === now.getFullYear() ? calQuarter : latestWithItems;
+  const activeQuarter = zoomQuarter ?? defaultQuarter;
+
+  const quarterItems = squad.roadmap_items
+    .filter((r) => r.quarter === activeQuarter)
+    .sort((a, b) => a.display_order - b.display_order);
+  const qCell = squad.quarter_progress[String(activeQuarter)];
+  const countByStatus = (s: string) => quarterItems.filter((r) => r.status === s).length;
+  const ragBreakdown: Array<{ k: RoadmapStatus; n: number; label: string }> = [
+    { k: "blocked", n: countByStatus("blocked"), label: t("card.blocked") },
+    { k: "at_risk", n: countByStatus("at_risk"), label: t("card.atrisk") },
+    { k: "on_track", n: countByStatus("on_track"), label: roadmap("on_track") },
+    { k: "done", n: countByStatus("done"), label: roadmap("done") },
+  ];
+
+  const objQuarter = (dateStr?: string | null): number | null => {
+    if (!dateStr) return null;
+    const d = new Date(dateStr);
+    return d.getFullYear() === squad.year ? Math.floor(d.getMonth() / 3) + 1 : null;
+  };
+  const quarterObjectives = squad.objectives.filter((o) => objQuarter(o.target_date) === activeQuarter);
+
+  const jalonTooltip = (r: RoadmapItem) =>
+    [roadmap(r.status), r.owner, (r.description || "").slice(0, 140)].filter(Boolean).join(" · ");
 
   return (
     <div className="stack" style={{ gap: 18 }}>
@@ -102,6 +133,104 @@ export default function SquadDetailPage() {
             );
           })}
         </div>
+      </div>
+
+      {/* Zoom détaillé sur un quarter (par défaut le quarter courant, sélectionnable) */}
+      <div className="card">
+        <div className="between" style={{ flexWrap: "wrap", gap: 10 }}>
+          <h2 style={{ margin: 0 }}>{t("squad.zoom")}</h2>
+          <div className="seg">
+            {[1, 2, 3, 4].map((q) => (
+              <button key={q} className={q === activeQuarter ? "active" : ""} onClick={() => setZoomQuarter(q)}>
+                Q{q}
+                {q === defaultQuarter ? " •" : ""}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="small muted" style={{ margin: "6px 0 14px" }}>{t("squad.zoom_hint")}</div>
+
+        <div className="quarter-block current" style={{ marginBottom: 18 }}>
+          <div className="between">
+            <h4 style={{ margin: 0 }}>Q{activeQuarter} · {squad.year}</h4>
+            <span className="strong" style={{ fontSize: 18 }}>{qCell?.progress_pct ?? 0}%</span>
+          </div>
+          <ProgressBar pct={qCell?.progress_pct ?? 0} />
+          {qCell?.comment && <div className="small muted" style={{ marginTop: 8 }}>{qCell.comment}</div>}
+          <div className="rag-counts" style={{ marginTop: 12, flexWrap: "wrap" }}>
+            {ragBreakdown.map((b) => (
+              <span key={b.k}>
+                <Dot status={roadmapRag(b.k)} /> {b.n} {b.label}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        <h3 style={{ marginBottom: 8 }}>{t("squad.quarter_obj")}</h3>
+        {quarterObjectives.length === 0 ? (
+          <div className="small muted" style={{ marginBottom: 16 }}>{t("squad.no_quarter_obj")}</div>
+        ) : (
+          <div style={{ marginBottom: 16 }}>
+            {quarterObjectives.map((o) => (
+              <div key={o.id} className="item-row">
+                <Dot status={o.rag_status} />
+                <div className="grow">
+                  <div>{o.title}</div>
+                  {o.description && <div className="small muted">{o.description}</div>}
+                </div>
+                <span className="small muted">
+                  {rag(o.rag_status)}
+                  {o.target_date ? ` · ${formatDate(o.target_date)}` : ""}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <h3 style={{ marginBottom: 8 }}>{t("squad.quarter_jalons")}</h3>
+        {quarterItems.length === 0 ? (
+          <div className="small muted">{t("squad.no_jalon")}</div>
+        ) : (
+          <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))" }}>
+            {quarterItems.map((r) => (
+              <div
+                key={r.id}
+                className="quarter-block clickable-row"
+                style={{ cursor: "pointer", margin: 0 }}
+                title={jalonTooltip(r)}
+                onClick={() => setOpenJalon(r)}
+              >
+                <div className="between" style={{ alignItems: "flex-start" }}>
+                  <div className="inline" style={{ gap: 8 }}>
+                    <Dot status={roadmapRag(r.status)} />
+                    <span className="strong">{r.title}</span>
+                  </div>
+                  <span className="badge badge-grey">{roadmap(r.status)}</span>
+                </div>
+                {r.owner && (
+                  <div className="small muted" style={{ marginTop: 4 }}>
+                    {t("jalon.owner")} : <span className="strong">{r.owner}</span>
+                  </div>
+                )}
+                {([
+                  [t("jalon.desc"), r.description],
+                  [t("jalon.success"), r.success_criteria],
+                  [t("jalon.benefit"), r.user_benefit],
+                  [t("jalon.deps"), r.dependencies],
+                  [t("jalon.risks"), r.risks],
+                ] as Array<[string, string | null | undefined]>).map(([label, val]) =>
+                  val ? (
+                    <div key={label} className="jalon-field">
+                      <div className="jl">{label}</div>
+                      <div className="jv">{val}</div>
+                    </div>
+                  ) : null
+                )}
+                <div className="small" style={{ marginTop: 8, color: "var(--accent)" }}>{t("jalon.details")} ›</div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {openJalon && <JalonView jalon={openJalon} onClose={() => setOpenJalon(null)} t={t} roadmap={roadmap} />}
