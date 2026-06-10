@@ -15,6 +15,7 @@ import {
   IconExpand,
   IconFeed,
   IconOrg,
+  IconReview,
   IconTribes,
 } from "./icons";
 
@@ -33,6 +34,7 @@ const NAV: NavItem[] = [
   { to: "/tribus", labelKey: "nav.tribes", titleKey: "nav.tribes", Icon: IconTribes, visible: canSeeAdmin },
   { to: "/saisie", labelKey: "nav.entry", titleKey: "nav.entry", Icon: IconEntry, visible: canSeeSaisie },
   { to: "/fil", labelKey: "nav.feed", titleKey: "nav.feed", Icon: IconFeed, visible: () => true },
+  { to: "/revue", labelKey: "nav.review", titleKey: "review.title", Icon: IconReview, visible: (r) => r === "admin" || r === "tribe_leader" },
   { to: "/admin", labelKey: "nav.admin", titleKey: "nav.admin", Icon: IconAdmin, visible: canSeeAdmin },
 ];
 

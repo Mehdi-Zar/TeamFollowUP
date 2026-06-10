@@ -465,6 +465,46 @@ class AuditOut(ORMModel):
     detail: Optional[dict] = None
 
 
+# ---------- Progress review ----------
+class ProgressNoteIn(BaseModel):
+    year: Optional[int] = None
+    note: Optional[str] = None
+    confidence: Optional[int] = Field(default=None, ge=1, le=5)
+
+
+class ProgressPointOut(BaseModel):
+    id: int
+    squad_id: int
+    year: int
+    created_at: datetime
+    kind: str
+    author_name: Optional[str] = None
+    note: Optional[str] = None
+    confidence: Optional[int] = None
+    progress_pct: int
+    blocked_count: int
+    at_risk_count: int
+    done_count: int
+    total_count: int
+    changes: list = []
+
+
+class ProgressReviewRow(BaseModel):
+    squad_id: int
+    squad_name: str
+    tribe_id: Optional[int] = None
+    tribe_name: Optional[str] = None
+    progress_pct: int
+    progress_delta: int
+    blocked_count: int
+    at_risk_count: int
+    confidence: Optional[int] = None
+    note: Optional[str] = None
+    last_update_at: Optional[datetime] = None
+    points_in_period: int
+    changes: list = []
+
+
 # ---------- Settings ----------
 class SettingsOut(BaseModel):
     staleness_threshold_days: int

@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { useI18n } from "../i18n";
-import { OrgNode, Squad, Tribe, Role } from "../types";
+import { Member, OrgNode, Squad, SquadDetail, Tribe, Role } from "../types";
 import { Spinner, ErrorBanner } from "../components/ui";
 import { useSetPageChrome } from "../components/pageChrome";
 import { canEditOrg } from "../perms";
@@ -249,15 +249,21 @@ function NodeView({
   onDelete: (n: OrgNode) => void;
 }) {
   const { t } = useI18n();
+  const [showTeam, setShowTeam] = useState(false);
   return (
     <div className="org-subtree">
       <div className="org-box org-node">
         <div className="strong small">{node.title}</div>
         {node.person_name && <div className="small muted">{node.person_name}</div>}
         {node.squad_id && linkSquads && (
-          <Link className="small" to={`/squads/${node.squad_id}`}>
-            {t("org.see_squad")}
-          </Link>
+          <div className="inline" style={{ gap: 8, marginTop: 4, justifyContent: "center", flexWrap: "wrap" }}>
+            <button className="btn-ghost btn-sm" onClick={() => setShowTeam((v) => !v)}>
+              {showTeam ? t("org.hide_team") : t("org.see_team")}
+            </button>
+            <Link className="small" to={`/squads/${node.squad_id}`}>
+              {t("org.open_squad")}
+            </Link>
+          </div>
         )}
         {editable && (
           <div className="inline" style={{ justifyContent: "center", marginTop: 6, gap: 4 }}>
@@ -273,6 +279,7 @@ function NodeView({
           </div>
         )}
       </div>
+      {showTeam && node.squad_id && <SquadTeam squadId={node.squad_id} />}
       {node.children.length > 0 && (
         <>
           <div className="org-connector" />
@@ -284,6 +291,56 @@ function NodeView({
         </>
       )}
     </div>
+  );
+}
+
+function SquadTeam({ squadId }: { squadId: number }) {
+  const { t } = useI18n();
+  const [data, setData] = useState<SquadDetail | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    api.get<SquadDetail>(`/api/squads/${squadId}`).then(setData).catch(() => setFailed(true));
+  }, [squadId]);
+
+  if (failed) return null;
+  if (!data) return <div className="small muted" style={{ marginTop: 8 }}>…</div>;
+  if (data.members.length === 0) {
+    return (
+      <>
+        <div className="org-connector" />
+        <div className="org-box" style={{ minWidth: 160 }}><div className="small muted">{t("squad.no_members")}</div></div>
+      </>
+    );
+  }
+
+  const byManager: Record<string, Member[]> = {};
+  for (const m of data.members) {
+    const key = m.manager_id == null ? "root" : String(m.manager_id);
+    (byManager[key] ||= []).push(m);
+  }
+  const roots = byManager["root"] || [];
+
+  const renderMember = (m: Member) => (
+    <div className="org-subtree" key={m.id}>
+      <div className="org-box org-node" style={{ width: 168, minHeight: 0 }}>
+        <div className="strong small">{m.full_name}</div>
+        {m.role_title && <div className="small muted">{m.role_title}</div>}
+      </div>
+      {(byManager[String(m.id)]?.length ?? 0) > 0 && (
+        <>
+          <div className="org-connector" />
+          <div className="org-children">{byManager[String(m.id)].map(renderMember)}</div>
+        </>
+      )}
+    </div>
+  );
+
+  return (
+    <>
+      <div className="org-connector" />
+      <div className="org-children">{roots.map(renderMember)}</div>
+    </>
   );
 }
 

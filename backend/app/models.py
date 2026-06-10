@@ -73,6 +73,7 @@ class Squad(Base):
     kpis: Mapped[list["Kpi"]] = relationship(back_populates="squad", cascade="all, delete-orphan")
     members: Mapped[list["Member"]] = relationship(back_populates="squad", cascade="all, delete-orphan")
     snapshots: Mapped[list["ReportSnapshot"]] = relationship(back_populates="squad", cascade="all, delete-orphan")
+    progress_updates: Mapped[list["ProgressUpdate"]] = relationship(back_populates="squad", cascade="all, delete-orphan")
 
 
 class Member(Base):
@@ -180,6 +181,40 @@ class ReportSnapshot(Base):
     cycle_label: Mapped[str] = mapped_column(String(100), nullable=False)
 
     squad: Mapped["Squad"] = relationship(back_populates="snapshots")
+
+
+class ProgressUpdate(Base):
+    """A point in a squad's progress-review timeline.
+
+    Created automatically on each meaningful update (kind="auto", coalesced),
+    on a weekly cadence (kind="weekly"), or when a leader writes a review note
+    (kind="review"). Stores the metrics of the moment (for the evolution curve),
+    a light state snapshot + computed changes (for the deltas), an optional free
+    review note and a confidence indicator.
+    """
+    __tablename__ = "progress_updates"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    squad_id: Mapped[int] = mapped_column(ForeignKey("squads.id"), nullable=False, index=True)
+    year: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    kind: Mapped[str] = mapped_column(String(20), nullable=False, default="auto")
+
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    confidence: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 1..5
+
+    progress_pct: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    blocked_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    at_risk_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    done_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    total_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    state: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    changes: Mapped[list | None] = mapped_column(JSON, nullable=True)
+
+    squad: Mapped["Squad"] = relationship(back_populates="progress_updates")
+    created_by: Mapped["User | None"] = relationship(foreign_keys=[created_by_user_id])
 
 
 class FeedPost(Base):

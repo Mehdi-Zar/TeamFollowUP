@@ -425,6 +425,20 @@ tr:last-child td { border-bottom: none; }
 
 .app-content { flex: 1; max-width: 1180px; width: 100%; margin: 0 auto; padding: 24px 24px 60px; }
 
+/* Progress review */
+.change-list { margin: 4px 0 0; padding-left: 18px; }
+.change-list li { margin: 1px 0; }
+.progress-point { border-left: 3px solid var(--line); padding: 8px 0 8px 12px; }
+.progress-point.k-review { border-left-color: var(--accent); }
+.progress-point.k-weekly { border-left-color: var(--navy); }
+.progress-point.k-auto { border-left-color: var(--line); }
+.progress-delta-up { color: var(--green); font-weight: 700; }
+.progress-delta-down { color: var(--red); font-weight: 700; }
+.progress-delta-flat { color: var(--grey); font-weight: 700; }
+.confidence-seg { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.confidence-seg button { background: #fff; color: var(--text); border: none; border-radius: 0; padding: 7px 13px; font-weight: 600; }
+.confidence-seg button.active { background: var(--navy); color: #fff; }
+
 @media (max-width: 720px) {
   .sidebar { position: fixed; z-index: 40; }
   .app-shell { --sidebar-w: 68px; }

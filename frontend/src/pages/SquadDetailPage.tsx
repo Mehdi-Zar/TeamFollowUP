@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { api } from "../api";
 import { useI18n } from "../i18n";
-import { Member, RoadmapItem, RoadmapStatus, SnapshotMeta, SquadDetail } from "../types";
+import { Member, ProgressPoint, RoadmapItem, RoadmapStatus, SnapshotMeta, SquadDetail } from "../types";
+import { ProgressCurve, ProgressTimeline } from "../components/progress";
 import { Dot, FreshnessBadge, ProgressBar, Spinner, ErrorBanner } from "../components/ui";
 import EmailExport from "../components/EmailExport";
 import { useSetPageChrome } from "../components/pageChrome";
@@ -19,6 +20,7 @@ export default function SquadDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [openJalon, setOpenJalon] = useState<RoadmapItem | null>(null);
   const [zoomQuarter, setZoomQuarter] = useState<number | null>(null);
+  const [progress, setProgress] = useState<ProgressPoint[]>([]);
 
   useEffect(() => {
     const q = yearParam ? `?year=${yearParam}` : "";
@@ -26,6 +28,11 @@ export default function SquadDetailPage() {
     api.get<SquadDetail>(`/api/squads/${squadId}${q}`).then(setSquad).catch((e) => setError(e.message));
     api.get<SnapshotMeta[]>(`/api/squads/${squadId}/snapshots`).then(setSnapshots).catch(() => {});
   }, [squadId, yearParam]);
+
+  useEffect(() => {
+    if (!squad) return;
+    api.get<ProgressPoint[]>(`/api/squads/${squadId}/progress?year=${squad.year}`).then(setProgress).catch(() => {});
+  }, [squadId, squad?.year]);
 
   useSetPageChrome(
     squad
@@ -258,6 +265,22 @@ export default function SquadDetailPage() {
           ))}
         </div>
       )}
+
+      {/* Revue de progression */}
+      <div className="card">
+        <h2>{t("progress.title")}</h2>
+        <div className="small muted" style={{ marginBottom: 12 }}>{t("progress.hint")}</div>
+        {progress.length === 0 ? (
+          <div className="small muted">{t("progress.no_data")}</div>
+        ) : (
+          <>
+            <ProgressCurve points={progress} />
+            <div style={{ marginTop: 12 }}>
+              <ProgressTimeline points={progress} />
+            </div>
+          </>
+        )}
+      </div>
 
       {/* Équipe / organigramme de la squad */}
       <div className="card">

@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..deps import assert_can_manage_objectives, get_current_user, record_audit
 from ..models import Objective, Squad, User
+from ..progress import capture_progress
 from ..schemas import ObjectiveCreate, ObjectiveOut, ObjectiveUpdate
 
 router = APIRouter(prefix="/api/objectives", tags=["objectives"])
@@ -37,6 +38,7 @@ def update_objective(objective_id: int, payload: ObjectiveUpdate, db: Session = 
     for k, v in data.items():
         setattr(obj, k, v)
     record_audit(db, user.id, "objective.update", entity="objective", entity_id=obj.id, detail=data)
+    capture_progress(db, obj.squad_id, obj.year, user)
     db.commit()
     db.refresh(obj)
     return obj

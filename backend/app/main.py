@@ -20,6 +20,7 @@ from .routers import (
     notifications,
     objectives,
     org,
+    progress,
     roadmap,
     snapshots,
     squads,
@@ -38,8 +39,42 @@ app = FastAPI(
 app.add_middleware(SessionMiddleware, secret_key=settings.secret_key, same_site="lax", https_only=False)
 
 for r in (auth, tribes, squads, dashboard, org, objectives, roadmap, kpis,
-          members, snapshots, exports, feed, notifications, admin, audit):
+          members, snapshots, exports, feed, notifications, admin, audit, progress):
     app.include_router(r.router)
+
+
+@app.on_event("startup")
+async def _start_weekly_progress_scheduler():
+    """Lightweight in-process scheduler: ensure a weekly progress point per squad.
+
+    Runs every 6h and creates weekly points only when due (>= 7 days since the
+    last weekly), so it is idempotent and self-healing. Disabled in tests via
+    DISABLE_SCHEDULER=1.
+    """
+    if os.environ.get("DISABLE_SCHEDULER") == "1":
+        return
+    import asyncio
+
+    from .database import SessionLocal
+    from .progress import ensure_weekly
+
+    async def loop():
+        # Small initial delay so startup (migrations/seed) settles first.
+        await asyncio.sleep(20)
+        while True:
+            try:
+                db = SessionLocal()
+                try:
+                    n = ensure_weekly(db)
+                    if n:
+                        logging.getLogger("trt.progress").info("Weekly progress points created: %s", n)
+                finally:
+                    db.close()
+            except Exception as exc:  # never crash the loop
+                logging.getLogger("trt.progress").warning("weekly scheduler error: %s", exc)
+            await asyncio.sleep(6 * 3600)
+
+    asyncio.create_task(loop())
 
 
 @app.get("/api/health", tags=["meta"])

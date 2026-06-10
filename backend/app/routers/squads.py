@@ -16,6 +16,7 @@ from ..deps import (
     visible_tribe_id,
 )
 from ..models import FeedPost, OrgNode, QuarterProgress, Squad, User
+from ..progress import capture_progress
 from ..schemas import (
     QuarterProgressIn,
     QuarterProgressOut,
@@ -133,6 +134,7 @@ def set_quarter_progress(squad_id: int, payload: QuarterProgressIn, db: Session 
         row.comment = payload.comment
     record_audit(db, user.id, "quarter_progress.set", entity="squad", entity_id=squad_id,
                  detail={"year": payload.year, "quarter": payload.quarter, "progress_pct": payload.progress_pct})
+    capture_progress(db, squad_id, payload.year, user)
     db.commit()
     db.refresh(row)
     return row

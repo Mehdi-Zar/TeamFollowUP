@@ -130,10 +130,57 @@ export default function EntryPage() {
           <ObjectivesEditor squad={squad} year={year} onChange={reload} editable={objAllowed} t={t} rag={rag} />
           <KpisEditor squad={squad} onChange={reload} readonly={!writeAllowed} t={t} trend={trend} />
           <MembersEditor squad={squad} onChange={reload} readonly={!writeAllowed} t={t} />
+          <ProgressReviewEditor squadId={squad.id} year={year} readonly={!writeAllowed} onSaved={() => flash(t("progress.review_saved"))} t={t} />
         </>
       )}
 
       {recap && squad && <SubmitRecap squad={squad} onConfirm={confirmSubmit} onCancel={() => setRecap(false)} t={t} />}
+    </div>
+  );
+}
+
+function ProgressReviewEditor({ squadId, year, readonly, onSaved, t }: any) {
+  const [note, setNote] = useState("");
+  const [confidence, setConfidence] = useState<number | null>(null);
+  const [saving, setSaving] = useState(false);
+  const empty = !note.trim() && !confidence;
+
+  async function save() {
+    if (empty) return;
+    setSaving(true);
+    try {
+      await api.post(`/api/squads/${squadId}/progress`, { year, note: note.trim() || null, confidence });
+      setNote("");
+      setConfidence(null);
+      onSaved();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="card stack" style={{ gap: 12 }}>
+      <div>
+        <h3 style={{ margin: 0 }}>{t("progress.title")}</h3>
+        <div className="small muted">{t("progress.review_intro")}</div>
+      </div>
+      <div>
+        <label>{t("progress.confidence_q")}</label>
+        <div className="confidence-seg">
+          {[1, 2, 3, 4, 5].map((n) => (
+            <button key={n} type="button" className={confidence === n ? "active" : ""} disabled={readonly} onClick={() => setConfidence(n)}>
+              {n}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div>
+        <label>{t("progress.note_label")}</label>
+        <textarea rows={3} placeholder={t("progress.note_ph")} value={note} disabled={readonly} onChange={(e) => setNote(e.target.value)} />
+      </div>
+      <div>
+        <button onClick={save} disabled={readonly || saving || empty}>{t("progress.save_review")}</button>
+      </div>
     </div>
   );
 }

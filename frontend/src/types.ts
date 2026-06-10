@@ -269,3 +269,46 @@ export interface FeedPost {
   reactions: Record<string, number>;
   my_reactions: string[];
 }
+
+// ---------- Progress review ----------
+export interface ProgressChange {
+  kind: string;
+  label: string;
+  from?: string | number | null;
+  to?: string | number | null;
+}
+
+export type ProgressKind = "auto" | "weekly" | "review";
+
+export interface ProgressPoint {
+  id: number;
+  squad_id: number;
+  year: number;
+  created_at: string;
+  kind: ProgressKind;
+  author_name?: string | null;
+  note?: string | null;
+  confidence?: number | null;
+  progress_pct: number;
+  blocked_count: number;
+  at_risk_count: number;
+  done_count: number;
+  total_count: number;
+  changes: ProgressChange[];
+}
+
+export interface ProgressReviewRow {
+  squad_id: number;
+  squad_name: string;
+  tribe_id?: number | null;
+  tribe_name?: string | null;
+  progress_pct: number;
+  progress_delta: number;
+  blocked_count: number;
+  at_risk_count: number;
+  confidence?: number | null;
+  note?: string | null;
+  last_update_at?: string | null;
+  points_in_period: number;
+  changes: ProgressChange[];
+}
