@@ -80,6 +80,15 @@ export function IconAdmin(p: IconProps) {
   );
 }
 
+export function IconReview(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path d="M3 3v18h18" />
+      <path d="M7 15l4-5 3 3 5-7" />
+    </Svg>
+  );
+}
+
 // Chevrons pour le bouton replier
 export function IconCollapse(p: IconProps) {
   return (

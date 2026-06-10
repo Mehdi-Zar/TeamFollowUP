@@ -10,6 +10,7 @@ import FeedPage from "./pages/FeedPage";
 import TribesPage from "./pages/TribesPage";
 import PreferencesPage from "./pages/PreferencesPage";
 import AdminPage from "./pages/AdminPage";
+import ReviewPage from "./pages/ReviewPage";
 import PrintSquadPage from "./pages/PrintSquadPage";
 import PrintDashboardPage from "./pages/PrintDashboardPage";
 import { PageChromeProvider } from "./components/pageChrome";
@@ -34,6 +35,7 @@ export default function App() {
         <Route path="/" element={<DashboardPage />} />
         <Route path="/squads/:id" element={<SquadDetailPage />} />
         <Route path="/fil" element={<FeedPage />} />
+        <Route path="/revue" element={<ReviewPage />} />
         <Route path="/preferences" element={<PreferencesPage />} />
         <Route path="/saisie" element={<EntryPage />} />
         <Route path="/organigramme" element={<OrgPage />} />

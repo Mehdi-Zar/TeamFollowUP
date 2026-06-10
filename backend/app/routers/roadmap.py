@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..deps import assert_can_edit_squad, record_audit, require_writer
 from ..models import RoadmapItem, Squad, User
+from ..progress import capture_progress
 from ..schemas import RoadmapItemCreate, RoadmapItemOut, RoadmapItemUpdate
 
 router = APIRouter(prefix="/api/roadmap-items", tags=["roadmap"])
@@ -20,6 +21,7 @@ def create_item(payload: RoadmapItemCreate, db: Session = Depends(get_db),
     db.flush()
     record_audit(db, user.id, "roadmap.create", entity="roadmap_item", entity_id=item.id,
                  detail={"squad_id": item.squad_id, "year": item.year, "quarter": item.quarter, "title": item.title})
+    capture_progress(db, item.squad_id, item.year, user)
     db.commit()
     db.refresh(item)
     return item
@@ -36,6 +38,7 @@ def update_item(item_id: int, payload: RoadmapItemUpdate, db: Session = Depends(
     for k, v in data.items():
         setattr(item, k, v)
     record_audit(db, user.id, "roadmap.update", entity="roadmap_item", entity_id=item.id, detail=data)
+    capture_progress(db, item.squad_id, item.year, user)
     db.commit()
     db.refresh(item)
     return item
