@@ -12,6 +12,7 @@ import PreferencesPage from "./pages/PreferencesPage";
 import AdminPage from "./pages/AdminPage";
 import PrintSquadPage from "./pages/PrintSquadPage";
 import PrintDashboardPage from "./pages/PrintDashboardPage";
+import { PageChromeProvider } from "./components/pageChrome";
 
 function Protected({ children, adminOnly }: { children: JSX.Element; adminOnly?: boolean }) {
   const { user, loading, effectiveRole } = useAuth();
@@ -29,7 +30,7 @@ export default function App() {
       <Route path="/print/squad/:id" element={<Protected><PrintSquadPage /></Protected>} />
       <Route path="/print/dashboard" element={<Protected><PrintDashboardPage /></Protected>} />
 
-      <Route element={<Protected><Layout /></Protected>}>
+      <Route element={<PageChromeProvider><Protected><Layout /></Protected></PageChromeProvider>}>
         <Route path="/" element={<DashboardPage />} />
         <Route path="/squads/:id" element={<SquadDetailPage />} />
         <Route path="/fil" element={<FeedPage />} />

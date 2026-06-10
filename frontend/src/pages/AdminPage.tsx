@@ -4,6 +4,7 @@ import { useI18n } from "../i18n";
 import { AuditEntry, Role, Squad, Tribe, User } from "../types";
 import { ErrorBanner } from "../components/ui";
 import { ALL_ROLES } from "../perms";
+import { useSetPageChrome } from "../components/pageChrome";
 
 type Tab = "tribes" | "squads" | "users" | "moderation" | "auth" | "smtp" | "settings" | "audit";
 
@@ -20,16 +21,19 @@ export default function AdminPage() {
     ["settings", t("admin.tab.settings")],
     ["audit", t("admin.tab.audit")],
   ];
+
+  useSetPageChrome(
+    {
+      title: t("admin.title"),
+      tabs: tabs.map(([key, label]) => ({ key, label })),
+      activeTab: tab,
+      onTab: (k) => setTab(k as Tab),
+    },
+    [tab, t]
+  );
+
   return (
     <div className="stack" style={{ gap: 16 }}>
-      <h1>{t("admin.title")}</h1>
-      <div className="tabs">
-        {tabs.map(([k, l]) => (
-          <button key={k} className={tab === k ? "active" : ""} onClick={() => setTab(k)}>
-            {l}
-          </button>
-        ))}
-      </div>
       {tab === "tribes" && <TribesAdmin />}
       {tab === "squads" && <SquadsAdmin />}
       {tab === "users" && <UsersAdmin />}

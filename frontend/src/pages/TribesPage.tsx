@@ -4,6 +4,7 @@ import { api } from "../api";
 import { useI18n } from "../i18n";
 import { OrgNode, TribeOrg } from "../types";
 import { Spinner, ErrorBanner } from "../components/ui";
+import { useSetPageChrome } from "../components/pageChrome";
 
 function ReadNode({ node }: { node: OrgNode }) {
   const { t } = useI18n();
@@ -42,6 +43,10 @@ export default function TribesPage() {
     api.get<TribeOrg[]>("/api/tribes/org-overview").then(setTribes).catch((e) => setError(e.message));
   }, []);
 
+  const detailTitle =
+    tribes && selected != null ? tribes.find((tr) => tr.tribe_id === selected)?.tribe_name : undefined;
+  useSetPageChrome({ title: detailTitle }, [detailTitle]);
+
   if (error) return <ErrorBanner message={error} />;
   if (!tribes) return <Spinner />;
 
@@ -54,8 +59,7 @@ export default function TribesPage() {
           <button className="btn-ghost btn-sm" onClick={() => setSelected(null)}>
             {t("tribes.back")}
           </button>
-          <h1 style={{ marginTop: 8 }}>{current.tribe_name}</h1>
-          <div className="muted small">{current.squads_count} {t("tribes.squads")}</div>
+          <div className="muted small" style={{ marginTop: 8 }}>{current.squads_count} {t("tribes.squads")}</div>
         </div>
         {current.tree.length === 0 ? (
           <div className="card muted">{t("tribes.empty")}</div>
@@ -74,10 +78,7 @@ export default function TribesPage() {
 
   return (
     <div className="stack" style={{ gap: 18 }}>
-      <div>
-        <h1 style={{ marginBottom: 2 }}>{t("tribes.title")}</h1>
-        <div className="muted small">{t("tribes.sub")}</div>
-      </div>
+      <div className="muted small">{t("tribes.sub")}</div>
       <div className="squad-grid-2">
         {tribes.map((tr) => (
           <button key={tr.tribe_id} className="squad-card squad-card-lg s-green" onClick={() => setSelected(tr.tribe_id)}>

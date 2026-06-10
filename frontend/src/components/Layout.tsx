@@ -1,21 +1,42 @@
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { useState } from "react";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth";
 import { useI18n } from "../i18n";
 import { useConfig } from "../config";
 import { Role } from "../types";
 import { ALL_ROLES, canSeeAdmin, canSeeSaisie } from "../perms";
 import NotificationBell from "./NotificationBell";
+import { usePageChrome } from "./pageChrome";
+import {
+  IconAdmin,
+  IconCollapse,
+  IconDashboard,
+  IconEntry,
+  IconExpand,
+  IconFeed,
+  IconOrg,
+  IconTribes,
+} from "./icons";
 
-function navStyle({ isActive }: { isActive: boolean }): React.CSSProperties {
-  return {
-    padding: "8px 14px",
-    borderRadius: 10,
-    fontWeight: 600,
-    fontSize: 14,
-    color: isActive ? "#fff" : "#CADCFC",
-    background: isActive ? "rgba(255,255,255,.14)" : "transparent",
-  };
-}
+type NavItem = {
+  to: string;
+  end?: boolean;
+  labelKey: string;
+  titleKey: string;
+  Icon: (p: { size?: number }) => JSX.Element;
+  visible: (role: Role) => boolean;
+};
+
+const NAV: NavItem[] = [
+  { to: "/", end: true, labelKey: "nav.dashboard", titleKey: "nav.dashboard", Icon: IconDashboard, visible: () => true },
+  { to: "/organigramme", labelKey: "nav.org", titleKey: "nav.org", Icon: IconOrg, visible: () => true },
+  { to: "/tribus", labelKey: "nav.tribes", titleKey: "nav.tribes", Icon: IconTribes, visible: canSeeAdmin },
+  { to: "/saisie", labelKey: "nav.entry", titleKey: "nav.entry", Icon: IconEntry, visible: canSeeSaisie },
+  { to: "/fil", labelKey: "nav.feed", titleKey: "nav.feed", Icon: IconFeed, visible: () => true },
+  { to: "/admin", labelKey: "nav.admin", titleKey: "nav.admin", Icon: IconAdmin, visible: canSeeAdmin },
+];
+
+const COLLAPSE_KEY = "sidebar.collapsed";
 
 const whiteSelect: React.CSSProperties = {
   width: "auto",
@@ -29,106 +50,133 @@ export default function Layout() {
   const { t, role: roleLabel, lang, setLang } = useI18n();
   const { app_name } = useConfig();
   const navigate = useNavigate();
+  const location = useLocation();
+  const chrome = usePageChrome();
   const role = (effectiveRole ?? "member") as Role;
+
+  const [collapsed, setCollapsed] = useState<boolean>(() => localStorage.getItem(COLLAPSE_KEY) === "1");
+  function toggleCollapsed() {
+    setCollapsed((c) => {
+      const next = !c;
+      localStorage.setItem(COLLAPSE_KEY, next ? "1" : "0");
+      return next;
+    });
+  }
 
   async function onLogout() {
     await logout();
     navigate("/login");
   }
 
+  // Titre de la page : priorité au chrome poussé par la page, sinon dérivé de la route.
+  const routeItem = NAV.find((n) => (n.end ? location.pathname === n.to : location.pathname.startsWith(n.to)));
+  const pageTitle =
+    chrome.title ??
+    (location.pathname.startsWith("/preferences")
+      ? t("prefs.title")
+      : routeItem
+      ? t(routeItem.titleKey)
+      : app_name);
+
   return (
-    <div style={{ minHeight: "100vh" }}>
-      <header
-        style={{
-          background: "linear-gradient(90deg,#141B47,#1E2761)",
-          color: "#fff",
-          padding: "12px 24px",
-          display: "flex",
-          alignItems: "center",
-          gap: 18,
-          flexWrap: "wrap",
-        }}
-      >
-        <div style={{ fontWeight: 700, fontSize: 17, cursor: "pointer" }} onClick={() => navigate("/")}>
-          {app_name}
+    <div className={`app-shell${collapsed ? " collapsed" : ""}`}>
+      <aside className="sidebar no-print">
+        <div className="sidebar-brand" onClick={() => navigate("/")} title={app_name}>
+          <span className="sidebar-logo">{app_name.slice(0, 1).toUpperCase()}</span>
+          {!collapsed && <span className="sidebar-brand-text">{app_name}</span>}
         </div>
-        <nav style={{ display: "flex", gap: 6, flex: 1, flexWrap: "wrap" }}>
-          <NavLink to="/" end style={navStyle}>
-            {t("nav.dashboard")}
-          </NavLink>
-          <NavLink to="/organigramme" style={navStyle}>
-            {t("nav.org")}
-          </NavLink>
-          {canSeeAdmin(role) && (
-            <NavLink to="/tribus" style={navStyle}>
-              {t("nav.tribes")}
+
+        <nav className="sidebar-nav">
+          {NAV.filter((n) => n.visible(role)).map(({ to, end, labelKey, Icon }) => (
+            <NavLink
+              key={to}
+              to={to}
+              end={end}
+              className={({ isActive }) => `sidebar-link${isActive ? " active" : ""}`}
+              title={collapsed ? t(labelKey) : undefined}
+            >
+              <Icon size={19} />
+              {!collapsed && <span className="sidebar-link-text">{t(labelKey)}</span>}
             </NavLink>
-          )}
-          {canSeeSaisie(role) && (
-            <NavLink to="/saisie" style={navStyle}>
-              {t("nav.entry")}
-            </NavLink>
-          )}
-          <NavLink to="/fil" style={navStyle}>
-            {t("nav.feed")}
-          </NavLink>
-          {canSeeAdmin(role) && (
-            <NavLink to="/admin" style={navStyle}>
-              {t("nav.admin")}
-            </NavLink>
-          )}
+          ))}
         </nav>
 
-        {user?.role === "admin" && (
-          <div className="inline" style={{ gap: 6 }}>
-            <span style={{ fontSize: 12, color: "#CADCFC" }}>{t("preview.as")}</span>
-            <select
-              value={previewRole ?? "admin"}
-              onChange={(e) => setPreviewRole(e.target.value === "admin" ? null : (e.target.value as Role))}
-              style={whiteSelect}
-            >
-              {ALL_ROLES.map((r) => (
-                <option key={r} value={r} style={{ color: "#1E293B" }}>
-                  {roleLabel(r)}
-                </option>
+        <button className="sidebar-collapse-btn" onClick={toggleCollapsed} title={collapsed ? t("nav.expand") : t("nav.collapse")}>
+          {collapsed ? <IconExpand size={18} /> : <IconCollapse size={18} />}
+          {!collapsed && <span>{t("nav.collapse")}</span>}
+        </button>
+      </aside>
+
+      <div className="app-main">
+        <header className="topbar no-print">
+          <div className="topbar-row">
+            <h1 className="topbar-title">{pageTitle}</h1>
+
+            <div className="topbar-actions">
+              {user?.role === "admin" && (
+                <div className="inline" style={{ gap: 6 }}>
+                  <span style={{ fontSize: 12, color: "var(--grey)" }}>{t("preview.as")}</span>
+                  <select
+                    value={previewRole ?? "admin"}
+                    onChange={(e) => setPreviewRole(e.target.value === "admin" ? null : (e.target.value as Role))}
+                    className="w-auto"
+                  >
+                    {ALL_ROLES.map((r) => (
+                      <option key={r} value={r}>
+                        {roleLabel(r)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <NotificationBell />
+
+              <select value={lang} onChange={(e) => setLang(e.target.value as any)} className="w-auto">
+                <option value="fr">FR</option>
+                <option value="en">EN</option>
+              </select>
+
+              <div className="topbar-user" onClick={() => navigate("/preferences")} title={t("prefs.title")}>
+                <div className="topbar-user-name">{user?.display_name}</div>
+                <div className="topbar-user-role">{user ? roleLabel(user.role) : ""}</div>
+              </div>
+              <button className="btn-ghost btn-sm" onClick={onLogout}>
+                {t("action.logout")}
+              </button>
+            </div>
+          </div>
+
+          {chrome.tabs && chrome.tabs.length > 0 && (
+            <div className="tabs topbar-tabs">
+              {chrome.tabs.map((tab) => (
+                <button
+                  key={tab.key}
+                  className={chrome.activeTab === tab.key ? "active" : ""}
+                  onClick={() => chrome.onTab?.(tab.key)}
+                >
+                  {tab.label}
+                </button>
               ))}
-            </select>
+            </div>
+          )}
+        </header>
+
+        {isPreview && (
+          <div className="no-print preview-banner">
+            <span>
+              {t("preview.as")} <strong>{roleLabel(previewRole as Role)}</strong> — {t("preview.banner")}
+            </span>
+            <button className="btn-secondary btn-sm" onClick={() => setPreviewRole(null)}>
+              {t("preview.back")}
+            </button>
           </div>
         )}
 
-        <NotificationBell />
-
-        <select value={lang} onChange={(e) => setLang(e.target.value as any)} style={whiteSelect}>
-          <option value="fr" style={{ color: "#1E293B" }}>FR</option>
-          <option value="en" style={{ color: "#1E293B" }}>EN</option>
-        </select>
-
-        <div style={{ fontSize: 13, opacity: 0.95, textAlign: "right", cursor: "pointer" }} onClick={() => navigate("/preferences")} title={t("prefs.title")}>
-          <div style={{ fontWeight: 600 }}>{user?.display_name}</div>
-          <div style={{ opacity: 0.7, fontSize: 12 }}>{user ? roleLabel(user.role) : ""}</div>
-        </div>
-        <button className="btn-ghost" style={{ color: "#fff", borderColor: "rgba(255,255,255,.3)" }} onClick={onLogout}>
-          {t("action.logout")}
-        </button>
-      </header>
-
-      {isPreview && (
-        <div
-          className="no-print"
-          style={{ background: "#FEF3C7", color: "#92400E", padding: "8px 24px", fontSize: 13, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}
-        >
-          <span>
-            {t("preview.as")} <strong>{roleLabel(previewRole as Role)}</strong> — {t("preview.banner")}
-          </span>
-          <button className="btn-secondary btn-sm" onClick={() => setPreviewRole(null)}>
-            {t("preview.back")}
-          </button>
-        </div>
-      )}
-
-      <main style={{ maxWidth: 1180, margin: "0 auto", padding: "24px 20px 60px" }}>
-        <Outlet />
-      </main>
+        <main className="app-content">
+          <Outlet />
+        </main>
+      </div>
     </div>
   );
 }
