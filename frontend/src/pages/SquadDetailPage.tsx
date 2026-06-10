@@ -193,40 +193,17 @@ export default function SquadDetailPage() {
         ) : (
           <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))" }}>
             {quarterItems.map((r) => (
-              <div
-                key={r.id}
-                className="quarter-block clickable-row"
-                style={{ cursor: "pointer", margin: 0 }}
-                title={jalonTooltip(r)}
-                onClick={() => setOpenJalon(r)}
-              >
-                <div className="between" style={{ alignItems: "flex-start" }}>
-                  <div className="inline" style={{ gap: 8 }}>
-                    <Dot status={roadmapRag(r.status)} />
-                    <span className="strong">{r.title}</span>
-                  </div>
-                  <span className="badge badge-grey">{roadmap(r.status)}</span>
+              <div key={r.id} className="quarter-block" style={{ margin: 0 }} title={jalonTooltip(r)}>
+                <div className="inline" style={{ gap: 8 }}>
+                  <Dot status={roadmapRag(r.status)} />
+                  <span className="strong">{r.title}</span>
                 </div>
-                {r.owner && (
-                  <div className="small muted" style={{ marginTop: 4 }}>
-                    {t("jalon.owner")} : <span className="strong">{r.owner}</span>
-                  </div>
+                {r.description && (
+                  <div className="small muted" style={{ marginTop: 6 }}>{r.description}</div>
                 )}
-                {([
-                  [t("jalon.desc"), r.description],
-                  [t("jalon.success"), r.success_criteria],
-                  [t("jalon.benefit"), r.user_benefit],
-                  [t("jalon.deps"), r.dependencies],
-                  [t("jalon.risks"), r.risks],
-                ] as Array<[string, string | null | undefined]>).map(([label, val]) =>
-                  val ? (
-                    <div key={label} className="jalon-field">
-                      <div className="jl">{label}</div>
-                      <div className="jv">{val}</div>
-                    </div>
-                  ) : null
-                )}
-                <div className="small" style={{ marginTop: 8, color: "var(--accent)" }}>{t("jalon.details")} ›</div>
+                <button className="btn-secondary btn-sm" style={{ marginTop: 10 }} onClick={() => setOpenJalon(r)}>
+                  {t("squad.jalon_detail")}
+                </button>
               </div>
             ))}
           </div>
