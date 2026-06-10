@@ -5,7 +5,10 @@ import { useAuth } from "../auth";
 import { useI18n } from "../i18n";
 import { OrgNode, Squad, Tribe, Role } from "../types";
 import { Spinner, ErrorBanner } from "../components/ui";
+import { useSetPageChrome } from "../components/pageChrome";
 import { canEditOrg } from "../perms";
+
+type OrgView = "tree" | "list";
 
 type Kind = "squad" | "entity";
 interface FormState {
@@ -27,6 +30,14 @@ function flatten(nodes: OrgNode[], depth = 0, acc: Flat[] = []): Flat[] {
   for (const n of nodes) {
     acc.push({ id: n.id, label: `${"— ".repeat(depth)}${n.title}`, depth });
     flatten(n.children, depth + 1, acc);
+  }
+  return acc;
+}
+
+function flattenNodes(nodes: OrgNode[], depth = 0, acc: { node: OrgNode; depth: number }[] = []) {
+  for (const n of nodes) {
+    acc.push({ node: n, depth });
+    flattenNodes(n.children, depth + 1, acc);
   }
   return acc;
 }
@@ -60,6 +71,7 @@ export default function OrgPage() {
   const [tribeId, setTribeId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState<FormState | null>(null);
+  const [view, setView] = useState<OrgView>("tree");
 
   // editing only allowed on one's OWN tribe (admin: any tribe they select)
   const isOwnTribe = tribeId !== null && tribeId === user?.tribe_id;
@@ -119,6 +131,47 @@ export default function OrgPage() {
     load(tribeId);
   }
 
+  useSetPageChrome(
+    {
+      tabs: [
+        { key: "tree", label: t("org.view_tree") },
+        { key: "list", label: t("org.view_list") },
+      ],
+      activeTab: view,
+      onTab: (k) => setView(k as OrgView),
+      actions: (
+        <>
+          {tribes.length > 1 && (
+            <select
+              className="w-auto"
+              value={tribeId ?? ""}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                setTribeId(v);
+                load(v);
+              }}
+            >
+              {tribes.map((tr) => (
+                <option key={tr.id} value={tr.id}>
+                  {tr.name}
+                </option>
+              ))}
+            </select>
+          )}
+          {!editable && !isOwnTribe && tribeId !== null && (
+            <span className="badge badge-grey">{t("org.view_only_other")}</span>
+          )}
+          {editable && (
+            <button className="btn-secondary btn-sm" onClick={() => openCreate(null)}>
+              + {t("org.add_top")}
+            </button>
+          )}
+        </>
+      ),
+    },
+    [view, tribes, tribeId, editable, isOwnTribe, t]
+  );
+
   if (error) return <ErrorBanner message={error} />;
   if (!tree) return <Spinner />;
 
@@ -132,34 +185,46 @@ export default function OrgPage() {
 
   return (
     <div className="stack" style={{ gap: 18 }}>
-      <div className="between">
-        <div className="muted small">{editable ? t("org.subtitle_edit") : t("org.subtitle_ro")}</div>
-        <div className="inline">
-          {tribes.length > 1 && (
-            <select className="w-auto" value={tribeId ?? ""} onChange={(e) => { const v = Number(e.target.value); setTribeId(v); load(v); }}>
-              {tribes.map((tr) => (<option key={tr.id} value={tr.id}>{tr.name}</option>))}
-            </select>
-          )}
-          {!editable && !isOwnTribe && tribeId !== null && <span className="badge badge-grey">{t("org.view_only_other")}</span>}
-          {editable && (
-            <button className="btn-secondary btn-sm" onClick={() => openCreate(null)}>
-              + {t("org.add_top")}
-            </button>
-          )}
-        </div>
-      </div>
+      <div className="muted small">{editable ? t("org.subtitle_edit") : t("org.subtitle_ro")}</div>
 
       {tree.length === 0 && (
         <div className="card muted">{t("org.empty")} {editable ? t("org.empty_edit") : ""}</div>
       )}
 
-      <div className="card" style={{ overflowX: "auto" }}>
-        <div className="row" style={{ justifyContent: "center", alignItems: "flex-start", gap: 24 }}>
-          {tree.map((n) => (
-            <NodeView key={n.id} node={n} editable={editable} linkSquads={isAdmin || isOwnTribe} onAdd={openCreate} onEdit={openEdit} onDelete={remove} />
+      {tree.length > 0 && view === "tree" && (
+        <div className="card" style={{ overflowX: "auto" }}>
+          <div className="row" style={{ justifyContent: "center", alignItems: "flex-start", gap: 24 }}>
+            {tree.map((n) => (
+              <NodeView key={n.id} node={n} editable={editable} linkSquads={isAdmin || isOwnTribe} onAdd={openCreate} onEdit={openEdit} onDelete={remove} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {tree.length > 0 && view === "list" && (
+        <div className="card stack" style={{ gap: 0 }}>
+          {flattenNodes(tree).map(({ node, depth }) => (
+            <div key={node.id} className="item-row">
+              <div className="grow" style={{ paddingLeft: depth * 22 }}>
+                <span className="strong small">{node.title}</span>
+                {node.person_name && <span className="small muted"> — {node.person_name}</span>}
+                {node.squad_id && (isAdmin || isOwnTribe) && (
+                  <Link className="small" to={`/squads/${node.squad_id}`} style={{ marginLeft: 8 }}>
+                    {t("org.see_squad")}
+                  </Link>
+                )}
+              </div>
+              {editable && (
+                <div className="inline" style={{ gap: 4 }}>
+                  <button className="btn-ghost btn-sm" title={t("org.add_below")} onClick={() => openCreate(node.id)}>+</button>
+                  <button className="btn-ghost btn-sm" title={t("action.save")} onClick={() => openEdit(node)}>✎</button>
+                  <button className="btn-danger btn-sm" title={t("action.delete")} onClick={() => remove(node)}>✕</button>
+                </div>
+              )}
+            </div>
           ))}
         </div>
-      </div>
+      )}
 
       {form && (
         <NodeForm form={form} squads={squads} parentOptions={parentOptions} onChange={setForm} onSave={save} onCancel={() => setForm(null)} />

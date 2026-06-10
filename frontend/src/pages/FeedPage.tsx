@@ -4,6 +4,7 @@ import { useAuth } from "../auth";
 import { useI18n } from "../i18n";
 import { FeedKind, FeedPost, Role, Squad } from "../types";
 import { Spinner, ErrorBanner } from "../components/ui";
+import { useSetPageChrome } from "../components/pageChrome";
 import { isWriter } from "../perms";
 
 const KINDS: FeedKind[] = ["incident", "info", "success"];
@@ -66,24 +67,32 @@ export default function FeedPage() {
     load();
   }
 
+  useSetPageChrome(
+    {
+      tabs: [
+        { key: "", label: t("feed.filter_kind") },
+        ...KINDS.map((k) => ({ key: k, label: t(`feed.kind.${k}`) })),
+      ],
+      activeTab: kindFilter,
+      onTab: (k) => setKindFilter(k),
+      actions: (
+        <select className="w-auto" value={squadFilter} onChange={(e) => setSquadFilter(e.target.value)}>
+          <option value="">{t("feed.filter_squad")}</option>
+          {squads.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name}
+            </option>
+          ))}
+        </select>
+      ),
+    },
+    [kindFilter, squadFilter, squads, t]
+  );
+
   if (error) return <ErrorBanner message={error} />;
 
   return (
     <div className="stack" style={{ gap: 16 }}>
-      <div className="between">
-        <div className="muted small">{t("feed.subtitle")}</div>
-        <div className="inline">
-          <select className="w-auto" value={squadFilter} onChange={(e) => setSquadFilter(e.target.value)}>
-            <option value="">{t("feed.filter_squad")}</option>
-            {squads.map((s) => (<option key={s.id} value={s.id}>{s.name}</option>))}
-          </select>
-          <select className="w-auto" value={kindFilter} onChange={(e) => setKindFilter(e.target.value)}>
-            <option value="">{t("feed.filter_kind")}</option>
-            {KINDS.map((k) => (<option key={k} value={k}>{t(`feed.kind.${k}`)}</option>))}
-          </select>
-        </div>
-      </div>
-
       {canPost ? (
         <div className="card">
           <textarea rows={2} placeholder={t("feed.placeholder")} value={content} onChange={(e) => setContent(e.target.value)} />

@@ -9,6 +9,8 @@ export type PageChrome = {
   tabs?: ChromeTab[];
   activeTab?: string;
   onTab?: (key: string) => void;
+  /** Filtres + boutons d'action affichés à droite de la barre contextuelle. */
+  actions?: ReactNode;
 };
 
 type ChromeCtx = {

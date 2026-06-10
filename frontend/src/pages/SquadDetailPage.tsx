@@ -26,12 +26,29 @@ export default function SquadDetailPage() {
     api.get<SnapshotMeta[]>(`/api/squads/${squadId}/snapshots`).then(setSnapshots).catch(() => {});
   }, [squadId, yearParam]);
 
-  useSetPageChrome({ title: squad?.name }, [squad?.name]);
+  useSetPageChrome(
+    squad
+      ? {
+          title: squad.name,
+          actions: (
+            <>
+              <div className="seg">
+                {[squad.year - 1, squad.year, squad.year + 1].map((y) => (
+                  <button key={y} className={y === squad.year ? "active" : ""} onClick={() => setParams({ year: String(y) })}>{y}</button>
+                ))}
+              </div>
+              <a className="btn btn-secondary btn-sm" href={`/api/exports/squad/${squadId}.csv?year=${squad.year}`}>{t("action.csv")}</a>
+              <Link className="btn btn-secondary btn-sm" to={`/print/squad/${squadId}?year=${squad.year}`} target="_blank">{t("action.report")}</Link>
+              <EmailExport endpoint={`/api/exports/squad/${squadId}/email`} year={squad.year} />
+            </>
+          ),
+        }
+      : {},
+    [squad?.name, squad?.year, squadId]
+  );
 
   if (error) return <ErrorBanner message={error} />;
   if (!squad) return <Spinner />;
-
-  const years = [squad.year - 1, squad.year, squad.year + 1];
 
   return (
     <div className="stack" style={{ gap: 18 }}>
@@ -49,22 +66,6 @@ export default function SquadDetailPage() {
             <span className="muted small">{t("squad.squad_leader")} : <span className="strong">{squad.leader?.display_name || "—"}</span></span>
             <FreshnessBadge freshness={squad.freshness} />
           </div>
-        </div>
-        <div className="inline">
-          <div className="seg">
-            {years.map((y) => (
-              <button key={y} className={y === squad.year ? "active" : ""} onClick={() => setParams({ year: String(y) })}>
-                {y}
-              </button>
-            ))}
-          </div>
-          <a className="btn btn-secondary btn-sm" href={`/api/exports/squad/${squadId}.csv?year=${squad.year}`}>
-            {t("action.csv")}
-          </a>
-          <Link className="btn btn-secondary btn-sm" to={`/print/squad/${squadId}?year=${squad.year}`} target="_blank">
-            {t("action.report")}
-          </Link>
-          <EmailExport endpoint={`/api/exports/squad/${squadId}/email`} year={squad.year} />
         </div>
       </div>
 
