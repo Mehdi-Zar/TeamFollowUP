@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git rm *)",
+      "Bash(git add *)",
+      "Bash(git -c user.name=dev -c user.email=dev@local commit -qm \"Add .gitignore; stop tracking node_modules/dist/.env\")"
+    ]
+  }
+}
