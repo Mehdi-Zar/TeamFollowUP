@@ -71,10 +71,7 @@ export default function EntryPage() {
   return (
     <div className="stack" style={{ gap: 18 }}>
       <div className="between">
-        <div>
-          <h1 style={{ marginBottom: 2 }}>{t("entry.title")}</h1>
-          <div className="muted small">{t("entry.subtitle")}</div>
-        </div>
+        <div className="muted small">{t("entry.subtitle")}</div>
         <div className="inline">
           <select className="w-auto" value={squadId ?? ""} onChange={(e) => setSquadId(Number(e.target.value))}>
             {editable.map((s) => (

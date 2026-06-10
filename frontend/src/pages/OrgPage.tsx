@@ -133,10 +133,7 @@ export default function OrgPage() {
   return (
     <div className="stack" style={{ gap: 18 }}>
       <div className="between">
-        <div>
-          <h1 style={{ marginBottom: 2 }}>{t("org.title")}</h1>
-          <div className="muted small">{editable ? t("org.subtitle_edit") : t("org.subtitle_ro")}</div>
-        </div>
+        <div className="muted small">{editable ? t("org.subtitle_edit") : t("org.subtitle_ro")}</div>
         <div className="inline">
           {tribes.length > 1 && (
             <select className="w-auto" value={tribeId ?? ""} onChange={(e) => { const v = Number(e.target.value); setTribeId(v); load(v); }}>

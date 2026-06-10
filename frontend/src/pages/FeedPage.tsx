@@ -71,10 +71,7 @@ export default function FeedPage() {
   return (
     <div className="stack" style={{ gap: 16 }}>
       <div className="between">
-        <div>
-          <h1 style={{ marginBottom: 2 }}>{t("feed.title")}</h1>
-          <div className="muted small">{t("feed.subtitle")}</div>
-        </div>
+        <div className="muted small">{t("feed.subtitle")}</div>
         <div className="inline">
           <select className="w-auto" value={squadFilter} onChange={(e) => setSquadFilter(e.target.value)}>
             <option value="">{t("feed.filter_squad")}</option>

@@ -72,10 +72,7 @@ export default function DashboardPage() {
   return (
     <div className="stack" style={{ gap: 20 }}>
       <div className="between">
-        <div>
-          <h1 style={{ marginBottom: 2 }}>{t("dash.title")}</h1>
-          <div className="muted small">{t("dash.year_view", { year: displayYear })}</div>
-        </div>
+        <div className="muted small">{t("dash.year_view", { year: displayYear })}</div>
         <div className="inline">
           <div className="seg">
             {years.map((y) => (

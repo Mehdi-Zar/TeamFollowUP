@@ -5,6 +5,7 @@ import { useI18n } from "../i18n";
 import { Member, RoadmapItem, SnapshotMeta, SquadDetail } from "../types";
 import { Dot, FreshnessBadge, ProgressBar, Spinner, ErrorBanner } from "../components/ui";
 import EmailExport from "../components/EmailExport";
+import { useSetPageChrome } from "../components/pageChrome";
 import { roadmapRag, trendRag } from "../labels";
 
 export default function SquadDetailPage() {
@@ -25,6 +26,8 @@ export default function SquadDetailPage() {
     api.get<SnapshotMeta[]>(`/api/squads/${squadId}/snapshots`).then(setSnapshots).catch(() => {});
   }, [squadId, yearParam]);
 
+  useSetPageChrome({ title: squad?.name }, [squad?.name]);
+
   if (error) return <ErrorBanner message={error} />;
   if (!squad) return <Spinner />;
 
@@ -37,12 +40,11 @@ export default function SquadDetailPage() {
           <Link to="/" className="small muted">
             {t("common.back_dashboard")}
           </Link>
-          <h1 className="inline" style={{ gap: 12, marginTop: 6 }}>
-            {squad.name}
+          <div className="inline" style={{ gap: 12, marginTop: 6 }}>
             <span className="badge badge-navy">{t("dash.annual")} {squad.annual_progress}%</span>
             {squad.counts.roadmap_blocked > 0 && <span className="badge badge-red">{squad.counts.roadmap_blocked} {t("card.blocked")}</span>}
             {squad.counts.roadmap_at_risk > 0 && <span className="badge badge-orange">{squad.counts.roadmap_at_risk} {t("card.atrisk")}</span>}
-          </h1>
+          </div>
           <div className="inline" style={{ marginTop: 4 }}>
             <span className="muted small">{t("squad.squad_leader")} : <span className="strong">{squad.leader?.display_name || "—"}</span></span>
             <FreshnessBadge freshness={squad.freshness} />

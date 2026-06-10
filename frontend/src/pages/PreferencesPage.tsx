@@ -34,7 +34,6 @@ export default function PreferencesPage() {
 
   return (
     <div className="stack" style={{ gap: 16, maxWidth: 560 }}>
-      <h1>{t("prefs.title")}</h1>
       <div className="card stack" style={{ gap: 14 }}>
         <h3 style={{ margin: 0 }}>{t("prefs.notifs")}</h3>
         <Toggle checked={prefs.notify_tweets} label={t("prefs.tweets")} onChange={(v: boolean) => update({ notify_tweets: v })} />
