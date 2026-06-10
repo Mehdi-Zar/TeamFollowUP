@@ -267,16 +267,11 @@ function NodeView({
       <div className="org-box org-node">
         <div className="strong small">{node.title}</div>
         {node.person_name && <div className="small muted">{node.person_name}</div>}
-        {node.squad_id && linkSquads && (
+        {node.squad_id && linkSquads && !forceShowTeam && (
           <div className="inline" style={{ gap: 8, marginTop: 4, justifyContent: "center", flexWrap: "wrap" }}>
-            {!forceShowTeam && (
-              <button className="btn-ghost btn-sm" onClick={() => setShowTeam((v) => !v)}>
-                {showTeam ? t("org.hide_team") : t("org.see_team")}
-              </button>
-            )}
-            <Link className="small" to={`/squads/${node.squad_id}`}>
-              {t("org.open_squad")}
-            </Link>
+            <button className="btn-ghost btn-sm" onClick={() => setShowTeam((v) => !v)}>
+              {showTeam ? t("org.hide_team") : t("org.see_team")}
+            </button>
           </div>
         )}
         {editable && (
