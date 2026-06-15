@@ -457,11 +457,14 @@ class EmailExportIn(BaseModel):
 
 
 class ReportSubscriptionOut(BaseModel):
+    squad_id: Optional[int] = None
+    squad_name: Optional[str] = None
     interval_days: int
     last_sent_at: Optional[datetime] = None
 
 
 class ReportSubscriptionIn(BaseModel):
+    squad_id: Optional[int] = None  # None = dashboard (user's visibility scope)
     interval_days: int = Field(ge=0, le=90)  # 0 = unsubscribe
 
 

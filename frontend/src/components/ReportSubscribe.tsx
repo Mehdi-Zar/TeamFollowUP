@@ -9,7 +9,7 @@ const INTERVALS = [7, 14, 30];
 
 type Sub = { interval_days: number; last_sent_at: string | null };
 
-export default function ReportSubscribe() {
+export default function ReportSubscribe({ squadId }: { squadId?: number }) {
   const { t } = useI18n();
   const { smtp_enabled } = useConfig();
   const weeklyOn = useModule()("review", "weekly_report");
@@ -17,9 +17,11 @@ export default function ReportSubscribe() {
   const [sub, setSub] = useState<Sub | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
 
+  const qs = squadId ? `?squad_id=${squadId}` : "";
+
   useEffect(() => {
-    if (weeklyOn) api.get<Sub>("/api/reports/subscription").then(setSub).catch(() => {});
-  }, [weeklyOn]);
+    if (weeklyOn) api.get<Sub>(`/api/reports/subscription${qs}`).then(setSub).catch(() => {});
+  }, [weeklyOn, squadId]);
 
   // Visible as soon as the report module is on; emails only start once SMTP is
   // configured (we surface that inside the popover so the option stays discoverable).
@@ -28,7 +30,7 @@ export default function ReportSubscribe() {
   async function choose(days: number) {
     setMsg(null);
     try {
-      const out = await api.put<Sub>("/api/reports/subscription", { interval_days: days });
+      const out = await api.put<Sub>("/api/reports/subscription", { interval_days: days, squad_id: squadId ?? null });
       setSub(out);
       setMsg(days ? t("sub.saved_on", { n: days }) : t("sub.saved_off"));
       setTimeout(() => { setMsg(null); if (!days) setOpen(false); }, 1600);

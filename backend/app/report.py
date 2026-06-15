@@ -66,8 +66,12 @@ def _change_text(ch: dict) -> str:
 # ----- Data assembly --------------------------------------------------------------
 
 def build_report_data(db: Session, scope_tribe: int | None, year: int | None = None,
-                      since_days: int = 7, now: datetime | None = None) -> dict:
-    """Assemble the combined dashboard + weekly-review data for the given scope."""
+                      since_days: int = 7, now: datetime | None = None,
+                      squad_id: int | None = None) -> dict:
+    """Assemble the combined dashboard + weekly-review data for the given scope.
+
+    squad_id, when set, narrows the report to a single squad (ignoring scope_tribe).
+    """
     from .routers.progress import aggregate_review  # local import avoids a cycle
 
     now = now or utcnow()
@@ -80,7 +84,8 @@ def build_report_data(db: Session, scope_tribe: int | None, year: int | None = N
     tribes = {t.id: t for t in db.scalars(select(Tribe)).all()}
     q = select(Squad).order_by(Squad.display_order, Squad.id)
     squads = [s for s in db.scalars(q).all()
-              if scope_tribe is None or s.tribe_id == scope_tribe]
+              if (squad_id is not None and s.id == squad_id)
+              or (squad_id is None and (scope_tribe is None or s.tribe_id == scope_tribe))]
 
     by_tribe: dict[int | None, list[dict]] = {}
     totals = {"squads": 0, "blocked": 0, "at_risk": 0, "objectives_red": 0,
@@ -139,7 +144,13 @@ def build_report_data(db: Session, scope_tribe: int | None, year: int | None = N
     attention.sort(key=lambda r: (-r["blocked"], r["delta"]))
 
     avg = round(totals["progress_sum"] / totals["squads"]) if totals["squads"] else 0
-    scope_name = tribes[scope_tribe].name if (scope_tribe in tribes) else "Toutes les tribus"
+    if squad_id is not None:
+        sq = db.get(Squad, squad_id)
+        scope_name = f"Squad {sq.name}" if sq else "Squad"
+    elif scope_tribe in tribes:
+        scope_name = tribes[scope_tribe].name
+    else:
+        scope_name = "Toutes les tribus"
 
     return {
         "app_name": cfg.get("app_name") or "Tribe Cockpit",
@@ -524,14 +535,15 @@ def send_due_weekly_reports(db: Session, now: datetime | None = None) -> int:
 
 
 def send_personal_subscriptions(db: Session, now: datetime | None = None) -> int:
-    """Send the report to each user subscribed to a personal cadence (every N days).
+    """Send the report to each subscription (global or per-squad) that is due.
 
-    Scope follows the user's visibility (admin → global, others → their tribe).
+    A global subscription (squad_id NULL) follows the user's visibility (admin →
+    all tribes, others → their tribe); a per-squad subscription targets that squad.
     Returns the number of emails sent. Safe to call repeatedly from the scheduler.
     """
     from .smtpconfig import get_smtp
     from .mail import send_email
-    from .models import User
+    from .models import ReportSubscription, User
     from .modulesconfig import get_modules, is_active
 
     now = now or utcnow()
@@ -542,35 +554,44 @@ def send_personal_subscriptions(db: Session, now: datetime | None = None) -> int
         return 0
 
     year = st.current_year_quarter(now)[0]
-    rendered: dict[int | None, tuple[str, bytes]] = {}
+    # Cache rendered output per (scope_tribe, squad_id) key.
+    rendered: dict[tuple, tuple[str, bytes]] = {}
 
-    def render_scope(scope: int | None, since: int) -> tuple[str, bytes]:
-        if scope not in rendered:
-            data = build_report_data(db, scope, year, since, now)
+    def render(scope_tribe: int | None, squad_id: int | None, since: int) -> tuple[str, bytes]:
+        key = (scope_tribe, squad_id)
+        if key not in rendered:
+            data = build_report_data(db, scope_tribe, year, since, now, squad_id=squad_id)
             html_body = render_html(data, standalone=True)
             try:
                 pptx_bytes = render_pptx(data)
             except Exception:
                 pptx_bytes = b""
-            rendered[scope] = (html_body, pptx_bytes)
-        return rendered[scope]
+            rendered[key] = (html_body, pptx_bytes)
+        return rendered[key]
 
     sent = 0
-    for u in db.scalars(select(User).where(User.report_interval_days > 0)).all():
-        if not u.email:
+    for sub in db.scalars(select(ReportSubscription).where(ReportSubscription.interval_days > 0)).all():
+        user = db.get(User, sub.user_id)
+        if user is None or not user.email:
             continue
-        last = _aware(u.report_last_sent_at)
-        if last is not None and (now - last) < timedelta(days=u.report_interval_days):
+        last = _aware(sub.last_sent_at)
+        if last is not None and (now - last) < timedelta(days=sub.interval_days):
             continue
-        scope = None if u.role == "admin" else u.tribe_id
-        html_body, pptx_bytes = render_scope(scope, max(u.report_interval_days, 7))
+        since = max(sub.interval_days, 7)
+        if sub.squad_id is not None:
+            html_body, pptx_bytes = render(None, sub.squad_id, since)
+        else:
+            scope_tribe = None if user.role == "admin" else user.tribe_id
+            html_body, pptx_bytes = render(scope_tribe, None, since)
         attachment = None
         if pptx_bytes:
             attachment = (f"rapport_{now.date().isoformat()}.pptx", pptx_bytes,
                           "application", "vnd.openxmlformats-officedocument.presentationml.presentation")
-        subject = f"Rapport — {u.report_interval_days} j"
-        if send_email(smtp, u.email, subject, html_body, attachment=attachment, html=True):
-            u.report_last_sent_at = now
+        subject = f"Rapport — {sub.interval_days} j"
+        if send_email(smtp, user.email, subject, html_body, attachment=attachment, html=True):
+            sub.last_sent_at = now
+            if sub.squad_id is None:
+                user.report_last_sent_at = now
             sent += 1
     if sent:
         db.commit()

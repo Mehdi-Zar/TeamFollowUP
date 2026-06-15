@@ -58,24 +58,47 @@ def weekly_pptx(tribe_id: int | None = Query(default=None), year: int | None = Q
     )
 
 
+def _sub_out(db: Session, sub, squad_id: int | None) -> ReportSubscriptionOut:
+    from ..models import Squad
+    name = None
+    if squad_id is not None:
+        sq = db.get(Squad, squad_id)
+        name = sq.name if sq else None
+    return ReportSubscriptionOut(
+        squad_id=squad_id, squad_name=name,
+        interval_days=sub.interval_days if sub else 0,
+        last_sent_at=sub.last_sent_at if sub else None,
+    )
+
+
+@router.get("/subscriptions", response_model=list[ReportSubscriptionOut])
+def list_my_subscriptions(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    from ..subscriptions import list_subscriptions
+    return [_sub_out(db, s, s.squad_id) for s in list_subscriptions(db, user)]
+
+
 @router.get("/subscription", response_model=ReportSubscriptionOut)
-def get_subscription(user: User = Depends(get_current_user)):
-    return ReportSubscriptionOut(interval_days=user.report_interval_days,
-                                 last_sent_at=user.report_last_sent_at)
+def get_my_subscription(squad_id: int | None = Query(default=None),
+                        db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    from ..subscriptions import get_subscription
+    return _sub_out(db, get_subscription(db, user.id, squad_id), squad_id)
 
 
 @router.put("/subscription", response_model=ReportSubscriptionOut)
-def set_subscription(payload: ReportSubscriptionIn, db: Session = Depends(get_db),
-                     user: User = Depends(get_current_user)):
-    # Changing the cadence restarts the clock so the next send respects it.
-    if payload.interval_days != user.report_interval_days:
-        user.report_last_sent_at = None
-    user.report_interval_days = payload.interval_days
-    # Keep the legacy boolean in sync for any code still reading it.
-    user.subscribe_weekly_report = payload.interval_days > 0
+def set_my_subscription(payload: ReportSubscriptionIn, db: Session = Depends(get_db),
+                        user: User = Depends(get_current_user)):
+    from ..subscriptions import set_subscription, user_can_see_squad
+    if payload.squad_id is not None and not user_can_see_squad(db, user, payload.squad_id):
+        raise HTTPException(status_code=404, detail="Squad introuvable")
+    sub = set_subscription(db, user, payload.squad_id, payload.interval_days)
+    # Keep the legacy global flags in sync (dashboard subscription only).
+    if payload.squad_id is None:
+        user.report_interval_days = payload.interval_days
+        user.subscribe_weekly_report = payload.interval_days > 0
+        if payload.interval_days <= 0:
+            user.report_last_sent_at = None
     db.commit()
-    return ReportSubscriptionOut(interval_days=user.report_interval_days,
-                                 last_sent_at=user.report_last_sent_at)
+    return _sub_out(db, sub, payload.squad_id)
 
 
 @router.post("/weekly/email")
