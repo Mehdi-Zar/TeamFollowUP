@@ -94,6 +94,33 @@ def test_member_cannot_manage_users(client, seeded):
     assert client.get("/api/admin/users").status_code == 403
 
 
+GLOBAL_CONFIG_GETS = [
+    "/api/admin/smtp-config",
+    "/api/admin/auth-config",
+    "/api/admin/settings",
+    "/api/admin/modules-config",
+    "/api/admin/report-config",
+    "/api/admin/log-export-config",
+]
+
+
+def test_non_admins_cannot_read_global_config(client, seeded):
+    for who in (seeded["tribe"], seeded["sl_a"], seeded["member"]):
+        login(client, who)
+        for ep in GLOBAL_CONFIG_GETS:
+            assert client.get(ep).status_code == 403, f"{who} could GET {ep}"
+
+
+def test_non_admins_cannot_write_smtp_or_modules(client, seeded):
+    for who in (seeded["tribe"], seeded["sl_a"]):
+        login(client, who)
+        assert client.put("/api/admin/smtp-config", json={"enabled": True}).status_code == 403
+        assert client.post("/api/admin/smtp-config/test", json={}).status_code == 403
+        assert client.put("/api/admin/modules-config", json={"feed": {"enabled": False}}).status_code == 403
+        assert client.put("/api/admin/settings", json={"app_name": "Hack"}).status_code == 403
+        assert client.put("/api/admin/report-config", json={"enabled": True}).status_code == 403
+
+
 def test_admin_still_full_access(client, seeded):
     login(client, seeded["admin"])
     assert client.get("/api/admin/users").status_code == 200
