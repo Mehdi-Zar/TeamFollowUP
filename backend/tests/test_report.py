@@ -124,3 +124,58 @@ def test_preferences_expose_weekly_subscription(client, seeded):
     assert client.get("/api/me/preferences").json()["subscribe_weekly_report"] is False
     out = client.put("/api/me/preferences", json={"subscribe_weekly_report": True}).json()
     assert out["subscribe_weekly_report"] is True
+
+
+# ---- personal subscription (every N days) --------------------------------------
+
+def test_subscription_roundtrip(client, seeded):
+    login(client, seeded["member"])
+    assert client.get("/api/reports/subscription").json()["interval_days"] == 0
+    out = client.put("/api/reports/subscription", json={"interval_days": 14}).json()
+    assert out["interval_days"] == 14
+    # preferences boolean reflects the subscription
+    assert client.get("/api/me/preferences").json()["subscribe_weekly_report"] is True
+    assert client.put("/api/reports/subscription", json={"interval_days": 0}).json()["interval_days"] == 0
+
+
+def test_preferences_toggle_drives_interval(client, seeded):
+    login(client, seeded["member"])
+    client.put("/api/me/preferences", json={"subscribe_weekly_report": True})
+    assert client.get("/api/reports/subscription").json()["interval_days"] == 7
+    client.put("/api/me/preferences", json={"subscribe_weekly_report": False})
+    assert client.get("/api/reports/subscription").json()["interval_days"] == 0
+
+
+def test_send_personal_subscriptions(db, seeded, monkeypatch):
+    from app import report as report_mod
+    from app.smtpconfig import set_smtp
+    from app.models import User
+    from sqlalchemy import select
+
+    set_smtp(db, {"enabled": True, "host": "smtp.local"})
+    user = db.scalar(select(User).where(User.email == "member@test"))
+    user.report_interval_days = 7
+    user.report_last_sent_at = None
+    db.commit()
+
+    sent_to = []
+    monkeypatch.setattr(report_mod, "render_pptx", lambda data: b"")  # skip pptx
+    monkeypatch.setattr("app.mail.send_email",
+                        lambda *a, **k: (sent_to.append(a[1]) or True))
+
+    n = report_mod.send_personal_subscriptions(db)
+    assert n == 1 and "member@test" in sent_to
+    db.refresh(user)
+    assert user.report_last_sent_at is not None
+    # Not due again immediately.
+    assert report_mod.send_personal_subscriptions(db) == 0
+
+
+def test_send_personal_subscriptions_needs_smtp(db, seeded):
+    from app.report import send_personal_subscriptions
+    from app.models import User
+    from sqlalchemy import select
+    u = db.scalar(select(User).where(User.email == "member@test"))
+    u.report_interval_days = 7
+    db.commit()
+    assert send_personal_subscriptions(db) == 0  # SMTP disabled
