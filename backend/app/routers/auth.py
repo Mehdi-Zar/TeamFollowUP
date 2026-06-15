@@ -55,6 +55,12 @@ def me(user: User = Depends(get_current_user)):
     return user
 
 
+@router.get("/me/permissions")
+def my_permissions(user: User = Depends(get_current_user)):
+    from ..rbac import permissions_payload
+    return permissions_payload(user)
+
+
 def _provision(db: Session, *, subject: str | None, email: str, name: str, groups, cfg, source: str) -> User:
     user = None
     if subject:

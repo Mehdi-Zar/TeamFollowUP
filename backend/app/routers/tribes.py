@@ -51,13 +51,21 @@ def create_tribe(payload: TribeCreate, db: Session = Depends(get_db), admin: Use
 
 
 @router.put("/{tribe_id}", response_model=TribeOut)
-def update_tribe(tribe_id: int, payload: TribeUpdate, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+def update_tribe(tribe_id: int, payload: TribeUpdate, db: Session = Depends(get_db),
+                 user: User = Depends(get_current_user)):
+    from ..rbac import can_edit_tribe
     tribe = db.get(Tribe, tribe_id)
     if tribe is None:
         raise HTTPException(status_code=404, detail="Tribu introuvable")
-    for k, v in payload.model_dump(exclude_unset=True).items():
+    if not can_edit_tribe(user, tribe_id):
+        raise HTTPException(status_code=403, detail="Vous ne pouvez modifier que votre tribu")
+    data = payload.model_dump(exclude_unset=True)
+    # display_order is a global ordering concern → admin only.
+    if "display_order" in data and user.role != "admin":
+        data.pop("display_order")
+    for k, v in data.items():
         setattr(tribe, k, v)
-    record_audit(db, admin.id, "tribe.update", entity="tribe", entity_id=tribe.id)
+    record_audit(db, user.id, "tribe.update", entity="tribe", entity_id=tribe.id)
     db.commit()
     db.refresh(tribe)
     return tribe

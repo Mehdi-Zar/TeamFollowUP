@@ -3,7 +3,10 @@ import { Role, SquadDetail } from "./types";
 export const ALL_ROLES: Role[] = ["admin", "tribe_leader", "squad_leader", "member"];
 
 export const isAdmin = (r: Role) => r === "admin";
-export const canSeeAdmin = (r: Role) => r === "admin";
+/** Who may open the (now role-scoped) Admin page: admins, tribe leaders, squad leaders. */
+export const canSeeAdmin = (r: Role) => r === "admin" || r === "tribe_leader" || r === "squad_leader";
+/** Strictly the global administrator (system configuration). */
+export const isGlobalAdmin = (r: Role) => r === "admin";
 export const canManageSquads = (r: Role) => r === "admin" || r === "tribe_leader";
 export const canManageObjectives = (r: Role) => r === "admin" || r === "tribe_leader";
 export const canEditOrg = (r: Role) => r === "admin" || r === "tribe_leader";
