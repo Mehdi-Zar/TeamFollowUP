@@ -49,6 +49,15 @@ def get_preferences(user: User = Depends(get_current_user)):
 @router.put("/me/preferences", response_model=PreferencesOut)
 def update_preferences(payload: PreferencesUpdate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     data = payload.model_dump(exclude_unset=True)
+    # The weekly-report toggle drives the personal subscription cadence
+    # (on = weekly / 7 days, off = unsubscribed); keep both representations aligned.
+    if "subscribe_weekly_report" in data:
+        on = bool(data["subscribe_weekly_report"])
+        if on and user.report_interval_days == 0:
+            user.report_interval_days = 7
+            user.report_last_sent_at = None
+        elif not on:
+            user.report_interval_days = 0
     for k, v in data.items():
         setattr(user, k, v)
     db.commit()

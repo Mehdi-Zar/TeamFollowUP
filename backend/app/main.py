@@ -59,7 +59,7 @@ async def _start_weekly_progress_scheduler():
 
     from .database import SessionLocal
     from .progress import ensure_weekly
-    from .report import send_due_weekly_reports
+    from .report import send_due_weekly_reports, send_personal_subscriptions
 
     async def loop():
         # Small initial delay so startup (migrations/seed) settles first.
@@ -74,6 +74,9 @@ async def _start_weekly_progress_scheduler():
                     sent = send_due_weekly_reports(db)
                     if sent:
                         logging.getLogger("trt.report").info("Weekly reports emailed: %s", sent)
+                    subs = send_personal_subscriptions(db)
+                    if subs:
+                        logging.getLogger("trt.report").info("Personal report subscriptions emailed: %s", subs)
                 finally:
                     db.close()
             except Exception as exc:  # never crash the loop
