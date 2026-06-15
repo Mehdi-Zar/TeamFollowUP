@@ -30,7 +30,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tribe}
       SECRET_KEY: ${SECRET_KEY:-change-me-in-prod-please-32chars-min-secret}
       STALENESS_THRESHOLD_DAYS: ${STALENESS_THRESHOLD_DAYS:-7}
-      SEED_DEMO: ${SEED_DEMO:-true}
+      SEED_DEMO: ${SEED_DEMO:-false}
       BREAKGLASS_EMAIL: ${BREAKGLASS_EMAIL:-admin@local}
       BREAKGLASS_PASSWORD: ${BREAKGLASS_PASSWORD:-}
       OIDC_ENABLED: ${OIDC_ENABLED:-false}
