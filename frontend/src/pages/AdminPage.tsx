@@ -30,11 +30,14 @@ export default function AdminPage() {
   const [perms, setPerms] = useState<Permissions | null>(null);
   const [tab, setTab] = useState<string>("");
 
+  const [loadError, setLoadError] = useState<string | null>(null);
   useEffect(() => {
-    api.get<Permissions>("/api/me/permissions").then((p) => {
-      setPerms(p);
-      setTab((cur) => (cur && p.admin_tabs.includes(cur) ? cur : p.admin_tabs[0] ?? ""));
-    });
+    api.get<Permissions>("/api/auth/me/permissions")
+      .then((p) => {
+        setPerms(p);
+        setTab((cur) => (cur && p.admin_tabs.includes(cur) ? cur : p.admin_tabs[0] ?? ""));
+      })
+      .catch((e) => setLoadError(e instanceof ApiError ? e.message : "Erreur"));
   }, []);
 
   const tabKeys = perms?.admin_tabs ?? [];
@@ -48,6 +51,7 @@ export default function AdminPage() {
     [tab, perms, t]
   );
 
+  if (loadError) return <ErrorBanner message={loadError} />;
   if (!perms) return <Spinner />;
 
   return (
