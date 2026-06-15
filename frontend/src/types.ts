@@ -180,6 +180,7 @@ export interface Preferences {
   notify_tweets: boolean;
   notify_replies: boolean;
   email_notifications: boolean;
+  subscribe_weekly_report: boolean;
 }
 
 export interface DashboardSummary {

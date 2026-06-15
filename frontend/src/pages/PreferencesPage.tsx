@@ -42,6 +42,10 @@ export default function PreferencesPage() {
           <Toggle checked={prefs.email_notifications} disabled={!smtp_enabled} label={t("prefs.email")} onChange={(v: boolean) => update({ email_notifications: v })} />
           {!smtp_enabled && <div className="small muted" style={{ marginTop: 6 }}>{t("prefs.email_off")}</div>}
         </div>
+        <div style={{ borderTop: "1px solid var(--line)", paddingTop: 14 }}>
+          <Toggle checked={prefs.subscribe_weekly_report} disabled={!smtp_enabled} label={t("prefs.weekly_report")} onChange={(v: boolean) => update({ subscribe_weekly_report: v })} />
+          <div className="small muted" style={{ marginTop: 6 }}>{!smtp_enabled ? t("prefs.email_off") : t("prefs.weekly_report_hint")}</div>
+        </div>
         {saved && <div className="small" style={{ color: "var(--green)" }}>{t("prefs.saved")}</div>}
       </div>
     </div>

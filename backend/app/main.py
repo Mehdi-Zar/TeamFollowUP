@@ -21,6 +21,7 @@ from .routers import (
     objectives,
     org,
     progress,
+    reports,
     roadmap,
     snapshots,
     squads,
@@ -39,17 +40,18 @@ app = FastAPI(
 app.add_middleware(SessionMiddleware, secret_key=settings.secret_key, same_site="lax", https_only=False)
 
 for r in (auth, tribes, squads, dashboard, org, objectives, roadmap, kpis,
-          members, snapshots, exports, feed, notifications, admin, audit, progress):
+          members, snapshots, exports, feed, notifications, admin, audit, progress, reports):
     app.include_router(r.router)
 
 
 @app.on_event("startup")
 async def _start_weekly_progress_scheduler():
-    """Lightweight in-process scheduler: ensure a weekly progress point per squad.
+    """Lightweight in-process scheduler.
 
-    Runs every 6h and creates weekly points only when due (>= 7 days since the
-    last weekly), so it is idempotent and self-healing. Disabled in tests via
-    DISABLE_SCHEDULER=1.
+    Runs hourly and, when due, (1) ensures a weekly progress point per squad
+    (>= 7 days since the last weekly) and (2) sends the weekly HTML/PPTX report
+    by email on the configured weekday/hour. Both steps are idempotent and
+    self-healing. Disabled in tests via DISABLE_SCHEDULER=1.
     """
     if os.environ.get("DISABLE_SCHEDULER") == "1":
         return
@@ -57,6 +59,7 @@ async def _start_weekly_progress_scheduler():
 
     from .database import SessionLocal
     from .progress import ensure_weekly
+    from .report import send_due_weekly_reports
 
     async def loop():
         # Small initial delay so startup (migrations/seed) settles first.
@@ -68,11 +71,14 @@ async def _start_weekly_progress_scheduler():
                     n = ensure_weekly(db)
                     if n:
                         logging.getLogger("trt.progress").info("Weekly progress points created: %s", n)
+                    sent = send_due_weekly_reports(db)
+                    if sent:
+                        logging.getLogger("trt.report").info("Weekly reports emailed: %s", sent)
                 finally:
                     db.close()
             except Exception as exc:  # never crash the loop
                 logging.getLogger("trt.progress").warning("weekly scheduler error: %s", exc)
-            await asyncio.sleep(6 * 3600)
+            await asyncio.sleep(3600)
 
     asyncio.create_task(loop())
 

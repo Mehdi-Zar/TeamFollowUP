@@ -134,6 +134,56 @@ def test_smtp(payload: dict = Body(...), db: Session = Depends(get_db), admin: U
     return {"ok": ok, "to": to}
 
 
+@router.get("/report-config")
+def read_report_config(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    from ..reportconfig import get_report
+    return get_report(db)
+
+
+@router.put("/report-config")
+def update_report_config(payload: dict = Body(...), db: Session = Depends(get_db),
+                         admin: User = Depends(require_admin)):
+    from ..reportconfig import set_report
+    # last_sent_week is bookkeeping owned by the scheduler — never let the UI set it.
+    payload = {k: v for k, v in (payload or {}).items() if k != "last_sent_week"}
+    cfg = set_report(db, payload)
+    record_audit(db, admin.id, "report_config.update", entity="weekly_report",
+                 detail={"enabled": cfg["enabled"], "weekday": cfg["weekday"],
+                         "hour": cfg["hour"], "recipients": len(cfg["recipients"])})
+    db.commit()
+    return cfg
+
+
+@router.post("/report-config/test")
+def test_report_config(payload: dict = Body(default=None), db: Session = Depends(get_db),
+                       admin: User = Depends(require_admin)):
+    """Send the weekly report now to the admin (or a chosen address) as a check."""
+    from ..smtpconfig import get_smtp
+    from ..mail import send_email
+    from ..report import build_report_data, render_html, render_pptx
+    from .. import status as st
+
+    to = (payload or {}).get("to") or admin.email
+    cfg = get_smtp(db)
+    if not cfg.get("enabled"):
+        raise HTTPException(status_code=400, detail="SMTP désactivé")
+    year = st.current_year_quarter()[0]
+    data = build_report_data(db, None, year, 7)
+    html_body = render_html(data, standalone=True)
+    attachment = None
+    try:
+        pptx_bytes = render_pptx(data)
+        attachment = (f"rapport_hebdo_{year}.pptx", pptx_bytes,
+                      "application", "vnd.openxmlformats-officedocument.presentationml.presentation")
+    except ImportError:
+        pass
+    ok = send_email(cfg, to, f"{data['app_name']} — Rapport hebdomadaire (test)",
+                    html_body, attachment=attachment, html=True)
+    record_audit(db, admin.id, "report_config.test", entity="weekly_report", detail={"ok": ok, "to": to})
+    db.commit()
+    return {"ok": ok, "to": to, "pptx": bool(attachment)}
+
+
 @router.get("/log-export-config")
 def read_log_export_config(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     from ..logexportconfig import get_log_export

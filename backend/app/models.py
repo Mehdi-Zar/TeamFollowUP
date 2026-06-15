@@ -48,6 +48,7 @@ class User(Base):
     notify_tweets: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     notify_replies: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     email_notifications: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    subscribe_weekly_report: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 

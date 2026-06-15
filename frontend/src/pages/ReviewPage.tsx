@@ -6,6 +6,7 @@ import { ProgressReviewRow } from "../types";
 import { Dot, Spinner, ErrorBanner } from "../components/ui";
 import { useSetPageChrome } from "../components/pageChrome";
 import { ChangeList, ConfidenceBadge, DeltaBadge } from "../components/progress";
+import ReportExport from "../components/ReportExport";
 
 const PERIODS = [7, 14, 30];
 
@@ -25,6 +26,7 @@ export default function ReviewPage() {
       tabs: PERIODS.map((d) => ({ key: String(d), label: t(`review.period.${d}`) })),
       activeTab: String(days),
       onTab: (k) => setDays(Number(k)),
+      actions: <ReportExport sinceDays={days} />,
     },
     [days, t]
   );

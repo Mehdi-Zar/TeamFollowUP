@@ -6,7 +6,7 @@ import { ErrorBanner } from "../components/ui";
 import { ALL_ROLES } from "../perms";
 import { useSetPageChrome } from "../components/pageChrome";
 
-type Tab = "tribes" | "squads" | "users" | "moderation" | "auth" | "smtp" | "logs" | "settings" | "audit";
+type Tab = "tribes" | "squads" | "users" | "moderation" | "auth" | "smtp" | "report" | "logs" | "settings" | "audit";
 
 export default function AdminPage() {
   const { t } = useI18n();
@@ -18,6 +18,7 @@ export default function AdminPage() {
     ["moderation", t("admin.tab.moderation")],
     ["auth", t("admin.tab.auth")],
     ["smtp", t("admin.tab.smtp")],
+    ["report", t("admin.tab.report")],
     ["logs", t("admin.tab.logs")],
     ["settings", t("admin.tab.settings")],
     ["audit", t("admin.tab.audit")],
@@ -41,6 +42,7 @@ export default function AdminPage() {
       {tab === "moderation" && <ModerationAdmin />}
       {tab === "auth" && <AuthAdmin />}
       {tab === "smtp" && <SmtpAdmin />}
+      {tab === "report" && <WeeklyReportAdmin />}
       {tab === "logs" && <LogExportAdmin />}
       {tab === "settings" && <SettingsAdmin />}
       {tab === "audit" && <AuditAdmin />}
@@ -113,6 +115,91 @@ function SmtpAdmin() {
       <div className="inline">
         <button onClick={save}>{t("action.save")}</button>
         <button className="btn-secondary" onClick={test} disabled={!cfg.enabled}>{t("smtp.test")}</button>
+        {saved && <span style={{ color: "var(--green)" }}>{t("admin.saved")}</span>}
+        {testMsg && <span className="small muted">{testMsg}</span>}
+      </div>
+    </div>
+  );
+}
+
+const WEEKDAYS_FR = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"];
+
+function WeeklyReportAdmin() {
+  const { t } = useI18n();
+  const [cfg, setCfg] = useState<any | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [testMsg, setTestMsg] = useState<string | null>(null);
+  const [testing, setTesting] = useState(false);
+  const { error, wrap } = useErr();
+
+  useEffect(() => { api.get<any>("/api/admin/report-config").then(setCfg); }, []);
+  if (!cfg) return <div className="spinner">{t("common.loading")}</div>;
+  const set = (k: string, v: any) => setCfg({ ...cfg, [k]: v });
+  const recipientsText = Array.isArray(cfg.recipients) ? cfg.recipients.join("\n") : (cfg.recipients ?? "");
+
+  async function save() {
+    await wrap(async () => {
+      const out = await api.put<any>("/api/admin/report-config", cfg);
+      setCfg(out);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    });
+  }
+  async function test() {
+    setTestMsg(null);
+    setTesting(true);
+    try {
+      const r = await api.post<any>("/api/admin/report-config/test", {});
+      setTestMsg(r.ok ? t("report.test_ok", { to: r.to }) : t("report.test_fail"));
+    } catch (e: any) {
+      setTestMsg(e.message);
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  return (
+    <div className="stack" style={{ maxWidth: 640 }}>
+      {error && <ErrorBanner message={error} />}
+      <div className="banner">{t("report.intro")}</div>
+      <div className="card stack" style={{ gap: 12 }}>
+        <label className="switch">
+          <input type="checkbox" checked={!!cfg.enabled} onChange={(e) => set("enabled", e.target.checked)} />
+          <span className="track"><span className="knob" /></span>
+          <span className="strong">{t("report.enabled")}</span>
+        </label>
+        <div>
+          <label>{t("report.recipients")}</label>
+          <textarea
+            rows={4}
+            value={recipientsText}
+            placeholder="dir@exemple.com&#10;copil@exemple.com"
+            onChange={(e) => set("recipients", e.target.value.split("\n"))}
+          />
+          <div className="small muted">{t("report.recipients_hint")}</div>
+        </div>
+        <div className="row">
+          <div style={{ flex: 1, minWidth: 160 }}>
+            <label>{t("report.weekday")}</label>
+            <select value={cfg.weekday ?? 0} onChange={(e) => set("weekday", Number(e.target.value))}>
+              {WEEKDAYS_FR.map((d, i) => <option key={i} value={i}>{d}</option>)}
+            </select>
+          </div>
+          <div style={{ width: 120 }}>
+            <label>{t("report.hour")}</label>
+            <input type="number" min={0} max={23} value={cfg.hour ?? 8} onChange={(e) => set("hour", Number(e.target.value))} />
+          </div>
+          <div style={{ width: 140 }}>
+            <label>{t("report.since_days")}</label>
+            <input type="number" min={1} max={120} value={cfg.since_days ?? 7} onChange={(e) => set("since_days", Number(e.target.value))} />
+          </div>
+        </div>
+        <div className="small muted">{t("report.schedule_hint")}</div>
+        {cfg.last_sent_week && <div className="small muted">{t("report.last_sent", { week: cfg.last_sent_week })}</div>}
+      </div>
+      <div className="inline">
+        <button onClick={save}>{t("action.save")}</button>
+        <button className="btn-secondary" onClick={test} disabled={testing}>{t("report.test")}</button>
         {saved && <span style={{ color: "var(--green)" }}>{t("admin.saved")}</span>}
         {testMsg && <span className="small muted">{testMsg}</span>}
       </div>

@@ -62,20 +62,14 @@ def add_review_note(squad_id: int, payload: ProgressNoteIn, db: Session = Depend
     return _point_out(pu, user.display_name)
 
 
-@router.get("/api/progress/review", response_model=list[ProgressReviewRow])
-def aggregated_review(since_days: int = Query(7, ge=1, le=120), tribe_id: int | None = None,
-                      db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    # The weekly ceremony is for leaders: admins see everything, tribe leaders
-    # see their own tribe.
-    if user.role == "admin":
-        scope_tribe = tribe_id
-    elif user.role == "tribe_leader":
-        scope_tribe = user.tribe_id
-    else:
-        raise HTTPException(status_code=403, detail="Réservé aux tribe leaders et administrateurs")
+def aggregate_review(db: Session, scope_tribe: int | None, since_days: int = 7,
+                     year: int | None = None) -> list[ProgressReviewRow]:
+    """Build the weekly-review rows for every squad in scope (None = all tribes).
 
+    Shared by the API endpoint and the HTML/PPTX report generator.
+    """
     cutoff = utcnow() - timedelta(days=since_days)
-    year = st.current_year_quarter()[0]
+    year = year or st.current_year_quarter()[0]
     tribes = {t.id: t.name for t in db.scalars(select(Tribe)).all()}
     rows: list[ProgressReviewRow] = []
 
@@ -127,6 +121,20 @@ def aggregated_review(since_days: int = Query(7, ge=1, le=120), tribe_id: int | 
     # Worst movers / most blocked first — most useful for the ceremony.
     rows.sort(key=lambda r: (-r.blocked_count, r.progress_delta, r.squad_name))
     return rows
+
+
+@router.get("/api/progress/review", response_model=list[ProgressReviewRow])
+def aggregated_review(since_days: int = Query(7, ge=1, le=120), tribe_id: int | None = None,
+                      db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    # The weekly ceremony is for leaders: admins see everything, tribe leaders
+    # see their own tribe.
+    if user.role == "admin":
+        scope_tribe = tribe_id
+    elif user.role == "tribe_leader":
+        scope_tribe = user.tribe_id
+    else:
+        raise HTTPException(status_code=403, detail="Réservé aux tribe leaders et administrateurs")
+    return aggregate_review(db, scope_tribe, since_days)
 
 
 @router.post("/api/admin/progress/run-weekly")
