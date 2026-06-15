@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { useI18n } from "../i18n";
-import { useConfig } from "../config";
+import { useConfig, useModule } from "../config";
 import { useAuth } from "../auth";
 import { DashboardOut, SquadCard, Tribe } from "../types";
 import { Dot, FreshnessBadge, ProgressBar, Spinner, ErrorBanner } from "../components/ui";
@@ -21,6 +21,7 @@ function healthOf(c: SquadCard): "blocked" | "at_risk" | "on_track" {
 export default function DashboardPage() {
   const { t, roadmap } = useI18n();
   const { default_year } = useConfig();
+  const csvOn = useModule()("exports_csv");
   const { effectiveRole } = useAuth();
   const isAdmin = effectiveRole === "admin";
   const [data, setData] = useState<DashboardOut | null>(null);
@@ -80,14 +81,14 @@ export default function DashboardPage() {
                   <button key={y} className={y === data.year ? "active" : ""} onClick={() => setYear(y)}>{y}</button>
                 ))}
               </div>
-              <a className="btn btn-secondary btn-sm" href={`/api/exports/dashboard.csv?year=${data.year}`}>{t("action.csv")}</a>
+              {csvOn && <a className="btn btn-secondary btn-sm" href={`/api/exports/dashboard.csv?year=${data.year}`}>{t("action.csv")}</a>}
               <Link className="btn btn-secondary btn-sm" to="/print/dashboard" target="_blank">{t("action.report")}</Link>
-              <EmailExport endpoint="/api/exports/dashboard/email" year={data.year} />
+              {csvOn && <EmailExport endpoint="/api/exports/dashboard/email" year={data.year} />}
             </>
           ),
         }
       : {},
-    [data?.year, health]
+    [data?.year, health, csvOn]
   );
 
   if (error) return <ErrorBanner message={error} />;

@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import { api, ApiError } from "../api";
 import { useI18n } from "../i18n";
-import { AuditEntry, Role, Squad, Tribe, User } from "../types";
+import { useReloadConfig } from "../config";
+import { AuditEntry, ModuleKey, Role, Squad, Tribe, User } from "../types";
 import { ErrorBanner } from "../components/ui";
 import { ALL_ROLES } from "../perms";
 import { useSetPageChrome } from "../components/pageChrome";
 
-type Tab = "tribes" | "squads" | "users" | "moderation" | "auth" | "smtp" | "report" | "logs" | "settings" | "audit";
+type Tab = "tribes" | "squads" | "users" | "modules" | "moderation" | "auth" | "smtp" | "report" | "logs" | "settings" | "audit";
 
 export default function AdminPage() {
   const { t } = useI18n();
@@ -15,6 +16,7 @@ export default function AdminPage() {
     ["tribes", t("admin.tab.tribes")],
     ["squads", t("admin.tab.squads")],
     ["users", t("admin.tab.users")],
+    ["modules", t("admin.tab.modules")],
     ["moderation", t("admin.tab.moderation")],
     ["auth", t("admin.tab.auth")],
     ["smtp", t("admin.tab.smtp")],
@@ -39,6 +41,7 @@ export default function AdminPage() {
       {tab === "tribes" && <TribesAdmin />}
       {tab === "squads" && <SquadsAdmin />}
       {tab === "users" && <UsersAdmin />}
+      {tab === "modules" && <ModulesAdmin />}
       {tab === "moderation" && <ModerationAdmin />}
       {tab === "auth" && <AuthAdmin />}
       {tab === "smtp" && <SmtpAdmin />}
@@ -118,6 +121,83 @@ function SmtpAdmin() {
         {saved && <span style={{ color: "var(--green)" }}>{t("admin.saved")}</span>}
         {testMsg && <span className="small muted">{testMsg}</span>}
       </div>
+    </div>
+  );
+}
+
+const MODULE_TREE: { key: ModuleKey; features: string[] }[] = [
+  { key: "dashboard", features: [] },
+  { key: "org", features: [] },
+  { key: "reporting", features: [] },
+  { key: "feed", features: ["reactions", "replies", "pin", "kinds"] },
+  { key: "review", features: ["notes", "weekly_report"] },
+  { key: "squad_content", features: ["objectives", "roadmap", "kpis"] },
+  { key: "notifications", features: ["inapp", "email"] },
+  { key: "exports_csv", features: [] },
+];
+
+function ModulesAdmin() {
+  const { t } = useI18n();
+  const reloadConfig = useReloadConfig();
+  const [cfg, setCfg] = useState<any | null>(null);
+  const [saved, setSaved] = useState(false);
+  const { error, wrap } = useErr();
+
+  useEffect(() => { api.get<any>("/api/admin/modules-config").then(setCfg); }, []);
+  if (!cfg) return <div className="spinner">{t("common.loading")}</div>;
+
+  async function apply(next: any) {
+    setCfg(next);
+    await wrap(async () => {
+      const out = await api.put<any>("/api/admin/modules-config", next);
+      setCfg(out);
+      reloadConfig();
+      setSaved(true);
+      setTimeout(() => setSaved(false), 1500);
+    });
+  }
+  const setModule = (key: string, enabled: boolean) => apply({ ...cfg, [key]: { ...cfg[key], enabled } });
+  const setFeature = (key: string, feat: string, val: boolean) =>
+    apply({ ...cfg, [key]: { ...cfg[key], [feat]: val } });
+
+  const Switch = ({ checked, onChange, label, strong }: any) => (
+    <label className="switch">
+      <input type="checkbox" checked={!!checked} onChange={(e) => onChange(e.target.checked)} />
+      <span className="track"><span className="knob" /></span>
+      <span className={strong ? "strong" : "small"}>{label}</span>
+    </label>
+  );
+
+  return (
+    <div className="stack" style={{ maxWidth: 640 }}>
+      {error && <ErrorBanner message={error} />}
+      <div className="banner">{t("modules.intro")}</div>
+      <div className="stack" style={{ gap: 12 }}>
+        {MODULE_TREE.map(({ key, features }) => {
+          const mod = cfg[key] || {};
+          const on = mod.enabled !== false;
+          return (
+            <div key={key} className="card stack" style={{ gap: 10, opacity: on ? 1 : 0.7 }}>
+              <div className="between">
+                <Switch checked={on} strong label={t(`mod.${key}`)} onChange={(v: boolean) => setModule(key, v)} />
+                {!on && <span className="badge badge-red">{t("modules.off")}</span>}
+              </div>
+              {features.length > 0 && (
+                <div className="small muted">{t(`mod.${key}.desc`)}</div>
+              )}
+              {features.length > 0 && on && (
+                <div className="stack" style={{ gap: 8, paddingLeft: 14, borderLeft: "2px solid var(--line)" }}>
+                  {features.map((f) => (
+                    <Switch key={f} checked={mod[f] !== false} label={t(`mod.${key}.${f}`)}
+                            onChange={(v: boolean) => setFeature(key, f, v)} />
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      {saved && <div className="small" style={{ color: "var(--green)" }}>{t("admin.saved")}</div>}
     </div>
   );
 }

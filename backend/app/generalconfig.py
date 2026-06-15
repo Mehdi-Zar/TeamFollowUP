@@ -72,6 +72,7 @@ def set_general(db: Session, patch: dict) -> dict:
 
 def public_config(db: Session) -> dict:
     from .smtpconfig import get_smtp
+    from .modulesconfig import get_modules
     cfg = get_general(db)
     return {
         "app_name": cfg["app_name"],
@@ -81,4 +82,5 @@ def public_config(db: Session) -> dict:
         "feed_post_scope": cfg["feed_post_scope"],
         "feed_kinds": cfg["feed_kinds"],
         "smtp_enabled": bool(get_smtp(db).get("enabled")),
+        "modules": get_modules(db),
     }

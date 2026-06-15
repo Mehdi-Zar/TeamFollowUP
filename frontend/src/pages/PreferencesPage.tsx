@@ -1,13 +1,16 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { useI18n } from "../i18n";
-import { useConfig } from "../config";
+import { useConfig, useModule } from "../config";
 import { Preferences } from "../types";
 import { Spinner } from "../components/ui";
 
 export default function PreferencesPage() {
   const { t } = useI18n();
   const { smtp_enabled } = useConfig();
+  const moduleOn = useModule();
+  const emailNotifOn = moduleOn("notifications", "email");
+  const weeklyReportOn = moduleOn("review", "weekly_report");
   const [prefs, setPrefs] = useState<Preferences | null>(null);
   const [saved, setSaved] = useState(false);
 
@@ -38,14 +41,18 @@ export default function PreferencesPage() {
         <h3 style={{ margin: 0 }}>{t("prefs.notifs")}</h3>
         <Toggle checked={prefs.notify_tweets} label={t("prefs.tweets")} onChange={(v: boolean) => update({ notify_tweets: v })} />
         <Toggle checked={prefs.notify_replies} label={t("prefs.replies")} onChange={(v: boolean) => update({ notify_replies: v })} />
-        <div style={{ borderTop: "1px solid var(--line)", paddingTop: 14 }}>
-          <Toggle checked={prefs.email_notifications} disabled={!smtp_enabled} label={t("prefs.email")} onChange={(v: boolean) => update({ email_notifications: v })} />
-          {!smtp_enabled && <div className="small muted" style={{ marginTop: 6 }}>{t("prefs.email_off")}</div>}
-        </div>
-        <div style={{ borderTop: "1px solid var(--line)", paddingTop: 14 }}>
-          <Toggle checked={prefs.subscribe_weekly_report} disabled={!smtp_enabled} label={t("prefs.weekly_report")} onChange={(v: boolean) => update({ subscribe_weekly_report: v })} />
-          <div className="small muted" style={{ marginTop: 6 }}>{!smtp_enabled ? t("prefs.email_off") : t("prefs.weekly_report_hint")}</div>
-        </div>
+        {emailNotifOn && (
+          <div style={{ borderTop: "1px solid var(--line)", paddingTop: 14 }}>
+            <Toggle checked={prefs.email_notifications} disabled={!smtp_enabled} label={t("prefs.email")} onChange={(v: boolean) => update({ email_notifications: v })} />
+            {!smtp_enabled && <div className="small muted" style={{ marginTop: 6 }}>{t("prefs.email_off")}</div>}
+          </div>
+        )}
+        {weeklyReportOn && (
+          <div style={{ borderTop: "1px solid var(--line)", paddingTop: 14 }}>
+            <Toggle checked={prefs.subscribe_weekly_report} disabled={!smtp_enabled} label={t("prefs.weekly_report")} onChange={(v: boolean) => update({ subscribe_weekly_report: v })} />
+            <div className="small muted" style={{ marginTop: 6 }}>{!smtp_enabled ? t("prefs.email_off") : t("prefs.weekly_report_hint")}</div>
+          </div>
+        )}
         {saved && <div className="small" style={{ color: "var(--green)" }}>{t("prefs.saved")}</div>}
       </div>
     </div>

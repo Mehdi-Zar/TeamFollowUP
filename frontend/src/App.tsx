@@ -1,5 +1,7 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { useAuth } from "./auth";
+import { useConfig, moduleOn } from "./config";
+import { ModuleKey } from "./types";
 import Layout from "./components/Layout";
 import LoginPage from "./pages/LoginPage";
 import DashboardPage from "./pages/DashboardPage";
@@ -23,6 +25,22 @@ function Protected({ children, adminOnly }: { children: JSX.Element; adminOnly?:
   return children;
 }
 
+// Fallback landing when the requested module is disabled: first enabled module.
+const MODULE_HOME: { module: ModuleKey; path: string }[] = [
+  { module: "dashboard", path: "/" },
+  { module: "org", path: "/organigramme" },
+  { module: "feed", path: "/fil" },
+  { module: "review", path: "/revue" },
+  { module: "reporting", path: "/saisie" },
+];
+
+function ModuleGuard({ module, children }: { module: ModuleKey; children: JSX.Element }) {
+  const { modules } = useConfig();
+  if (moduleOn(modules, module)) return children;
+  const fallback = MODULE_HOME.find((m) => m.path !== location.pathname && moduleOn(modules, m.module));
+  return <Navigate to={fallback ? fallback.path : "/preferences"} replace />;
+}
+
 export default function App() {
   return (
     <Routes>
@@ -32,13 +50,13 @@ export default function App() {
       <Route path="/print/dashboard" element={<Protected><PrintDashboardPage /></Protected>} />
 
       <Route element={<PageChromeProvider><Protected><Layout /></Protected></PageChromeProvider>}>
-        <Route path="/" element={<DashboardPage />} />
+        <Route path="/" element={<ModuleGuard module="dashboard"><DashboardPage /></ModuleGuard>} />
         <Route path="/squads/:id" element={<SquadDetailPage />} />
-        <Route path="/fil" element={<FeedPage />} />
-        <Route path="/revue" element={<ReviewPage />} />
+        <Route path="/fil" element={<ModuleGuard module="feed"><FeedPage /></ModuleGuard>} />
+        <Route path="/revue" element={<ModuleGuard module="review"><ReviewPage /></ModuleGuard>} />
         <Route path="/preferences" element={<PreferencesPage />} />
-        <Route path="/saisie" element={<EntryPage />} />
-        <Route path="/organigramme" element={<OrgPage />} />
+        <Route path="/saisie" element={<ModuleGuard module="reporting"><EntryPage /></ModuleGuard>} />
+        <Route path="/organigramme" element={<ModuleGuard module="org"><OrgPage /></ModuleGuard>} />
         <Route path="/tribus" element={<Protected adminOnly><TribesPage /></Protected>} />
         <Route path="/admin" element={<Protected adminOnly><AdminPage /></Protected>} />
       </Route>

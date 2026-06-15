@@ -151,6 +151,19 @@ export interface SquadCard {
   freshness: Freshness;
 }
 
+export interface ModulesConfig {
+  dashboard: { enabled: boolean };
+  org: { enabled: boolean };
+  reporting: { enabled: boolean };
+  feed: { enabled: boolean; reactions: boolean; replies: boolean; pin: boolean; kinds: boolean };
+  review: { enabled: boolean; notes: boolean; weekly_report: boolean };
+  squad_content: { enabled: boolean; objectives: boolean; roadmap: boolean; kpis: boolean };
+  notifications: { enabled: boolean; inapp: boolean; email: boolean };
+  exports_csv: { enabled: boolean };
+}
+
+export type ModuleKey = keyof ModulesConfig;
+
 export interface PublicConfig {
   app_name: string;
   app_subtitle: string;
@@ -159,6 +172,7 @@ export interface PublicConfig {
   feed_post_scope: "leaders" | "everyone";
   feed_kinds: FeedKind[];
   smtp_enabled: boolean;
+  modules: ModulesConfig;
 }
 
 export interface Notif {

@@ -6,7 +6,8 @@ from sqlalchemy.orm import Session
 
 from .. import status as st
 from ..database import get_db
-from ..deps import assert_can_edit_squad, get_current_user, record_audit, require_admin, require_writer
+from ..deps import (assert_can_edit_squad, get_current_user, record_audit,
+                    require_admin, require_module, require_writer)
 from ..models import ProgressUpdate, Squad, Tribe, User, utcnow
 from ..progress import compute_metrics, ensure_weekly, record_progress
 from ..schemas import ProgressNoteIn, ProgressPointOut, ProgressReviewRow
@@ -30,7 +31,8 @@ def _point_out(pu: ProgressUpdate, author: str | None) -> ProgressPointOut:
     )
 
 
-@router.get("/api/squads/{squad_id}/progress", response_model=list[ProgressPointOut])
+@router.get("/api/squads/{squad_id}/progress", response_model=list[ProgressPointOut],
+            dependencies=[Depends(require_module("review"))])
 def squad_progress(squad_id: int, year: int | None = None, db: Session = Depends(get_db),
                    user: User = Depends(get_current_user)):
     if db.get(Squad, squad_id) is None:
@@ -43,7 +45,8 @@ def squad_progress(squad_id: int, year: int | None = None, db: Session = Depends
     return [_point_out(r, names.get(r.created_by_user_id)) for r in rows]
 
 
-@router.post("/api/squads/{squad_id}/progress", response_model=ProgressPointOut, status_code=201)
+@router.post("/api/squads/{squad_id}/progress", response_model=ProgressPointOut, status_code=201,
+             dependencies=[Depends(require_module("review", "notes"))])
 def add_review_note(squad_id: int, payload: ProgressNoteIn, db: Session = Depends(get_db),
                     user: User = Depends(require_writer)):
     squad = db.get(Squad, squad_id)
@@ -123,7 +126,8 @@ def aggregate_review(db: Session, scope_tribe: int | None, since_days: int = 7,
     return rows
 
 
-@router.get("/api/progress/review", response_model=list[ProgressReviewRow])
+@router.get("/api/progress/review", response_model=list[ProgressReviewRow],
+            dependencies=[Depends(require_module("review"))])
 def aggregated_review(since_days: int = Query(7, ge=1, le=120), tribe_id: int | None = None,
                       db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     # The weekly ceremony is for leaders: admins see everything, tribe leaders

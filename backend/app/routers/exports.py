@@ -8,11 +8,13 @@ from sqlalchemy.orm import Session
 
 from .. import status as st
 from ..database import get_db
-from ..deps import assert_tribe_scope, get_current_user, get_threshold, visible_tribe_id
+from ..deps import (assert_tribe_scope, get_current_user, get_threshold,
+                    require_module, visible_tribe_id)
 from ..models import Squad, User
 from ..schemas import EmailExportIn
 
-router = APIRouter(prefix="/api/exports", tags=["exports"])
+router = APIRouter(prefix="/api/exports", tags=["exports"],
+                   dependencies=[Depends(require_module("exports_csv"))])
 
 
 def _to_csv(header, rows) -> str:
