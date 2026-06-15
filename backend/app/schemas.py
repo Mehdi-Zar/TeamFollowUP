@@ -456,6 +456,15 @@ class EmailExportIn(BaseModel):
     year: Optional[int] = None
 
 
+class ReportSubscriptionOut(BaseModel):
+    interval_days: int
+    last_sent_at: Optional[datetime] = None
+
+
+class ReportSubscriptionIn(BaseModel):
+    interval_days: int = Field(ge=0, le=90)  # 0 = unsubscribe
+
+
 # ---------- Audit ----------
 class AuditOut(ORMModel):
     id: int

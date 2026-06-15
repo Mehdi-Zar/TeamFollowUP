@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import html
 import io
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -16,6 +16,12 @@ from . import status as st
 from .generalconfig import get_general
 from .models import Squad, Tribe, utcnow
 from .serializers import annual_progress
+
+
+def _aware(dt: datetime | None) -> datetime | None:
+    if dt is None:
+        return None
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 # ----- RAG / status presentation -------------------------------------------------
 
@@ -501,26 +507,71 @@ def send_due_weekly_reports(db: Session, now: datetime | None = None) -> int:
         if send_email(smtp, addr, subject, html_body, attachment=attachment, html=True):
             sent += 1
 
-    # 1) Fixed recipient list → global report.
-    targets: list[tuple[str, int | None]] = [(a, None) for a in cfg.get("recipients", [])]
-
-    # 2) Opt-in users → report scoped to their visibility.
-    for u in db.scalars(select(User).where(User.subscribe_weekly_report.is_(True))).all():
-        if not u.email:
-            continue
-        scope = None if u.role == "admin" else u.tribe_id
-        targets.append((u.email, scope))
-
-    # De-duplicate (address, scope) pairs.
+    # Fixed recipient list → global report. (Per-user subscriptions are handled
+    # separately by send_personal_subscriptions, on each user's own cadence.)
     seen = set()
-    for addr, scope in targets:
-        key = (addr.lower(), scope)
+    for addr in cfg.get("recipients", []):
+        key = addr.lower()
         if key in seen:
             continue
         seen.add(key)
-        send_to(addr, scope)
+        send_to(addr, None)
 
     cfg["last_sent_week"] = week
     set_report(db, cfg)
     db.commit()
+    return sent
+
+
+def send_personal_subscriptions(db: Session, now: datetime | None = None) -> int:
+    """Send the report to each user subscribed to a personal cadence (every N days).
+
+    Scope follows the user's visibility (admin → global, others → their tribe).
+    Returns the number of emails sent. Safe to call repeatedly from the scheduler.
+    """
+    from .smtpconfig import get_smtp
+    from .mail import send_email
+    from .models import User
+    from .modulesconfig import get_modules, is_active
+
+    now = now or utcnow()
+    if not is_active(get_modules(db), "review", "weekly_report"):
+        return 0
+    smtp = get_smtp(db)
+    if not smtp.get("enabled"):
+        return 0
+
+    year = st.current_year_quarter(now)[0]
+    rendered: dict[int | None, tuple[str, bytes]] = {}
+
+    def render_scope(scope: int | None, since: int) -> tuple[str, bytes]:
+        if scope not in rendered:
+            data = build_report_data(db, scope, year, since, now)
+            html_body = render_html(data, standalone=True)
+            try:
+                pptx_bytes = render_pptx(data)
+            except Exception:
+                pptx_bytes = b""
+            rendered[scope] = (html_body, pptx_bytes)
+        return rendered[scope]
+
+    sent = 0
+    for u in db.scalars(select(User).where(User.report_interval_days > 0)).all():
+        if not u.email:
+            continue
+        last = _aware(u.report_last_sent_at)
+        if last is not None and (now - last) < timedelta(days=u.report_interval_days):
+            continue
+        scope = None if u.role == "admin" else u.tribe_id
+        html_body, pptx_bytes = render_scope(scope, max(u.report_interval_days, 7))
+        attachment = None
+        if pptx_bytes:
+            attachment = (f"rapport_{now.date().isoformat()}.pptx", pptx_bytes,
+                          "application", "vnd.openxmlformats-officedocument.presentationml.presentation")
+        subject = f"Rapport — {u.report_interval_days} j"
+        if send_email(smtp, u.email, subject, html_body, attachment=attachment, html=True):
+            u.report_last_sent_at = now
+            sent += 1
+    if sent:
+        db.commit()
     return sent

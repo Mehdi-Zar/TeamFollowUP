@@ -12,6 +12,7 @@ from ..database import get_db
 from ..deps import get_current_user, require_module
 from ..models import User
 from ..report import build_report_data, render_html, render_pptx
+from ..schemas import ReportSubscriptionIn, ReportSubscriptionOut
 
 router = APIRouter(prefix="/api/reports", tags=["reports"],
                    dependencies=[Depends(require_module("review", "weekly_report"))])
@@ -55,6 +56,26 @@ def weekly_pptx(tribe_id: int | None = Query(default=None), year: int | None = Q
         media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@router.get("/subscription", response_model=ReportSubscriptionOut)
+def get_subscription(user: User = Depends(get_current_user)):
+    return ReportSubscriptionOut(interval_days=user.report_interval_days,
+                                 last_sent_at=user.report_last_sent_at)
+
+
+@router.put("/subscription", response_model=ReportSubscriptionOut)
+def set_subscription(payload: ReportSubscriptionIn, db: Session = Depends(get_db),
+                     user: User = Depends(get_current_user)):
+    # Changing the cadence restarts the clock so the next send respects it.
+    if payload.interval_days != user.report_interval_days:
+        user.report_last_sent_at = None
+    user.report_interval_days = payload.interval_days
+    # Keep the legacy boolean in sync for any code still reading it.
+    user.subscribe_weekly_report = payload.interval_days > 0
+    db.commit()
+    return ReportSubscriptionOut(interval_days=user.report_interval_days,
+                                 last_sent_at=user.report_last_sent_at)
 
 
 @router.post("/weekly/email")
