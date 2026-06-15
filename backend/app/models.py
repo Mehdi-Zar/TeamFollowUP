@@ -276,6 +276,23 @@ class Notification(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
 
 
+class ReportSubscription(Base):
+    """A user's email subscription to a report, on their own cadence.
+
+    squad_id NULL = the dashboard report scoped to the user's visibility
+    (global for admins, their tribe otherwise). squad_id set = that squad only.
+    """
+    __tablename__ = "report_subscriptions"
+    __table_args__ = (UniqueConstraint("user_id", "squad_id", name="uq_report_sub_user_squad"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    squad_id: Mapped[int | None] = mapped_column(ForeignKey("squads.id"), nullable=True, index=True)
+    interval_days: Mapped[int] = mapped_column(Integer, nullable=False, default=7)
+    last_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class AppSetting(Base):
     __tablename__ = "app_settings"
 

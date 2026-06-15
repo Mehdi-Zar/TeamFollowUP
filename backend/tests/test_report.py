@@ -150,12 +150,12 @@ def test_send_personal_subscriptions(db, seeded, monkeypatch):
     from app import report as report_mod
     from app.smtpconfig import set_smtp
     from app.models import User
+    from app.subscriptions import set_subscription
     from sqlalchemy import select
 
     set_smtp(db, {"enabled": True, "host": "smtp.local"})
     user = db.scalar(select(User).where(User.email == "member@test"))
-    user.report_interval_days = 7
-    user.report_last_sent_at = None
+    set_subscription(db, user, None, 7)  # global subscription
     db.commit()
 
     sent_to = []
@@ -165,17 +165,36 @@ def test_send_personal_subscriptions(db, seeded, monkeypatch):
 
     n = report_mod.send_personal_subscriptions(db)
     assert n == 1 and "member@test" in sent_to
-    db.refresh(user)
-    assert user.report_last_sent_at is not None
     # Not due again immediately.
     assert report_mod.send_personal_subscriptions(db) == 0
+
+
+def test_send_per_squad_subscription(db, seeded, monkeypatch):
+    from app import report as report_mod
+    from app.smtpconfig import set_smtp
+    from app.models import User
+    from app.subscriptions import set_subscription
+    from sqlalchemy import select
+
+    set_smtp(db, {"enabled": True, "host": "smtp.local"})
+    tl = db.scalar(select(User).where(User.email == "tribe@test"))
+    set_subscription(db, tl, seeded["squad_a"], 14)  # per-squad subscription
+    db.commit()
+
+    captured = {}
+    monkeypatch.setattr(report_mod, "render_pptx", lambda data: b"")
+    monkeypatch.setattr("app.mail.send_email",
+                        lambda *a, **k: (captured.setdefault("body", a[3]) or True))
+    assert report_mod.send_personal_subscriptions(db) == 1
+    assert "Squad A" in captured["body"]  # report narrowed to that squad
 
 
 def test_send_personal_subscriptions_needs_smtp(db, seeded):
     from app.report import send_personal_subscriptions
     from app.models import User
+    from app.subscriptions import set_subscription
     from sqlalchemy import select
     u = db.scalar(select(User).where(User.email == "member@test"))
-    u.report_interval_days = 7
+    set_subscription(db, u, None, 7)
     db.commit()
     assert send_personal_subscriptions(db) == 0  # SMTP disabled
