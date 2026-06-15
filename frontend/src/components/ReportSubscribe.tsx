@@ -18,10 +18,12 @@ export default function ReportSubscribe() {
   const [msg, setMsg] = useState<string | null>(null);
 
   useEffect(() => {
-    if (weeklyOn && smtp_enabled) api.get<Sub>("/api/reports/subscription").then(setSub).catch(() => {});
-  }, [weeklyOn, smtp_enabled]);
+    if (weeklyOn) api.get<Sub>("/api/reports/subscription").then(setSub).catch(() => {});
+  }, [weeklyOn]);
 
-  if (!weeklyOn || !smtp_enabled) return null;
+  // Visible as soon as the report module is on; emails only start once SMTP is
+  // configured (we surface that inside the popover so the option stays discoverable).
+  if (!weeklyOn) return null;
 
   async function choose(days: number) {
     setMsg(null);
@@ -45,6 +47,9 @@ export default function ReportSubscribe() {
       {open && (
         <div className="card" style={{ position: "absolute", right: 0, top: 38, zIndex: 50, width: 290, padding: 12 }}>
           <div className="small muted" style={{ marginBottom: 8 }}>{t("sub.intro")}</div>
+          {!smtp_enabled && (
+            <div className="small" style={{ marginBottom: 8, color: "var(--orange)" }}>{t("sub.no_smtp")}</div>
+          )}
           <div className="stack" style={{ gap: 6 }}>
             {INTERVALS.map((d) => (
               <button
