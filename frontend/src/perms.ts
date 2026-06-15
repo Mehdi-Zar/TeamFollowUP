@@ -2,6 +2,15 @@ import { Role, SquadDetail } from "./types";
 
 export const ALL_ROLES: Role[] = ["admin", "tribe_leader", "squad_leader", "member"];
 
+// Admin tabs a role may open — mirrors backend app/rbac.py ADMIN_TABS.
+// Used so the admin "preview as role" reflects the scoped tab set.
+export const ADMIN_TABS_BY_ROLE: Record<Role, string[]> = {
+  admin: ["tribes", "squads", "users", "modules", "moderation", "auth", "smtp", "report", "logs", "settings", "audit"],
+  tribe_leader: ["tribe", "squads", "users"],
+  squad_leader: ["my_squads"],
+  member: [],
+};
+
 export const isAdmin = (r: Role) => r === "admin";
 /** Who may open the (now role-scoped) Admin page: admins, tribe leaders, squad leaders. */
 export const canSeeAdmin = (r: Role) => r === "admin" || r === "tribe_leader" || r === "squad_leader";

@@ -21,12 +21,29 @@ export default function ReviewPage() {
     api.get<ProgressReviewRow[]>(`/api/progress/review?since_days=${days}`).then(setRows).catch((e) => setError(e.message));
   }, [days]);
 
+  const isPreset = PERIODS.includes(days);
   useSetPageChrome(
     {
       tabs: PERIODS.map((d) => ({ key: String(d), label: t(`review.period.${d}`) })),
-      activeTab: String(days),
+      activeTab: isPreset ? String(days) : "",
       onTab: (k) => setDays(Number(k)),
-      actions: <ReportExport sinceDays={days} />,
+      actions: (
+        <div className="inline" style={{ gap: 10, alignItems: "center" }}>
+          <label className="inline small muted" style={{ gap: 6, alignItems: "center" }}>
+            {t("review.custom")}
+            <input
+              type="number"
+              min={1}
+              max={365}
+              style={{ width: 72 }}
+              value={days}
+              onChange={(e) => setDays(Math.max(1, Math.min(365, Number(e.target.value) || 1)))}
+            />
+            {t("review.days_unit")}
+          </label>
+          <ReportExport sinceDays={days} />
+        </div>
+      ),
     },
     [days, t]
   );

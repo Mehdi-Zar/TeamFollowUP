@@ -5,7 +5,7 @@ import { useReloadConfig } from "../config";
 import { useAuth } from "../auth";
 import { AuditEntry, ModuleKey, Permissions, Role, Squad, SquadDetail, Tribe, User } from "../types";
 import { ErrorBanner, Spinner } from "../components/ui";
-import { ALL_ROLES } from "../perms";
+import { ADMIN_TABS_BY_ROLE, ALL_ROLES } from "../perms";
 import { useSetPageChrome } from "../components/pageChrome";
 
 // Label key for each admin tab (server decides which a role may open).
@@ -27,20 +27,27 @@ const TAB_LABEL: Record<string, string> = {
 
 export default function AdminPage() {
   const { t } = useI18n();
+  const { effectiveRole } = useAuth();
   const [perms, setPerms] = useState<Permissions | null>(null);
   const [tab, setTab] = useState<string>("");
 
   const [loadError, setLoadError] = useState<string | null>(null);
   useEffect(() => {
     api.get<Permissions>("/api/auth/me/permissions")
-      .then((p) => {
-        setPerms(p);
-        setTab((cur) => (cur && p.admin_tabs.includes(cur) ? cur : p.admin_tabs[0] ?? ""));
-      })
+      .then((p) => setPerms(p))
       .catch((e) => setLoadError(e instanceof ApiError ? e.message : "Erreur"));
   }, []);
 
-  const tabKeys = perms?.admin_tabs ?? [];
+  // When an admin previews another role, reflect that role's scoped tab set
+  // (the backend still enforces the real account's permissions on every call).
+  const tabKeys =
+    perms && effectiveRole && effectiveRole !== perms.role
+      ? ADMIN_TABS_BY_ROLE[effectiveRole] ?? []
+      : perms?.admin_tabs ?? [];
+
+  useEffect(() => {
+    setTab((cur) => (cur && tabKeys.includes(cur) ? cur : tabKeys[0] ?? ""));
+  }, [tabKeys.join(",")]);
   useSetPageChrome(
     {
       title: t("admin.title"),
