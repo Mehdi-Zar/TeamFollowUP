@@ -75,6 +75,20 @@ qui satisfait la spec ».
   génération PDF serveur. C'est l'option explicitement autorisée par la spec, sans
   dépendance système lourde (pas de WeasyPrint/cairo/pango), et le format est
   unifié pour toutes les équipes. Export **CSV** servi par l'API (`/api/exports/...`).
+- **Rapport hebdomadaire HTML + PPTX** (`app/report.py`, `/api/reports/weekly.*`) :
+  document combiné *dashboard (état actuel) + revue hebdo (mouvements de la semaine)*.
+  Le HTML est autonome (CSS inline) — sert à la fois au téléchargement, à l'aperçu
+  navigateur et au corps d'email. Le **PPTX** est généré côté serveur avec
+  `python-pptx` (pur Python, pas de LibreOffice) : slide titre + synthèse + points
+  d'attention + une slide-table par tribu. Rendu dégradé en HTML seul si `python-pptx`
+  absent (réponse 501 pour le téléchargement direct).
+- **Envoi automatique hebdomadaire** piloté par le scheduler in-process de `main.py`
+  (tick horaire), `report.send_due_weekly_reports` : idempotent à la semaine ISO
+  (`last_sent_week`), déclenché le jour/heure configurés (`app_settings['weekly_report']`).
+  Destinataires = **liste fixe configurable** (rapport global, côté admin) **+ opt-in
+  par utilisateur** (`users.subscribe_weekly_report`, rapport limité à leur périmètre :
+  global pour les admins, leur tribu pour les tribe leaders). Email = **HTML inline +
+  PPTX en pièce jointe** (`mail.send_email(..., html=True)`). Nécessite un SMTP actif.
 
 ## Front-end
 

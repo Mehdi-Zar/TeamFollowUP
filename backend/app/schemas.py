@@ -441,12 +441,14 @@ class PreferencesOut(BaseModel):
     notify_tweets: bool
     notify_replies: bool
     email_notifications: bool
+    subscribe_weekly_report: bool
 
 
 class PreferencesUpdate(BaseModel):
     notify_tweets: Optional[bool] = None
     notify_replies: Optional[bool] = None
     email_notifications: Optional[bool] = None
+    subscribe_weekly_report: Optional[bool] = None
 
 
 class EmailExportIn(BaseModel):

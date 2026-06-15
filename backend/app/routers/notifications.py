@@ -40,7 +40,8 @@ def mark_read(notif_id: int, db: Session = Depends(get_db), user: User = Depends
 @router.get("/me/preferences", response_model=PreferencesOut)
 def get_preferences(user: User = Depends(get_current_user)):
     return PreferencesOut(notify_tweets=user.notify_tweets, notify_replies=user.notify_replies,
-                          email_notifications=user.email_notifications)
+                          email_notifications=user.email_notifications,
+                          subscribe_weekly_report=user.subscribe_weekly_report)
 
 
 @router.put("/me/preferences", response_model=PreferencesOut)
@@ -50,4 +51,5 @@ def update_preferences(payload: PreferencesUpdate, db: Session = Depends(get_db)
         setattr(user, k, v)
     db.commit()
     return PreferencesOut(notify_tweets=user.notify_tweets, notify_replies=user.notify_replies,
-                          email_notifications=user.email_notifications)
+                          email_notifications=user.email_notifications,
+                          subscribe_weekly_report=user.subscribe_weekly_report)

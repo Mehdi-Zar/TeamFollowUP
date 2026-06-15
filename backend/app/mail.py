@@ -7,8 +7,13 @@ from email.message import EmailMessage
 logger = logging.getLogger("trt.mail")
 
 
-def send_email(cfg: dict, to: str, subject: str, body: str, attachment: tuple | None = None) -> bool:
-    """Send synchronously. attachment = (filename, bytes, maintype, subtype). Returns True on success."""
+def send_email(cfg: dict, to: str, subject: str, body: str, attachment: tuple | None = None,
+               html: bool = False) -> bool:
+    """Send synchronously. attachment = (filename, bytes, maintype, subtype).
+
+    When html=True, `body` is sent as an HTML body (with a plain-text fallback).
+    Returns True on success.
+    """
     if not cfg.get("enabled") or not cfg.get("host") or not to:
         return False
     msg = EmailMessage()
@@ -16,7 +21,11 @@ def send_email(cfg: dict, to: str, subject: str, body: str, attachment: tuple | 
     msg["From"] = f"{from_name} <{cfg.get('from_addr')}>"
     msg["To"] = to
     msg["Subject"] = subject
-    msg.set_content(body)
+    if html:
+        msg.set_content("Ce rapport nécessite un client mail compatible HTML.")
+        msg.add_alternative(body, subtype="html")
+    else:
+        msg.set_content(body)
     if attachment:
         filename, data, maintype, subtype = attachment
         msg.add_attachment(data, maintype=maintype, subtype=subtype, filename=filename)
