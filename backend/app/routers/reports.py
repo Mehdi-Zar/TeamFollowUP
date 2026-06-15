@@ -9,11 +9,12 @@ from sqlalchemy.orm import Session
 
 from .. import status as st
 from ..database import get_db
-from ..deps import get_current_user
+from ..deps import get_current_user, require_module
 from ..models import User
 from ..report import build_report_data, render_html, render_pptx
 
-router = APIRouter(prefix="/api/reports", tags=["reports"])
+router = APIRouter(prefix="/api/reports", tags=["reports"],
+                   dependencies=[Depends(require_module("review", "weekly_report"))])
 
 
 def _resolve_scope(user: User, tribe_id: int | None) -> int | None:

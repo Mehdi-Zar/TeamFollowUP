@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api, ApiError } from "../api";
 import { useAuth } from "../auth";
 import { useI18n } from "../i18n";
-import { useConfig } from "../config";
+import { useConfig, useModule } from "../config";
 import { Kpi, Member, Objective, Rag, RoadmapItem, RoadmapStatus, Squad, SquadDetail, Trend, Role } from "../types";
 import { Dot, FreshnessBadge, Spinner, ErrorBanner } from "../components/ui";
 import { canEditSquad, canManageObjectives } from "../perms";
@@ -15,6 +15,11 @@ export default function EntryPage() {
   const { user, effectiveRole, isPreview } = useAuth();
   const { t, roadmap, trend, rag, freshness } = useI18n();
   const { default_year } = useConfig();
+  const moduleOn = useModule();
+  const roadmapOn = moduleOn("squad_content", "roadmap");
+  const objectivesOn = moduleOn("squad_content", "objectives");
+  const kpisOn = moduleOn("squad_content", "kpis");
+  const reviewNotesOn = moduleOn("review", "notes");
   const role = (effectiveRole ?? "member") as Role;
   const [squads, setSquads] = useState<Squad[]>([]);
   const [squadId, setSquadId] = useState<number | null>(null);
@@ -126,11 +131,11 @@ export default function EntryPage() {
           </div>
           {!writeAllowed && <div className="banner" style={{ background: "var(--ice-soft)" }}>{t("entry.readonly")}</div>}
 
-          <RoadmapEditor squad={squad} year={year} onChange={reload} readonly={!writeAllowed} t={t} roadmap={roadmap} />
-          <ObjectivesEditor squad={squad} year={year} onChange={reload} editable={objAllowed} t={t} rag={rag} />
-          <KpisEditor squad={squad} onChange={reload} readonly={!writeAllowed} t={t} trend={trend} />
+          {roadmapOn && <RoadmapEditor squad={squad} year={year} onChange={reload} readonly={!writeAllowed} t={t} roadmap={roadmap} />}
+          {objectivesOn && <ObjectivesEditor squad={squad} year={year} onChange={reload} editable={objAllowed} t={t} rag={rag} />}
+          {kpisOn && <KpisEditor squad={squad} onChange={reload} readonly={!writeAllowed} t={t} trend={trend} />}
           <MembersEditor squad={squad} onChange={reload} readonly={!writeAllowed} t={t} />
-          <ProgressReviewEditor squadId={squad.id} year={year} readonly={!writeAllowed} onSaved={() => flash(t("progress.review_saved"))} t={t} />
+          {reviewNotesOn && <ProgressReviewEditor squadId={squad.id} year={year} readonly={!writeAllowed} onSaved={() => flash(t("progress.review_saved"))} t={t} />}
         </>
       )}
 

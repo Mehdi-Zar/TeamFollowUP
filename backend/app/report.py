@@ -454,8 +454,11 @@ def send_due_weekly_reports(db: Session, now: datetime | None = None) -> int:
     from .smtpconfig import get_smtp
     from .mail import send_email
     from .models import User
+    from .modulesconfig import get_modules, is_active
 
     now = now or utcnow()
+    if not is_active(get_modules(db), "review", "weekly_report"):
+        return 0
     cfg = get_report(db)
     if not cfg.get("enabled"):
         return 0

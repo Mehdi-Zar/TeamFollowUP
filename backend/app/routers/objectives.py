@@ -2,12 +2,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..deps import assert_can_manage_objectives, get_current_user, record_audit
+from ..deps import assert_can_manage_objectives, get_current_user, record_audit, require_module
 from ..models import Objective, Squad, User
 from ..progress import capture_progress
 from ..schemas import ObjectiveCreate, ObjectiveOut, ObjectiveUpdate
 
-router = APIRouter(prefix="/api/objectives", tags=["objectives"])
+router = APIRouter(prefix="/api/objectives", tags=["objectives"],
+                   dependencies=[Depends(require_module("squad_content", "objectives"))])
 
 
 @router.post("", response_model=ObjectiveOut, status_code=201)

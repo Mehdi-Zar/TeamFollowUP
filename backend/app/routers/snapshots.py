@@ -4,11 +4,13 @@ from sqlalchemy.orm import Session
 
 from .. import status as st
 from ..database import get_db
-from ..deps import assert_can_edit_squad, get_current_user, record_audit, require_writer
+from ..deps import (assert_can_edit_squad, get_current_user, record_audit,
+                    require_module, require_writer)
 from ..models import ReportSnapshot, Squad, User, utcnow
 from ..schemas import SnapshotMeta, SnapshotOut, SubmitCycleIn
 
-router = APIRouter(prefix="/api/squads/{squad_id}/snapshots", tags=["snapshots"])
+router = APIRouter(prefix="/api/squads/{squad_id}/snapshots", tags=["snapshots"],
+                   dependencies=[Depends(require_module("reporting"))])
 
 
 def build_payload(squad: Squad, year: int) -> dict:

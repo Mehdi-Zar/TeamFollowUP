@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { useI18n } from "../i18n";
+import { useModule } from "../config";
 import { FeedKind, FeedPost, Role, Squad } from "../types";
 import { Spinner, ErrorBanner } from "../components/ui";
 import { useSetPageChrome } from "../components/pageChrome";
@@ -20,6 +21,11 @@ export default function FeedPage() {
   const role = (effectiveRole ?? "member") as Role;
   const canPost = isWriter(role);
   const canPin = isWriter(role);
+  const moduleOn = useModule();
+  const kindsOn = moduleOn("feed", "kinds");
+  const reactionsOn = moduleOn("feed", "reactions");
+  const repliesOn = moduleOn("feed", "replies");
+  const pinOn = moduleOn("feed", "pin");
 
   const [posts, setPosts] = useState<FeedPost[] | null>(null);
   const [squads, setSquads] = useState<Squad[]>([]);
@@ -69,10 +75,12 @@ export default function FeedPage() {
 
   useSetPageChrome(
     {
-      tabs: [
-        { key: "", label: t("feed.filter_kind") },
-        ...KINDS.map((k) => ({ key: k, label: t(`feed.kind.${k}`) })),
-      ],
+      tabs: kindsOn
+        ? [
+            { key: "", label: t("feed.filter_kind") },
+            ...KINDS.map((k) => ({ key: k, label: t(`feed.kind.${k}`) })),
+          ]
+        : undefined,
       activeTab: kindFilter,
       onTab: (k) => setKindFilter(k),
       actions: (
@@ -86,7 +94,7 @@ export default function FeedPage() {
         </select>
       ),
     },
-    [kindFilter, squadFilter, squads, t]
+    [kindFilter, squadFilter, squads, t, kindsOn]
   );
 
   if (error) return <ErrorBanner message={error} />;
@@ -98,9 +106,11 @@ export default function FeedPage() {
           <textarea rows={2} placeholder={t("feed.placeholder")} value={content} onChange={(e) => setContent(e.target.value)} />
           <div className="between" style={{ marginTop: 10 }}>
             <div className="inline">
-              <select className="w-auto" value={kind} onChange={(e) => setKind(e.target.value as FeedKind)}>
-                {KINDS.map((k) => (<option key={k} value={k}>{t(`feed.kind.${k}`)}</option>))}
-              </select>
+              {kindsOn && (
+                <select className="w-auto" value={kind} onChange={(e) => setKind(e.target.value as FeedKind)}>
+                  {KINDS.map((k) => (<option key={k} value={k}>{t(`feed.kind.${k}`)}</option>))}
+                </select>
+              )}
               <select className="w-auto" value={squadId} onChange={(e) => setSquadId(e.target.value)}>
                 <option value="">{t("feed.attach_squad")}</option>
                 {squads.map((s) => (<option key={s.id} value={s.id}>{s.name}</option>))}
@@ -119,14 +129,16 @@ export default function FeedPage() {
         <div className="card muted">{t("feed.empty")}</div>
       ) : (
         posts.map((p) => (
-          <PostCard key={p.id} post={p} canPin={canPin} canDelete={p.author?.id === user?.id || role === "admin" || role === "tribe_leader"} userId={user?.id} onChange={load} t={t} formatDateTime={formatDateTime} />
+          <PostCard key={p.id} post={p} canPin={canPin && pinOn} reactionsOn={reactionsOn} repliesOn={repliesOn}
+                    canDelete={p.author?.id === user?.id || role === "admin" || role === "tribe_leader"}
+                    userId={user?.id} onChange={load} t={t} formatDateTime={formatDateTime} />
         ))
       )}
     </div>
   );
 }
 
-function PostCard({ post, canPin, canDelete, userId, onChange, t, formatDateTime }: any) {
+function PostCard({ post, canPin, reactionsOn, repliesOn, canDelete, userId, onChange, t, formatDateTime }: any) {
   const [reply, setReply] = useState("");
 
   async function react(kind: string) {
@@ -169,17 +181,21 @@ function PostCard({ post, canPin, canDelete, userId, onChange, t, formatDateTime
           <div style={{ marginTop: 6, whiteSpace: "pre-wrap" }}>{post.content}</div>
 
           <div className="inline" style={{ gap: 8, marginTop: 10, flexWrap: "wrap" }}>
-            <button className={`feed-react ${post.my_reactions.includes("like") ? "active" : ""}`} onClick={() => react("like")}>
-              ♥ {t("feed.like")} {post.reactions.like || 0}
-            </button>
-            <button className={`feed-react ${post.my_reactions.includes("ack") ? "active" : ""}`} onClick={() => react("ack")}>
-              ✓ {t("feed.ack")} {post.reactions.ack || 0}
-            </button>
+            {reactionsOn && (
+              <>
+                <button className={`feed-react ${post.my_reactions.includes("like") ? "active" : ""}`} onClick={() => react("like")}>
+                  ♥ {t("feed.like")} {post.reactions.like || 0}
+                </button>
+                <button className={`feed-react ${post.my_reactions.includes("ack") ? "active" : ""}`} onClick={() => react("ack")}>
+                  ✓ {t("feed.ack")} {post.reactions.ack || 0}
+                </button>
+              </>
+            )}
             {canPin && <button className="feed-react" onClick={togglePin}>{post.is_pinned ? t("feed.unpin") : t("feed.pin")}</button>}
             {canDelete && <button className="feed-react" onClick={del}>{t("action.delete")}</button>}
           </div>
 
-          {post.replies.length > 0 && (
+          {repliesOn && post.replies.length > 0 && (
             <div className="stack" style={{ marginTop: 12, gap: 8 }}>
               {post.replies.map((r: any) => (
                 <div key={r.id} className="feed-reply">
@@ -195,10 +211,12 @@ function PostCard({ post, canPin, canDelete, userId, onChange, t, formatDateTime
             </div>
           )}
 
-          <div className="inline" style={{ marginTop: 10 }}>
-            <input placeholder={t("feed.reply_ph")} value={reply} onChange={(e) => setReply(e.target.value)} onKeyDown={(e) => e.key === "Enter" && sendReply()} />
-            <button className="btn-secondary btn-sm" onClick={sendReply}>{t("feed.reply")}</button>
-          </div>
+          {repliesOn && (
+            <div className="inline" style={{ marginTop: 10 }}>
+              <input placeholder={t("feed.reply_ph")} value={reply} onChange={(e) => setReply(e.target.value)} onKeyDown={(e) => e.key === "Enter" && sendReply()} />
+              <button className="btn-secondary btn-sm" onClick={sendReply}>{t("feed.reply")}</button>
+            </div>
+          )}
         </div>
       </div>
     </div>

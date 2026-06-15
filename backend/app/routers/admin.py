@@ -134,6 +134,23 @@ def test_smtp(payload: dict = Body(...), db: Session = Depends(get_db), admin: U
     return {"ok": ok, "to": to}
 
 
+@router.get("/modules-config")
+def read_modules_config(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    from ..modulesconfig import get_modules
+    return get_modules(db)
+
+
+@router.put("/modules-config")
+def update_modules_config(payload: dict = Body(...), db: Session = Depends(get_db),
+                          admin: User = Depends(require_admin)):
+    from ..modulesconfig import set_modules
+    cfg = set_modules(db, payload)
+    record_audit(db, admin.id, "modules_config.update", entity="modules",
+                 detail={m: v.get("enabled") for m, v in cfg.items()})
+    db.commit()
+    return cfg
+
+
 @router.get("/report-config")
 def read_report_config(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     from ..reportconfig import get_report

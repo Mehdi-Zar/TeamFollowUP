@@ -2,12 +2,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..deps import assert_can_edit_squad, record_audit, require_writer
+from ..deps import assert_can_edit_squad, record_audit, require_module, require_writer
 from ..models import RoadmapItem, Squad, User
 from ..progress import capture_progress
 from ..schemas import RoadmapItemCreate, RoadmapItemOut, RoadmapItemUpdate
 
-router = APIRouter(prefix="/api/roadmap-items", tags=["roadmap"])
+router = APIRouter(prefix="/api/roadmap-items", tags=["roadmap"],
+                   dependencies=[Depends(require_module("squad_content", "roadmap"))])
 
 
 @router.post("", response_model=RoadmapItemOut, status_code=201)

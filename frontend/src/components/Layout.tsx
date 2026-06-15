@@ -2,8 +2,8 @@ import { useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth";
 import { useI18n } from "../i18n";
-import { useConfig } from "../config";
-import { Role } from "../types";
+import { useConfig, moduleOn } from "../config";
+import { ModuleKey, Role } from "../types";
 import { ALL_ROLES, canSeeAdmin, canSeeSaisie } from "../perms";
 import NotificationBell from "./NotificationBell";
 import { usePageChrome } from "./pageChrome";
@@ -26,15 +26,17 @@ type NavItem = {
   titleKey: string;
   Icon: (p: { size?: number }) => JSX.Element;
   visible: (role: Role) => boolean;
+  /** When set, the entry is hidden if that module is disabled in the admin. */
+  module?: ModuleKey;
 };
 
 const NAV: NavItem[] = [
-  { to: "/", end: true, labelKey: "nav.dashboard", titleKey: "nav.dashboard", Icon: IconDashboard, visible: () => true },
-  { to: "/organigramme", labelKey: "nav.org", titleKey: "nav.org", Icon: IconOrg, visible: () => true },
+  { to: "/", end: true, labelKey: "nav.dashboard", titleKey: "nav.dashboard", Icon: IconDashboard, visible: () => true, module: "dashboard" },
+  { to: "/organigramme", labelKey: "nav.org", titleKey: "nav.org", Icon: IconOrg, visible: () => true, module: "org" },
   { to: "/tribus", labelKey: "nav.tribes", titleKey: "nav.tribes", Icon: IconTribes, visible: canSeeAdmin },
-  { to: "/saisie", labelKey: "nav.entry", titleKey: "nav.entry", Icon: IconEntry, visible: canSeeSaisie },
-  { to: "/fil", labelKey: "nav.feed", titleKey: "nav.feed", Icon: IconFeed, visible: () => true },
-  { to: "/revue", labelKey: "nav.review", titleKey: "review.title", Icon: IconReview, visible: (r) => r === "admin" || r === "tribe_leader" },
+  { to: "/saisie", labelKey: "nav.entry", titleKey: "nav.entry", Icon: IconEntry, visible: canSeeSaisie, module: "reporting" },
+  { to: "/fil", labelKey: "nav.feed", titleKey: "nav.feed", Icon: IconFeed, visible: () => true, module: "feed" },
+  { to: "/revue", labelKey: "nav.review", titleKey: "review.title", Icon: IconReview, visible: (r) => r === "admin" || r === "tribe_leader", module: "review" },
   { to: "/admin", labelKey: "nav.admin", titleKey: "nav.admin", Icon: IconAdmin, visible: canSeeAdmin },
 ];
 
@@ -50,7 +52,8 @@ const whiteSelect: React.CSSProperties = {
 export default function Layout() {
   const { user, logout, effectiveRole, isPreview, previewRole, setPreviewRole } = useAuth();
   const { t, role: roleLabel, lang, setLang } = useI18n();
-  const { app_name } = useConfig();
+  const { app_name, modules } = useConfig();
+  const navVisible = (n: NavItem) => n.visible(role) && (!n.module || moduleOn(modules, n.module));
   const navigate = useNavigate();
   const location = useLocation();
   const chrome = usePageChrome();
@@ -89,7 +92,7 @@ export default function Layout() {
         </div>
 
         <nav className="sidebar-nav">
-          {NAV.filter((n) => n.visible(role)).map(({ to, end, labelKey, Icon }) => (
+          {NAV.filter(navVisible).map(({ to, end, labelKey, Icon }) => (
             <NavLink
               key={to}
               to={to}

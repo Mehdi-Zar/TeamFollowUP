@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { api } from "../api";
 import { useI18n } from "../i18n";
+import { useModule } from "../config";
 import { Member, ProgressPoint, RoadmapItem, RoadmapStatus, SnapshotMeta, SquadDetail } from "../types";
 import { ProgressCurve, ProgressTimeline } from "../components/progress";
 import { Dot, FreshnessBadge, ProgressBar, Spinner, ErrorBanner } from "../components/ui";
@@ -21,6 +22,12 @@ export default function SquadDetailPage() {
   const [openJalon, setOpenJalon] = useState<RoadmapItem | null>(null);
   const [zoomQuarter, setZoomQuarter] = useState<number | null>(null);
   const [progress, setProgress] = useState<ProgressPoint[]>([]);
+  const moduleOn = useModule();
+  const roadmapOn = moduleOn("squad_content", "roadmap");
+  const objectivesOn = moduleOn("squad_content", "objectives");
+  const kpisOn = moduleOn("squad_content", "kpis");
+  const reviewOn = moduleOn("review");
+  const csvOn = moduleOn("exports_csv");
 
   useEffect(() => {
     const q = yearParam ? `?year=${yearParam}` : "";
@@ -45,14 +52,14 @@ export default function SquadDetailPage() {
                   <button key={y} className={y === squad.year ? "active" : ""} onClick={() => setParams({ year: String(y) })}>{y}</button>
                 ))}
               </div>
-              <a className="btn btn-secondary btn-sm" href={`/api/exports/squad/${squadId}.csv?year=${squad.year}`}>{t("action.csv")}</a>
+              {csvOn && <a className="btn btn-secondary btn-sm" href={`/api/exports/squad/${squadId}.csv?year=${squad.year}`}>{t("action.csv")}</a>}
               <Link className="btn btn-secondary btn-sm" to={`/print/squad/${squadId}?year=${squad.year}`} target="_blank">{t("action.report")}</Link>
-              <EmailExport endpoint={`/api/exports/squad/${squadId}/email`} year={squad.year} />
+              {csvOn && <EmailExport endpoint={`/api/exports/squad/${squadId}/email`} year={squad.year} />}
             </>
           ),
         }
       : {},
-    [squad?.name, squad?.year, squadId]
+    [squad?.name, squad?.year, squadId, csvOn]
   );
 
   if (error) return <ErrorBanner message={error} />;
@@ -110,6 +117,7 @@ export default function SquadDetailPage() {
       {squad.description && <div className="muted small">{squad.description}</div>}
 
       {/* Roadmap par quarter */}
+      {roadmapOn && (
       <div className="card">
         <h2>{t("squad.roadmap", { year: squad.year })}</h2>
         <div className="small muted" style={{ marginBottom: 10 }}>{t("jalon.view_hint")}</div>
@@ -141,8 +149,10 @@ export default function SquadDetailPage() {
           })}
         </div>
       </div>
+      )}
 
       {/* Zoom détaillé sur un quarter (par défaut le quarter courant, sélectionnable) */}
+      {roadmapOn && (
       <div className="card">
         <div className="between" style={{ flexWrap: "wrap", gap: 10 }}>
           <h2 style={{ margin: 0 }}>{t("squad.zoom")}</h2>
@@ -216,10 +226,12 @@ export default function SquadDetailPage() {
           </div>
         )}
       </div>
+      )}
 
       {openJalon && <JalonView jalon={openJalon} onClose={() => setOpenJalon(null)} t={t} roadmap={roadmap} />}
 
       {/* Objectifs annuels */}
+      {objectivesOn && (
       <div className="card">
         <h2>{t("squad.objectives", { year: squad.year })}</h2>
         <div className="small muted" style={{ marginBottom: 6 }}>{t("squad.objectives_hint")}</div>
@@ -238,9 +250,10 @@ export default function SquadDetailPage() {
           </div>
         ))}
       </div>
+      )}
 
       {/* KPIs (optionnels) */}
-      {squad.kpis_enabled && (
+      {squad.kpis_enabled && kpisOn && (
         <div className="card">
           <h2>{t("squad.kpis")}</h2>
           {squad.kpis.length === 0 && <div className="small muted">{t("squad.no_kpi")}</div>}
@@ -267,6 +280,7 @@ export default function SquadDetailPage() {
       )}
 
       {/* Revue de progression */}
+      {reviewOn && (
       <div className="card">
         <h2>{t("progress.title")}</h2>
         <div className="small muted" style={{ marginBottom: 12 }}>{t("progress.hint")}</div>
@@ -281,6 +295,7 @@ export default function SquadDetailPage() {
           </>
         )}
       </div>
+      )}
 
       {/* Équipe / organigramme de la squad */}
       <div className="card">

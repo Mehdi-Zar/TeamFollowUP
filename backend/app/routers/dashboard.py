@@ -4,12 +4,13 @@ from sqlalchemy.orm import Session
 
 from .. import status as st
 from ..database import get_db
-from ..deps import get_current_user, get_threshold, visible_tribe_id
+from ..deps import get_current_user, get_threshold, require_module, visible_tribe_id
 from ..models import Squad, User
 from ..schemas import DashboardOut, DashboardSummary
 from ..serializers import squad_card
 
-router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
+router = APIRouter(prefix="/api/dashboard", tags=["dashboard"],
+                   dependencies=[Depends(require_module("dashboard"))])
 
 
 @router.get("", response_model=DashboardOut)

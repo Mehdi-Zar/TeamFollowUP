@@ -3,14 +3,16 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..deps import get_current_user
+from ..deps import get_current_user, require_module
 from ..models import Notification, User
 from ..schemas import NotificationsResponse, PreferencesOut, PreferencesUpdate
 
 router = APIRouter(prefix="/api", tags=["notifications"])
 
+_inapp = Depends(require_module("notifications", "inapp"))
 
-@router.get("/notifications", response_model=NotificationsResponse)
+
+@router.get("/notifications", response_model=NotificationsResponse, dependencies=[_inapp])
 def list_notifications(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     items = db.scalars(
         select(Notification).where(Notification.user_id == user.id)
@@ -20,14 +22,14 @@ def list_notifications(db: Session = Depends(get_db), user: User = Depends(get_c
     return NotificationsResponse(unread_count=unread, items=list(items))
 
 
-@router.post("/notifications/read-all")
+@router.post("/notifications/read-all", dependencies=[_inapp])
 def mark_all_read(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     db.execute(update(Notification).where(Notification.user_id == user.id, Notification.is_read.is_(False)).values(is_read=True))
     db.commit()
     return {"ok": True}
 
 
-@router.post("/notifications/{notif_id}/read")
+@router.post("/notifications/{notif_id}/read", dependencies=[_inapp])
 def mark_read(notif_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     n = db.get(Notification, notif_id)
     if n is None or n.user_id != user.id:

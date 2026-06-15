@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import or_
 
 from ..database import get_db
-from ..deps import get_current_user, record_audit, require_writer, visible_tribe_id
+from ..deps import get_current_user, record_audit, require_module, require_writer, visible_tribe_id
 from ..generalconfig import get_general
 from ..models import FeedPost, FeedReaction, FeedReply, Squad, User
 from ..notify import notify_new_post, notify_reply
@@ -21,7 +21,8 @@ from ..schemas import (
     ReactionIn,
 )
 
-router = APIRouter(prefix="/api/feed", tags=["feed"])
+router = APIRouter(prefix="/api/feed", tags=["feed"],
+                   dependencies=[Depends(require_module("feed"))])
 
 ADMIN_TRIBE = ("admin", "tribe_leader")
 
@@ -115,7 +116,8 @@ def delete_post(post_id: int, db: Session = Depends(get_db), user: User = Depend
     db.commit()
 
 
-@router.put("/{post_id}/pin", response_model=FeedPostOut)
+@router.put("/{post_id}/pin", response_model=FeedPostOut,
+            dependencies=[Depends(require_module("feed", "pin"))])
 def pin_post(post_id: int, payload: PinIn, db: Session = Depends(get_db), user: User = Depends(require_writer)):
     post = db.get(FeedPost, post_id)
     if post is None:
@@ -128,7 +130,8 @@ def pin_post(post_id: int, payload: PinIn, db: Session = Depends(get_db), user: 
     return _serialize(post, user, squad_names)
 
 
-@router.post("/{post_id}/replies", response_model=FeedPostOut, status_code=201)
+@router.post("/{post_id}/replies", response_model=FeedPostOut, status_code=201,
+             dependencies=[Depends(require_module("feed", "replies"))])
 def add_reply(post_id: int, payload: FeedReplyCreate, db: Session = Depends(get_db),
               user: User = Depends(get_current_user)):
     post = db.get(FeedPost, post_id)
@@ -156,7 +159,8 @@ def delete_reply(reply_id: int, db: Session = Depends(get_db), user: User = Depe
     db.commit()
 
 
-@router.post("/{post_id}/reactions", response_model=FeedPostOut)
+@router.post("/{post_id}/reactions", response_model=FeedPostOut,
+             dependencies=[Depends(require_module("feed", "reactions"))])
 def toggle_reaction(post_id: int, payload: ReactionIn, db: Session = Depends(get_db),
                     user: User = Depends(get_current_user)):
     post = db.get(FeedPost, post_id)

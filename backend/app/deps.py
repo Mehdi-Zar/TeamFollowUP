@@ -109,3 +109,18 @@ def require_org_editor(user: User = Depends(get_current_user)) -> User:
     if user.role not in (ADMIN, TRIBE):
         raise HTTPException(status_code=403, detail="L'organigramme est géré par le tribe leader")
     return user
+
+
+def require_module(module: str, feature: str | None = None):
+    """Dependency that 404s when a module/feature is disabled in the admin.
+
+    Used as a route or router dependency to enforce the on/off switches
+    server-side (the SPA also hides the corresponding UI). 404 keeps a disabled
+    service indistinguishable from a non-existent one.
+    """
+    def _dep(db: Session = Depends(get_db)) -> None:
+        from .modulesconfig import get_modules, is_active
+        if not is_active(get_modules(db), module, feature):
+            raise HTTPException(status_code=404, detail="Service désactivé")
+
+    return _dep

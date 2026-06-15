@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { useI18n } from "../i18n";
+import { useModule } from "../config";
 import { Notif, NotificationsResponse } from "../types";
 
 function BellIcon() {
@@ -16,18 +17,21 @@ function BellIcon() {
 export default function NotificationBell() {
   const { t, formatDateTime } = useI18n();
   const navigate = useNavigate();
+  const moduleOn = useModule();
+  const inappOn = moduleOn("notifications", "inapp");
   const [data, setData] = useState<NotificationsResponse>({ unread_count: 0, items: [] });
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   function load() {
+    if (!inappOn) return;
     api.get<NotificationsResponse>("/api/notifications").then(setData).catch(() => {});
   }
   useEffect(() => {
     load();
     const id = setInterval(load, 15000);
     return () => clearInterval(id);
-  }, []);
+  }, [inappOn]);
   useEffect(() => {
     function onDoc(e: MouseEvent) {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
@@ -48,6 +52,8 @@ export default function NotificationBell() {
   }
   const label = (n: Notif) =>
     n.kind === "reply" ? t("notif.reply", { actor: n.actor_name || "?" }) : t("notif.tweet", { actor: n.actor_name || "?" });
+
+  if (!inappOn) return null;
 
   return (
     <div ref={ref} style={{ position: "relative" }}>

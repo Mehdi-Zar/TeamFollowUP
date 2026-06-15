@@ -3,12 +3,13 @@ from sqlalchemy.orm import Session
 
 from .. import status as st
 from ..database import get_db
-from ..deps import assert_can_edit_squad, record_audit, require_writer
+from ..deps import assert_can_edit_squad, record_audit, require_module, require_writer
 from ..models import Kpi, Squad, User
 from ..progress import capture_progress
 from ..schemas import KpiCreate, KpiOut, KpiUpdate
 
-router = APIRouter(prefix="/api/kpis", tags=["kpis"])
+router = APIRouter(prefix="/api/kpis", tags=["kpis"],
+                   dependencies=[Depends(require_module("squad_content", "kpis"))])
 
 
 @router.post("", response_model=KpiOut, status_code=201)

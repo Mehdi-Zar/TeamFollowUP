@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { api, ApiError } from "../api";
 import { useI18n } from "../i18n";
-import { useConfig } from "../config";
+import { useConfig, useModule } from "../config";
 import { useAuth } from "../auth";
 
 /** Export of the weekly report (combined dashboard + review) as HTML / PPTX,
@@ -9,6 +9,7 @@ import { useAuth } from "../auth";
 export default function ReportExport({ sinceDays = 7 }: { sinceDays?: number }) {
   const { t } = useI18n();
   const { smtp_enabled } = useConfig();
+  const weeklyReportOn = useModule()("review", "weekly_report");
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
   const [to, setTo] = useState(user?.email || "");
@@ -31,6 +32,8 @@ export default function ReportExport({ sinceDays = 7 }: { sinceDays?: number }) 
       setSending(false);
     }
   }
+
+  if (!weeklyReportOn) return null;
 
   return (
     <div className="inline" style={{ gap: 8 }}>
