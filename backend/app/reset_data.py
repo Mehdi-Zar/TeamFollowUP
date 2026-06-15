@@ -22,7 +22,7 @@ SQUADS = [
     "Azure",
     "GCP / S3NS",
     "AWS",
-    "VMWare",
+    "VMware",
     "Edge Computing",
     "Run & Operation",
     "Customer Success",
