@@ -17,11 +17,15 @@ import PrintSquadPage from "./pages/PrintSquadPage";
 import PrintDashboardPage from "./pages/PrintDashboardPage";
 import { PageChromeProvider } from "./components/pageChrome";
 
-function Protected({ children, adminOnly }: { children: JSX.Element; adminOnly?: boolean }) {
+function Protected({ children, adminOnly, adminPage }: { children: JSX.Element; adminOnly?: boolean; adminPage?: boolean }) {
   const { user, loading, effectiveRole } = useAuth();
   if (loading) return <div className="spinner">Chargement…</div>;
   if (!user) return <Navigate to="/login" replace />;
   if (adminOnly && effectiveRole !== "admin") return <Navigate to="/" replace />;
+  // Admin page is role-scoped: admins, tribe leaders and squad leaders may open it.
+  if (adminPage && !["admin", "tribe_leader", "squad_leader"].includes(effectiveRole ?? "")) {
+    return <Navigate to="/" replace />;
+  }
   return children;
 }
 
@@ -58,7 +62,7 @@ export default function App() {
         <Route path="/saisie" element={<ModuleGuard module="reporting"><EntryPage /></ModuleGuard>} />
         <Route path="/organigramme" element={<ModuleGuard module="org"><OrgPage /></ModuleGuard>} />
         <Route path="/tribus" element={<Protected adminOnly><TribesPage /></Protected>} />
-        <Route path="/admin" element={<Protected adminOnly><AdminPage /></Protected>} />
+        <Route path="/admin" element={<Protected adminPage><AdminPage /></Protected>} />
       </Route>
 
       <Route path="*" element={<Navigate to="/" replace />} />

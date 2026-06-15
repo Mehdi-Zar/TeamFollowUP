@@ -42,10 +42,13 @@ def test_tribe_leader_manages_objectives_and_squads(client, seeded):
     assert n.status_code == 201
 
 
-def test_tribe_leader_cannot_access_admin(client, seeded):
+def test_tribe_leader_manages_users_but_not_global_config(client, seeded):
     login(client, seeded["tribe"])
-    assert client.get("/api/admin/users").status_code == 403
+    # Tribe leaders now manage users (scoped to their tribe)...
+    assert client.get("/api/admin/users").status_code == 200
+    # ...but global configuration stays admin-only.
     assert client.get("/api/admin/settings").status_code == 403
+    assert client.get("/api/admin/modules-config").status_code == 403
 
 
 def test_squad_leader_manages_own_members(client, seeded):

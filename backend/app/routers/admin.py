@@ -4,9 +4,16 @@ from sqlalchemy.orm import Session
 
 from ..authconfig import get_auth_config, set_auth_config
 from ..database import get_db
-from ..deps import record_audit, require_admin
+from ..deps import get_current_user, record_audit, require_admin
 from ..generalconfig import get_general, set_general
 from ..models import User
+from ..rbac import (
+    assignable_roles,
+    can_assign_role,
+    can_manage_user,
+    can_manage_users,
+    users_scope_tribe,
+)
 from ..schemas import (
     UserCreate,
     UserOut,
@@ -17,13 +24,30 @@ from ..security import hash_password
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 
+def _require_user_manager(actor: User) -> None:
+    if not can_manage_users(actor):
+        raise HTTPException(status_code=403, detail="Gestion des utilisateurs réservée aux administrateurs et tribe leaders")
+
+
 @router.get("/users", response_model=list[UserOut])
-def list_users(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
-    return list(db.scalars(select(User).order_by(User.id)).all())
+def list_users(db: Session = Depends(get_db), actor: User = Depends(get_current_user)):
+    _require_user_manager(actor)
+    q = select(User).order_by(User.id)
+    scope = users_scope_tribe(actor)  # None for admin, own tribe for tribe leader
+    if scope is not None:
+        q = q.where(User.tribe_id == scope)
+    return list(db.scalars(q).all())
 
 
 @router.post("/users", response_model=UserOut, status_code=201)
-def create_user(payload: UserCreate, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+def create_user(payload: UserCreate, db: Session = Depends(get_db), actor: User = Depends(get_current_user)):
+    _require_user_manager(actor)
+    if not can_assign_role(actor, payload.role):
+        raise HTTPException(status_code=403, detail=f"Rôle non autorisé (autorisés : {', '.join(assignable_roles(actor))})")
+    # Tribe leaders can only create users inside their own tribe.
+    tribe_id = payload.tribe_id if actor.role == "admin" else actor.tribe_id
+    if actor.role != "admin" and payload.tribe_id not in (None, actor.tribe_id):
+        raise HTTPException(status_code=403, detail="Vous ne pouvez créer des utilisateurs que dans votre tribu")
     email = payload.email.lower().strip()
     if db.scalar(select(User).where(User.email == email)):
         raise HTTPException(status_code=409, detail="Email déjà utilisé")
@@ -31,12 +55,12 @@ def create_user(payload: UserCreate, db: Session = Depends(get_db), admin: User 
         email=email,
         display_name=payload.display_name,
         role=payload.role,
-        tribe_id=payload.tribe_id,
+        tribe_id=tribe_id,
         password_hash=hash_password(payload.password) if payload.password else None,
     )
     db.add(user)
     db.flush()
-    record_audit(db, admin.id, "user.create", entity="user", entity_id=user.id,
+    record_audit(db, actor.id, "user.create", entity="user", entity_id=user.id,
                  detail={"email": email, "role": user.role})
     db.commit()
     db.refresh(user)
@@ -45,35 +69,48 @@ def create_user(payload: UserCreate, db: Session = Depends(get_db), admin: User 
 
 @router.put("/users/{user_id}", response_model=UserOut)
 def update_user(user_id: int, payload: UserUpdate, db: Session = Depends(get_db),
-                admin: User = Depends(require_admin)):
+                actor: User = Depends(get_current_user)):
+    _require_user_manager(actor)
     user = db.get(User, user_id)
     if user is None:
         raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+    if not can_manage_user(actor, user):
+        raise HTTPException(status_code=403, detail="Cet utilisateur n'est pas dans votre périmètre")
     data = payload.model_dump(exclude_unset=True)
     if "password" in data:
         pw = data.pop("password")
         if pw:
             user.password_hash = hash_password(pw)
-    if data.get("role") and user.is_break_glass and data["role"] != "admin":
-        raise HTTPException(status_code=400, detail="Le compte de secours doit rester administrateur")
+    # Role changes must stay within what the actor may assign.
+    if "role" in data and data["role"] is not None:
+        if user.is_break_glass and data["role"] != "admin":
+            raise HTTPException(status_code=400, detail="Le compte de secours doit rester administrateur")
+        if not can_assign_role(actor, data["role"]):
+            raise HTTPException(status_code=403, detail="Rôle non autorisé")
+    # Only an admin may move a user to another tribe.
+    if "tribe_id" in data and actor.role != "admin" and data["tribe_id"] != actor.tribe_id:
+        raise HTTPException(status_code=403, detail="Vous ne pouvez pas déplacer un utilisateur hors de votre tribu")
     for k, v in data.items():
         setattr(user, k, v)
-    record_audit(db, admin.id, "user.update", entity="user", entity_id=user.id, detail=data)
+    record_audit(db, actor.id, "user.update", entity="user", entity_id=user.id, detail=data)
     db.commit()
     db.refresh(user)
     return user
 
 
 @router.delete("/users/{user_id}", status_code=204)
-def delete_user(user_id: int, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+def delete_user(user_id: int, db: Session = Depends(get_db), actor: User = Depends(get_current_user)):
+    _require_user_manager(actor)
     user = db.get(User, user_id)
     if user is None:
         raise HTTPException(status_code=404, detail="Utilisateur introuvable")
     if user.is_break_glass:
         raise HTTPException(status_code=400, detail="Le compte de secours ne peut pas être supprimé")
-    if user.id == admin.id:
+    if user.id == actor.id:
         raise HTTPException(status_code=400, detail="Vous ne pouvez pas supprimer votre propre compte")
-    record_audit(db, admin.id, "user.delete", entity="user", entity_id=user.id, detail={"email": user.email})
+    if not can_manage_user(actor, user):
+        raise HTTPException(status_code=403, detail="Cet utilisateur n'est pas dans votre périmètre")
+    record_audit(db, actor.id, "user.delete", entity="user", entity_id=user.id, detail={"email": user.email})
     db.delete(user)
     db.commit()
 

@@ -2,45 +2,61 @@ import { useEffect, useState } from "react";
 import { api, ApiError } from "../api";
 import { useI18n } from "../i18n";
 import { useReloadConfig } from "../config";
-import { AuditEntry, ModuleKey, Role, Squad, Tribe, User } from "../types";
-import { ErrorBanner } from "../components/ui";
+import { useAuth } from "../auth";
+import { AuditEntry, ModuleKey, Permissions, Role, Squad, SquadDetail, Tribe, User } from "../types";
+import { ErrorBanner, Spinner } from "../components/ui";
 import { ALL_ROLES } from "../perms";
 import { useSetPageChrome } from "../components/pageChrome";
 
-type Tab = "tribes" | "squads" | "users" | "modules" | "moderation" | "auth" | "smtp" | "report" | "logs" | "settings" | "audit";
+// Label key for each admin tab (server decides which a role may open).
+const TAB_LABEL: Record<string, string> = {
+  tribes: "admin.tab.tribes",
+  tribe: "admin.tab.my_tribe",
+  squads: "admin.tab.squads",
+  users: "admin.tab.users",
+  my_squads: "admin.tab.my_squads",
+  modules: "admin.tab.modules",
+  moderation: "admin.tab.moderation",
+  auth: "admin.tab.auth",
+  smtp: "admin.tab.smtp",
+  report: "admin.tab.report",
+  logs: "admin.tab.logs",
+  settings: "admin.tab.settings",
+  audit: "admin.tab.audit",
+};
 
 export default function AdminPage() {
   const { t } = useI18n();
-  const [tab, setTab] = useState<Tab>("tribes");
-  const tabs: Array<[Tab, string]> = [
-    ["tribes", t("admin.tab.tribes")],
-    ["squads", t("admin.tab.squads")],
-    ["users", t("admin.tab.users")],
-    ["modules", t("admin.tab.modules")],
-    ["moderation", t("admin.tab.moderation")],
-    ["auth", t("admin.tab.auth")],
-    ["smtp", t("admin.tab.smtp")],
-    ["report", t("admin.tab.report")],
-    ["logs", t("admin.tab.logs")],
-    ["settings", t("admin.tab.settings")],
-    ["audit", t("admin.tab.audit")],
-  ];
+  const [perms, setPerms] = useState<Permissions | null>(null);
+  const [tab, setTab] = useState<string>("");
 
+  useEffect(() => {
+    api.get<Permissions>("/api/me/permissions").then((p) => {
+      setPerms(p);
+      setTab((cur) => (cur && p.admin_tabs.includes(cur) ? cur : p.admin_tabs[0] ?? ""));
+    });
+  }, []);
+
+  const tabKeys = perms?.admin_tabs ?? [];
   useSetPageChrome(
     {
       title: t("admin.title"),
-      tabs: tabs.map(([key, label]) => ({ key, label })),
+      tabs: tabKeys.map((k) => ({ key: k, label: t(TAB_LABEL[k] ?? k) })),
       activeTab: tab,
-      onTab: (k) => setTab(k as Tab),
+      onTab: setTab,
     },
-    [tab, t]
+    [tab, perms, t]
   );
+
+  if (!perms) return <Spinner />;
 
   return (
     <div className="stack" style={{ gap: 16 }}>
       {tab === "tribes" && <TribesAdmin />}
-      {tab === "squads" && <SquadsAdmin />}
-      {tab === "users" && <UsersAdmin />}
+      {tab === "tribe" && <TribeSelfAdmin perms={perms} />}
+      {tab === "squads" && <SquadsAdmin perms={perms} />}
+      {tab === "users" && <UsersAdmin perms={perms} />}
+      {tab === "my_squads" && <MySquadsAdmin />}
       {tab === "modules" && <ModulesAdmin />}
       {tab === "moderation" && <ModerationAdmin />}
       {tab === "auth" && <AuthAdmin />}
@@ -418,6 +434,125 @@ function LogExportAdmin() {
   );
 }
 
+// Tribe leader: edit their own tribe (name / description). No create/delete.
+function TribeSelfAdmin({ perms }: { perms: Permissions }) {
+  const { t } = useI18n();
+  const [tribe, setTribe] = useState<Tribe | null>(null);
+  const [saved, setSaved] = useState(false);
+  const { error, wrap } = useErr();
+
+  useEffect(() => {
+    api.get<Tribe[]>("/api/tribes").then((list) => setTribe(list.find((tr) => tr.id === perms.tribe_id) ?? null));
+  }, []);
+
+  if (!perms.tribe_id) return <div className="banner">{t("admin.no_tribe_assigned")}</div>;
+  if (!tribe) return <div className="spinner">{t("common.loading")}</div>;
+
+  async function save(patch: Partial<Tribe>) {
+    await wrap(async () => {
+      const out = await api.put<Tribe>(`/api/tribes/${tribe!.id}`, patch);
+      setTribe(out);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 1500);
+    });
+  }
+
+  return (
+    <div className="stack" style={{ maxWidth: 560 }}>
+      {error && <ErrorBanner message={error} />}
+      <div className="banner">{t("admin.my_tribe_intro")}</div>
+      <div className="card stack" style={{ gap: 12 }}>
+        <div><label>{t("admin.name")}</label>
+          <input defaultValue={tribe.name} onBlur={(e) => e.target.value !== tribe.name && save({ name: e.target.value })} /></div>
+        <div><label>{t("admin.tribe_desc")}</label>
+          <input defaultValue={tribe.description ?? ""} onBlur={(e) => e.target.value !== (tribe.description ?? "") && save({ description: e.target.value })} /></div>
+      </div>
+      {saved && <div className="small" style={{ color: "var(--green)" }}>{t("admin.saved")}</div>}
+    </div>
+  );
+}
+
+// Squad leader: manage the squads they lead (name, KPIs on/off, members).
+function MySquadsAdmin() {
+  const { t } = useI18n();
+  const { user } = useAuth();
+  const [squads, setSquads] = useState<Squad[]>([]);
+  const { error, wrap } = useErr();
+
+  async function load() {
+    const all = await wrap(() => api.get<Squad[]>("/api/squads"));
+    if (all) setSquads(all.filter((s) => s.leader_user_id === user?.id));
+  }
+  useEffect(() => { load(); }, []);
+
+  return (
+    <div className="stack">
+      {error && <ErrorBanner message={error} />}
+      <div className="banner">{t("admin.my_squads_intro")}</div>
+      {squads.length === 0 && <div className="card muted">{t("admin.no_led_squad")}</div>}
+      {squads.map((s) => <SquadSelfCard key={s.id} squadId={s.id} />)}
+    </div>
+  );
+}
+
+function SquadSelfCard({ squadId }: { squadId: number }) {
+  const { t } = useI18n();
+  const [squad, setSquad] = useState<SquadDetail | null>(null);
+  const [newMember, setNewMember] = useState({ full_name: "", role_title: "" });
+  const { error, wrap } = useErr();
+
+  async function load() {
+    const d = await wrap(() => api.get<SquadDetail>(`/api/squads/${squadId}`));
+    if (d) setSquad(d);
+  }
+  useEffect(() => { load(); }, [squadId]);
+  if (!squad) return <div className="card spinner">{t("common.loading")}</div>;
+
+  const patchSquad = (patch: any) => wrap(async () => { await api.put(`/api/squads/${squadId}`, patch); await load(); });
+  const addMember = () => wrap(async () => {
+    if (!newMember.full_name.trim()) return;
+    await api.post("/api/members", { squad_id: squadId, full_name: newMember.full_name.trim(), role_title: newMember.role_title.trim() || null });
+    setNewMember({ full_name: "", role_title: "" });
+    await load();
+  });
+  const delMember = (id: number) => wrap(async () => { await api.del(`/api/members/${id}`); await load(); });
+
+  return (
+    <div className="card stack" style={{ gap: 12 }}>
+      {error && <ErrorBanner message={error} />}
+      <div className="row" style={{ alignItems: "flex-end" }}>
+        <div style={{ flex: 1, minWidth: 200 }}>
+          <label>{t("admin.squad")}</label>
+          <input defaultValue={squad.name} onBlur={(e) => e.target.value !== squad.name && patchSquad({ name: e.target.value })} />
+        </div>
+        <label className="switch">
+          <input type="checkbox" checked={!!squad.kpis_enabled} onChange={(e) => patchSquad({ kpis_enabled: e.target.checked })} />
+          <span className="track"><span className="knob" /></span>
+          <span className="small">{t("squad.kpis")}</span>
+        </label>
+      </div>
+
+      <div>
+        <div className="small muted" style={{ marginBottom: 6 }}>{t("admin.members")}</div>
+        {squad.members.length === 0 && <div className="small muted">{t("squad.no_members")}</div>}
+        {squad.members.map((m) => (
+          <div key={m.id} className="item-row">
+            <span className="grow">{m.full_name}{m.role_title ? <span className="muted small"> · {m.role_title}</span> : null}</span>
+            <button className="btn-ghost btn-sm" onClick={() => delMember(m.id)}>✕</button>
+          </div>
+        ))}
+        <div className="row" style={{ alignItems: "flex-end", marginTop: 8 }}>
+          <div style={{ flex: 1, minWidth: 160 }}><label>{t("admin.member_name")}</label>
+            <input value={newMember.full_name} onChange={(e) => setNewMember({ ...newMember, full_name: e.target.value })} /></div>
+          <div style={{ flex: 1, minWidth: 140 }}><label>{t("admin.member_role")}</label>
+            <input value={newMember.role_title} onChange={(e) => setNewMember({ ...newMember, role_title: e.target.value })} /></div>
+          <button className="btn-sm" onClick={addMember} disabled={!newMember.full_name.trim()}>{t("admin.add")}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function TribesAdmin() {
   const { t } = useI18n();
   const [tribes, setTribes] = useState<Tribe[]>([]);
@@ -625,29 +760,32 @@ function AuthAdmin() {
 
 function useErr() {
   const [error, setError] = useState<string | null>(null);
-  const wrap = async (fn: () => Promise<void>) => {
+  const wrap = async <T,>(fn: () => Promise<T>): Promise<T | undefined> => {
     setError(null);
     try {
-      await fn();
+      return await fn();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Erreur");
+      return undefined;
     }
   };
   return { error, wrap };
 }
 
-function SquadsAdmin() {
+function SquadsAdmin({ perms }: { perms: Permissions }) {
   const { t } = useI18n();
+  const isAdmin = perms.role === "admin";
   const [squads, setSquads] = useState<Squad[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [tribes, setTribes] = useState<Tribe[]>([]);
   const { error, wrap } = useErr();
-  const [form, setForm] = useState({ name: "", leader_user_id: "", tribe_id: "" });
+  const [form, setForm] = useState({ name: "", leader_user_id: "", tribe_id: isAdmin ? "" : String(perms.tribe_id ?? "") });
 
   async function load() {
     setSquads(await api.get<Squad[]>("/api/squads"));
     setUsers(await api.get<User[]>("/api/admin/users"));
-    setTribes(await api.get<Tribe[]>("/api/tribes"));
+    const allTribes = await api.get<Tribe[]>("/api/tribes");
+    setTribes(isAdmin ? allTribes : allTribes.filter((tr) => tr.id === perms.tribe_id));
   }
   useEffect(() => {
     load();
@@ -697,11 +835,17 @@ function SquadsAdmin() {
           <tbody>
             {squads.map((s) => (
               <tr key={s.id}>
-                <td className="strong">{s.name}</td>
+                <td className="strong">
+                  <input defaultValue={s.name} onBlur={(e) => e.target.value !== s.name && update(s, { name: e.target.value })} />
+                </td>
                 <td>
-                  <select className="w-auto" value={s.tribe_id} onChange={(e) => update(s, { tribe_id: Number(e.target.value) } as any)}>
-                    {tribes.map((tr) => (<option key={tr.id} value={tr.id}>{tr.name}</option>))}
-                  </select>
+                  {isAdmin ? (
+                    <select className="w-auto" value={s.tribe_id} onChange={(e) => update(s, { tribe_id: Number(e.target.value) } as any)}>
+                      {tribes.map((tr) => (<option key={tr.id} value={tr.id}>{tr.name}</option>))}
+                    </select>
+                  ) : (
+                    <span className="muted">{tribeName(s.tribe_id)}</span>
+                  )}
                 </td>
                 <td>
                   <select className="w-auto" value={s.leader_user_id ?? ""} onChange={(e) => update(s, { leader_user_id: e.target.value ? Number(e.target.value) : null })}>
@@ -734,13 +878,15 @@ function SquadsAdmin() {
             <label>{t("admin.name")}</label>
             <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
           </div>
-          <div style={{ width: 200 }}>
-            <label>{t("admin.tribe")}</label>
-            <select value={form.tribe_id} onChange={(e) => setForm({ ...form, tribe_id: e.target.value })}>
-              <option value="">—</option>
-              {tribes.map((tr) => (<option key={tr.id} value={tr.id}>{tr.name}</option>))}
-            </select>
-          </div>
+          {isAdmin && (
+            <div style={{ width: 200 }}>
+              <label>{t("admin.tribe")}</label>
+              <select value={form.tribe_id} onChange={(e) => setForm({ ...form, tribe_id: e.target.value })}>
+                <option value="">—</option>
+                {tribes.map((tr) => (<option key={tr.id} value={tr.id}>{tr.name}</option>))}
+              </select>
+            </div>
+          )}
           <div style={{ width: 200 }}>
             <label>{t("admin.responsible")}</label>
             <select value={form.leader_user_id} onChange={(e) => setForm({ ...form, leader_user_id: e.target.value })}>
@@ -761,28 +907,38 @@ function SquadsAdmin() {
   );
 }
 
-function UsersAdmin() {
+function UsersAdmin({ perms }: { perms: Permissions }) {
   const { t, role: roleLabel, formatDateTime } = useI18n();
+  const isAdmin = perms.role === "admin";
+  const roleOptions = perms.assignable_roles.length ? perms.assignable_roles : ALL_ROLES;
   const [users, setUsers] = useState<User[]>([]);
   const [tribes, setTribes] = useState<Tribe[]>([]);
   const { error, wrap } = useErr();
-  const [form, setForm] = useState({ email: "", display_name: "", role: "member" as Role, password: "", tribe_id: "" });
+  const [form, setForm] = useState({
+    email: "", display_name: "", role: roleOptions[roleOptions.length - 1] as Role,
+    password: "", tribe_id: isAdmin ? "" : String(perms.tribe_id ?? ""),
+  });
 
   async function load() {
     setUsers(await api.get<User[]>("/api/admin/users"));
-    setTribes(await api.get<Tribe[]>("/api/tribes"));
+    const allTribes = await api.get<Tribe[]>("/api/tribes");
+    setTribes(isAdmin ? allTribes : allTribes.filter((tr) => tr.id === perms.tribe_id));
   }
   useEffect(() => {
     load();
   }, []);
 
+  // A non-admin manager may only act on users whose role is within their grant.
+  const canManage = (u: User) => !u.is_break_glass && (isAdmin || roleOptions.includes(u.role));
+
   async function create() {
     await wrap(async () => {
       await api.post("/api/admin/users", {
         email: form.email, display_name: form.display_name, role: form.role,
-        tribe_id: form.tribe_id ? Number(form.tribe_id) : null, password: form.password || null,
+        tribe_id: form.tribe_id ? Number(form.tribe_id) : (isAdmin ? null : perms.tribe_id),
+        password: form.password || null,
       });
-      setForm({ email: "", display_name: "", role: "member", password: "", tribe_id: "" });
+      setForm({ email: "", display_name: "", role: roleOptions[roleOptions.length - 1] as Role, password: "", tribe_id: isAdmin ? "" : String(perms.tribe_id ?? "") });
       await load();
     });
   }
@@ -827,8 +983,8 @@ function UsersAdmin() {
                 </td>
                 <td>{u.email}</td>
                 <td>
-                  <select className="w-auto" value={u.role} disabled={u.is_break_glass} onChange={(e) => update(u, { role: e.target.value as Role })}>
-                    {ALL_ROLES.map((r) => (
+                  <select className="w-auto" value={u.role} disabled={!canManage(u)} onChange={(e) => update(u, { role: e.target.value as Role })}>
+                    {(isAdmin ? ALL_ROLES : Array.from(new Set([u.role, ...roleOptions]))).map((r) => (
                       <option key={r} value={r}>
                         {roleLabel(r)}
                       </option>
@@ -836,17 +992,23 @@ function UsersAdmin() {
                   </select>
                 </td>
                 <td>
-                  <select className="w-auto" value={u.tribe_id ?? ""} onChange={(e) => update(u, { tribe_id: e.target.value ? Number(e.target.value) : null })}>
-                    <option value="">{t("admin.no_tribe")}</option>
-                    {tribes.map((tr) => (<option key={tr.id} value={tr.id}>{tr.name}</option>))}
-                  </select>
+                  {isAdmin ? (
+                    <select className="w-auto" value={u.tribe_id ?? ""} onChange={(e) => update(u, { tribe_id: e.target.value ? Number(e.target.value) : null })}>
+                      <option value="">{t("admin.no_tribe")}</option>
+                      {tribes.map((tr) => (<option key={tr.id} value={tr.id}>{tr.name}</option>))}
+                    </select>
+                  ) : (
+                    <span className="muted">{tribes.find((tr) => tr.id === u.tribe_id)?.name ?? "—"}</span>
+                  )}
                 </td>
                 <td className="muted">{formatDateTime(u.last_login_at)}</td>
                 <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                  <button className="btn-secondary btn-sm" onClick={() => resetPassword(u)} style={{ marginRight: 6 }}>
-                    {t("admin.password")}
-                  </button>
-                  {!u.is_break_glass && (
+                  {canManage(u) && (
+                    <button className="btn-secondary btn-sm" onClick={() => resetPassword(u)} style={{ marginRight: 6 }}>
+                      {t("admin.password")}
+                    </button>
+                  )}
+                  {canManage(u) && (
                     <button className="btn-danger btn-sm" onClick={() => remove(u)}>
                       {t("action.delete")}
                     </button>
@@ -872,20 +1034,22 @@ function UsersAdmin() {
           <div style={{ width: 150 }}>
             <label>{t("admin.role")}</label>
             <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as Role })}>
-              {ALL_ROLES.map((r) => (
+              {roleOptions.map((r) => (
                 <option key={r} value={r}>
                   {roleLabel(r)}
                 </option>
               ))}
             </select>
           </div>
-          <div style={{ width: 160 }}>
-            <label>{t("admin.tribe")}</label>
-            <select value={form.tribe_id} onChange={(e) => setForm({ ...form, tribe_id: e.target.value })}>
-              <option value="">{t("admin.no_tribe")}</option>
-              {tribes.map((tr) => (<option key={tr.id} value={tr.id}>{tr.name}</option>))}
-            </select>
-          </div>
+          {isAdmin && (
+            <div style={{ width: 160 }}>
+              <label>{t("admin.tribe")}</label>
+              <select value={form.tribe_id} onChange={(e) => setForm({ ...form, tribe_id: e.target.value })}>
+                <option value="">{t("admin.no_tribe")}</option>
+                {tribes.map((tr) => (<option key={tr.id} value={tr.id}>{tr.name}</option>))}
+              </select>
+            </div>
+          )}
           <div style={{ width: 150 }}>
             <label>{t("admin.password_local")}</label>
             <input value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />

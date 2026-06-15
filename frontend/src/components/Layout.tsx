@@ -4,7 +4,7 @@ import { useAuth } from "../auth";
 import { useI18n } from "../i18n";
 import { useConfig, moduleOn } from "../config";
 import { ModuleKey, Role } from "../types";
-import { ALL_ROLES, canSeeAdmin, canSeeSaisie } from "../perms";
+import { ALL_ROLES, canSeeAdmin, canSeeSaisie, isGlobalAdmin } from "../perms";
 import NotificationBell from "./NotificationBell";
 import { usePageChrome } from "./pageChrome";
 import {
@@ -33,7 +33,7 @@ type NavItem = {
 const NAV: NavItem[] = [
   { to: "/", end: true, labelKey: "nav.dashboard", titleKey: "nav.dashboard", Icon: IconDashboard, visible: () => true, module: "dashboard" },
   { to: "/organigramme", labelKey: "nav.org", titleKey: "nav.org", Icon: IconOrg, visible: () => true, module: "org" },
-  { to: "/tribus", labelKey: "nav.tribes", titleKey: "nav.tribes", Icon: IconTribes, visible: canSeeAdmin },
+  { to: "/tribus", labelKey: "nav.tribes", titleKey: "nav.tribes", Icon: IconTribes, visible: isGlobalAdmin },
   { to: "/saisie", labelKey: "nav.entry", titleKey: "nav.entry", Icon: IconEntry, visible: canSeeSaisie, module: "reporting" },
   { to: "/fil", labelKey: "nav.feed", titleKey: "nav.feed", Icon: IconFeed, visible: () => true, module: "feed" },
   { to: "/revue", labelKey: "nav.review", titleKey: "review.title", Icon: IconReview, visible: (r) => r === "admin" || r === "tribe_leader", module: "review" },

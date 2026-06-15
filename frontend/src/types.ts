@@ -1,4 +1,14 @@
 export type Role = "admin" | "tribe_leader" | "squad_leader" | "member";
+
+export interface Permissions {
+  role: Role;
+  tribe_id: number | null;
+  can_access_admin: boolean;
+  admin_tabs: string[];
+  assignable_roles: Role[];
+  can_create_tribe: boolean;
+  can_manage_users: boolean;
+}
 export type Rag = "green" | "amber" | "red";
 export type RoadmapStatus = "on_track" | "at_risk" | "blocked" | "done";
 export type QuarterHealth = "on_track" | "at_risk" | "blocked";
