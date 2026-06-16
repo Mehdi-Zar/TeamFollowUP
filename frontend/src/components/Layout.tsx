@@ -7,6 +7,7 @@ import { useConfig, moduleOn } from "../config";
 import { ModuleKey, Role } from "../types";
 import { canSeeAdmin, canSeeSaisie, isGlobalAdmin } from "../perms";
 import NotificationBell from "./NotificationBell";
+import { Modal } from "./ui";
 import { usePageChrome } from "./pageChrome";
 import {
   IconAdmin,
@@ -15,6 +16,7 @@ import {
   IconEntry,
   IconExpand,
   IconFeed,
+  IconHelp,
   IconOrg,
   IconReview,
   IconTribes,
@@ -32,6 +34,7 @@ type NavItem = {
 };
 
 const NAV: NavItem[] = [
+  { to: "/prise-en-main", labelKey: "nav.gettingstarted", titleKey: "gs.title", Icon: IconHelp, visible: () => true },
   { to: "/", end: true, labelKey: "nav.dashboard", titleKey: "nav.dashboard", Icon: IconDashboard, visible: () => true, module: "dashboard" },
   { to: "/organigramme", labelKey: "nav.org", titleKey: "nav.org", Icon: IconOrg, visible: () => true, module: "org" },
   { to: "/tribus", labelKey: "nav.tribes", titleKey: "nav.tribes", Icon: IconTribes, visible: isGlobalAdmin },
@@ -61,6 +64,16 @@ export default function Layout() {
   useEffect(() => {
     if (canImpersonate) api.get<any[]>("/api/admin/users").then(setPeople).catch(() => {});
   }, [canImpersonate]);
+
+  // First-login welcome → invites the user to the getting-started guide.
+  const [welcome, setWelcome] = useState(false);
+  useEffect(() => {
+    if (user && !isPreview && !localStorage.getItem(`gs_welcomed_${user.id}`)) setWelcome(true);
+  }, [user?.id, isPreview]);
+  function dismissWelcome() {
+    if (user) localStorage.setItem(`gs_welcomed_${user.id}`, "1");
+    setWelcome(false);
+  }
   const navVisible = (n: NavItem) => n.visible(role) && (!n.module || moduleOn(modules, n.module));
   const navigate = useNavigate();
   const location = useLocation();
@@ -200,6 +213,22 @@ export default function Layout() {
         <main className="app-content">
           <Outlet />
         </main>
+
+        {welcome && (
+          <Modal
+            title={t("gs.welcome_title")}
+            onClose={dismissWelcome}
+            width={460}
+            footer={
+              <>
+                <button className="btn-secondary btn-sm" onClick={dismissWelcome}>{t("gs.later")}</button>
+                <button className="btn-sm" onClick={() => { dismissWelcome(); navigate("/prise-en-main"); }}>{t("gs.discover")}</button>
+              </>
+            }
+          >
+            <div className="small">{t("gs.welcome_body")}</div>
+          </Modal>
+        )}
       </div>
     </div>
   );
