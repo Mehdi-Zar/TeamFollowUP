@@ -7,9 +7,7 @@ import { Member, ProgressPoint, RoadmapItem, SnapshotMeta, SquadDetail } from ".
 import { ProgressCurve, ProgressTimeline } from "../components/progress";
 import { Dot, FreshnessBadge, ProgressBar, Spinner, ErrorBanner, Collapsible } from "../components/ui";
 import { useAuth } from "../auth";
-import EmailExport from "../components/EmailExport";
-import ReportSubscribe from "../components/ReportSubscribe";
-import ReportExport from "../components/ReportExport";
+import ExportMenu from "../components/ExportMenu";
 import { useSetPageChrome } from "../components/pageChrome";
 import { roadmapRag, trendRag } from "../labels";
 
@@ -29,7 +27,6 @@ export default function SquadDetailPage() {
   const objectivesOn = moduleOn("squad_content", "objectives");
   const kpisOn = moduleOn("squad_content", "kpis");
   const reviewOn = moduleOn("review");
-  const csvOn = moduleOn("exports_csv");
   const { user, effectiveRole } = useAuth();
 
   useEffect(() => {
@@ -55,16 +52,18 @@ export default function SquadDetailPage() {
                   <button key={y} className={y === squad.year ? "active" : ""} onClick={() => setParams({ year: String(y) })}>{y}</button>
                 ))}
               </div>
-              {csvOn && <a className="btn btn-secondary btn-sm" href={`/api/exports/squad/${squadId}.csv?year=${squad.year}`}>{t("action.csv")}</a>}
-              <Link className="btn btn-secondary btn-sm" to={`/print/squad/${squadId}?year=${squad.year}`} target="_blank">{t("action.report")}</Link>
-              <ReportExport squadId={squadId} />
-              <ReportSubscribe squadId={squadId} />
-              {csvOn && <EmailExport endpoint={`/api/exports/squad/${squadId}/email`} year={squad.year} />}
+              <ExportMenu
+                year={squad.year}
+                squadId={squadId}
+                csvHref={`/api/exports/squad/${squadId}.csv?year=${squad.year}`}
+                csvEmailEndpoint={`/api/exports/squad/${squadId}/email`}
+                printHref={`/print/squad/${squadId}?year=${squad.year}`}
+              />
             </>
           ),
         }
       : {},
-    [squad?.name, squad?.year, squadId, csvOn]
+    [squad?.name, squad?.year, squadId]
   );
 
   if (error) return <ErrorBanner message={error} />;

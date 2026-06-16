@@ -6,7 +6,7 @@ import { ProgressReviewRow } from "../types";
 import { Dot, Spinner, ErrorBanner } from "../components/ui";
 import { useSetPageChrome } from "../components/pageChrome";
 import { ChangeList, ConfidenceBadge, DeltaBadge } from "../components/progress";
-import ReportExport from "../components/ReportExport";
+import ExportMenu from "../components/ExportMenu";
 
 const PERIODS = [7, 14, 30];
 
@@ -41,7 +41,7 @@ export default function ReviewPage() {
             />
             {t("review.days_unit")}
           </label>
-          <ReportExport sinceDays={days} />
+          <ExportMenu sinceDays={days} />
         </div>
       ),
     },

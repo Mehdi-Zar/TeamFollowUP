@@ -6,11 +6,14 @@ interface AuthState {
   user: User | null;
   loading: boolean;
   config: AuthConfig;
-  /** The role the UI renders for. Equals the real role unless an admin previews a persona. */
+  /** The role the UI renders for. With real impersonation this is just the
+   *  (impersonated) session user's role. */
   effectiveRole: Role | null;
-  previewRole: Role | null;
-  isPreview: boolean;
-  setPreviewRole: (r: Role | null) => void;
+  isPreview: boolean; // true while an admin views the app as another user
+  impersonating: boolean;
+  impersonatorName: string | null;
+  impersonate: (userId: number) => Promise<void>;
+  stopImpersonation: () => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
@@ -22,12 +25,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [config, setConfig] = useState<AuthConfig>({ oidc_enabled: false, saml_enabled: false });
-  const [previewRole, setPreviewRole] = useState<Role | null>(null);
+  const [impersonating, setImpersonating] = useState(false);
+  const [impersonatorName, setImpersonatorName] = useState<string | null>(null);
 
   async function refresh() {
     try {
       const me = await api.get<User>("/api/auth/me");
       setUser(me);
+      try {
+        const p = await api.get<any>("/api/auth/me/permissions");
+        setImpersonating(!!p.impersonating);
+        setImpersonatorName(p.impersonator_name ?? null);
+      } catch {
+        setImpersonating(false);
+        setImpersonatorName(null);
+      }
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) setUser(null);
     }
@@ -48,19 +60,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   async function login(email: string, password: string) {
     const u = await api.post<User>("/api/auth/login", { email, password });
     setUser(u);
-    setPreviewRole(null);
   }
 
   async function logout() {
     await api.post("/api/auth/logout");
     setUser(null);
-    setPreviewRole(null);
   }
 
-  // Only a real admin may preview another persona.
-  const canPreview = user?.role === "admin";
-  const effectivePreview = canPreview ? previewRole : null;
-  const effectiveRole: Role | null = user ? (effectivePreview ?? user.role) : null;
+  // Impersonation changes the backend session — a full reload re-initialises the
+  // whole app (config, permissions, data) as the new session user, so the
+  // simulation is faithful "all the way down".
+  async function impersonate(userId: number) {
+    await api.post("/api/auth/impersonate", { user_id: userId });
+    window.location.href = "/";
+  }
+  async function stopImpersonation() {
+    await api.post("/api/auth/stop-impersonation");
+    window.location.href = "/";
+  }
+
+  const effectiveRole: Role | null = user ? user.role : null;
 
   return (
     <AuthContext.Provider
@@ -69,9 +88,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         loading,
         config,
         effectiveRole,
-        previewRole: effectivePreview,
-        isPreview: effectivePreview !== null,
-        setPreviewRole: (r) => setPreviewRole(r),
+        isPreview: impersonating,
+        impersonating,
+        impersonatorName,
+        impersonate,
+        stopImpersonation,
         login,
         logout,
         refresh,
