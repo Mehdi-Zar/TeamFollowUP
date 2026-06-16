@@ -23,12 +23,12 @@ function Protected({ children, adminOnly, adminPage, manageSquads }: { children:
   if (loading) return <div className="spinner">Chargement…</div>;
   if (!user) return <Navigate to="/login" replace />;
   if (adminOnly && effectiveRole !== "admin") return <Navigate to="/" replace />;
-  // Admin page is role-scoped: admins, tribe leaders and squad leaders may open it.
-  if (adminPage && !["admin", "tribe_leader", "squad_leader"].includes(effectiveRole ?? "")) {
+  // Admin page is role-scoped: admins and tribe leaders may open it.
+  if (adminPage && !["admin", "tribe_leader"].includes(effectiveRole ?? "")) {
     return <Navigate to="/" replace />;
   }
-  // "Manage my squads" page: tribe leaders and admins.
-  if (manageSquads && !["admin", "tribe_leader"].includes(effectiveRole ?? "")) {
+  // "My squads" page: admins, tribe leaders and squad leaders.
+  if (manageSquads && !["admin", "tribe_leader", "squad_leader"].includes(effectiveRole ?? "")) {
     return <Navigate to="/" replace />;
   }
   return children;

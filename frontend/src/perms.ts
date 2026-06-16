@@ -7,15 +7,17 @@ export const ALL_ROLES: Role[] = ["admin", "tribe_leader", "squad_leader", "memb
 export const ADMIN_TABS_BY_ROLE: Record<Role, string[]> = {
   admin: ["tribes", "squads", "users", "modules", "moderation", "auth", "smtp", "report", "logs", "settings", "audit"],
   tribe_leader: ["tribe", "users"],
-  squad_leader: ["my_squads"],
+  squad_leader: [],
   member: [],
 };
-// Who gets the dedicated "Manage my squads" page (KPIs on/off + annual objectives).
-export const canManageMySquads = (r: Role) => r === "tribe_leader" || r === "admin";
+// Who gets the dedicated "my squads" page. Tribe leaders & admins manage KPIs /
+// objectives; squad leaders manage their squad's team (members).
+export const canManageMySquads = (r: Role) => r === "tribe_leader" || r === "admin" || r === "squad_leader";
 
 export const isAdmin = (r: Role) => r === "admin";
-/** Who may open the (now role-scoped) Admin page: admins, tribe leaders, squad leaders. */
-export const canSeeAdmin = (r: Role) => r === "admin" || r === "tribe_leader" || r === "squad_leader";
+/** Who may open the Admin page: admins and tribe leaders (squad leaders use the
+ *  dedicated "my squad" page instead). */
+export const canSeeAdmin = (r: Role) => r === "admin" || r === "tribe_leader";
 /** Strictly the global administrator (system configuration). */
 export const isGlobalAdmin = (r: Role) => r === "admin";
 export const canManageSquads = (r: Role) => r === "admin" || r === "tribe_leader";

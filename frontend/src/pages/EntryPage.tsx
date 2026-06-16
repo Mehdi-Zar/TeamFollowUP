@@ -134,7 +134,6 @@ export default function EntryPage() {
           {roadmapOn && <RoadmapEditor squad={squad} year={year} onChange={reload} readonly={!writeAllowed} t={t} roadmap={roadmap} />}
           {objectivesOn && <ObjectivesEditor squad={squad} year={year} onChange={reload} editable={objAllowed} t={t} rag={rag} />}
           {kpisOn && <KpisEditor squad={squad} onChange={reload} readonly={!writeAllowed} t={t} trend={trend} />}
-          <MembersEditor squad={squad} onChange={reload} readonly={!writeAllowed} t={t} />
           {reviewNotesOn && <ProgressReviewEditor squadId={squad.id} year={year} readonly={!writeAllowed} onSaved={() => flash(t("progress.review_saved"))} t={t} />}
         </>
       )}
@@ -475,56 +474,3 @@ function KpisEditor({ squad, onChange, readonly, t, trend }: any) {
   );
 }
 
-function MembersEditor({ squad, onChange, readonly, t }: any) {
-  const [name, setName] = useState("");
-  const [roleTitle, setRoleTitle] = useState("");
-  const [managerId, setManagerId] = useState("");
-  async function add() {
-    if (!name.trim()) return;
-    await api.post("/api/members", { squad_id: squad.id, full_name: name.trim(), role_title: roleTitle.trim() || null, manager_id: managerId ? Number(managerId) : null });
-    setName(""); setRoleTitle(""); setManagerId("");
-    onChange();
-  }
-  async function update(m: Member, patch: Partial<Member>) {
-    await api.put(`/api/members/${m.id}`, patch);
-    onChange();
-  }
-  async function remove(m: Member) {
-    await api.del(`/api/members/${m.id}`);
-    onChange();
-  }
-  return (
-    <Card title={t("squad.team")} hint={t("entry.team_hint")}>
-      {squad.members.map((m: Member) => (
-        <div key={m.id} className="item-row" style={{ flexWrap: "wrap" }}>
-          {readonly ? <span className="grow">{m.full_name}</span> : (
-            <input className="grow" defaultValue={m.full_name} onBlur={(e) => e.target.value !== m.full_name && update(m, { full_name: e.target.value })} />
-          )}
-          {readonly ? <span className="small muted">{m.role_title || "—"}</span> : (
-            <input className="w-auto" style={{ maxWidth: 160 }} placeholder={t("entry.member_role")} defaultValue={m.role_title ?? ""} onBlur={(e) => e.target.value !== (m.role_title ?? "") && update(m, { role_title: e.target.value || null })} />
-          )}
-          {!readonly && (
-            <select className="w-auto" style={{ maxWidth: 180 }} value={m.manager_id ?? ""} onChange={(e) => update(m, { manager_id: e.target.value ? Number(e.target.value) : null })}>
-              <option value="">{t("entry.member_manager")}: —</option>
-              {squad.members.filter((o: Member) => o.id !== m.id).map((o: Member) => (
-                <option key={o.id} value={o.id}>{t("entry.member_manager")}: {o.full_name}</option>
-              ))}
-            </select>
-          )}
-          {!readonly && <button className="btn-danger btn-sm" onClick={() => remove(m)}>✕</button>}
-        </div>
-      ))}
-      {!readonly && (
-        <div className="inline" style={{ marginTop: 8, flexWrap: "wrap" }}>
-          <input placeholder={t("entry.member_name")} value={name} onChange={(e) => setName(e.target.value)} />
-          <input placeholder={t("entry.member_role")} value={roleTitle} onChange={(e) => setRoleTitle(e.target.value)} />
-          <select className="w-auto" value={managerId} onChange={(e) => setManagerId(e.target.value)}>
-            <option value="">{t("entry.member_manager")}: —</option>
-            {squad.members.map((o: Member) => (<option key={o.id} value={o.id}>{o.full_name}</option>))}
-          </select>
-          <button className="btn-secondary btn-sm" onClick={add}>{t("action.add")}</button>
-        </div>
-      )}
-    </Card>
-  );
-}

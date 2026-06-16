@@ -24,7 +24,8 @@ def test_permissions_tribe_leader(client, seeded):
 def test_permissions_squad_leader(client, seeded):
     login(client, seeded["sl_a"])
     p = client.get("/api/auth/me/permissions").json()
-    assert p["admin_tabs"] == ["my_squads"]
+    # Squad leaders manage their squad on the dedicated "my squad" page, not in admin.
+    assert p["admin_tabs"] == []
     assert p["can_manage_users"] is False
 
 
