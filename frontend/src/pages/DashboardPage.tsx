@@ -84,7 +84,6 @@ export default function DashboardPage() {
                 year={data.year}
                 csvHref={`/api/exports/dashboard.csv?year=${data.year}`}
                 csvEmailEndpoint="/api/exports/dashboard/email"
-                printHref="/print/dashboard"
               />
             </>
           ),

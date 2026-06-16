@@ -36,7 +36,7 @@ def test_render_pptx_produces_valid_deck(db, seeded):
     assert blob[:2] == b"PK"  # zip/OOXML magic
     import io
     prs = pptx.Presentation(io.BytesIO(blob))
-    assert len(prs.slides) >= 3  # title + summary + at least one tribe
+    assert len(prs.slides) == 1  # single branded one-pager
 
 
 # ---- config sanitization -------------------------------------------------------

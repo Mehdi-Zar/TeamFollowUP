@@ -301,153 +301,150 @@ _CSS = """<style>
 
 # ----- PPTX rendering -------------------------------------------------------------
 
+# Brand palette (mirrors the app theme): navy / accent + RAG.
+_BRAND = {
+    "navy": "#1E2761", "navy_deep": "#141B47", "accent": "#175CD3",
+    "green": "#027A48", "orange": "#B54708", "red": "#B42318",
+    "ink": "#1F2937", "muted": "#6B7280", "card": "#F1F5F9",
+    "line": "#E2E8F0", "white": "#FFFFFF", "zebra": "#F8FAFC",
+}
+_RAG_BRAND = {"red": "#B42318", "amber": "#B54708", "green": "#027A48", "grey": "#6B7280"}
+
+
 def render_pptx(data: dict) -> bytes:
-    """Render the report as a .pptx deck. Requires python-pptx."""
+    """Render the report as a single branded slide (one-pager). Requires python-pptx."""
     from pptx import Presentation
-    from pptx.util import Inches, Pt
+    from pptx.util import Inches, Pt, Emu
     from pptx.dml.color import RGBColor
-    from pptx.enum.text import PP_ALIGN
+    from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
 
     def rgb(hexstr: str) -> RGBColor:
         return RGBColor.from_string(hexstr.lstrip("#").upper())
 
-    INK = rgb("#111827")
-    MUTED = rgb("#6b7280")
+    B = {k: rgb(v) for k, v in _BRAND.items()}
 
     prs = Presentation()
     prs.slide_width = Inches(13.333)
     prs.slide_height = Inches(7.5)
-    blank = prs.slide_layouts[6]
-    SW, SH = prs.slide_width, prs.slide_height
+    s = prs.slides.add_slide(prs.slide_layouts[6])
 
-    def add_text(slide, left, top, width, height, text, size, *, bold=False,
-                 color=INK, align=PP_ALIGN.LEFT):
-        box = slide.shapes.add_textbox(left, top, width, height)
+    def textbox(left, top, width, height, text, size, *, bold=False, color=B["ink"],
+                align=PP_ALIGN.LEFT, anchor=MSO_ANCHOR.TOP):
+        box = s.shapes.add_textbox(left, top, width, height)
         tf = box.text_frame
         tf.word_wrap = True
+        tf.vertical_anchor = anchor
+        tf.margin_left = tf.margin_right = Emu(0)
+        tf.margin_top = tf.margin_bottom = Emu(0)
         p = tf.paragraphs[0]
         p.alignment = align
-        run = p.add_run()
-        run.text = text
-        run.font.size = Pt(size)
-        run.font.bold = bold
-        run.font.color.rgb = color
+        r = p.add_run(); r.text = text
+        r.font.size = Pt(size); r.font.bold = bold; r.font.color.rgb = color
         return box
+
+    def rect(left, top, width, height, fill, line=None):
+        from pptx.enum.shapes import MSO_SHAPE
+        sh = s.shapes.add_shape(MSO_SHAPE.RECTANGLE, left, top, width, height)
+        sh.fill.solid(); sh.fill.fore_color.rgb = fill
+        if line is None:
+            sh.line.fill.background()
+        else:
+            sh.line.color.rgb = line
+        sh.shadow.inherit = False
+        return sh
 
     gen = data["generated_at"]
     gen_str = gen.strftime("%d/%m/%Y %H:%M") if isinstance(gen, datetime) else str(gen)
-
-    # --- Title slide
-    s = prs.slides.add_slide(blank)
-    add_text(s, Inches(0.9), Inches(2.3), Inches(11.5), Inches(1.2),
-             f'{data["app_name"]} — Rapport hebdomadaire', 40, bold=True)
-    add_text(s, Inches(0.9), Inches(3.5), Inches(11.5), Inches(0.8),
-             f'{data["scope_name"]} · Année {data["year"]}', 22, color=MUTED)
-    add_text(s, Inches(0.9), Inches(4.2), Inches(11.5), Inches(0.6),
-             f'Généré le {gen_str} · fenêtre {data["since_days"]} jours', 14, color=MUTED)
-
-    # --- Summary slide
     sm = data["summary"]
-    s = prs.slides.add_slide(blank)
-    add_text(s, Inches(0.6), Inches(0.4), Inches(12), Inches(0.8), "Synthèse", 28, bold=True)
+    squads = [r for blk in data["tribes"] for r in blk["squads"]]
+
+    # --- Header band (navy)
+    rect(Inches(0), Inches(0), prs.slide_width, Inches(1.12), B["navy"])
+    textbox(Inches(0.55), Inches(0.18), Inches(9.5), Inches(0.5),
+            f'{data["app_name"]} — Rapport', 26, bold=True, color=B["white"])
+    textbox(Inches(0.57), Inches(0.68), Inches(9.5), Inches(0.35),
+            f'{data["scope_name"]} · Année {data["year"]}', 13, color=rgb("#C7D2FE"))
+    textbox(Inches(9.3), Inches(0.3), Inches(3.5), Inches(0.6),
+            f'Généré le {gen_str}\nFenêtre {data["since_days"]} j', 11,
+            color=rgb("#C7D2FE"), align=PP_ALIGN.RIGHT)
+
+    # --- KPI banner (6 cards)
     kpis = [
-        ("Squads", str(sm["squads_total"]), INK),
-        ("Progression moy.", f'{sm["avg_progress"]}%', rgb("#16a34a")),
-        ("Jalons bloqués", str(sm["blocked"]), rgb("#dc2626") if sm["blocked"] else INK),
-        ("Jalons à risque", str(sm["at_risk"]), rgb("#d97706") if sm["at_risk"] else INK),
-        ("Objectifs rouges", str(sm["objectives_red"]), rgb("#dc2626") if sm["objectives_red"] else INK),
-        ("Reporting périmé", str(sm["stale"]), rgb("#d97706") if sm["stale"] else INK),
+        ("Squads", str(sm["squads_total"]), B["navy"]),
+        ("Progression moy.", f'{sm["avg_progress"]}%', B["accent"]),
+        ("Jalons bloqués", str(sm["blocked"]), B["red"] if sm["blocked"] else B["ink"]),
+        ("Jalons à risque", str(sm["at_risk"]), B["orange"] if sm["at_risk"] else B["ink"]),
+        ("Objectifs rouges", str(sm["objectives_red"]), B["red"] if sm["objectives_red"] else B["ink"]),
+        ("Reporting périmé", str(sm["stale"]), B["orange"] if sm["stale"] else B["ink"]),
     ]
-    cw, gap = Inches(3.9), Inches(0.3)
+    margin = Inches(0.5)
+    gap = Inches(0.14)
+    n = len(kpis)
+    total_w = prs.slide_width - margin * 2
+    card_w = Emu(int((total_w - gap * (n - 1)) / n))
+    ky, kh = Inches(1.34), Inches(1.05)
     for i, (label, val, color) in enumerate(kpis):
-        col, rowi = i % 3, i // 3
-        left = Inches(0.6) + col * (cw + gap)
-        top = Inches(1.6) + rowi * Inches(2.3)
-        card = s.shapes.add_shape(1, left, top, cw, Inches(2.0))  # rectangle
-        card.fill.solid()
-        card.fill.fore_color.rgb = rgb("#f9fafb")
-        card.line.color.rgb = rgb("#e5e7eb")
-        card.shadow.inherit = False
-        tf = card.text_frame
-        tf.word_wrap = True
-        p0 = tf.paragraphs[0]
-        p0.alignment = PP_ALIGN.CENTER
-        r0 = p0.add_run(); r0.text = val
-        r0.font.size = Pt(40); r0.font.bold = True; r0.font.color.rgb = color
-        p1 = tf.add_paragraph(); p1.alignment = PP_ALIGN.CENTER
-        r1 = p1.add_run(); r1.text = label
-        r1.font.size = Pt(14); r1.font.color.rgb = MUTED
+        left = Emu(int(margin) + i * (int(card_w) + int(gap)))
+        rect(left, ky, card_w, kh, B["card"], line=B["line"])
+        textbox(left, Inches(1.46), card_w, Inches(0.5), val, 26, bold=True, color=color, align=PP_ALIGN.CENTER)
+        textbox(left, Inches(2.04), card_w, Inches(0.3), label, 10, color=B["muted"], align=PP_ALIGN.CENTER)
 
-    # --- Attention slide
-    if data["attention"]:
-        s = prs.slides.add_slide(blank)
-        add_text(s, Inches(0.6), Inches(0.4), Inches(12), Inches(0.8),
-                 "Points d'attention", 28, bold=True)
-        box = s.shapes.add_textbox(Inches(0.6), Inches(1.5), Inches(12.1), Inches(5.5))
-        tf = box.text_frame
-        tf.word_wrap = True
-        first = True
-        for r in data["attention"][:14]:
-            bits = []
-            if r["blocked"]:
-                bits.append(f'{r["blocked"]} bloqué(s)')
-            if r["delta"] < 0:
-                bits.append(f'{r["delta"]} pt')
-            if r["is_stale"]:
-                bits.append('périmé')
-            p = tf.paragraphs[0] if first else tf.add_paragraph()
-            first = False
-            rn = p.add_run(); rn.text = f'• {r["name"]} — {", ".join(bits)}'
-            rn.font.size = Pt(16); rn.font.color.rgb = INK
-        # nothing else
+    # --- Squads table (mini)
+    headers = ["Squad", "Responsable", "Statut", "Progr.", "Δ sem.", "Bloqués", "À risque"]
+    wfrac = [0.275, 0.21, 0.12, 0.105, 0.082, 0.103, 0.105]
+    table_w = int(prs.slide_width - margin * 2)
+    widths = [Emu(int(table_w * f)) for f in wfrac]
 
-    # --- Per-tribe table slides
-    for blk in data["tribes"]:
-        s = prs.slides.add_slide(blank)
-        add_text(s, Inches(0.6), Inches(0.35), Inches(12), Inches(0.7), blk["tribe_name"], 24, bold=True)
-        rows = blk["squads"]
-        headers = ["Squad", "Resp.", "Statut", "Progr.", "Δ", "Bloq.", "À risq.", "Faits de la semaine"]
-        widths = [Inches(2.2), Inches(1.5), Inches(1.2), Inches(0.9), Inches(0.6),
-                  Inches(0.7), Inches(0.8), Inches(4.31)]
-        nrows = len(rows) + 1
-        tbl_shape = s.shapes.add_table(nrows, len(headers), Inches(0.5), Inches(1.25),
-                                       sum(widths, Inches(0)), Inches(0.4) + Inches(0.42) * len(rows))
-        table = tbl_shape.table
-        for ci, w in enumerate(widths):
-            table.columns[ci].width = w
-        for ci, h in enumerate(headers):
-            cell = table.cell(0, ci)
-            cell.text = h
-            para = cell.text_frame.paragraphs[0]
-            para.runs[0].font.size = Pt(11)
-            para.runs[0].font.bold = True
-            para.runs[0].font.color.rgb = rgb("#374151")
-            cell.fill.solid(); cell.fill.fore_color.rgb = rgb("#f3f4f6")
-        for ri, r in enumerate(rows, start=1):
-            note = (r["note"] or "").replace("\n", " ")
-            changes = "; ".join(_change_text(c) for c in r["changes"][:3])
-            facts = changes or (f'« {note[:90]} »' if note else "—")
-            values = [
-                r["name"], r["leader"], _status_label(r["status"]),
-                f'{r["annual_pct"]}%',
-                (f'+{r["delta"]}' if r["delta"] > 0 else str(r["delta"])),
-                str(r["blocked"] or ""), str(r["at_risk"] or ""), facts,
-            ]
-            for ci, val in enumerate(values):
-                cell = table.cell(ri, ci)
-                cell.text = val or " "  # avoid an empty paragraph (no run to style)
-                runs = cell.text_frame.paragraphs[0].runs
-                if not runs:
-                    continue
-                run = runs[0]
-                run.font.size = Pt(10)
-                if ci == 2:  # statut colored
-                    run.font.color.rgb = rgb(RAG_COLOR[r["status_rag"]])
-                    run.font.bold = True
-                elif ci == 4 and r["delta"]:
-                    run.font.color.rgb = rgb(RAG_COLOR["green"] if r["delta"] > 0 else RAG_COLOR["red"])
-                else:
-                    run.font.color.rgb = INK
+    MAX = 18
+    shown = squads[:MAX]
+    overflow = len(squads) - len(shown)
+    nrows = len(shown) + 1 + (1 if overflow > 0 else 0)
+    top = Inches(2.62)
+    tbl = s.shapes.add_table(max(nrows, 2), len(headers), margin, top, Emu(table_w),
+                             Inches(0.34) + Inches(0.255) * (nrows - 1)).table
+    for ci, w in enumerate(widths):
+        tbl.columns[ci].width = w
+
+    def style_cell(cell, text, size, color, *, bold=False, align=PP_ALIGN.LEFT, fill=None):
+        cell.margin_left = Inches(0.06); cell.margin_right = Inches(0.04)
+        cell.margin_top = Emu(0); cell.margin_bottom = Emu(0)
+        cell.vertical_anchor = MSO_ANCHOR.MIDDLE
+        if fill is not None:
+            cell.fill.solid(); cell.fill.fore_color.rgb = fill
+        else:
+            cell.fill.background()
+        cell.text = text or " "
+        p = cell.text_frame.paragraphs[0]
+        p.alignment = align
+        if p.runs:
+            r = p.runs[0]
+            r.font.size = Pt(size); r.font.bold = bold; r.font.color.rgb = color
+
+    for ci, h in enumerate(headers):
+        align = PP_ALIGN.LEFT if ci < 2 else PP_ALIGN.CENTER
+        style_cell(tbl.cell(0, ci), h, 10, B["white"], bold=True, align=align, fill=B["navy"])
+
+    for ri, r in enumerate(shown, start=1):
+        zebra = B["zebra"] if ri % 2 == 0 else B["white"]
+        delta = r["delta"]
+        cells = [
+            (r["name"], B["ink"], True, PP_ALIGN.LEFT),
+            (r["leader"] or "—", B["muted"], False, PP_ALIGN.LEFT),
+            (_status_label(r["status"]), rgb(_RAG_BRAND[r["status_rag"]]), True, PP_ALIGN.CENTER),
+            (f'{r["annual_pct"]}%', B["ink"], False, PP_ALIGN.CENTER),
+            ((f'+{delta}' if delta > 0 else str(delta)),
+             (B["green"] if delta > 0 else B["red"]) if delta else B["muted"], False, PP_ALIGN.CENTER),
+            (str(r["blocked"] or "—"), B["red"] if r["blocked"] else B["muted"], r["blocked"] > 0, PP_ALIGN.CENTER),
+            (str(r["at_risk"] or "—"), B["orange"] if r["at_risk"] else B["muted"], r["at_risk"] > 0, PP_ALIGN.CENTER),
+        ]
+        for ci, (val, color, bold, align) in enumerate(cells):
+            style_cell(tbl.cell(ri, ci), val, 9.5, color, bold=bold, align=align, fill=zebra)
+
+    if overflow > 0:
+        last = len(shown) + 1
+        style_cell(tbl.cell(last, 0), f'… +{overflow} autres squads', 9, B["muted"], align=PP_ALIGN.LEFT)
+        for ci in range(1, len(headers)):
+            style_cell(tbl.cell(last, ci), " ", 9, B["muted"])
 
     buf = io.BytesIO()
     prs.save(buf)
