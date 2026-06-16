@@ -6,10 +6,12 @@ export const ALL_ROLES: Role[] = ["admin", "tribe_leader", "squad_leader", "memb
 // Used so the admin "preview as role" reflects the scoped tab set.
 export const ADMIN_TABS_BY_ROLE: Record<Role, string[]> = {
   admin: ["tribes", "squads", "users", "modules", "moderation", "auth", "smtp", "report", "logs", "settings", "audit"],
-  tribe_leader: ["tribe", "squads", "users"],
+  tribe_leader: ["tribe", "users"],
   squad_leader: ["my_squads"],
   member: [],
 };
+// Who gets the dedicated "Manage my squads" page (KPIs on/off + annual objectives).
+export const canManageMySquads = (r: Role) => r === "tribe_leader" || r === "admin";
 
 export const isAdmin = (r: Role) => r === "admin";
 /** Who may open the (now role-scoped) Admin page: admins, tribe leaders, squad leaders. */
