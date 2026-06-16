@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { ReactNode, WheelEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
 import { useAuth } from "../auth";
@@ -219,17 +219,7 @@ export default function OrgPage() {
         </div>
       )}
 
-      {fullscreen && (
-        <div className="org-fullscreen" onClick={() => setFullscreen(false)}>
-          <div className="org-fullscreen-bar">
-            <span className="strong">{t("nav.org")}</span>
-            <button className="btn-secondary btn-sm" onClick={() => setFullscreen(false)}>✕ {t("action.close")}</button>
-          </div>
-          <div className="org-fullscreen-body" onClick={(e) => e.stopPropagation()}>
-            <FitScale fitHeight>{treeContent}</FitScale>
-          </div>
-        </div>
-      )}
+      {fullscreen && <OrgFullscreen onClose={() => setFullscreen(false)}>{treeContent}</OrgFullscreen>}
 
       {tree.length > 0 && view === "list" && (
         <div className="card stack" style={{ gap: 0 }}>
@@ -452,6 +442,58 @@ function NodeForm({
         <button className="btn-secondary" onClick={onCancel}>
           {t("action.cancel")}
         </button>
+      </div>
+    </div>
+  );
+}
+
+/** Fullscreen org chart with a zoom (magnifier) control. Starts fitted to the
+ *  screen; zoom in to read details — the view becomes pannable (scroll). */
+function OrgFullscreen({ children, onClose }: { children: ReactNode; onClose: () => void }) {
+  const { t } = useI18n();
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [fit, setFit] = useState(1);
+  const [zoom, setZoom] = useState(1);
+
+  useLayoutEffect(() => {
+    const measure = () => {
+      const body = bodyRef.current, c = contentRef.current;
+      if (!body || !c) return;
+      const cw = c.scrollWidth, ch = c.scrollHeight;
+      if (cw === 0 || ch === 0) return;
+      const f = Math.max(0.3, Math.min(body.clientWidth / cw, body.clientHeight / ch, 1));
+      setFit(f);
+      setZoom((z) => (z === 1 ? f : z)); // initialise to the fit scale once
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    if (contentRef.current) ro.observe(contentRef.current);
+    return () => ro.disconnect();
+  }, []);
+
+  const clamp = (z: number) => Math.max(0.2, Math.min(3, z));
+  const onWheel = (e: WheelEvent) => {
+    if (e.ctrlKey) { e.preventDefault(); setZoom((z) => clamp(z * (e.deltaY < 0 ? 1.1 : 0.9))); }
+  };
+
+  return (
+    <div className="org-fullscreen" onClick={onClose}>
+      <div className="org-fullscreen-bar" onClick={(e) => e.stopPropagation()}>
+        <span className="strong">{t("nav.org")}</span>
+        <div className="inline" style={{ gap: 8, alignItems: "center" }}>
+          <button className="btn-secondary btn-sm" title={t("org.zoom_out")} onClick={() => setZoom((z) => clamp(z * 0.85))}>−</button>
+          <span className="small" style={{ minWidth: 46, textAlign: "center" }}>{Math.round(zoom * 100)}%</span>
+          <button className="btn-secondary btn-sm" title={t("org.zoom_in")} onClick={() => setZoom((z) => clamp(z * 1.18))}>+</button>
+          <button className="btn-ghost btn-sm" onClick={() => setZoom(fit)}>{t("org.fit")}</button>
+          <button className="btn-secondary btn-sm" onClick={onClose}>✕ {t("action.close")}</button>
+        </div>
+      </div>
+      <div ref={bodyRef} className="org-fullscreen-body" style={{ display: "block", overflow: "auto" }}
+           onClick={(e) => e.stopPropagation()} onWheel={onWheel}>
+        <div ref={contentRef} style={{ transform: `scale(${zoom})`, transformOrigin: "top center", width: "max-content", margin: "0 auto" }}>
+          {children}
+        </div>
       </div>
     </div>
   );
