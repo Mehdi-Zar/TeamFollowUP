@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { api, ApiError } from "../api";
 import { useI18n } from "../i18n";
 import { useAuth } from "../auth";
-import { ProgressReviewRow } from "../types";
+import { ProgressReviewRow, ReviewAction } from "../types";
 import { Dot, Spinner, ErrorBanner, ProgressBar, Modal } from "../components/ui";
 import { useSetPageChrome } from "../components/pageChrome";
 import { ChangeList } from "../components/progress";
@@ -91,26 +91,47 @@ function LegendChip({ rag, label }: { rag: "red" | "amber" | "green"; label: str
   );
 }
 
-function CaptureAction({ squadId, onSaved, onError }: { squadId: number; onSaved: () => void; onError: (m: string) => void }) {
-  const { t } = useI18n();
-  const [text, setText] = useState("");
-  const [busy, setBusy] = useState(false);
-  async function save() {
-    if (!text.trim()) return;
-    setBusy(true);
-    try {
-      await api.post(`/api/squads/${squadId}/progress`, { note: text.trim() });
-      setText("");
-      onSaved();
-    } catch (e) {
-      onError(e instanceof ApiError ? (e.status === 403 ? t("review.actions_forbidden") : e.message) : "Erreur");
-    } finally { setBusy(false); }
+/** Structured COPIL actions per squad: text + owner + due date + done/to-do. */
+function ActionItems({ squadId, canEdit, onError }: { squadId: number; canEdit: boolean; onError: (m: string) => void }) {
+  const { t, formatDate } = useI18n();
+  const [items, setItems] = useState<ReviewAction[] | null>(null);
+  const [add, setAdd] = useState({ text: "", owner: "", due_date: "" });
+
+  async function load() {
+    try { setItems(await api.get<ReviewAction[]>(`/api/squads/${squadId}/actions`)); }
+    catch (e) { onError(e instanceof ApiError ? e.message : "Erreur"); }
   }
+  useEffect(() => { load(); }, [squadId]);
+  async function run(fn: () => Promise<any>) {
+    try { await fn(); await load(); }
+    catch (e) { onError(e instanceof ApiError ? (e.status === 403 ? t("review.actions_forbidden") : e.message) : "Erreur"); }
+  }
+  const create = () => { if (add.text.trim()) run(async () => { await api.post(`/api/squads/${squadId}/actions`, { text: add.text.trim(), owner: add.owner.trim() || null, due_date: add.due_date || null }); setAdd({ text: "", owner: "", due_date: "" }); }); };
+
+  const overdue = (a: ReviewAction) => !a.done && a.due_date && new Date(a.due_date) < new Date();
+
   return (
-    <div className="inline" style={{ gap: 6 }}>
-      <input style={{ flex: 1 }} placeholder={t("review.actions_ph")} value={text}
-             onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && save()} />
-      <button className="btn-secondary btn-sm" disabled={busy || !text.trim()} onClick={save}>{t("review.actions_add")}</button>
+    <div className="stack" style={{ gap: 6 }}>
+      <div className="small muted inline" style={{ gap: 6 }}><IcoNote /> {t("review.actions_title")}</div>
+      {items && items.length === 0 && <div className="small muted">{t("review.actions_none")}</div>}
+      {items?.map((a) => (
+        <div key={a.id} className="inline" style={{ gap: 8, alignItems: "center" }}>
+          <input type="checkbox" checked={a.done} disabled={!canEdit} onChange={(e) => run(() => api.put(`/api/actions/${a.id}`, { done: e.target.checked }))} />
+          <span className="small" style={{ flex: 1, minWidth: 0, textDecoration: a.done ? "line-through" : "none", color: a.done ? "var(--grey)" : undefined }}>{a.text}</span>
+          {a.owner && <span className="badge badge-grey">{a.owner}</span>}
+          {a.due_date && <span className="small" style={{ color: overdue(a) ? "var(--red)" : "var(--grey)" }}>{formatDate(a.due_date)}</span>}
+          {canEdit && <button className="btn-ghost btn-sm" onClick={() => run(() => api.del(`/api/actions/${a.id}`))}>✕</button>}
+        </div>
+      ))}
+      {canEdit && (
+        <div className="row" style={{ gap: 6, alignItems: "flex-end" }}>
+          <input style={{ flex: 1, minWidth: 130 }} placeholder={t("review.actions_ph")} value={add.text}
+                 onChange={(e) => setAdd({ ...add, text: e.target.value })} onKeyDown={(e) => e.key === "Enter" && create()} />
+          <input style={{ width: 100 }} placeholder={t("review.action_owner")} value={add.owner} onChange={(e) => setAdd({ ...add, owner: e.target.value })} />
+          <input style={{ width: 140 }} type="date" value={add.due_date} onChange={(e) => setAdd({ ...add, due_date: e.target.value })} />
+          <button className="btn-secondary btn-sm" disabled={!add.text.trim()} onClick={create}>{t("review.actions_add")}</button>
+        </div>
+      )}
     </div>
   );
 }
@@ -299,20 +320,18 @@ export default function ReviewPage() {
                     </Metric>
                   </div>
 
-                  {/* Decisions & actions (COPIL) */}
-                  <div className="stack" style={{ gap: 6 }}>
-                    <div className="small muted inline" style={{ gap: 6 }}><IcoNote /> {t("review.actions_title")}</div>
-                    {r.note ? (
-                      <div className="small" style={{ whiteSpace: "pre-wrap", background: "var(--ice-soft)", borderRadius: 8, padding: "8px 10px" }}>{r.note}</div>
-                    ) : (
-                      <div className="small muted">{t("review.actions_none")}</div>
-                    )}
-                    {canCapture && <CaptureAction squadId={r.squad_id} onSaved={load} onError={setError} />}
-                  </div>
+                  {r.note && (
+                    <div className="small" style={{ whiteSpace: "pre-wrap", background: "var(--ice-soft)", borderRadius: 8, padding: "8px 10px" }}>
+                      <span className="muted inline" style={{ gap: 6 }}><IcoNote /> {t("review.note_label2")} : </span>{r.note}
+                    </div>
+                  )}
 
-                  <div>
+                  {/* Structured COPIL decisions & actions */}
+                  <ActionItems squadId={r.squad_id} canEdit={canCapture} onError={setError} />
+
+                  <div style={{ borderTop: "1px solid var(--line)", paddingTop: 8 }}>
                     <div className="small muted inline" style={{ marginBottom: 4, gap: 6 }}><IcoActivity /> {t("review.m.changes")} · <span title={t("review.h.points")}>{r.points_in_period} {t("review.points")}</span></div>
-                    {r.changes.length > 0 ? <ChangeList changes={r.changes} max={6} /> : <div className="small muted">{t("review.no_change")}</div>}
+                    {r.changes.length > 0 ? <ChangeList changes={r.changes} max={5} /> : <div className="small muted">{t("review.no_change")}</div>}
                   </div>
                 </div>
               );
