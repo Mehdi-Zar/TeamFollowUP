@@ -68,9 +68,9 @@ def update_tribe(tribe_id: int, payload: TribeUpdate, db: Session = Depends(get_
     from ..rbac import can_edit_tribe
     tribe = db.get(Tribe, tribe_id)
     if tribe is None:
-        raise HTTPException(status_code=404, detail="Tribu introuvable")
+        raise HTTPException(status_code=404, detail="Tribe introuvable")
     if not can_edit_tribe(user, tribe_id):
-        raise HTTPException(status_code=403, detail="Vous ne pouvez modifier que votre tribu")
+        raise HTTPException(status_code=403, detail="Vous ne pouvez modifier que votre tribe")
     data = payload.model_dump(exclude_unset=True)
     # display_order is a global ordering concern → admin only.
     if "display_order" in data and user.role != "admin":
@@ -87,9 +87,9 @@ def update_tribe(tribe_id: int, payload: TribeUpdate, db: Session = Depends(get_
 def delete_tribe(tribe_id: int, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     tribe = db.get(Tribe, tribe_id)
     if tribe is None:
-        raise HTTPException(status_code=404, detail="Tribu introuvable")
+        raise HTTPException(status_code=404, detail="Tribe introuvable")
     if db.scalar(select(Squad).where(Squad.tribe_id == tribe_id)) is not None:
-        raise HTTPException(status_code=409, detail="Supprimez ou déplacez d'abord les squads de cette tribu")
+        raise HTTPException(status_code=409, detail="Supprimez ou déplacez d'abord les squads de cette tribe")
     # detach users and clean org/feed of this tribe
     for u in db.scalars(select(User).where(User.tribe_id == tribe_id)).all():
         u.tribe_id = None
