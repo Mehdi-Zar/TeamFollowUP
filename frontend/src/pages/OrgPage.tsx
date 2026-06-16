@@ -1,5 +1,5 @@
 import { MouseEvent as ReactMouseEvent, ReactNode, WheelEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { useI18n } from "../i18n";
@@ -84,10 +84,14 @@ export default function OrgPage() {
     api.get<OrgNode[]>(`/api/org${q}`).then(setTree).catch((e) => setError(e.message));
     api.get<Squad[]>(`/api/squads${q}`).then(setSquads).catch(() => {});
   }
+  const [searchParams] = useSearchParams();
   useEffect(() => {
     api.get<Tribe[]>("/api/tribes").then((ts) => {
       setTribes(ts);
-      const def = user?.tribe_id ?? (ts.length ? ts[0].id : null);
+      // Optional ?tribe=ID (e.g. from the admin "all tribes" overview).
+      const wanted = Number(searchParams.get("tribe")) || null;
+      const def = (wanted && ts.some((x) => x.id === wanted) ? wanted : null)
+        ?? user?.tribe_id ?? (ts.length ? ts[0].id : null);
       setTribeId(def);
       load(def);
     });
