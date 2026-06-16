@@ -175,6 +175,16 @@ export interface ModulesConfig {
 
 export type ModuleKey = keyof ModulesConfig;
 
+export interface ReviewAction {
+  id: number;
+  squad_id: number;
+  text: string;
+  owner?: string | null;
+  due_date?: string | null;
+  done: boolean;
+  created_at?: string | null;
+}
+
 export interface PublicConfig {
   app_name: string;
   app_subtitle: string;

@@ -487,6 +487,29 @@ class ProgressNoteIn(BaseModel):
     confidence: Optional[int] = Field(default=None, ge=1, le=5)
 
 
+class ReviewActionOut(ORMModel):
+    id: int
+    squad_id: int
+    text: str
+    owner: Optional[str] = None
+    due_date: Optional[datetime] = None
+    done: bool
+    created_at: Optional[datetime] = None
+
+
+class ReviewActionCreate(BaseModel):
+    text: str
+    owner: Optional[str] = None
+    due_date: Optional[datetime] = None
+
+
+class ReviewActionUpdate(BaseModel):
+    text: Optional[str] = None
+    owner: Optional[str] = None
+    due_date: Optional[datetime] = None
+    done: Optional[bool] = None
+
+
 class ProgressPointOut(BaseModel):
     id: int
     squad_id: int

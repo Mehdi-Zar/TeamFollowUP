@@ -9,6 +9,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from .config import settings
 from .database import get_db
 from .routers import (
+    actions,
     admin,
     audit,
     auth,
@@ -40,7 +41,7 @@ app = FastAPI(
 app.add_middleware(SessionMiddleware, secret_key=settings.secret_key, same_site="lax", https_only=False)
 
 for r in (auth, tribes, squads, dashboard, org, objectives, roadmap, kpis,
-          members, snapshots, exports, feed, notifications, admin, audit, progress, reports):
+          members, snapshots, exports, feed, notifications, admin, audit, progress, reports, actions):
     app.include_router(r.router)
 
 
