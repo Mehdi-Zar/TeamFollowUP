@@ -214,7 +214,7 @@ def run(db: Session) -> None:
     db.flush()
 
     # ---- Org chart (grouped by domain) ----
-    root = OrgNode(tribe_id=tribe.id, parent_id=None, title="Direction de la tribu",
+    root = OrgNode(tribe_id=tribe.id, parent_id=None, title="Direction de la tribe",
                    person_name=tl.display_name, display_order=0)
     db.add(root)
     db.flush()
