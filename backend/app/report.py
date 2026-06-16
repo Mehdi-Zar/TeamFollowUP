@@ -150,7 +150,7 @@ def build_report_data(db: Session, scope_tribe: int | None, year: int | None = N
     elif scope_tribe in tribes:
         scope_name = tribes[scope_tribe].name
     else:
-        scope_name = "Toutes les tribus"
+        scope_name = "Toutes les tribes"
 
     return {
         "app_name": cfg.get("app_name") or "Tribe Cockpit",
