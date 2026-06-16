@@ -29,6 +29,22 @@ def test_render_html_contains_squads(db, seeded):
     assert "Rapport hebdomadaire" in html
 
 
+def test_render_html_follows_lang(db, seeded):
+    year = st.current_year_quarter()[0]
+    fr = render_html(build_report_data(db, None, year, 7, lang="fr"))
+    en = render_html(build_report_data(db, None, year, 7, lang="en"))
+    assert "Rapport hebdomadaire" in fr and "Responsable" in fr
+    assert "Weekly report" in en and "Leader" in en
+    assert "Rapport hebdomadaire" not in en
+
+
+def test_weekly_html_endpoint_lang_query(client, seeded):
+    login(client, seeded["admin"])
+    r = client.get("/api/reports/weekly.html?lang=en")
+    assert r.status_code == 200
+    assert "Weekly report" in r.text and "Rapport hebdomadaire" not in r.text
+
+
 def test_render_pptx_produces_valid_deck(db, seeded):
     pptx = pytest.importorskip("pptx")
     year = st.current_year_quarter()[0]
