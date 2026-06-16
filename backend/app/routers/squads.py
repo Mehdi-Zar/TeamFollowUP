@@ -82,11 +82,12 @@ def update_squad(squad_id: int, payload: SquadUpdate, db: Session = Depends(get_
     data = payload.model_dump(exclude_unset=True)
     if "tribe_id" in data and user.role != ADMIN:
         raise HTTPException(status_code=403, detail="Seul l'administrateur peut déplacer une squad de tribu")
-    structural = {"leader_user_id", "display_order"}
+    # KPI on/off is a tribe-leader decision (like leader assignment & ordering).
+    structural = {"leader_user_id", "display_order", "kpis_enabled"}
     if user.role not in (ADMIN, TRIBE):
         assert_can_edit_squad(db, user, squad_id)
         if structural & data.keys():
-            raise HTTPException(status_code=403, detail="Champs structurels réservés au tribe leader")
+            raise HTTPException(status_code=403, detail="Champs réservés au tribe leader")
     for k, v in data.items():
         setattr(squad, k, v)
     record_audit(db, user.id, "squad.update", entity="squad", entity_id=squad.id, detail=data)

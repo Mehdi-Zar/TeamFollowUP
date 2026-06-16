@@ -11,6 +11,7 @@
   --text: #1E293B;
   --grey: #64748B;
   --line: #E2E8F0;
+  --org-line: #94A3B8;
   --bg: #F5F7FA;
   --radius: 14px;
   --shadow: 0 1px 3px rgba(20,27,71,.08), 0 6px 16px rgba(20,27,71,.06);
@@ -262,9 +263,36 @@ tr:last-child td { border-bottom: none; }
 .org-node.s-red { border-left-color: var(--red); }
 .org-node.s-orange { border-left-color: var(--orange); }
 .org-node.s-green { border-left-color: var(--green); }
-.org-children { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 10px; }
 .org-subtree { display: flex; flex-direction: column; align-items: center; }
-.org-connector { height: 14px; border-left: 2px solid var(--line); }
+
+/* Org-chart connectors: a vertical stub down from a parent, then a horizontal
+   bar across its children with a vertical stub up to each child. */
+.org-connector { height: 22px; border-left: 2px solid var(--org-line); }
+.org-children {
+  display: flex;
+  gap: 28px;
+  margin-top: 0;
+  padding-top: 22px;
+  position: relative;
+}
+.org-children > .org-subtree { position: relative; }
+.org-children > .org-subtree::before {
+  content: ""; position: absolute; top: -22px; left: calc(50% - 1px);
+  width: 2px; height: 22px; background: var(--org-line);
+}
+.org-children > .org-subtree::after {
+  content: ""; position: absolute; top: -22px; left: -14px; right: -14px;
+  height: 2px; background: var(--org-line);
+}
+.org-children > .org-subtree:first-child::after { left: calc(50% - 1px); }
+.org-children > .org-subtree:last-child::after { right: calc(50% - 1px); }
+.org-children > .org-subtree:only-child::after { display: none; }
+
+/* Clickable squad node */
+.org-node--squad { cursor: pointer; transition: box-shadow .12s, border-color .12s; }
+.org-node--squad:hover { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(23, 92, 211, .18), var(--shadow); }
+.org-squad-link { color: var(--accent); text-decoration: none; }
+.org-squad-link:hover { text-decoration: underline; }
 
 /* Notifications */
 .notif-badge { position: absolute; top: -6px; right: -6px; background: var(--red); color: #fff; border-radius: 999px; font-size: 11px; font-weight: 700; min-width: 18px; height: 18px; display: flex; align-items: center; justify-content: center; padding: 0 4px; }
