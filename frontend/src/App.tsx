@@ -65,7 +65,7 @@ export default function App() {
         <Route path="/fil" element={<ModuleGuard module="feed"><FeedPage /></ModuleGuard>} />
         <Route path="/revue" element={<ModuleGuard module="review"><ReviewPage /></ModuleGuard>} />
         <Route path="/preferences" element={<PreferencesPage />} />
-        <Route path="/prise-en-main" element={<GettingStartedPage />} />
+        <Route path="/prise-en-main" element={<ModuleGuard module="getting_started"><GettingStartedPage /></ModuleGuard>} />
         <Route path="/saisie" element={<ModuleGuard module="reporting"><EntryPage /></ModuleGuard>} />
         <Route path="/organigramme" element={<ModuleGuard module="org"><OrgPage /></ModuleGuard>} />
         <Route path="/tribus" element={<Protected adminOnly><TribesPage /></Protected>} />
