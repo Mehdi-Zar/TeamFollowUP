@@ -6,18 +6,18 @@ from sqlalchemy.orm import Session
 from ..authconfig import get_auth_config, role_from_groups
 from ..config import settings
 from ..database import get_db
-from ..deps import get_current_user, record_audit
+from ..deps import get_current_user, record_audit, require_admin
 from ..models import User, utcnow
 from ..schemas import AuthConfig, LoginIn, UserOut
-from ..security import create_session_token, verify_password
+from ..security import create_session_token, decode_session, verify_password
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
-def _set_session(response: Response, user_id: int) -> None:
+def _set_session(response: Response, user_id: int, impersonator_id: int | None = None) -> None:
     response.set_cookie(
         key=settings.session_cookie,
-        value=create_session_token(user_id),
+        value=create_session_token(user_id, impersonator_id),
         max_age=settings.session_max_age_seconds,
         httponly=True,
         samesite="lax",
@@ -56,9 +56,52 @@ def me(user: User = Depends(get_current_user)):
 
 
 @router.get("/me/permissions")
-def my_permissions(user: User = Depends(get_current_user)):
+def my_permissions(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     from ..rbac import permissions_payload
-    return permissions_payload(user)
+    payload = permissions_payload(user)
+    # Impersonation context, so the SPA can show the "viewing as" banner.
+    imp_id = getattr(request.state, "impersonator_id", None)
+    payload["impersonating"] = imp_id is not None
+    payload["viewing_as"] = user.display_name if imp_id is not None else None
+    if imp_id is not None:
+        admin = db.get(User, imp_id)
+        payload["impersonator_name"] = admin.display_name if admin else None
+    return payload
+
+
+@router.post("/impersonate", response_model=UserOut)
+def impersonate(payload: dict, response: Response, request: Request,
+                db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    """Admin starts viewing the whole app as another user (full simulation)."""
+    # If already impersonating, the real admin is the impersonator in the token.
+    imp_id = getattr(request.state, "impersonator_id", None)
+    real_admin_id = imp_id if imp_id is not None else admin.id
+    target_id = (payload or {}).get("user_id")
+    target = db.get(User, target_id) if target_id is not None else None
+    if target is None:
+        raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+    if target.id == real_admin_id:
+        # "viewing as myself" → just stop impersonating.
+        _set_session(response, real_admin_id)
+        return db.get(User, real_admin_id)
+    record_audit(db, real_admin_id, "impersonate.start", entity="user", entity_id=target.id,
+                 detail={"email": target.email})
+    db.commit()
+    _set_session(response, target.id, impersonator_id=real_admin_id)
+    return target
+
+
+@router.post("/stop-impersonation", response_model=UserOut)
+def stop_impersonation(response: Response, request: Request,
+                       db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    imp_id = getattr(request.state, "impersonator_id", None)
+    if imp_id is None:
+        raise HTTPException(status_code=400, detail="Aucune simulation en cours")
+    admin = db.get(User, imp_id)
+    if admin is None:
+        raise HTTPException(status_code=404, detail="Compte administrateur introuvable")
+    _set_session(response, admin.id)
+    return admin
 
 
 def _provision(db: Session, *, subject: str | None, email: str, name: str, groups, cfg, source: str) -> User:
