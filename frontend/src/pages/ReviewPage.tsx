@@ -1,7 +1,8 @@
 import { ReactNode, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { api } from "../api";
+import { api, ApiError } from "../api";
 import { useI18n } from "../i18n";
+import { useAuth } from "../auth";
 import { ProgressReviewRow } from "../types";
 import { Dot, Spinner, ErrorBanner, ProgressBar, Modal } from "../components/ui";
 import { useSetPageChrome } from "../components/pageChrome";
@@ -90,16 +91,45 @@ function LegendChip({ rag, label }: { rag: "red" | "amber" | "green"; label: str
   );
 }
 
+function CaptureAction({ squadId, onSaved, onError }: { squadId: number; onSaved: () => void; onError: (m: string) => void }) {
+  const { t } = useI18n();
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  async function save() {
+    if (!text.trim()) return;
+    setBusy(true);
+    try {
+      await api.post(`/api/squads/${squadId}/progress`, { note: text.trim() });
+      setText("");
+      onSaved();
+    } catch (e) {
+      onError(e instanceof ApiError ? (e.status === 403 ? t("review.actions_forbidden") : e.message) : "Erreur");
+    } finally { setBusy(false); }
+  }
+  return (
+    <div className="inline" style={{ gap: 6 }}>
+      <input style={{ flex: 1 }} placeholder={t("review.actions_ph")} value={text}
+             onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && save()} />
+      <button className="btn-secondary btn-sm" disabled={busy || !text.trim()} onClick={save}>{t("review.actions_add")}</button>
+    </div>
+  );
+}
+
 export default function ReviewPage() {
   const { t } = useI18n();
   const [days, setDays] = useState(7);
   const [rows, setRows] = useState<ProgressReviewRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [help, setHelp] = useState(false);
+  const { effectiveRole } = useAuth();
+  const canCapture = effectiveRole !== "member"; // who may log decisions/actions
 
+  function load() {
+    api.get<ProgressReviewRow[]>(`/api/progress/review?since_days=${days}`).then(setRows).catch((e) => setError(e.message));
+  }
   useEffect(() => {
     setRows(null);
-    api.get<ProgressReviewRow[]>(`/api/progress/review?since_days=${days}`).then(setRows).catch((e) => setError(e.message));
+    load();
   }, [days]);
 
   const isPreset = PERIODS.includes(days);
@@ -145,8 +175,17 @@ export default function ReviewPage() {
   if (error) return <ErrorBanner message={error} />;
   if (!rows) return <Spinner />;
 
+  const attention = (rows ?? []).filter((r) => verdictOf(r) !== "ontrack")
+    .sort((a, b) => (b.blocked_count - a.blocked_count) || (a.progress_delta - b.progress_delta));
+
   return (
     <div className="stack" style={{ gap: 18 }}>
+      {/* Purpose */}
+      <div className="card" style={{ borderLeft: "4px solid var(--accent)" }}>
+        <div className="strong">{t("review.purpose_title")}</div>
+        <div className="small muted" style={{ marginTop: 4 }}>{t("review.purpose_body")}</div>
+      </div>
+
       {/* Visual legend strip */}
       <div className="card" style={{ padding: "10px 14px" }}>
         <div className="between" style={{ alignItems: "center", flexWrap: "wrap", gap: 12 }}>
@@ -188,6 +227,33 @@ export default function ReviewPage() {
           <div className="kpi"><div className="v">{summary.flat}</div><div className="l">{t("review.sum.flat")}</div></div>
           <div className="kpi"><div className="v" style={{ color: summary.down ? "var(--red)" : undefined }}>{summary.down}</div><div className="l">{t("review.sum.down")}</div></div>
           <div className="kpi"><div className={`v ${summary.blocked ? "red" : ""}`}>{summary.blocked}</div><div className="l">{t("review.sum.blocked")}</div></div>
+        </div>
+      )}
+
+      {/* Squads to unblock — the headline for COPIL prep */}
+      {attention.length > 0 && (
+        <div className="card stack" style={{ gap: 10, borderTop: "3px solid var(--red)" }}>
+          <div className="strong inline" style={{ gap: 8 }}><IcoAlert /> {t("review.attention_title")} ({attention.length})</div>
+          <div className="stack" style={{ gap: 6 }}>
+            {attention.map((r) => {
+              const v = verdictOf(r);
+              const reasons = [
+                r.blocked_count > 0 ? `${r.blocked_count} ${t("review.m.blocked")}` : null,
+                r.at_risk_count > 0 ? `${r.at_risk_count} ${t("review.m.atrisk")}` : null,
+                r.progress_delta < 0 ? `${r.progress_delta} pts` : null,
+              ].filter(Boolean).join(" · ");
+              return (
+                <div key={r.squad_id} className="between" style={{ gap: 10, padding: "6px 0", borderBottom: "1px solid var(--line)" }}>
+                  <div className="inline" style={{ gap: 8 }}>
+                    <Dot status={VERDICT_RAG[v]} />
+                    <Link to={`/squads/${r.squad_id}`} className="strong">{r.squad_name}</Link>
+                    {r.tribe_name && <span className="small muted">· {r.tribe_name}</span>}
+                  </div>
+                  <span className="small" style={{ color: VERDICT_RAG[v] === "red" ? "var(--red)" : "var(--orange)" }}>{reasons || t(`review.verdict.${v}`)}</span>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 
@@ -233,11 +299,16 @@ export default function ReviewPage() {
                     </Metric>
                   </div>
 
-                  {r.note && (
-                    <div className="small" style={{ whiteSpace: "pre-wrap", background: "var(--ice-soft)", borderRadius: 8, padding: "8px 10px" }}>
-                      <span className="muted inline" style={{ gap: 6 }}><IcoNote /> {t("review.latest_note")} : </span>{r.note}
-                    </div>
-                  )}
+                  {/* Decisions & actions (COPIL) */}
+                  <div className="stack" style={{ gap: 6 }}>
+                    <div className="small muted inline" style={{ gap: 6 }}><IcoNote /> {t("review.actions_title")}</div>
+                    {r.note ? (
+                      <div className="small" style={{ whiteSpace: "pre-wrap", background: "var(--ice-soft)", borderRadius: 8, padding: "8px 10px" }}>{r.note}</div>
+                    ) : (
+                      <div className="small muted">{t("review.actions_none")}</div>
+                    )}
+                    {canCapture && <CaptureAction squadId={r.squad_id} onSaved={load} onError={setError} />}
+                  </div>
 
                   <div>
                     <div className="small muted inline" style={{ marginBottom: 4, gap: 6 }}><IcoActivity /> {t("review.m.changes")} · <span title={t("review.h.points")}>{r.points_in_period} {t("review.points")}</span></div>
