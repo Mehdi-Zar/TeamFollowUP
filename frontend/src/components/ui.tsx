@@ -3,9 +3,10 @@ import { Freshness, QuarterHealth, Rag } from "../types";
 import { badgeClass, dotClass, qhToRag, ragClass } from "../labels";
 import { useI18n } from "../i18n";
 
-/** Scales its content down (never up) so it always fits the available width —
- *  keeps the org chart on a single page without a horizontal scrollbar. */
-export function FitScale({ children }: { children: ReactNode }) {
+/** Scales its content down (never up) so it always fits the available space —
+ *  keeps the org chart readable on one page without scrollbars. With fitHeight
+ *  it fits BOTH width and height of its container (for a fullscreen view). */
+export function FitScale({ children, fitHeight }: { children: ReactNode; fitHeight?: boolean }) {
   const outerRef = useRef<HTMLDivElement>(null);
   const innerRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
@@ -15,22 +16,33 @@ export function FitScale({ children }: { children: ReactNode }) {
     const measure = () => {
       const outer = outerRef.current, inner = innerRef.current;
       if (!outer || !inner) return;
-      const avail = outer.clientWidth;
-      const cw = inner.scrollWidth;
-      const s = cw > avail && cw > 0 ? Math.max(0.35, avail / cw) : 1;
+      const cw = inner.scrollWidth, ch = inner.scrollHeight;
+      let s = cw > 0 ? outer.clientWidth / cw : 1;
+      if (fitHeight && ch > 0) s = Math.min(s, outer.clientHeight / ch);
+      s = Math.max(0.45, Math.min(1, s));
       setScale(s);
-      setHeight(inner.scrollHeight * s);
+      setHeight(fitHeight ? undefined : ch * s);
     };
     measure();
     const ro = new ResizeObserver(measure);
     if (outerRef.current) ro.observe(outerRef.current);
     if (innerRef.current) ro.observe(innerRef.current);
     return () => ro.disconnect();
-  }, []);
+  }, [fitHeight]);
 
   return (
-    <div ref={outerRef} style={{ width: "100%", height, overflow: "hidden", display: "flex", justifyContent: "center" }}>
-      <div ref={innerRef} style={{ transform: `scale(${scale})`, transformOrigin: "top center", flex: "0 0 auto" }}>
+    <div
+      ref={outerRef}
+      style={{
+        width: "100%",
+        height: fitHeight ? "100%" : height,
+        overflow: "hidden",
+        display: "flex",
+        justifyContent: "center",
+        alignItems: fitHeight ? "center" : "flex-start",
+      }}
+    >
+      <div ref={innerRef} style={{ transform: `scale(${scale})`, transformOrigin: fitHeight ? "center" : "top center", flex: "0 0 auto" }}>
         {children}
       </div>
     </div>
