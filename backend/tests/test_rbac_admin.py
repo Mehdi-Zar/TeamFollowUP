@@ -175,6 +175,14 @@ def test_stop_without_impersonation_fails(client, seeded):
     assert client.post("/api/auth/stop-impersonation").status_code == 400
 
 
+def test_review_readable_by_everyone_scoped(client, seeded):
+    # Members can now read the review (COPIL prep), scoped to their tribe.
+    login(client, seeded["member"])  # tribe 1
+    r = client.get("/api/progress/review")
+    assert r.status_code == 200
+    assert all(row["tribe_id"] == seeded["t1"] for row in r.json())
+
+
 def test_admin_still_full_access(client, seeded):
     login(client, seeded["admin"])
     assert client.get("/api/admin/users").status_code == 200

@@ -130,14 +130,9 @@ def aggregate_review(db: Session, scope_tribe: int | None, since_days: int = 7,
             dependencies=[Depends(require_module("review"))])
 def aggregated_review(since_days: int = Query(7, ge=1, le=365), tribe_id: int | None = None,
                       db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    # The weekly ceremony is for leaders: admins see everything, tribe leaders
-    # see their own tribe.
-    if user.role == "admin":
-        scope_tribe = tribe_id
-    elif user.role == "tribe_leader":
-        scope_tribe = user.tribe_id
-    else:
-        raise HTTPException(status_code=403, detail="Réservé aux tribe leaders et administrateurs")
+    # Readable by everyone (COPIL prep), scoped to their visibility: admins see
+    # all tribes (or a chosen one), everyone else sees their own tribe.
+    scope_tribe = tribe_id if user.role == "admin" else user.tribe_id
     return aggregate_review(db, scope_tribe, since_days)
 
 
