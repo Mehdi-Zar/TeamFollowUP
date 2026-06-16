@@ -65,14 +65,6 @@ export default function DashboardPage() {
   useSetPageChrome(
     data
       ? {
-          tabs: [
-            { key: "all", label: t("dash.filter.all_f") },
-            { key: "blocked", label: roadmap("blocked") },
-            { key: "at_risk", label: roadmap("at_risk") },
-            { key: "on_track", label: roadmap("on_track") },
-          ],
-          activeTab: health,
-          onTab: (k) => setHealth(k as Health),
           actions: (
             <>
               <div className="seg">
@@ -89,7 +81,7 @@ export default function DashboardPage() {
           ),
         }
       : {},
-    [data?.year, health]
+    [data?.year]
   );
 
   if (error) return <ErrorBanner message={error} />;
@@ -120,6 +112,15 @@ export default function DashboardPage() {
               </select>
             </div>
           )}
+          <div style={{ width: 170 }}>
+            <label>{t("dash.filter.status")}</label>
+            <select value={health} onChange={(e) => setHealth(e.target.value as Health)}>
+              <option value="all">{t("dash.filter.all_f")}</option>
+              <option value="blocked">{roadmap("blocked")}</option>
+              <option value="at_risk">{roadmap("at_risk")}</option>
+              <option value="on_track">{roadmap("on_track")}</option>
+            </select>
+          </div>
           <div style={{ width: 190 }}>
             <label>{t("dash.sort")}</label>
             <select value={sort} onChange={(e) => setSort(e.target.value as SortKey)}>

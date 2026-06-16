@@ -53,6 +53,24 @@ export function Dot({ status }: { status: Rag }) {
   return <span className={`dot ${dotClass(status)}`} aria-hidden />;
 }
 
+/** Centered modal dialog with an overlay. */
+export function Modal({ title, onClose, children, footer, width = 560 }: {
+  title: ReactNode; onClose: () => void; children: ReactNode; footer?: ReactNode; width?: number;
+}) {
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-card" style={{ maxWidth: width }} onClick={(e) => e.stopPropagation()}>
+        <div className="modal-head">
+          <h3 style={{ margin: 0 }}>{title}</h3>
+          <button className="btn-ghost btn-sm" onClick={onClose} aria-label="close">✕</button>
+        </div>
+        <div className="modal-body">{children}</div>
+        {footer && <div className="modal-foot">{footer}</div>}
+      </div>
+    </div>
+  );
+}
+
 /** A card whose body collapses behind a clickable header. */
 export function Collapsible({
   title,

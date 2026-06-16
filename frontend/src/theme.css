@@ -308,6 +308,17 @@ tr:last-child td { border-bottom: none; }
   width: 16px; height: 2px; background: var(--org-line);
 }
 
+/* Modal dialog */
+.modal-overlay { position: fixed; inset: 0; z-index: 1100; background: rgba(15, 23, 42, .42);
+  display: flex; align-items: flex-start; justify-content: center; padding: 48px 16px; overflow: auto; }
+.modal-card { background: #fff; border-radius: 12px; width: 100%;
+  box-shadow: 0 16px 48px rgba(15, 23, 42, .28); }
+.modal-head { display: flex; justify-content: space-between; align-items: center;
+  padding: 16px 20px; border-bottom: 1px solid var(--line); }
+.modal-body { padding: 20px; }
+.modal-foot { padding: 14px 20px; border-top: 1px solid var(--line);
+  display: flex; justify-content: flex-end; gap: 8px; }
+
 /* Export / share dropdown menu */
 .menu-pop { box-shadow: 0 8px 28px rgba(15, 23, 42, .16); }
 .menu-label { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--grey); padding: 6px 8px 2px; }
