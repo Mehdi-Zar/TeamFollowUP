@@ -3,9 +3,10 @@ import { Link, useParams, useSearchParams } from "react-router-dom";
 import { api } from "../api";
 import { useI18n } from "../i18n";
 import { useModule } from "../config";
-import { Member, ProgressPoint, RoadmapItem, RoadmapStatus, SnapshotMeta, SquadDetail } from "../types";
+import { Member, ProgressPoint, RoadmapItem, SnapshotMeta, SquadDetail } from "../types";
 import { ProgressCurve, ProgressTimeline } from "../components/progress";
-import { Dot, FreshnessBadge, ProgressBar, Spinner, ErrorBanner } from "../components/ui";
+import { Dot, FreshnessBadge, ProgressBar, Spinner, ErrorBanner, Collapsible } from "../components/ui";
+import { useAuth } from "../auth";
 import EmailExport from "../components/EmailExport";
 import ReportSubscribe from "../components/ReportSubscribe";
 import ReportExport from "../components/ReportExport";
@@ -22,7 +23,6 @@ export default function SquadDetailPage() {
   const [snapshots, setSnapshots] = useState<SnapshotMeta[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [openJalon, setOpenJalon] = useState<RoadmapItem | null>(null);
-  const [zoomQuarter, setZoomQuarter] = useState<number | null>(null);
   const [progress, setProgress] = useState<ProgressPoint[]>([]);
   const moduleOn = useModule();
   const roadmapOn = moduleOn("squad_content", "roadmap");
@@ -30,6 +30,7 @@ export default function SquadDetailPage() {
   const kpisOn = moduleOn("squad_content", "kpis");
   const reviewOn = moduleOn("review");
   const csvOn = moduleOn("exports_csv");
+  const { user, effectiveRole } = useAuth();
 
   useEffect(() => {
     const q = yearParam ? `?year=${yearParam}` : "";
@@ -69,35 +70,13 @@ export default function SquadDetailPage() {
   if (error) return <ErrorBanner message={error} />;
   if (!squad) return <Spinner />;
 
-  // Quarter "courant" : trimestre calendaire si on regarde l'année en cours,
-  // sinon le dernier quarter qui contient des jalons (fallback Q1).
-  const now = new Date();
-  const calQuarter = Math.floor(now.getMonth() / 3) + 1;
-  const latestWithItems = [4, 3, 2, 1].find((q) => squad.roadmap_items.some((r) => r.quarter === q)) ?? 1;
-  const defaultQuarter = squad.year === now.getFullYear() ? calQuarter : latestWithItems;
-  const activeQuarter = zoomQuarter ?? defaultQuarter;
-
-  const quarterItems = squad.roadmap_items
-    .filter((r) => r.quarter === activeQuarter)
-    .sort((a, b) => a.display_order - b.display_order);
-  const qCell = squad.quarter_progress[String(activeQuarter)];
-  const countByStatus = (s: string) => quarterItems.filter((r) => r.status === s).length;
-  const ragBreakdown: Array<{ k: RoadmapStatus; n: number; label: string }> = [
-    { k: "blocked", n: countByStatus("blocked"), label: t("card.blocked") },
-    { k: "at_risk", n: countByStatus("at_risk"), label: t("card.atrisk") },
-    { k: "on_track", n: countByStatus("on_track"), label: roadmap("on_track") },
-    { k: "done", n: countByStatus("done"), label: roadmap("done") },
-  ];
-
-  const objQuarter = (dateStr?: string | null): number | null => {
-    if (!dateStr) return null;
-    const d = new Date(dateStr);
-    return d.getFullYear() === squad.year ? Math.floor(d.getMonth() / 3) + 1 : null;
-  };
-  const quarterObjectives = squad.objectives.filter((o) => objQuarter(o.target_date) === activeQuarter);
-
-  const jalonTooltip = (r: RoadmapItem) =>
-    [roadmap(r.status), r.owner, (r.description || "").slice(0, 140)].filter(Boolean).join(" · ");
+  // Annual objectives & KPIs are set by the tribe leader and visible only to the
+  // squad leader (of this squad), its tribe leader, and admins.
+  const role = effectiveRole ?? "member";
+  const privileged =
+    role === "admin" ||
+    (role === "tribe_leader" && user?.tribe_id === squad.tribe_id) ||
+    (role === "squad_leader" && squad.leader_user_id === user?.id);
 
   return (
     <div className="stack" style={{ gap: 18 }}>
@@ -155,87 +134,10 @@ export default function SquadDetailPage() {
       </div>
       )}
 
-      {/* Zoom détaillé sur un quarter (par défaut le quarter courant, sélectionnable) */}
-      {roadmapOn && (
-      <div className="card">
-        <div className="between" style={{ flexWrap: "wrap", gap: 10 }}>
-          <h2 style={{ margin: 0 }}>{t("squad.zoom")}</h2>
-          <div className="seg">
-            {[1, 2, 3, 4].map((q) => (
-              <button key={q} className={q === activeQuarter ? "active" : ""} onClick={() => setZoomQuarter(q)}>
-                Q{q}
-                {q === defaultQuarter ? " •" : ""}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="small muted" style={{ margin: "6px 0 14px" }}>{t("squad.zoom_hint")}</div>
-
-        <div className="quarter-block current" style={{ marginBottom: 18 }}>
-          <div className="between">
-            <h4 style={{ margin: 0 }}>Q{activeQuarter} · {squad.year}</h4>
-            <span className="strong" style={{ fontSize: 18 }}>{qCell?.progress_pct ?? 0}%</span>
-          </div>
-          <ProgressBar pct={qCell?.progress_pct ?? 0} />
-          {qCell?.comment && <div className="small muted" style={{ marginTop: 8 }}>{qCell.comment}</div>}
-          <div className="rag-counts" style={{ marginTop: 12, flexWrap: "wrap" }}>
-            {ragBreakdown.map((b) => (
-              <span key={b.k}>
-                <Dot status={roadmapRag(b.k)} /> {b.n} {b.label}
-              </span>
-            ))}
-          </div>
-        </div>
-
-        <h3 style={{ marginBottom: 8 }}>{t("squad.quarter_obj")}</h3>
-        {quarterObjectives.length === 0 ? (
-          <div className="small muted" style={{ marginBottom: 16 }}>{t("squad.no_quarter_obj")}</div>
-        ) : (
-          <div style={{ marginBottom: 16 }}>
-            {quarterObjectives.map((o) => (
-              <div key={o.id} className="item-row">
-                <Dot status={o.rag_status} />
-                <div className="grow">
-                  <div>{o.title}</div>
-                  {o.description && <div className="small muted">{o.description}</div>}
-                </div>
-                <span className="small muted">
-                  {rag(o.rag_status)}
-                  {o.target_date ? ` · ${formatDate(o.target_date)}` : ""}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-
-        <h3 style={{ marginBottom: 8 }}>{t("squad.quarter_jalons")}</h3>
-        {quarterItems.length === 0 ? (
-          <div className="small muted">{t("squad.no_jalon")}</div>
-        ) : (
-          <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))" }}>
-            {quarterItems.map((r) => (
-              <div key={r.id} className="quarter-block" style={{ margin: 0 }} title={jalonTooltip(r)}>
-                <div className="inline" style={{ gap: 8 }}>
-                  <Dot status={roadmapRag(r.status)} />
-                  <span className="strong">{r.title}</span>
-                </div>
-                {r.description && (
-                  <div className="small muted" style={{ marginTop: 6 }}>{r.description}</div>
-                )}
-                <button className="btn-secondary btn-sm" style={{ marginTop: 10 }} onClick={() => setOpenJalon(r)}>
-                  {t("squad.jalon_detail")}
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-      )}
-
       {openJalon && <JalonView jalon={openJalon} onClose={() => setOpenJalon(null)} t={t} roadmap={roadmap} />}
 
-      {/* Objectifs annuels */}
-      {objectivesOn && (
+      {/* Objectifs annuels — définis par le tribe leader, visibles par le squad leader */}
+      {objectivesOn && privileged && (
       <div className="card">
         <h2>{t("squad.objectives", { year: squad.year })}</h2>
         <div className="small muted" style={{ marginBottom: 6 }}>{t("squad.objectives_hint")}</div>
@@ -256,8 +158,8 @@ export default function SquadDetailPage() {
       </div>
       )}
 
-      {/* KPIs (optionnels) */}
-      {squad.kpis_enabled && kpisOn && (
+      {/* KPIs (optionnels) — visibles par le squad leader / tribe leader / admin */}
+      {squad.kpis_enabled && kpisOn && privileged && (
         <div className="card">
           <h2>{t("squad.kpis")}</h2>
           {squad.kpis.length === 0 && <div className="small muted">{t("squad.no_kpi")}</div>}
@@ -283,29 +185,28 @@ export default function SquadDetailPage() {
         </div>
       )}
 
-      {/* Revue de progression */}
+      {/* Revue de progression — carte dépliable */}
       {reviewOn && (
-      <div className="card">
-        <h2>{t("progress.title")}</h2>
-        <div className="small muted" style={{ marginBottom: 12 }}>{t("progress.hint")}</div>
-        {progress.length === 0 ? (
-          <div className="small muted">{t("progress.no_data")}</div>
-        ) : (
-          <>
-            <ProgressCurve points={progress} />
-            <div style={{ marginTop: 12 }}>
-              <ProgressTimeline points={progress} />
-            </div>
-          </>
-        )}
-      </div>
+        <Collapsible title={t("progress.title")} subtitle={t("progress.collapsed_hint")}>
+          <div className="small muted" style={{ marginBottom: 12 }}>{t("progress.hint")}</div>
+          <div className="banner" style={{ marginBottom: 12 }}>{t("progress.how_it_works")}</div>
+          {progress.length === 0 ? (
+            <div className="small muted">{t("progress.no_data")}</div>
+          ) : (
+            <>
+              <ProgressCurve points={progress} />
+              <div style={{ marginTop: 12 }}>
+                <ProgressTimeline points={progress} />
+              </div>
+            </>
+          )}
+        </Collapsible>
       )}
 
-      {/* Équipe / organigramme de la squad */}
-      <div className="card">
-        <h2>{t("squad.team")}</h2>
+      {/* Équipe / organigramme de la squad — carte dépliable */}
+      <Collapsible title={t("squad.team")} subtitle={t("squad.team_collapsed_hint", { n: squad.members.length })}>
         <SquadOrg squad={squad} emptyLabel={t("squad.no_members")} />
-      </div>
+      </Collapsible>
 
       <History squadId={squadId} snapshots={snapshots} />
     </div>
@@ -396,8 +297,7 @@ function History({ squadId, snapshots }: { squadId: number; snapshots: SnapshotM
   }
 
   return (
-    <div className="card">
-      <h2>{t("squad.history")}</h2>
+    <Collapsible title={t("squad.history")} subtitle={t("squad.history_collapsed_hint", { n: snapshots.length })}>
       {snapshots.length === 0 && <div className="small muted">{t("squad.no_history")}</div>}
       <div className="stack">
         {snapshots.map((s) => (
@@ -415,7 +315,7 @@ function History({ squadId, snapshots }: { squadId: number; snapshots: SnapshotM
           </div>
         ))}
       </div>
-    </div>
+    </Collapsible>
   );
 }
 
