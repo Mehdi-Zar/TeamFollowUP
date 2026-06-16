@@ -11,7 +11,7 @@ from .. import status as st
 from ..database import get_db
 from ..deps import get_current_user, require_module
 from ..models import User
-from ..report import build_report_data, render_html, render_pptx
+from ..report import build_report_data, render_html, render_pptx, rt
 from ..schemas import ReportSubscriptionIn, ReportSubscriptionOut
 
 router = APIRouter(prefix="/api/reports", tags=["reports"],
@@ -19,36 +19,38 @@ router = APIRouter(prefix="/api/reports", tags=["reports"],
 
 
 def _data(db: Session, user: User, tribe_id: int | None, year: int | None,
-          since_days: int, squad_id: int | None = None) -> dict:
+          since_days: int, squad_id: int | None = None, lang: str | None = None) -> dict:
     """Build the report scoped to the user's visibility (or a single squad).
 
     Available to any authenticated user — same scope as what they already see on
-    the dashboard / squad pages.
+    the dashboard / squad pages. lang follows the caller's UI language.
     """
     year = year or st.current_year_quarter()[0]
     if squad_id is not None:
         from ..subscriptions import user_can_see_squad
         if not user_can_see_squad(db, user, squad_id):
             raise HTTPException(status_code=404, detail="Squad introuvable")
-        return build_report_data(db, None, year, since_days, squad_id=squad_id)
+        return build_report_data(db, None, year, since_days, squad_id=squad_id, lang=lang)
     # Admin may target a tribe; everyone else is scoped to their own tribe.
     scope = tribe_id if user.role == "admin" else user.tribe_id
-    return build_report_data(db, scope, year, since_days)
+    return build_report_data(db, scope, year, since_days, lang=lang)
 
 
 @router.get("/weekly.html", response_class=HTMLResponse)
 def weekly_html(tribe_id: int | None = Query(default=None), year: int | None = Query(default=None),
                 since_days: int = Query(default=7, ge=1, le=365), squad_id: int | None = Query(default=None),
+                lang: str | None = Query(default=None),
                 db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    data = _data(db, user, tribe_id, year, since_days, squad_id)
+    data = _data(db, user, tribe_id, year, since_days, squad_id, lang)
     return HTMLResponse(render_html(data, standalone=True))
 
 
 @router.get("/weekly.pptx")
 def weekly_pptx(tribe_id: int | None = Query(default=None), year: int | None = Query(default=None),
                 since_days: int = Query(default=7, ge=1, le=365), squad_id: int | None = Query(default=None),
+                lang: str | None = Query(default=None),
                 db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    data = _data(db, user, tribe_id, year, since_days, squad_id)
+    data = _data(db, user, tribe_id, year, since_days, squad_id, lang)
     try:
         payload = render_pptx(data)
     except ImportError:
@@ -119,12 +121,13 @@ def weekly_email(payload: dict = Body(default=None), db: Session = Depends(get_d
     year = payload.get("year")
     since_days = int(payload.get("since_days") or 7)
     squad_id = payload.get("squad_id")
+    lang = payload.get("lang")
 
     cfg = get_smtp(db)
     if not cfg.get("enabled"):
         raise HTTPException(status_code=400, detail="SMTP non configuré (activez-le dans l'Administration)")
 
-    data = _data(db, user, tribe_id, year, since_days, squad_id)
+    data = _data(db, user, tribe_id, year, since_days, squad_id, lang)
     html_body = render_html(data, standalone=True)
     attachment = None
     try:
@@ -134,7 +137,7 @@ def weekly_email(payload: dict = Body(default=None), db: Session = Depends(get_d
     except ImportError:
         pass  # send HTML-only if PPTX backend unavailable
 
-    subject = f"{data['app_name']} — Rapport hebdomadaire"
+    subject = f"{data['app_name']} — {rt(data['lang'], 'report')}"
     ok = send_email(cfg, to, subject, html_body, attachment=attachment, html=True)
     if not ok:
         raise HTTPException(status_code=502, detail="L'envoi de l'email a échoué (vérifiez la configuration SMTP)")
