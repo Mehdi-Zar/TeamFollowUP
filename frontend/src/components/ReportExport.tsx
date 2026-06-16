@@ -4,9 +4,9 @@ import { useI18n } from "../i18n";
 import { useConfig, useModule } from "../config";
 import { useAuth } from "../auth";
 
-/** Export of the weekly report (combined dashboard + review) as HTML / PPTX,
- *  plus an on-demand email send. Placed in the Review page action bar. */
-export default function ReportExport({ sinceDays = 7 }: { sinceDays?: number }) {
+/** Export of the report (combined dashboard + review) as HTML / PPTX, plus an
+ *  on-demand email send. Optionally scoped to a single squad. */
+export default function ReportExport({ sinceDays = 7, squadId }: { sinceDays?: number; squadId?: number }) {
   const { t } = useI18n();
   const { smtp_enabled } = useConfig();
   const weeklyReportOn = useModule()("review", "weekly_report");
@@ -16,14 +16,14 @@ export default function ReportExport({ sinceDays = 7 }: { sinceDays?: number }) 
   const [msg, setMsg] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
 
-  const qs = `since_days=${sinceDays}`;
+  const qs = `since_days=${sinceDays}${squadId ? `&squad_id=${squadId}` : ""}`;
 
   async function send() {
     if (!to.trim()) return;
     setSending(true);
     setMsg(null);
     try {
-      await api.post("/api/reports/weekly/email", { to: to.trim(), since_days: sinceDays });
+      await api.post("/api/reports/weekly/email", { to: to.trim(), since_days: sinceDays, squad_id: squadId ?? null });
       setMsg(t("export.sent", { to: to.trim() }));
       setTimeout(() => { setOpen(false); setMsg(null); }, 1800);
     } catch (e) {
