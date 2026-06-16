@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { api } from "../api";
 import { useI18n } from "../i18n";
 import { ProgressReviewRow } from "../types";
-import { Dot, Spinner, ErrorBanner, ProgressBar, Collapsible } from "../components/ui";
+import { Dot, Spinner, ErrorBanner, ProgressBar, Modal } from "../components/ui";
 import { useSetPageChrome } from "../components/pageChrome";
 import { ChangeList } from "../components/progress";
 import ExportMenu from "../components/ExportMenu";
@@ -60,11 +60,20 @@ function Metric({ label, children, help }: { label: string; children: ReactNode;
   );
 }
 
+function LegendChip({ rag, label }: { rag: "red" | "amber" | "green"; label: string }) {
+  return (
+    <span className="inline" style={{ gap: 6, alignItems: "center" }}>
+      <Dot status={rag} /><span className="small strong">{label}</span>
+    </span>
+  );
+}
+
 export default function ReviewPage() {
   const { t } = useI18n();
   const [days, setDays] = useState(7);
   const [rows, setRows] = useState<ProgressReviewRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [help, setHelp] = useState(false);
 
   useEffect(() => {
     setRows(null);
@@ -116,20 +125,39 @@ export default function ReviewPage() {
 
   return (
     <div className="stack" style={{ gap: 18 }}>
-      {/* How to read this page */}
-      <Collapsible title={t("review.help_title")} subtitle={t("review.help_sub")} defaultOpen>
-        <div className="stack" style={{ gap: 10 }}>
-          <div className="small">{t("review.help_intro", { days })}</div>
-          <ul className="stack" style={{ gap: 8, margin: 0, paddingLeft: 0, listStyle: "none" }}>
-            <li className="small"><span className="strong">📊 {t("review.m.progress")}</span> — {t("review.h.progress")}</li>
-            <li className="small"><span className="strong">📈 {t("review.m.delta")}</span> — {t("review.h.delta")}</li>
-            <li className="small"><span className="strong">🎯 {t("review.m.confidence")}</span> — {t("review.h.confidence")}</li>
-            <li className="small"><span className="strong"><Dot status="red" /> {t("review.m.blocked")} / <Dot status="amber" /> {t("review.m.atrisk")}</span> — {t("review.h.blocked")}</li>
-            <li className="small"><span className="strong">🔄 {t("review.m.changes")}</span> — {t("review.h.changes")}</li>
-          </ul>
-          <div className="small muted">{t("review.h.verdict")}</div>
+      {/* Visual legend strip */}
+      <div className="card" style={{ padding: "10px 14px" }}>
+        <div className="between" style={{ alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+          <div className="inline" style={{ gap: 18, flexWrap: "wrap", alignItems: "center" }}>
+            <LegendChip rag="green" label={t("review.verdict.ontrack")} />
+            <LegendChip rag="amber" label={t("review.verdict.tension")} />
+            <LegendChip rag="red" label={t("review.verdict.blocked")} />
+            <span style={{ width: 1, height: 18, background: "var(--line)" }} />
+            <span className="inline small" style={{ gap: 6, color: "var(--green)", fontWeight: 600 }}>▲ {t("review.up")}</span>
+            <span className="inline small" style={{ gap: 6, color: "var(--red)", fontWeight: 600 }}>▼ {t("review.down")}</span>
+          </div>
+          <button className="btn-ghost btn-sm" onClick={() => setHelp(true)}>ⓘ {t("review.how")}</button>
         </div>
-      </Collapsible>
+      </div>
+
+      {help && (
+        <Modal title={t("review.how")} onClose={() => setHelp(false)} width={520}>
+          <div className="stack" style={{ gap: 12 }}>
+            {[
+              ["📊", t("review.m.progress"), t("review.h.progress")],
+              ["📈", t("review.m.delta"), t("review.h.delta")],
+              ["🎯", t("review.m.confidence"), t("review.h.confidence")],
+              ["🔴", t("review.m.jalons"), t("review.h.blocked")],
+              ["🔄", t("review.m.changes"), t("review.h.changes")],
+            ].map(([icon, label, desc]) => (
+              <div key={label} className="inline" style={{ gap: 12, alignItems: "flex-start" }}>
+                <span style={{ fontSize: 22, lineHeight: 1, width: 28, textAlign: "center" }}>{icon}</span>
+                <div><div className="strong small">{label}</div><div className="small muted">{desc}</div></div>
+              </div>
+            ))}
+          </div>
+        </Modal>
+      )}
 
       {/* Summary band */}
       {rows.length > 0 && (
