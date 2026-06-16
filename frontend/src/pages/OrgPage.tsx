@@ -1,4 +1,4 @@
-import { ReactNode, WheelEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { MouseEvent as ReactMouseEvent, ReactNode, WheelEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
 import { useAuth } from "../auth";
@@ -473,8 +473,33 @@ function OrgFullscreen({ children, onClose }: { children: ReactNode; onClose: ()
   }, []);
 
   const clamp = (z: number) => Math.max(0.2, Math.min(3, z));
+
+  // Zoom while keeping the point under the cursor fixed (magnifier feel).
+  function zoomAt(clientX: number, clientY: number, factor: number) {
+    const body = bodyRef.current;
+    if (!body) { setZoom((z) => clamp(z * factor)); return; }
+    const rect = body.getBoundingClientRect();
+    const ox = clientX - rect.left, oy = clientY - rect.top;
+    setZoom((z) => {
+      const nz = clamp(z * factor);
+      const contentX = (body.scrollLeft + ox) / z;
+      const contentY = (body.scrollTop + oy) / z;
+      requestAnimationFrame(() => {
+        body.scrollLeft = contentX * nz - ox;
+        body.scrollTop = contentY * nz - oy;
+      });
+      return nz;
+    });
+  }
+
   const onWheel = (e: WheelEvent) => {
-    if (e.ctrlKey) { e.preventDefault(); setZoom((z) => clamp(z * (e.deltaY < 0 ? 1.1 : 0.9))); }
+    if (e.ctrlKey) { e.preventDefault(); zoomAt(e.clientX, e.clientY, e.deltaY < 0 ? 1.12 : 0.9); }
+  };
+  const onClick = (e: ReactMouseEvent) => {
+    // Let clicks on a squad link open the squad; otherwise click = zoom.
+    if ((e.target as HTMLElement).closest("a")) return;
+    e.stopPropagation();
+    zoomAt(e.clientX, e.clientY, e.shiftKey || e.altKey ? 1 / 1.4 : 1.4);
   };
 
   return (
@@ -482,6 +507,7 @@ function OrgFullscreen({ children, onClose }: { children: ReactNode; onClose: ()
       <div className="org-fullscreen-bar" onClick={(e) => e.stopPropagation()}>
         <span className="strong">{t("nav.org")}</span>
         <div className="inline" style={{ gap: 8, alignItems: "center" }}>
+          <span className="small muted" style={{ marginRight: 4 }}>{t("org.zoom_hint")}</span>
           <button className="btn-secondary btn-sm" title={t("org.zoom_out")} onClick={() => setZoom((z) => clamp(z * 0.85))}>−</button>
           <span className="small" style={{ minWidth: 46, textAlign: "center" }}>{Math.round(zoom * 100)}%</span>
           <button className="btn-secondary btn-sm" title={t("org.zoom_in")} onClick={() => setZoom((z) => clamp(z * 1.18))}>+</button>
@@ -489,9 +515,14 @@ function OrgFullscreen({ children, onClose }: { children: ReactNode; onClose: ()
           <button className="btn-secondary btn-sm" onClick={onClose}>✕ {t("action.close")}</button>
         </div>
       </div>
-      <div ref={bodyRef} className="org-fullscreen-body" style={{ display: "block", overflow: "auto" }}
-           onClick={(e) => e.stopPropagation()} onWheel={onWheel}>
-        <div ref={contentRef} style={{ transform: `scale(${zoom})`, transformOrigin: "top center", width: "max-content", margin: "0 auto" }}>
+      <div
+        ref={bodyRef}
+        className="org-fullscreen-body org-zoomable"
+        style={{ display: "block", overflow: "auto" }}
+        onClick={onClick}
+        onWheel={onWheel}
+      >
+        <div ref={contentRef} style={{ transform: `scale(${zoom})`, transformOrigin: "0 0", width: "max-content" }}>
           {children}
         </div>
       </div>
