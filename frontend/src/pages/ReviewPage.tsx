@@ -60,6 +60,28 @@ function Metric({ label, children, help }: { label: string; children: ReactNode;
   );
 }
 
+// Clean line icons (Feather-style) instead of emoji.
+const Svg = ({ children }: { children: ReactNode }) => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+       strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{children}</svg>
+);
+const IcoProgress = () => <Svg><line x1="6" y1="20" x2="6" y2="14" /><line x1="12" y1="20" x2="12" y2="4" /><line x1="18" y1="20" x2="18" y2="10" /></Svg>;
+const IcoTrend = () => <Svg><polyline points="22 7 13.5 15.5 8.5 10.5 2 17" /><polyline points="16 7 22 7 22 13" /></Svg>;
+const IcoTarget = () => <Svg><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="5" /><circle cx="12" cy="12" r="1.5" /></Svg>;
+const IcoAlert = () => <Svg><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></Svg>;
+const IcoActivity = () => <Svg><polyline points="22 12 18 12 15 21 9 3 6 12 2 12" /></Svg>;
+const IcoNote = () => <Svg><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></Svg>;
+const IcoInfo = () => <Svg><circle cx="12" cy="12" r="9" /><line x1="12" y1="11" x2="12" y2="16" /><line x1="12" y1="8" x2="12.01" y2="8" /></Svg>;
+
+function IconBadge({ children, color = "var(--accent)" }: { children: ReactNode; color?: string }) {
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center",
+                   width: 34, height: 34, borderRadius: 9, background: "var(--ice-soft)", color, flex: "0 0 auto" }}>
+      {children}
+    </span>
+  );
+}
+
 function LegendChip({ rag, label }: { rag: "red" | "amber" | "green"; label: string }) {
   return (
     <span className="inline" style={{ gap: 6, alignItems: "center" }}>
@@ -136,22 +158,22 @@ export default function ReviewPage() {
             <span className="inline small" style={{ gap: 6, color: "var(--green)", fontWeight: 600 }}>▲ {t("review.up")}</span>
             <span className="inline small" style={{ gap: 6, color: "var(--red)", fontWeight: 600 }}>▼ {t("review.down")}</span>
           </div>
-          <button className="btn-ghost btn-sm" onClick={() => setHelp(true)}>ⓘ {t("review.how")}</button>
+          <button className="btn-ghost btn-sm inline" style={{ gap: 6 }} onClick={() => setHelp(true)}><IcoInfo /> {t("review.how")}</button>
         </div>
       </div>
 
       {help && (
         <Modal title={t("review.how")} onClose={() => setHelp(false)} width={520}>
-          <div className="stack" style={{ gap: 12 }}>
+          <div className="stack" style={{ gap: 14 }}>
             {[
-              ["📊", t("review.m.progress"), t("review.h.progress")],
-              ["📈", t("review.m.delta"), t("review.h.delta")],
-              ["🎯", t("review.m.confidence"), t("review.h.confidence")],
-              ["🔴", t("review.m.jalons"), t("review.h.blocked")],
-              ["🔄", t("review.m.changes"), t("review.h.changes")],
-            ].map(([icon, label, desc]) => (
-              <div key={label} className="inline" style={{ gap: 12, alignItems: "flex-start" }}>
-                <span style={{ fontSize: 22, lineHeight: 1, width: 28, textAlign: "center" }}>{icon}</span>
+              [<IcoProgress />, "var(--accent)", t("review.m.progress"), t("review.h.progress")],
+              [<IcoTrend />, "var(--green)", t("review.m.delta"), t("review.h.delta")],
+              [<IcoTarget />, "var(--navy)", t("review.m.confidence"), t("review.h.confidence")],
+              [<IcoAlert />, "var(--red)", t("review.m.jalons"), t("review.h.blocked")],
+              [<IcoActivity />, "var(--accent)", t("review.m.changes"), t("review.h.changes")],
+            ].map(([icon, color, label, desc]: any) => (
+              <div key={label} className="inline" style={{ gap: 12, alignItems: "center" }}>
+                <IconBadge color={color}>{icon}</IconBadge>
                 <div><div className="strong small">{label}</div><div className="small muted">{desc}</div></div>
               </div>
             ))}
@@ -213,12 +235,12 @@ export default function ReviewPage() {
 
                   {r.note && (
                     <div className="small" style={{ whiteSpace: "pre-wrap", background: "var(--ice-soft)", borderRadius: 8, padding: "8px 10px" }}>
-                      <span className="muted">💬 {t("review.latest_note")} : </span>{r.note}
+                      <span className="muted inline" style={{ gap: 6 }}><IcoNote /> {t("review.latest_note")} : </span>{r.note}
                     </div>
                   )}
 
                   <div>
-                    <div className="small muted" style={{ marginBottom: 4 }}>🔄 {t("review.m.changes")} · <span title={t("review.h.points")}>{r.points_in_period} {t("review.points")}</span></div>
+                    <div className="small muted inline" style={{ marginBottom: 4, gap: 6 }}><IcoActivity /> {t("review.m.changes")} · <span title={t("review.h.points")}>{r.points_in_period} {t("review.points")}</span></div>
                     {r.changes.length > 0 ? <ChangeList changes={r.changes} max={6} /> : <div className="small muted">{t("review.no_change")}</div>}
                   </div>
                 </div>
