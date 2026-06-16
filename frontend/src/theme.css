@@ -257,8 +257,8 @@ tr:last-child td { border-bottom: none; }
   justify-content: center;
   gap: 2px;
   cursor: default;
-  width: 200px;
-  min-height: 92px;
+  width: 170px;
+  min-height: 78px;
 }
 .org-node.s-red { border-left-color: var(--red); }
 .org-node.s-orange { border-left-color: var(--orange); }
@@ -287,6 +287,16 @@ tr:last-child td { border-bottom: none; }
 .org-children > .org-subtree:first-child::after { left: calc(50% - 1px); }
 .org-children > .org-subtree:last-child::after { right: calc(50% - 1px); }
 .org-children > .org-subtree:only-child::after { display: none; }
+
+/* Export / share dropdown menu */
+.menu-pop { box-shadow: 0 8px 28px rgba(15, 23, 42, .16); }
+.menu-label { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--grey); padding: 6px 8px 2px; }
+.menu-item {
+  display: block; width: 100%; text-align: left; background: none; border: none;
+  padding: 8px 10px; border-radius: 6px; font-size: 13px; color: var(--ink, #111827);
+  cursor: pointer; text-decoration: none;
+}
+.menu-item:hover { background: var(--ice-soft); }
 
 /* Clickable squad node */
 .org-node--squad { cursor: pointer; transition: box-shadow .12s, border-color .12s; }
