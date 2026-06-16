@@ -18,39 +18,42 @@ router = APIRouter(prefix="/api/reports", tags=["reports"],
                    dependencies=[Depends(require_module("review", "weekly_report"))])
 
 
-def _resolve_scope(user: User, tribe_id: int | None) -> int | None:
-    """Weekly report is a leader/admin artifact, scoped to visibility."""
-    if user.role == "admin":
-        return tribe_id
-    if user.role == "tribe_leader":
-        return user.tribe_id
-    raise HTTPException(status_code=403, detail="Réservé aux tribe leaders et administrateurs")
+def _data(db: Session, user: User, tribe_id: int | None, year: int | None,
+          since_days: int, squad_id: int | None = None) -> dict:
+    """Build the report scoped to the user's visibility (or a single squad).
 
-
-def _data(db: Session, user: User, tribe_id: int | None, year: int | None, since_days: int) -> dict:
-    scope = _resolve_scope(user, tribe_id)
+    Available to any authenticated user — same scope as what they already see on
+    the dashboard / squad pages.
+    """
     year = year or st.current_year_quarter()[0]
+    if squad_id is not None:
+        from ..subscriptions import user_can_see_squad
+        if not user_can_see_squad(db, user, squad_id):
+            raise HTTPException(status_code=404, detail="Squad introuvable")
+        return build_report_data(db, None, year, since_days, squad_id=squad_id)
+    # Admin may target a tribe; everyone else is scoped to their own tribe.
+    scope = tribe_id if user.role == "admin" else user.tribe_id
     return build_report_data(db, scope, year, since_days)
 
 
 @router.get("/weekly.html", response_class=HTMLResponse)
 def weekly_html(tribe_id: int | None = Query(default=None), year: int | None = Query(default=None),
-                since_days: int = Query(default=7, ge=1, le=120),
+                since_days: int = Query(default=7, ge=1, le=365), squad_id: int | None = Query(default=None),
                 db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    data = _data(db, user, tribe_id, year, since_days)
+    data = _data(db, user, tribe_id, year, since_days, squad_id)
     return HTMLResponse(render_html(data, standalone=True))
 
 
 @router.get("/weekly.pptx")
 def weekly_pptx(tribe_id: int | None = Query(default=None), year: int | None = Query(default=None),
-                since_days: int = Query(default=7, ge=1, le=120),
+                since_days: int = Query(default=7, ge=1, le=365), squad_id: int | None = Query(default=None),
                 db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    data = _data(db, user, tribe_id, year, since_days)
+    data = _data(db, user, tribe_id, year, since_days, squad_id)
     try:
         payload = render_pptx(data)
     except ImportError:
         raise HTTPException(status_code=501, detail="Génération PPTX indisponible (python-pptx non installé)")
-    filename = f"rapport_hebdo_{data['year']}.pptx"
+    filename = f"rapport_{data['year']}.pptx"
     return StreamingResponse(
         iter([payload]),
         media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
@@ -115,12 +118,13 @@ def weekly_email(payload: dict = Body(default=None), db: Session = Depends(get_d
     tribe_id = payload.get("tribe_id")
     year = payload.get("year")
     since_days = int(payload.get("since_days") or 7)
+    squad_id = payload.get("squad_id")
 
     cfg = get_smtp(db)
     if not cfg.get("enabled"):
         raise HTTPException(status_code=400, detail="SMTP non configuré (activez-le dans l'Administration)")
 
-    data = _data(db, user, tribe_id, year, since_days)
+    data = _data(db, user, tribe_id, year, since_days, squad_id)
     html_body = render_html(data, standalone=True)
     attachment = None
     try:

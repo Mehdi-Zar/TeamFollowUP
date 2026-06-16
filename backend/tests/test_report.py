@@ -88,9 +88,21 @@ def test_weekly_pptx_endpoint_admin(client, seeded):
     assert r.content[:2] == b"PK"
 
 
-def test_weekly_report_forbidden_for_member(client, seeded):
-    login(client, seeded["member"])
-    assert client.get("/api/reports/weekly.html").status_code == 403
+def test_weekly_report_available_to_member_scoped(client, seeded):
+    # Report export is available to any authenticated user, scoped to their tribe.
+    login(client, seeded["member"])  # tribe 1
+    r = client.get("/api/reports/weekly.html")
+    assert r.status_code == 200
+    assert "Squad C" not in r.text  # tribe 2 squad excluded
+
+
+def test_weekly_report_squad_scope(client, seeded):
+    login(client, seeded["sl_a"])  # leads squad A (tribe 1)
+    r = client.get(f"/api/reports/weekly.html?squad_id={seeded['squad_a']}")
+    assert r.status_code == 200
+    assert "Squad A" in r.text and "Squad B" not in r.text
+    # A squad outside the user's visibility is 404.
+    assert client.get(f"/api/reports/weekly.html?squad_id={seeded['squad_c']}").status_code == 404
 
 
 def test_tribe_leader_scoped_to_own_tribe(client, seeded):
