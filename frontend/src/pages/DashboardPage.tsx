@@ -8,6 +8,7 @@ import { DashboardOut, SquadCard, Tribe } from "../types";
 import { Dot, FreshnessBadge, ProgressBar, Spinner, ErrorBanner } from "../components/ui";
 import EmailExport from "../components/EmailExport";
 import ReportSubscribe from "../components/ReportSubscribe";
+import ReportExport from "../components/ReportExport";
 import { useSetPageChrome } from "../components/pageChrome";
 
 type SortKey = "risk" | "progress" | "name" | "fresh";
@@ -84,6 +85,7 @@ export default function DashboardPage() {
               </div>
               {csvOn && <a className="btn btn-secondary btn-sm" href={`/api/exports/dashboard.csv?year=${data.year}`}>{t("action.csv")}</a>}
               <Link className="btn btn-secondary btn-sm" to="/print/dashboard" target="_blank">{t("action.report")}</Link>
+              <ReportExport />
               <ReportSubscribe />
               {csvOn && <EmailExport endpoint="/api/exports/dashboard/email" year={data.year} />}
             </>

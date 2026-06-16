@@ -8,6 +8,7 @@ import { ProgressCurve, ProgressTimeline } from "../components/progress";
 import { Dot, FreshnessBadge, ProgressBar, Spinner, ErrorBanner } from "../components/ui";
 import EmailExport from "../components/EmailExport";
 import ReportSubscribe from "../components/ReportSubscribe";
+import ReportExport from "../components/ReportExport";
 import { useSetPageChrome } from "../components/pageChrome";
 import { roadmapRag, trendRag } from "../labels";
 
@@ -55,6 +56,7 @@ export default function SquadDetailPage() {
               </div>
               {csvOn && <a className="btn btn-secondary btn-sm" href={`/api/exports/squad/${squadId}.csv?year=${squad.year}`}>{t("action.csv")}</a>}
               <Link className="btn btn-secondary btn-sm" to={`/print/squad/${squadId}?year=${squad.year}`} target="_blank">{t("action.report")}</Link>
+              <ReportExport squadId={squadId} />
               <ReportSubscribe squadId={squadId} />
               {csvOn && <EmailExport endpoint={`/api/exports/squad/${squadId}/email`} year={squad.year} />}
             </>
