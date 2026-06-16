@@ -24,6 +24,7 @@ def _defaults() -> dict:
         "squad_content": {"enabled": True, "objectives": True, "roadmap": True, "kpis": True},
         "notifications": {"enabled": True, "inapp": True, "email": True},
         "exports_csv": {"enabled": True},
+        "getting_started": {"enabled": True},
     }
 
 
