@@ -20,7 +20,9 @@ export const canManageSquads = (r: Role) => r === "admin" || r === "tribe_leader
 export const canManageObjectives = (r: Role) => r === "admin" || r === "tribe_leader";
 export const canEditOrg = (r: Role) => r === "admin" || r === "tribe_leader";
 export const isWriter = (r: Role) => r === "admin" || r === "tribe_leader" || r === "squad_leader";
-export const canSeeSaisie = (r: Role) => isWriter(r);
+// Reporting (saisie) is for squad leaders (and admins). Tribe leaders steer their
+// squads via the admin "Squads" tab (KPIs on/off, annual objectives), not reporting.
+export const canSeeSaisie = (r: Role) => r === "admin" || r === "squad_leader";
 
 /** Can this role (with this user id) edit the given squad's roadmap/KPIs/members? */
 export function canEditSquad(role: Role, userId: number | undefined, squad: Pick<SquadDetail, "leader_user_id">): boolean {
