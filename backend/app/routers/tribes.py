@@ -41,10 +41,22 @@ def org_overview(db: Session = Depends(get_db), admin: User = Depends(require_ad
 
 @router.post("", response_model=TribeOut, status_code=201)
 def create_tribe(payload: TribeCreate, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
-    tribe = Tribe(**payload.model_dump())
+    data = payload.model_dump()
+    leader_user_id = data.pop("leader_user_id", None)
+    tribe = Tribe(**data)
     db.add(tribe)
     db.flush()
-    record_audit(db, admin.id, "tribe.create", entity="tribe", entity_id=tribe.id, detail={"name": tribe.name})
+    # Optionally promote a chosen user to tribe leader of this new tribe.
+    if leader_user_id is not None:
+        leader = db.get(User, leader_user_id)
+        if leader is None:
+            raise HTTPException(status_code=404, detail="Utilisateur (tribe leader) introuvable")
+        if leader.is_break_glass:
+            raise HTTPException(status_code=400, detail="Le compte de secours ne peut pas être tribe leader")
+        leader.role = "tribe_leader"
+        leader.tribe_id = tribe.id
+    record_audit(db, admin.id, "tribe.create", entity="tribe", entity_id=tribe.id,
+                 detail={"name": tribe.name, "leader_user_id": leader_user_id})
     db.commit()
     db.refresh(tribe)
     return tribe
