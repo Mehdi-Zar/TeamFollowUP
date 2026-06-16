@@ -226,7 +226,7 @@ export default function OrgPage() {
             <button className="btn-secondary btn-sm" onClick={() => setFullscreen(false)}>✕ {t("action.close")}</button>
           </div>
           <div className="org-fullscreen-body" onClick={(e) => e.stopPropagation()}>
-            {treeContent}
+            <FitScale fitHeight>{treeContent}</FitScale>
           </div>
         </div>
       )}
@@ -317,16 +317,21 @@ function NodeView({
         )}
       </div>
       {teamVisible && node.squad_id && <SquadTeam squadId={node.squad_id} />}
-      {node.children.length > 0 && (
-        <>
-          <div className="org-connector" />
-          <div className="org-children">
-            {node.children.map((c) => (
-              <NodeView key={c.id} node={c} editable={editable} linkSquads={linkSquads} forceShowTeam={forceShowTeam} onAdd={onAdd} onEdit={onEdit} onDelete={onDelete} />
-            ))}
-          </div>
-        </>
-      )}
+      {node.children.length > 0 && (() => {
+        // Stack terminal children (e.g. a domain's squads) vertically so the
+        // chart stays compact and readable instead of spreading very wide.
+        const vertical = node.children.every((c) => c.children.length === 0);
+        return (
+          <>
+            {!vertical && <div className="org-connector" />}
+            <div className={vertical ? "org-children org-children--vertical" : "org-children"}>
+              {node.children.map((c) => (
+                <NodeView key={c.id} node={c} editable={editable} linkSquads={linkSquads} forceShowTeam={forceShowTeam} onAdd={onAdd} onEdit={onEdit} onDelete={onDelete} />
+              ))}
+            </div>
+          </>
+        );
+      })()}
     </div>
   );
 }
