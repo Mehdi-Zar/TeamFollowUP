@@ -142,6 +142,38 @@ def test_kpis_toggle_is_tribe_leader_only(client, seeded):
     assert client.put(f"/api/squads/{sid}", json={"kpis_enabled": False}).status_code == 200
 
 
+def test_impersonation_full_simulation(client, seeded):
+    login(client, seeded["admin"])
+    tl = next(u for u in client.get("/api/admin/users").json() if u["email"] == "tribe@test")
+
+    # Start viewing as the tribe leader → session truly becomes them.
+    r = client.post("/api/auth/impersonate", json={"user_id": tl["id"]})
+    assert r.status_code == 200 and r.json()["email"] == "tribe@test"
+    me = client.get("/api/auth/me").json()
+    assert me["role"] == "tribe_leader" and me["tribe_id"] == seeded["t1"]
+
+    perms = client.get("/api/auth/me/permissions").json()
+    assert perms["impersonating"] is True
+    assert perms["admin_tabs"] == ["tribe", "squads", "users"]  # tribe-leader tabs
+    # And global config is now genuinely forbidden (acting as the tribe leader).
+    assert client.get("/api/admin/smtp-config").status_code == 403
+
+    # Stop → back to admin with full access.
+    back = client.post("/api/auth/stop-impersonation")
+    assert back.status_code == 200 and back.json()["email"] == "admin@test"
+    assert client.get("/api/admin/smtp-config").status_code == 200
+
+
+def test_non_admin_cannot_impersonate(client, seeded):
+    login(client, seeded["tribe"])
+    assert client.post("/api/auth/impersonate", json={"user_id": 1}).status_code == 403
+
+
+def test_stop_without_impersonation_fails(client, seeded):
+    login(client, seeded["admin"])
+    assert client.post("/api/auth/stop-impersonation").status_code == 400
+
+
 def test_admin_still_full_access(client, seeded):
     login(client, seeded["admin"])
     assert client.get("/api/admin/users").status_code == 200

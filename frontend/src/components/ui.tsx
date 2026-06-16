@@ -1,7 +1,41 @@
-import { ReactNode, useState } from "react";
+import { ReactNode, useLayoutEffect, useRef, useState } from "react";
 import { Freshness, QuarterHealth, Rag } from "../types";
 import { badgeClass, dotClass, qhToRag, ragClass } from "../labels";
 import { useI18n } from "../i18n";
+
+/** Scales its content down (never up) so it always fits the available width —
+ *  keeps the org chart on a single page without a horizontal scrollbar. */
+export function FitScale({ children }: { children: ReactNode }) {
+  const outerRef = useRef<HTMLDivElement>(null);
+  const innerRef = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(1);
+  const [height, setHeight] = useState<number | undefined>(undefined);
+
+  useLayoutEffect(() => {
+    const measure = () => {
+      const outer = outerRef.current, inner = innerRef.current;
+      if (!outer || !inner) return;
+      const avail = outer.clientWidth;
+      const cw = inner.scrollWidth;
+      const s = cw > avail && cw > 0 ? Math.max(0.35, avail / cw) : 1;
+      setScale(s);
+      setHeight(inner.scrollHeight * s);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    if (outerRef.current) ro.observe(outerRef.current);
+    if (innerRef.current) ro.observe(innerRef.current);
+    return () => ro.disconnect();
+  }, []);
+
+  return (
+    <div ref={outerRef} style={{ width: "100%", height, overflow: "hidden", display: "flex", justifyContent: "center" }}>
+      <div ref={innerRef} style={{ transform: `scale(${scale})`, transformOrigin: "top center", flex: "0 0 auto" }}>
+        {children}
+      </div>
+    </div>
+  );
+}
 
 export function Dot({ status }: { status: Rag }) {
   return <span className={`dot ${dotClass(status)}`} aria-hidden />;
