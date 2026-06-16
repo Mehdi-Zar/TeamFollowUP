@@ -76,7 +76,7 @@ def tribe_in_scope(user: User, tribe_id: int | None) -> bool:
 
 def assert_tribe_scope(user: User, tribe_id: int | None) -> None:
     if not tribe_in_scope(user, tribe_id):
-        raise HTTPException(status_code=403, detail="Cette tribu n'est pas dans votre périmètre")
+        raise HTTPException(status_code=403, detail="Cette tribe n'est pas dans votre périmètre")
 
 
 def can_edit_squad(db: Session, user: User, squad_id: int) -> bool:
@@ -104,7 +104,7 @@ def assert_can_manage_objectives(user: User, squad=None) -> None:
         return
     if user.role == TRIBE and (squad is None or squad.tribe_id == user.tribe_id):
         return
-    raise HTTPException(status_code=403, detail="Les objectifs sont définis par le tribe leader de la tribu")
+    raise HTTPException(status_code=403, detail="Les objectifs sont définis par le tribe leader de la tribe")
 
 
 def require_org_editor(user: User = Depends(get_current_user)) -> User:

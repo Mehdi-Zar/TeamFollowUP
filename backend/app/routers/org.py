@@ -44,7 +44,7 @@ def get_org(tribe_id: int | None = Query(default=None),
 def create_node(payload: OrgNodeCreate, db: Session = Depends(get_db), user: User = Depends(require_org_editor)):
     tid = payload.tribe_id if user.role == ADMIN else user.tribe_id
     if tid is None:
-        raise HTTPException(status_code=400, detail="Tribu requise")
+        raise HTTPException(status_code=400, detail="Tribe requise")
     assert_tribe_scope(user, tid)
     if payload.parent_id is not None:
         parent = db.get(OrgNode, payload.parent_id)

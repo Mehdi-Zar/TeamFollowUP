@@ -59,7 +59,7 @@ def create_squad(payload: SquadCreate, db: Session = Depends(get_db), user: User
     # tribe leaders can only create squads in their own tribe
     tribe_id = payload.tribe_id if user.role == ADMIN else user.tribe_id
     if tribe_id is None:
-        raise HTTPException(status_code=400, detail="Tribu requise")
+        raise HTTPException(status_code=400, detail="Tribe requise")
     assert_tribe_scope(user, tribe_id)
     data = payload.model_dump()
     data["tribe_id"] = tribe_id
@@ -81,7 +81,7 @@ def update_squad(squad_id: int, payload: SquadUpdate, db: Session = Depends(get_
     assert_tribe_scope(user, squad.tribe_id)
     data = payload.model_dump(exclude_unset=True)
     if "tribe_id" in data and user.role != ADMIN:
-        raise HTTPException(status_code=403, detail="Seul l'administrateur peut déplacer une squad de tribu")
+        raise HTTPException(status_code=403, detail="Seul l'administrateur peut déplacer une squad de tribe")
     # KPI on/off is a tribe-leader decision (like leader assignment & ordering).
     structural = {"leader_user_id", "display_order", "kpis_enabled"}
     if user.role not in (ADMIN, TRIBE):
