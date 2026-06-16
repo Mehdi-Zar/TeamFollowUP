@@ -47,7 +47,7 @@ def create_user(payload: UserCreate, db: Session = Depends(get_db), actor: User 
     # Tribe leaders can only create users inside their own tribe.
     tribe_id = payload.tribe_id if actor.role == "admin" else actor.tribe_id
     if actor.role != "admin" and payload.tribe_id not in (None, actor.tribe_id):
-        raise HTTPException(status_code=403, detail="Vous ne pouvez créer des utilisateurs que dans votre tribu")
+        raise HTTPException(status_code=403, detail="Vous ne pouvez créer des utilisateurs que dans votre tribe")
     email = payload.email.lower().strip()
     if db.scalar(select(User).where(User.email == email)):
         raise HTTPException(status_code=409, detail="Email déjà utilisé")
@@ -89,7 +89,7 @@ def update_user(user_id: int, payload: UserUpdate, db: Session = Depends(get_db)
             raise HTTPException(status_code=403, detail="Rôle non autorisé")
     # Only an admin may move a user to another tribe.
     if "tribe_id" in data and actor.role != "admin" and data["tribe_id"] != actor.tribe_id:
-        raise HTTPException(status_code=403, detail="Vous ne pouvez pas déplacer un utilisateur hors de votre tribu")
+        raise HTTPException(status_code=403, detail="Vous ne pouvez pas déplacer un utilisateur hors de votre tribe")
     for k, v in data.items():
         setattr(user, k, v)
     record_audit(db, actor.id, "user.update", entity="user", entity_id=user.id, detail=data)
