@@ -335,6 +335,8 @@ tr:last-child td { border-bottom: none; }
 .org-fullscreen-bar { display: flex; justify-content: space-between; align-items: center;
   padding: 12px 20px; background: #fff; border-bottom: 1px solid var(--line); box-shadow: var(--shadow); }
 .org-fullscreen-body { flex: 1; min-height: 0; overflow: hidden; padding: 28px; display: flex; }
+.org-zoomable { cursor: zoom-in; }
+.org-zoomable a, .org-zoomable button { cursor: pointer; }
 
 /* Clickable squad node */
 .org-node--squad { cursor: pointer; transition: box-shadow .12s, border-color .12s; }
