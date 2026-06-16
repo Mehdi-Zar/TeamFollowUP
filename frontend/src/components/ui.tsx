@@ -1,9 +1,46 @@
+import { ReactNode, useState } from "react";
 import { Freshness, QuarterHealth, Rag } from "../types";
 import { badgeClass, dotClass, qhToRag, ragClass } from "../labels";
 import { useI18n } from "../i18n";
 
 export function Dot({ status }: { status: Rag }) {
   return <span className={`dot ${dotClass(status)}`} aria-hidden />;
+}
+
+/** A card whose body collapses behind a clickable header. */
+export function Collapsible({
+  title,
+  subtitle,
+  right,
+  defaultOpen = false,
+  children,
+}: {
+  title: ReactNode;
+  subtitle?: ReactNode;
+  right?: ReactNode;
+  defaultOpen?: boolean;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="card collapsible">
+      <div
+        className="between collapsible-head"
+        style={{ cursor: "pointer", alignItems: "center", gap: 10 }}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <div className="inline" style={{ gap: 10, alignItems: "center" }}>
+          <span className="collapsible-caret" style={{ transition: "transform .15s", transform: open ? "rotate(90deg)" : "none", color: "var(--accent)" }}>▸</span>
+          <h2 style={{ margin: 0 }}>{title}</h2>
+        </div>
+        <div className="inline" style={{ gap: 10, alignItems: "center" }} onClick={(e) => e.stopPropagation()}>
+          {right}
+        </div>
+      </div>
+      {subtitle && !open && <div className="small muted" style={{ marginTop: 4 }}>{subtitle}</div>}
+      {open && <div style={{ marginTop: 14 }}>{children}</div>}
+    </div>
+  );
 }
 
 export function StatusBadge({ status }: { status: Rag }) {

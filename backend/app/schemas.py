@@ -58,6 +58,7 @@ class TribeCreate(BaseModel):
     name: str
     description: Optional[str] = None
     display_order: int = 0
+    leader_user_id: Optional[int] = None  # promote this user to tribe leader of the new tribe
 
 
 class TribeUpdate(BaseModel):

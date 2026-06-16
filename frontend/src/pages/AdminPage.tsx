@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { api, ApiError } from "../api";
 import { useI18n } from "../i18n";
 import { useReloadConfig } from "../config";
@@ -536,11 +536,6 @@ function SquadSelfCard({ squadId }: { squadId: number }) {
           <label>{t("admin.squad")}</label>
           <input defaultValue={squad.name} onBlur={(e) => e.target.value !== squad.name && patchSquad({ name: e.target.value })} />
         </div>
-        <label className="switch">
-          <input type="checkbox" checked={!!squad.kpis_enabled} onChange={(e) => patchSquad({ kpis_enabled: e.target.checked })} />
-          <span className="track"><span className="knob" /></span>
-          <span className="small">{t("squad.kpis")}</span>
-        </label>
       </div>
 
       <div>
@@ -567,18 +562,23 @@ function SquadSelfCard({ squadId }: { squadId: number }) {
 function TribesAdmin() {
   const { t } = useI18n();
   const [tribes, setTribes] = useState<Tribe[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
   const { error, wrap } = useErr();
-  const [form, setForm] = useState({ name: "", description: "" });
+  const [form, setForm] = useState({ name: "", description: "", leader_user_id: "" });
 
   async function load() {
     setTribes(await api.get<Tribe[]>("/api/tribes"));
+    setUsers(await api.get<User[]>("/api/admin/users"));
   }
   useEffect(() => { load(); }, []);
 
   async function create() {
     await wrap(async () => {
-      await api.post("/api/tribes", { name: form.name, description: form.description || null });
-      setForm({ name: "", description: "" });
+      await api.post("/api/tribes", {
+        name: form.name, description: form.description || null,
+        leader_user_id: form.leader_user_id ? Number(form.leader_user_id) : null,
+      });
+      setForm({ name: "", description: "", leader_user_id: "" });
       await load();
     });
   }
@@ -609,10 +609,20 @@ function TribesAdmin() {
       <div className="card">
         <h3>{t("admin.new_tribe")}</h3>
         <div className="row" style={{ alignItems: "flex-end" }}>
-          <div style={{ width: 240 }}><label>{t("admin.name")}</label><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
+          <div style={{ width: 220 }}><label>{t("admin.name")}</label><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
           <div className="col"><label>{t("admin.tribe_desc")}</label><input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
+          <div style={{ width: 200 }}>
+            <label>{t("admin.tribe_leader")}</label>
+            <select value={form.leader_user_id} onChange={(e) => setForm({ ...form, leader_user_id: e.target.value })}>
+              <option value="">{t("admin.tribe_leader_none")}</option>
+              {users.filter((u) => !u.is_break_glass).map((u) => (
+                <option key={u.id} value={u.id}>{u.display_name}</option>
+              ))}
+            </select>
+          </div>
           <button onClick={create} disabled={!form.name.trim()}>{t("admin.create")}</button>
         </div>
+        <div className="small muted" style={{ marginTop: 6 }}>{t("admin.tribe_leader_hint")}</div>
       </div>
     </div>
   );
@@ -783,6 +793,66 @@ function useErr() {
   return { error, wrap };
 }
 
+// Tribe-leader / admin per-squad settings: KPIs on/off + annual objectives.
+// (No team management here — that's the squad leader's job in reporting.)
+const RAGS: Array<"green" | "amber" | "red"> = ["green", "amber", "red"];
+
+function SquadParamsPanel({ squadId }: { squadId: number }) {
+  const { t, rag } = useI18n();
+  const [squad, setSquad] = useState<SquadDetail | null>(null);
+  const [newObj, setNewObj] = useState("");
+  const { error, wrap } = useErr();
+
+  async function load() {
+    const d = await wrap(() => api.get<SquadDetail>(`/api/squads/${squadId}`));
+    if (d) setSquad(d);
+  }
+  useEffect(() => { load(); }, [squadId]);
+  if (!squad) return <div className="small muted">{t("common.loading")}</div>;
+
+  const toggleKpis = (on: boolean) => wrap(async () => { await api.put(`/api/squads/${squadId}`, { kpis_enabled: on }); await load(); });
+  const addObj = () => wrap(async () => {
+    if (!newObj.trim()) return;
+    await api.post("/api/objectives", { squad_id: squadId, year: squad.year, title: newObj.trim(), rag_status: "green" });
+    setNewObj("");
+    await load();
+  });
+  const updObj = (id: number, patch: any) => wrap(async () => { await api.put(`/api/objectives/${id}`, patch); await load(); });
+  const delObj = (id: number) => wrap(async () => { await api.del(`/api/objectives/${id}`); await load(); });
+
+  return (
+    <div className="stack" style={{ gap: 14, padding: "6px 2px" }}>
+      {error && <ErrorBanner message={error} />}
+      <label className="switch">
+        <input type="checkbox" checked={!!squad.kpis_enabled} onChange={(e) => toggleKpis(e.target.checked)} />
+        <span className="track"><span className="knob" /></span>
+        <span className="small strong">{t("admin.kpis_enabled")}</span>
+      </label>
+
+      <div>
+        <div className="small muted" style={{ marginBottom: 6 }}>{t("squad.objectives", { year: squad.year })} — {t("admin.objectives_hint")}</div>
+        {squad.objectives.length === 0 && <div className="small muted">{t("squad.no_obj")}</div>}
+        {squad.objectives.map((o) => (
+          <div key={o.id} className="item-row" style={{ gap: 8 }}>
+            <input style={{ flex: 1 }} defaultValue={o.title} onBlur={(e) => e.target.value !== o.title && updObj(o.id, { title: e.target.value })} />
+            <select className="w-auto" value={o.rag_status} onChange={(e) => updObj(o.id, { rag_status: e.target.value })}>
+              {RAGS.map((r) => <option key={r} value={r}>{rag(r)}</option>)}
+            </select>
+            <button className="btn-ghost btn-sm" onClick={() => delObj(o.id)}>✕</button>
+          </div>
+        ))}
+        <div className="row" style={{ alignItems: "flex-end", marginTop: 8 }}>
+          <div style={{ flex: 1, minWidth: 200 }}>
+            <label>{t("admin.new_objective")}</label>
+            <input value={newObj} onChange={(e) => setNewObj(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addObj()} />
+          </div>
+          <button className="btn-sm" onClick={addObj} disabled={!newObj.trim()}>{t("admin.add")}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SquadsAdmin({ perms }: { perms: Permissions }) {
   const { t } = useI18n();
   const isAdmin = perms.role === "admin";
@@ -791,6 +861,7 @@ function SquadsAdmin({ perms }: { perms: Permissions }) {
   const [tribes, setTribes] = useState<Tribe[]>([]);
   const { error, wrap } = useErr();
   const [form, setForm] = useState({ name: "", leader_user_id: "", tribe_id: isAdmin ? "" : String(perms.tribe_id ?? "") });
+  const [paramsId, setParamsId] = useState<number | null>(null);
 
   async function load() {
     setSquads(await api.get<Squad[]>("/api/squads"));
@@ -845,7 +916,8 @@ function SquadsAdmin({ perms }: { perms: Permissions }) {
           </thead>
           <tbody>
             {squads.map((s) => (
-              <tr key={s.id}>
+              <Fragment key={s.id}>
+              <tr>
                 <td className="strong">
                   <input defaultValue={s.name} onBlur={(e) => e.target.value !== s.name && update(s, { name: e.target.value })} />
                 </td>
@@ -871,12 +943,24 @@ function SquadsAdmin({ perms }: { perms: Permissions }) {
                 <td style={{ width: 90 }}>
                   <input type="number" defaultValue={s.display_order} onBlur={(e) => Number(e.target.value) !== s.display_order && update(s, { display_order: Number(e.target.value) })} />
                 </td>
-                <td style={{ textAlign: "right" }}>
+                <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                  <button className="btn-secondary btn-sm" style={{ marginRight: 6 }}
+                          onClick={() => setParamsId(paramsId === s.id ? null : s.id)}>
+                    {t("admin.squad_params")}
+                  </button>
                   <button className="btn-danger btn-sm" onClick={() => remove(s)}>
                     {t("action.delete")}
                   </button>
                 </td>
               </tr>
+              {paramsId === s.id && (
+                <tr>
+                  <td colSpan={5} style={{ background: "var(--ice-soft)" }}>
+                    <SquadParamsPanel squadId={s.id} />
+                  </td>
+                </tr>
+              )}
+              </Fragment>
             ))}
           </tbody>
         </table>

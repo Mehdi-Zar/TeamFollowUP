@@ -121,6 +121,27 @@ def test_non_admins_cannot_write_smtp_or_modules(client, seeded):
         assert client.put("/api/admin/report-config", json={"enabled": True}).status_code == 403
 
 
+def test_create_tribe_with_leader(client, seeded):
+    login(client, seeded["admin"])
+    # promote the existing member to tribe leader of a brand-new tribe
+    member = next(u for u in client.get("/api/admin/users").json() if u["email"] == "member@test")
+    r = client.post("/api/tribes", json={"name": "Nouvelle", "leader_user_id": member["id"]})
+    assert r.status_code == 201
+    new_tribe_id = r.json()["id"]
+    updated = next(u for u in client.get("/api/admin/users").json() if u["id"] == member["id"])
+    assert updated["role"] == "tribe_leader" and updated["tribe_id"] == new_tribe_id
+
+
+def test_kpis_toggle_is_tribe_leader_only(client, seeded):
+    sid = seeded["squad_a"]
+    # squad leader cannot flip kpis_enabled (structural / tribe-leader decision)
+    login(client, seeded["sl_a"])
+    assert client.put(f"/api/squads/{sid}", json={"kpis_enabled": False}).status_code == 403
+    # tribe leader of that tribe can
+    login(client, seeded["tribe"])
+    assert client.put(f"/api/squads/{sid}", json={"kpis_enabled": False}).status_code == 200
+
+
 def test_admin_still_full_access(client, seeded):
     login(client, seeded["admin"])
     assert client.get("/api/admin/users").status_code == 200
