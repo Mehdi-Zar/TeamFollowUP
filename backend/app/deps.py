@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from .config import settings
 from .database import get_db
 from .models import AppSetting, AuditLog, Squad, User
-from .security import decode_session_token
+from .security import decode_session
 
 THRESHOLD_KEY = "staleness_threshold_days"
 
@@ -34,12 +34,14 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
     token = request.cookies.get(settings.session_cookie)
     if not token:
         raise HTTPException(status_code=401, detail="Non authentifié")
-    user_id = decode_session_token(token)
+    user_id, impersonator_id = decode_session(token)
     if user_id is None:
         raise HTTPException(status_code=401, detail="Session invalide")
     user = db.get(User, user_id)
     if user is None:
         raise HTTPException(status_code=401, detail="Utilisateur introuvable")
+    # Surface impersonation context (admin viewing the app as another user).
+    request.state.impersonator_id = impersonator_id
     return user
 
 

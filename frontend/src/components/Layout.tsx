@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { api } from "../api";
 import { useAuth } from "../auth";
 import { useI18n } from "../i18n";
 import { useConfig, moduleOn } from "../config";
 import { ModuleKey, Role } from "../types";
-import { ALL_ROLES, canSeeAdmin, canSeeSaisie, isGlobalAdmin } from "../perms";
+import { canSeeAdmin, canSeeSaisie, isGlobalAdmin } from "../perms";
 import NotificationBell from "./NotificationBell";
 import { usePageChrome } from "./pageChrome";
 import {
@@ -50,9 +51,15 @@ const whiteSelect: React.CSSProperties = {
 };
 
 export default function Layout() {
-  const { user, logout, effectiveRole, isPreview, previewRole, setPreviewRole } = useAuth();
+  const { user, logout, effectiveRole, isPreview, impersonate, stopImpersonation } = useAuth();
   const { t, role: roleLabel, lang, setLang } = useI18n();
   const { app_name, modules } = useConfig();
+  const [people, setPeople] = useState<{ id: number; display_name: string; role: string }[]>([]);
+  // Only a real admin (not already impersonating) may pick someone to view as.
+  const canImpersonate = user?.role === "admin" && !isPreview;
+  useEffect(() => {
+    if (canImpersonate) api.get<any[]>("/api/admin/users").then(setPeople).catch(() => {});
+  }, [canImpersonate]);
   const navVisible = (n: NavItem) => n.visible(role) && (!n.module || moduleOn(modules, n.module));
   const navigate = useNavigate();
   const location = useLocation();
@@ -118,19 +125,22 @@ export default function Layout() {
             <h1 className="topbar-title">{pageTitle}</h1>
 
             <div className="topbar-actions">
-              {user?.role === "admin" && (
+              {canImpersonate && (
                 <div className="inline" style={{ gap: 6 }}>
                   <span style={{ fontSize: 12, color: "var(--grey)" }}>{t("preview.as")}</span>
                   <select
-                    value={previewRole ?? "admin"}
-                    onChange={(e) => setPreviewRole(e.target.value === "admin" ? null : (e.target.value as Role))}
+                    value=""
+                    onChange={(e) => e.target.value && impersonate(Number(e.target.value))}
                     className="w-auto"
                   >
-                    {ALL_ROLES.map((r) => (
-                      <option key={r} value={r}>
-                        {roleLabel(r)}
-                      </option>
-                    ))}
+                    <option value="">{t("preview.pick")}</option>
+                    {people
+                      .filter((p) => p.id !== user?.id)
+                      .map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.display_name} — {roleLabel(p.role as Role)}
+                        </option>
+                      ))}
                   </select>
                 </div>
               )}
@@ -177,9 +187,10 @@ export default function Layout() {
         {isPreview && (
           <div className="no-print preview-banner">
             <span>
-              {t("preview.as")} <strong>{roleLabel(previewRole as Role)}</strong> — {t("preview.banner")}
+              {t("preview.viewing_as")} <strong>{user?.display_name}</strong>
+              {" "}({user ? roleLabel(user.role) : ""}) — {t("preview.banner")}
             </span>
-            <button className="btn-secondary btn-sm" onClick={() => setPreviewRole(null)}>
+            <button className="btn-secondary btn-sm" onClick={() => stopImpersonation()}>
               {t("preview.back")}
             </button>
           </div>

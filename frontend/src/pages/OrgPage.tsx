@@ -4,7 +4,7 @@ import { api } from "../api";
 import { useAuth } from "../auth";
 import { useI18n } from "../i18n";
 import { Member, OrgNode, Squad, SquadDetail, Tribe, Role } from "../types";
-import { Spinner, ErrorBanner } from "../components/ui";
+import { Spinner, ErrorBanner, FitScale } from "../components/ui";
 import { useSetPageChrome } from "../components/pageChrome";
 import { canEditOrg } from "../perms";
 
@@ -201,12 +201,14 @@ export default function OrgPage() {
       )}
 
       {tree.length > 0 && view === "tree" && (
-        <div className="card" style={{ overflowX: "auto" }}>
-          <div className="row" style={{ justifyContent: "center", alignItems: "flex-start", gap: 24 }}>
-            {tree.map((n) => (
-              <NodeView key={n.id} node={n} editable={editable} linkSquads={isAdmin || isOwnTribe} forceShowTeam={showAllMembers} onAdd={openCreate} onEdit={openEdit} onDelete={remove} />
-            ))}
-          </div>
+        <div className="card">
+          <FitScale>
+            <div className="row" style={{ justifyContent: "center", alignItems: "flex-start", gap: 24, flexWrap: "nowrap" }}>
+              {tree.map((n) => (
+                <NodeView key={n.id} node={n} editable={editable} linkSquads={isAdmin || isOwnTribe} forceShowTeam={showAllMembers} onAdd={openCreate} onEdit={openEdit} onDelete={remove} />
+              ))}
+            </div>
+          </FitScale>
         </div>
       )}
 

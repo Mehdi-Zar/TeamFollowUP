@@ -2,13 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { useI18n } from "../i18n";
-import { useConfig, useModule } from "../config";
+import { useConfig } from "../config";
 import { useAuth } from "../auth";
 import { DashboardOut, SquadCard, Tribe } from "../types";
 import { Dot, FreshnessBadge, ProgressBar, Spinner, ErrorBanner } from "../components/ui";
-import EmailExport from "../components/EmailExport";
-import ReportSubscribe from "../components/ReportSubscribe";
-import ReportExport from "../components/ReportExport";
+import ExportMenu from "../components/ExportMenu";
 import { useSetPageChrome } from "../components/pageChrome";
 
 type SortKey = "risk" | "progress" | "name" | "fresh";
@@ -23,7 +21,6 @@ function healthOf(c: SquadCard): "blocked" | "at_risk" | "on_track" {
 export default function DashboardPage() {
   const { t, roadmap } = useI18n();
   const { default_year } = useConfig();
-  const csvOn = useModule()("exports_csv");
   const { effectiveRole } = useAuth();
   const isAdmin = effectiveRole === "admin";
   const [data, setData] = useState<DashboardOut | null>(null);
@@ -83,16 +80,17 @@ export default function DashboardPage() {
                   <button key={y} className={y === data.year ? "active" : ""} onClick={() => setYear(y)}>{y}</button>
                 ))}
               </div>
-              {csvOn && <a className="btn btn-secondary btn-sm" href={`/api/exports/dashboard.csv?year=${data.year}`}>{t("action.csv")}</a>}
-              <Link className="btn btn-secondary btn-sm" to="/print/dashboard" target="_blank">{t("action.report")}</Link>
-              <ReportExport />
-              <ReportSubscribe />
-              {csvOn && <EmailExport endpoint="/api/exports/dashboard/email" year={data.year} />}
+              <ExportMenu
+                year={data.year}
+                csvHref={`/api/exports/dashboard.csv?year=${data.year}`}
+                csvEmailEndpoint="/api/exports/dashboard/email"
+                printHref="/print/dashboard"
+              />
             </>
           ),
         }
       : {},
-    [data?.year, health, csvOn]
+    [data?.year, health]
   );
 
   if (error) return <ErrorBanner message={error} />;
