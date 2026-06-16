@@ -13,6 +13,7 @@ import TribesPage from "./pages/TribesPage";
 import PreferencesPage from "./pages/PreferencesPage";
 import AdminPage from "./pages/AdminPage";
 import MySquadsPage from "./pages/MySquadsPage";
+import GettingStartedPage from "./pages/GettingStartedPage";
 import ReviewPage from "./pages/ReviewPage";
 import PrintSquadPage from "./pages/PrintSquadPage";
 import PrintDashboardPage from "./pages/PrintDashboardPage";
@@ -64,6 +65,7 @@ export default function App() {
         <Route path="/fil" element={<ModuleGuard module="feed"><FeedPage /></ModuleGuard>} />
         <Route path="/revue" element={<ModuleGuard module="review"><ReviewPage /></ModuleGuard>} />
         <Route path="/preferences" element={<PreferencesPage />} />
+        <Route path="/prise-en-main" element={<GettingStartedPage />} />
         <Route path="/saisie" element={<ModuleGuard module="reporting"><EntryPage /></ModuleGuard>} />
         <Route path="/organigramme" element={<ModuleGuard module="org"><OrgPage /></ModuleGuard>} />
         <Route path="/tribus" element={<Protected adminOnly><TribesPage /></Protected>} />
