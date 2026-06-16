@@ -133,7 +133,7 @@ export default function EntryPage() {
 
           {roadmapOn && <RoadmapEditor squad={squad} year={year} onChange={reload} readonly={!writeAllowed} t={t} roadmap={roadmap} />}
           {objectivesOn && <ObjectivesEditor squad={squad} year={year} onChange={reload} editable={objAllowed} t={t} rag={rag} />}
-          {kpisOn && <KpisEditor squad={squad} onChange={reload} readonly={!writeAllowed} t={t} trend={trend} />}
+          {kpisOn && squad.kpis_enabled && <KpisEditor squad={squad} onChange={reload} readonly={!writeAllowed} t={t} trend={trend} />}
           {reviewNotesOn && <ProgressReviewEditor squadId={squad.id} year={year} readonly={!writeAllowed} onSaved={() => flash(t("progress.review_saved"))} t={t} />}
         </>
       )}
@@ -417,10 +417,6 @@ function KpisEditor({ squad, onChange, readonly, t, trend }: any) {
   const [name, setName] = useState("");
   const trends: Trend[] = ["on_target", "under_pressure", "missed"];
   const num = (v: string) => (v.trim() === "" ? null : Number.isNaN(Number(v)) ? null : Number(v));
-  async function toggleKpis(enabled: boolean) {
-    await api.put(`/api/squads/${squad.id}`, { kpis_enabled: enabled });
-    onChange();
-  }
   async function add() {
     if (!name.trim()) return;
     await api.post("/api/kpis", { squad_id: squad.id, name: name.trim(), trend_status: "on_target" });
@@ -435,19 +431,9 @@ function KpisEditor({ squad, onChange, readonly, t, trend }: any) {
     await api.del(`/api/kpis/${k.id}`);
     onChange();
   }
-  const toggle = (
-    <label className="switch">
-      <input type="checkbox" checked={squad.kpis_enabled} disabled={readonly} onChange={(e) => toggleKpis(e.target.checked)} />
-      <span className="track"><span className="knob" /></span>
-      <span className="small">{t("entry.kpi_toggle")}</span>
-    </label>
-  );
   return (
-    <Card title={t("squad.kpis")} hint={squad.kpis_enabled ? t("entry.kpi_hint") : undefined} action={toggle}>
-      {!squad.kpis_enabled ? (
-        <div className="small muted">{t("entry.kpi_off")}</div>
-      ) : (
-        <>
+    <Card title={t("squad.kpis")} hint={t("entry.kpi_hint")}>
+      <>
           {squad.kpis.map((k: Kpi) => (
             <div key={k.id} className="item-row" style={{ flexWrap: "wrap" }}>
               {readonly ? <span className="grow" style={{ minWidth: 140 }}>{k.name}</span> : (
@@ -468,8 +454,7 @@ function KpisEditor({ squad, onChange, readonly, t, trend }: any) {
               <button className="btn-secondary btn-sm" onClick={add}>{t("action.add")}</button>
             </div>
           )}
-        </>
-      )}
+      </>
     </Card>
   );
 }
