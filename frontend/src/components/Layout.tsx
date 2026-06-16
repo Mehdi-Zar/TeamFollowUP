@@ -38,7 +38,7 @@ const NAV: NavItem[] = [
   { to: "/saisie", labelKey: "nav.entry", titleKey: "nav.entry", Icon: IconEntry, visible: canSeeSaisie, module: "reporting" },
   { to: "/fil", labelKey: "nav.feed", titleKey: "nav.feed", Icon: IconFeed, visible: () => true, module: "feed" },
   { to: "/revue", labelKey: "nav.review", titleKey: "review.title", Icon: IconReview, visible: (r) => r === "admin" || r === "tribe_leader", module: "review" },
-  { to: "/mes-squads", labelKey: "nav.mysquads", titleKey: "mysquads.title", Icon: IconTribes, visible: (r) => r === "tribe_leader" },
+  { to: "/mes-squads", labelKey: "nav.mysquads", titleKey: "mysquads.title", Icon: IconTribes, visible: (r) => r === "tribe_leader" || r === "squad_leader" },
   { to: "/admin", labelKey: "nav.admin", titleKey: "nav.admin", Icon: IconAdmin, visible: canSeeAdmin },
 ];
 

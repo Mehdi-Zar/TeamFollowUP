@@ -26,10 +26,10 @@ MANAGER_ROLES = (ADMIN, TRIBE, SQUAD)
 ADMIN_TABS = {
     ADMIN: ["tribes", "squads", "users", "modules", "moderation", "auth",
             "smtp", "report", "logs", "settings", "audit"],
-    # Tribe leaders manage squads (KPIs / annual objectives) on the dedicated
-    # "Gestion de mes squads" page, not in Administration.
+    # Tribe & squad leaders manage their squads on the dedicated "my squads"
+    # page, not in Administration.
     TRIBE: ["tribe", "users"],
-    SQUAD: ["my_squads"],
+    SQUAD: [],
     MEMBER: [],
 }
 
