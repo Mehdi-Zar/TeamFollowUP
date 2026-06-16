@@ -13,14 +13,13 @@ type Props = {
   sinceDays?: number;
   csvHref?: string;
   csvEmailEndpoint?: string;
-  printHref?: string;
 };
 
 type Sub = { interval_days: number };
 type View = "menu" | "emailReport" | "emailCsv" | "subscribe";
 const INTERVALS = [7, 14, 30];
 
-export default function ExportMenu({ year, squadId, sinceDays = 7, csvHref, csvEmailEndpoint, printHref }: Props) {
+export default function ExportMenu({ year, squadId, sinceDays = 7, csvHref, csvEmailEndpoint }: Props) {
   const { t } = useI18n();
   const { smtp_enabled } = useConfig();
   const m = useModule();
@@ -52,7 +51,7 @@ export default function ExportMenu({ year, squadId, sinceDays = 7, csvHref, csvE
     }
   }, [open, view, squadId, reportOn]);
 
-  const hasDownloads = (csvHref && csvOn) || reportOn || printHref;
+  const hasDownloads = (csvHref && csvOn) || reportOn;
   const hasEmail = smtp_enabled && (reportOn || (csvEmailEndpoint && csvOn));
   if (!hasDownloads && !hasEmail) return null;
 
@@ -98,10 +97,9 @@ export default function ExportMenu({ year, squadId, sinceDays = 7, csvHref, csvE
           {view === "menu" && (
             <>
               {hasDownloads && <div className="menu-label">{t("export.group_download")}</div>}
-              {csvHref && csvOn && <Item href={csvHref} download>{t("action.csv")}</Item>}
-              {reportOn && <Item href={`/api/reports/weekly.html?${rqs}`}>{t("report.html")}</Item>}
-              {reportOn && <Item href={`/api/reports/weekly.pptx?${rqs}`} download>{t("report.pptx")}</Item>}
-              {printHref && <Item href={printHref}>{t("action.report")}</Item>}
+              {csvHref && csvOn && <Item href={csvHref} download>{t("export.csv_data")}</Item>}
+              {reportOn && <Item href={`/api/reports/weekly.html?${rqs}`}>{t("export.report_html")}</Item>}
+              {reportOn && <Item href={`/api/reports/weekly.pptx?${rqs}`} download>{t("export.report_pptx")}</Item>}
 
               {hasEmail && <div className="menu-label" style={{ marginTop: 6 }}>{t("export.group_email")}</div>}
               {smtp_enabled && reportOn && <Item onClick={() => { setView("emailReport"); setMsg(null); }}>{t("export.send_report")} …</Item>}

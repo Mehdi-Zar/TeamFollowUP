@@ -57,7 +57,6 @@ export default function SquadDetailPage() {
                 squadId={squadId}
                 csvHref={`/api/exports/squad/${squadId}.csv?year=${squad.year}`}
                 csvEmailEndpoint={`/api/exports/squad/${squadId}/email`}
-                printHref={`/print/squad/${squadId}?year=${squad.year}`}
               />
             </>
           ),
