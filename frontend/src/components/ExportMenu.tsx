@@ -20,7 +20,7 @@ type View = "menu" | "emailReport" | "emailCsv" | "subscribe";
 const INTERVALS = [7, 14, 30];
 
 export default function ExportMenu({ year, squadId, sinceDays = 7, csvHref, csvEmailEndpoint }: Props) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const { smtp_enabled } = useConfig();
   const m = useModule();
   const { user } = useAuth();
@@ -35,7 +35,7 @@ export default function ExportMenu({ year, squadId, sinceDays = 7, csvHref, csvE
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const rqs = `since_days=${sinceDays}${squadId ? `&squad_id=${squadId}` : ""}`;
+  const rqs = `since_days=${sinceDays}${squadId ? `&squad_id=${squadId}` : ""}&lang=${lang}`;
 
   useEffect(() => {
     function onDoc(e: MouseEvent) {
@@ -59,7 +59,7 @@ export default function ExportMenu({ year, squadId, sinceDays = 7, csvHref, csvE
     if (!to.trim()) return;
     setBusy(true); setMsg(null);
     try {
-      await api.post("/api/reports/weekly/email", { to: to.trim(), since_days: sinceDays, squad_id: squadId ?? null });
+      await api.post("/api/reports/weekly/email", { to: to.trim(), since_days: sinceDays, squad_id: squadId ?? null, lang });
       setMsg(t("export.sent", { to: to.trim() }));
     } catch (e) { setMsg(e instanceof ApiError ? e.message : "Erreur"); } finally { setBusy(false); }
   }

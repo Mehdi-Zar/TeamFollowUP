@@ -30,36 +30,82 @@ RAG_COLOR = {"red": "#dc2626", "amber": "#d97706", "green": "#16a34a", "grey": "
 _STATUS_RAG = {"blocked": "red", "at_risk": "amber", "on_track": "green",
                "done": "green", "red": "red", "amber": "amber", "green": "green"}
 
-_STATUS_LABEL_FR = {
-    "blocked": "Bloqué", "at_risk": "À risque", "on_track": "En cours",
-    "done": "Terminé", "red": "Rouge", "amber": "Orange", "green": "Vert",
+_STATUS_LABELS = {
+    "fr": {"blocked": "Bloqué", "at_risk": "À risque", "on_track": "En cours",
+           "done": "Terminé", "red": "Rouge", "amber": "Orange", "green": "Vert"},
+    "en": {"blocked": "Blocked", "at_risk": "At risk", "on_track": "On track",
+           "done": "Done", "red": "Red", "amber": "Amber", "green": "Green"},
 }
 
-_CHANGE_LABEL_FR = {
-    "jalon_added": "Nouveau jalon", "jalon_status": "Jalon",
-    "quarter_pct": "Progression", "objective_rag": "Objectif", "kpi_trend": "KPI",
+_CHANGE_LABELS = {
+    "fr": {"jalon_added": "Nouveau jalon", "jalon_status": "Jalon",
+           "quarter_pct": "Progression", "objective_rag": "Objectif", "kpi_trend": "KPI"},
+    "en": {"jalon_added": "New milestone", "jalon_status": "Milestone",
+           "quarter_pct": "Progress", "objective_rag": "Objective", "kpi_trend": "KPI"},
 }
+
+# All other report strings, by language.
+_RT = {
+    "fr": {
+        "report": "Rapport hebdomadaire", "all_tribes": "Toutes les tribus",
+        "year": "Année", "generated": "généré le", "window": "fenêtre {n} j",
+        "generated_full": "Généré le {d}", "window_full": "Fenêtre {n} jours",
+        "k_squads": "Squads", "k_progress": "Progression moy.", "k_blocked": "Jalons bloqués",
+        "k_atrisk": "Jalons à risque", "k_obj_red": "Objectifs rouges", "k_stale": "Reporting périmé",
+        "attention": "Points d'attention", "blocked_n": "bloqué(s)", "stale": "périmé",
+        "h_squad": "Squad", "h_leader": "Responsable", "h_status": "Statut", "h_progress": "Progr.",
+        "h_progress_long": "Progression", "h_delta": "Δ sem.", "h_blocked": "Bloqués",
+        "h_atrisk": "À risque", "h_facts": "Faits de la semaine",
+        "squad_scope": "Squad {name}", "more_squads": "… +{n} autres squads",
+        "subject": "Rapport hebdomadaire — semaine {w}", "synthesis": "Synthèse",
+        "subject_personal": "Rapport — {n} j",
+    },
+    "en": {
+        "report": "Weekly report", "all_tribes": "All tribes",
+        "year": "Year", "generated": "generated on", "window": "window {n}d",
+        "generated_full": "Generated on {d}", "window_full": "Window {n} days",
+        "k_squads": "Squads", "k_progress": "Avg. progress", "k_blocked": "Blocked milestones",
+        "k_atrisk": "At-risk milestones", "k_obj_red": "Red objectives", "k_stale": "Stale reporting",
+        "attention": "Attention points", "blocked_n": "blocked", "stale": "stale",
+        "h_squad": "Squad", "h_leader": "Leader", "h_status": "Status", "h_progress": "Progr.",
+        "h_progress_long": "Progress", "h_delta": "Δ wk", "h_blocked": "Blocked",
+        "h_atrisk": "At risk", "h_facts": "This week",
+        "squad_scope": "Squad {name}", "more_squads": "… +{n} more squads",
+        "subject": "Weekly report — week {w}", "synthesis": "Summary",
+        "subject_personal": "Report — {n}d",
+    },
+}
+
+
+def _lang(lang: str | None) -> str:
+    return "en" if lang == "en" else "fr"
+
+
+def rt(lang: str, key: str, **kw) -> str:
+    s = _RT[_lang(lang)].get(key, key)
+    return s.format(**kw) if kw else s
 
 
 def _status_rag(status: str | None) -> str:
     return _STATUS_RAG.get(status or "", "grey")
 
 
-def _status_label(status: str | None) -> str:
-    return _STATUS_LABEL_FR.get(status or "", status or "—")
+def _status_label(status: str | None, lang: str = "fr") -> str:
+    return _STATUS_LABELS[_lang(lang)].get(status or "", status or "—")
 
 
-def _change_text(ch: dict) -> str:
+def _change_text(ch: dict, lang: str = "fr") -> str:
     kind = ch.get("kind", "")
     label = ch.get("label", "")
     frm, to = ch.get("from"), ch.get("to")
-    prefix = _CHANGE_LABEL_FR.get(kind, kind)
+    prefix = _CHANGE_LABELS[_lang(lang)].get(kind, kind)
+    sep = " : " if _lang(lang) == "fr" else ": "
     if kind == "jalon_added":
-        return f"{prefix} : {label}"
+        return f"{prefix}{sep}{label}"
     if to is not None and frm is not None:
-        return f"{prefix} {label} : {_status_label(str(frm))} → {_status_label(str(to))}"
+        return f"{prefix} {label}{sep}{_status_label(str(frm), lang)} → {_status_label(str(to), lang)}"
     if to is not None:
-        return f"{prefix} {label} → {_status_label(str(to))}"
+        return f"{prefix} {label} → {_status_label(str(to), lang)}"
     return f"{prefix} {label}".strip()
 
 
@@ -67,10 +113,11 @@ def _change_text(ch: dict) -> str:
 
 def build_report_data(db: Session, scope_tribe: int | None, year: int | None = None,
                       since_days: int = 7, now: datetime | None = None,
-                      squad_id: int | None = None) -> dict:
+                      squad_id: int | None = None, lang: str | None = None) -> dict:
     """Assemble the combined dashboard + weekly-review data for the given scope.
 
     squad_id, when set, narrows the report to a single squad (ignoring scope_tribe).
+    lang, when set, picks the report language; otherwise the general default_lang.
     """
     from .routers.progress import aggregate_review  # local import avoids a cycle
 
@@ -78,6 +125,7 @@ def build_report_data(db: Session, scope_tribe: int | None, year: int | None = N
     cfg = get_general(db)
     threshold = cfg.get("staleness_threshold_days")
     year = year or st.current_year_quarter(now)[0]
+    lang = _lang(lang or cfg.get("default_lang"))
 
     review_rows = {r.squad_id: r for r in aggregate_review(db, scope_tribe, since_days, year)}
 
@@ -146,16 +194,17 @@ def build_report_data(db: Session, scope_tribe: int | None, year: int | None = N
     avg = round(totals["progress_sum"] / totals["squads"]) if totals["squads"] else 0
     if squad_id is not None:
         sq = db.get(Squad, squad_id)
-        scope_name = f"Squad {sq.name}" if sq else "Squad"
+        scope_name = rt(lang, "squad_scope", name=sq.name) if sq else rt(lang, "h_squad")
     elif scope_tribe in tribes:
         scope_name = tribes[scope_tribe].name
     else:
-        scope_name = "Toutes les tribes"
+        scope_name = rt(lang, "all_tribes")
 
     return {
         "app_name": cfg.get("app_name") or "Tribe Cockpit",
         "subtitle": cfg.get("app_subtitle") or "",
         "scope_name": scope_name,
+        "lang": lang,
         "year": year,
         "since_days": since_days,
         "generated_at": now,
@@ -193,23 +242,24 @@ def _delta_html(delta: int) -> str:
 
 def render_html(data: dict, *, standalone: bool = True) -> str:
     e = html.escape
+    lang = data.get("lang", "fr")
     s = data["summary"]
     gen = data["generated_at"]
     gen_str = gen.strftime("%d/%m/%Y %H:%M") if isinstance(gen, datetime) else str(gen)
 
     parts: list[str] = []
-    parts.append(f'<div class="hdr"><h1>{e(data["app_name"])} — Rapport hebdomadaire</h1>')
-    parts.append(f'<div class="sub">{e(data["scope_name"])} · Année {data["year"]} · '
-                 f'généré le {e(gen_str)} · fenêtre {data["since_days"]} j</div></div>')
+    parts.append(f'<div class="hdr"><h1>{e(data["app_name"])} — {e(rt(lang, "report"))}</h1>')
+    parts.append(f'<div class="sub">{e(data["scope_name"])} · {e(rt(lang, "year"))} {data["year"]} · '
+                 f'{e(rt(lang, "generated"))} {e(gen_str)} · {e(rt(lang, "window", n=data["since_days"]))}</div></div>')
 
     # Summary cards
     cards = [
-        ("Squads", s["squads_total"], "#111827"),
-        ("Progression moy.", f'{s["avg_progress"]}%', RAG_COLOR["green"]),
-        ("Jalons bloqués", s["blocked"], RAG_COLOR["red"] if s["blocked"] else "#111827"),
-        ("Jalons à risque", s["at_risk"], RAG_COLOR["amber"] if s["at_risk"] else "#111827"),
-        ("Objectifs rouges", s["objectives_red"], RAG_COLOR["red"] if s["objectives_red"] else "#111827"),
-        ("Reporting périmé", s["stale"], RAG_COLOR["amber"] if s["stale"] else "#111827"),
+        (rt(lang, "k_squads"), s["squads_total"], "#111827"),
+        (rt(lang, "k_progress"), f'{s["avg_progress"]}%', RAG_COLOR["green"]),
+        (rt(lang, "k_blocked"), s["blocked"], RAG_COLOR["red"] if s["blocked"] else "#111827"),
+        (rt(lang, "k_atrisk"), s["at_risk"], RAG_COLOR["amber"] if s["at_risk"] else "#111827"),
+        (rt(lang, "k_obj_red"), s["objectives_red"], RAG_COLOR["red"] if s["objectives_red"] else "#111827"),
+        (rt(lang, "k_stale"), s["stale"], RAG_COLOR["amber"] if s["stale"] else "#111827"),
     ]
     parts.append('<div class="cards">')
     for label, val, color in cards:
@@ -219,15 +269,15 @@ def render_html(data: dict, *, standalone: bool = True) -> str:
 
     # Attention list
     if data["attention"]:
-        parts.append('<h2>Points d\'attention</h2><ul class="attention">')
+        parts.append(f'<h2>{e(rt(lang, "attention"))}</h2><ul class="attention">')
         for r in data["attention"][:12]:
             bits = []
             if r["blocked"]:
-                bits.append(f'{r["blocked"]} bloqué(s)')
+                bits.append(f'{r["blocked"]} {rt(lang, "blocked_n")}')
             if r["delta"] < 0:
                 bits.append(f'{r["delta"]} pt')
             if r["is_stale"]:
-                bits.append('périmé')
+                bits.append(rt(lang, "stale"))
             parts.append(f'<li><span class="dot" style="background:{RAG_COLOR["red"]}"></span>'
                          f'<strong>{e(r["name"])}</strong> — {e(", ".join(bits))}</li>')
         parts.append('</ul>')
@@ -236,25 +286,27 @@ def render_html(data: dict, *, standalone: bool = True) -> str:
     for blk in data["tribes"]:
         parts.append(f'<h2>{e(blk["tribe_name"])}</h2>')
         parts.append('<table><thead><tr>'
-                     '<th>Squad</th><th>Responsable</th><th>Statut</th>'
-                     '<th>Progression</th><th>Δ sem.</th><th>Bloqués</th>'
-                     '<th>À risque</th><th>Faits de la semaine</th>'
+                     f'<th>{e(rt(lang, "h_squad"))}</th><th>{e(rt(lang, "h_leader"))}</th>'
+                     f'<th>{e(rt(lang, "h_status"))}</th>'
+                     f'<th>{e(rt(lang, "h_progress_long"))}</th><th>{e(rt(lang, "h_delta"))}</th>'
+                     f'<th>{e(rt(lang, "h_blocked"))}</th>'
+                     f'<th>{e(rt(lang, "h_atrisk"))}</th><th>{e(rt(lang, "h_facts"))}</th>'
                      '</tr></thead><tbody>')
         for r in blk["squads"]:
             changes = r["changes"][:4]
-            ch_html = "<br>".join(e(_change_text(c)) for c in changes) if changes else \
+            ch_html = "<br>".join(e(_change_text(c, lang)) for c in changes) if changes else \
                 ('<span class="muted">—</span>' if not r["note"] else "")
             if r["note"]:
                 note = e(r["note"]).replace("\n", " ")
                 if len(note) > 160:
                     note = note[:159] + "…"
                 ch_html = (ch_html + "<br>" if ch_html else "") + f'<em class="note">« {note} »</em>'
-            stale_badge = ' <span class="badge">périmé</span>' if r["is_stale"] else ""
+            stale_badge = f' <span class="badge">{e(rt(lang, "stale"))}</span>' if r["is_stale"] else ""
             parts.append(
                 f'<tr><td><strong>{e(r["name"])}</strong>{stale_badge}</td>'
                 f'<td>{e(r["leader"])}</td>'
                 f'<td><span class="pill" style="background:{RAG_COLOR[r["status_rag"]]}">'
-                f'{e(_status_label(r["status"]))}</span></td>'
+                f'{e(_status_label(r["status"], lang))}</span></td>'
                 f'<td>{_bar(r["annual_pct"], r["status_rag"])}</td>'
                 f'<td>{_delta_html(r["delta"])}</td>'
                 f'<td>{r["blocked"] or ""}</td><td>{r["at_risk"] or ""}</td>'
@@ -266,8 +318,8 @@ def render_html(data: dict, *, standalone: bool = True) -> str:
     if not standalone:
         return f'<div class="tc-report">{_CSS}{body}</div>'
     return (
-        '<!doctype html><html lang="fr"><head><meta charset="utf-8">'
-        f'<title>{e(data["app_name"])} — Rapport hebdomadaire</title>'
+        f'<!doctype html><html lang="{e(lang)}"><head><meta charset="utf-8">'
+        f'<title>{e(data["app_name"])} — {e(rt(lang, "report"))}</title>'
         f'{_CSS}</head><body><div class="tc-report">{body}</div></body></html>'
     )
 
@@ -322,6 +374,7 @@ def render_pptx(data: dict) -> bytes:
         return RGBColor.from_string(hexstr.lstrip("#").upper())
 
     B = {k: rgb(v) for k, v in _BRAND.items()}
+    lang = data.get("lang", "fr")
 
     prs = Presentation()
     prs.slide_width = Inches(13.333)
@@ -361,21 +414,21 @@ def render_pptx(data: dict) -> bytes:
     # --- Header band (navy)
     rect(Inches(0), Inches(0), prs.slide_width, Inches(1.12), B["navy"])
     textbox(Inches(0.55), Inches(0.18), Inches(9.5), Inches(0.5),
-            f'{data["app_name"]} — Rapport', 26, bold=True, color=B["white"])
+            f'{data["app_name"]} — {rt(lang, "report")}', 26, bold=True, color=B["white"])
     textbox(Inches(0.57), Inches(0.68), Inches(9.5), Inches(0.35),
-            f'{data["scope_name"]} · Année {data["year"]}', 13, color=rgb("#C7D2FE"))
+            f'{data["scope_name"]} · {rt(lang, "year")} {data["year"]}', 13, color=rgb("#C7D2FE"))
     textbox(Inches(9.3), Inches(0.3), Inches(3.5), Inches(0.6),
-            f'Généré le {gen_str}\nFenêtre {data["since_days"]} j', 11,
+            f'{rt(lang, "generated_full", d=gen_str)}\n{rt(lang, "window_full", n=data["since_days"])}', 11,
             color=rgb("#C7D2FE"), align=PP_ALIGN.RIGHT)
 
     # --- KPI banner (6 cards)
     kpis = [
-        ("Squads", str(sm["squads_total"]), B["navy"]),
-        ("Progression moy.", f'{sm["avg_progress"]}%', B["accent"]),
-        ("Jalons bloqués", str(sm["blocked"]), B["red"] if sm["blocked"] else B["ink"]),
-        ("Jalons à risque", str(sm["at_risk"]), B["orange"] if sm["at_risk"] else B["ink"]),
-        ("Objectifs rouges", str(sm["objectives_red"]), B["red"] if sm["objectives_red"] else B["ink"]),
-        ("Reporting périmé", str(sm["stale"]), B["orange"] if sm["stale"] else B["ink"]),
+        (rt(lang, "k_squads"), str(sm["squads_total"]), B["navy"]),
+        (rt(lang, "k_progress"), f'{sm["avg_progress"]}%', B["accent"]),
+        (rt(lang, "k_blocked"), str(sm["blocked"]), B["red"] if sm["blocked"] else B["ink"]),
+        (rt(lang, "k_atrisk"), str(sm["at_risk"]), B["orange"] if sm["at_risk"] else B["ink"]),
+        (rt(lang, "k_obj_red"), str(sm["objectives_red"]), B["red"] if sm["objectives_red"] else B["ink"]),
+        (rt(lang, "k_stale"), str(sm["stale"]), B["orange"] if sm["stale"] else B["ink"]),
     ]
     margin = Inches(0.5)
     gap = Inches(0.14)
@@ -390,7 +443,8 @@ def render_pptx(data: dict) -> bytes:
         textbox(left, Inches(2.04), card_w, Inches(0.3), label, 10, color=B["muted"], align=PP_ALIGN.CENTER)
 
     # --- Squads table (mini)
-    headers = ["Squad", "Responsable", "Statut", "Progr.", "Δ sem.", "Bloqués", "À risque"]
+    headers = [rt(lang, "h_squad"), rt(lang, "h_leader"), rt(lang, "h_status"),
+               rt(lang, "h_progress"), rt(lang, "h_delta"), rt(lang, "h_blocked"), rt(lang, "h_atrisk")]
     wfrac = [0.275, 0.21, 0.12, 0.105, 0.082, 0.103, 0.105]
     table_w = int(prs.slide_width - margin * 2)
     widths = [Emu(int(table_w * f)) for f in wfrac]
@@ -430,7 +484,7 @@ def render_pptx(data: dict) -> bytes:
         cells = [
             (r["name"], B["ink"], True, PP_ALIGN.LEFT),
             (r["leader"] or "—", B["muted"], False, PP_ALIGN.LEFT),
-            (_status_label(r["status"]), rgb(_RAG_BRAND[r["status_rag"]]), True, PP_ALIGN.CENTER),
+            (_status_label(r["status"], lang), rgb(_RAG_BRAND[r["status_rag"]]), True, PP_ALIGN.CENTER),
             (f'{r["annual_pct"]}%', B["ink"], False, PP_ALIGN.CENTER),
             ((f'+{delta}' if delta > 0 else str(delta)),
              (B["green"] if delta > 0 else B["red"]) if delta else B["muted"], False, PP_ALIGN.CENTER),
@@ -442,7 +496,7 @@ def render_pptx(data: dict) -> bytes:
 
     if overflow > 0:
         last = len(shown) + 1
-        style_cell(tbl.cell(last, 0), f'… +{overflow} autres squads', 9, B["muted"], align=PP_ALIGN.LEFT)
+        style_cell(tbl.cell(last, 0), rt(lang, "more_squads", n=overflow), 9, B["muted"], align=PP_ALIGN.LEFT)
         for ci in range(1, len(headers)):
             style_cell(tbl.cell(last, ci), " ", 9, B["muted"])
 
@@ -487,13 +541,14 @@ def send_due_weekly_reports(db: Session, now: datetime | None = None) -> int:
 
     since = cfg.get("since_days", 7)
     year = st.current_year_quarter(now)[0]
+    lang = _lang(get_general(db).get("default_lang"))
 
     # Cache rendered output per scope (None = global) to avoid recomputation.
     rendered: dict[int | None, tuple[str, bytes]] = {}
 
     def render_scope(scope: int | None) -> tuple[str, bytes]:
         if scope not in rendered:
-            data = build_report_data(db, scope, year, since, now)
+            data = build_report_data(db, scope, year, since, now, lang=lang)
             html_body = render_html(data, standalone=True)
             try:
                 pptx_bytes = render_pptx(data)
@@ -502,7 +557,7 @@ def send_due_weekly_reports(db: Session, now: datetime | None = None) -> int:
             rendered[scope] = (html_body, pptx_bytes)
         return rendered[scope]
 
-    subject = f'Rapport hebdomadaire — semaine {now.isocalendar()[1]}'
+    subject = rt(lang, "subject", w=now.isocalendar()[1])
     sent = 0
 
     def send_to(addr: str, scope: int | None) -> None:
@@ -551,13 +606,14 @@ def send_personal_subscriptions(db: Session, now: datetime | None = None) -> int
         return 0
 
     year = st.current_year_quarter(now)[0]
+    lang = _lang(get_general(db).get("default_lang"))
     # Cache rendered output per (scope_tribe, squad_id) key.
     rendered: dict[tuple, tuple[str, bytes]] = {}
 
     def render(scope_tribe: int | None, squad_id: int | None, since: int) -> tuple[str, bytes]:
         key = (scope_tribe, squad_id)
         if key not in rendered:
-            data = build_report_data(db, scope_tribe, year, since, now, squad_id=squad_id)
+            data = build_report_data(db, scope_tribe, year, since, now, squad_id=squad_id, lang=lang)
             html_body = render_html(data, standalone=True)
             try:
                 pptx_bytes = render_pptx(data)
@@ -584,7 +640,7 @@ def send_personal_subscriptions(db: Session, now: datetime | None = None) -> int
         if pptx_bytes:
             attachment = (f"rapport_{now.date().isoformat()}.pptx", pptx_bytes,
                           "application", "vnd.openxmlformats-officedocument.presentationml.presentation")
-        subject = f"Rapport — {sub.interval_days} j"
+        subject = rt(lang, "subject_personal", n=sub.interval_days)
         if send_email(smtp, user.email, subject, html_body, attachment=attachment, html=True):
             sub.last_sent_at = now
             if sub.squad_id is None:
