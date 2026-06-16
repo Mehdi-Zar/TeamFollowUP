@@ -34,7 +34,7 @@ type NavItem = {
 };
 
 const NAV: NavItem[] = [
-  { to: "/prise-en-main", labelKey: "nav.gettingstarted", titleKey: "gs.title", Icon: IconHelp, visible: () => true },
+  { to: "/prise-en-main", labelKey: "nav.gettingstarted", titleKey: "gs.title", Icon: IconHelp, visible: () => true, module: "getting_started" },
   { to: "/", end: true, labelKey: "nav.dashboard", titleKey: "nav.dashboard", Icon: IconDashboard, visible: () => true, module: "dashboard" },
   { to: "/organigramme", labelKey: "nav.org", titleKey: "nav.org", Icon: IconOrg, visible: () => true, module: "org" },
   { to: "/tribus", labelKey: "nav.tribes", titleKey: "nav.tribes", Icon: IconTribes, visible: isGlobalAdmin },
@@ -68,8 +68,8 @@ export default function Layout() {
   // First-login welcome → invites the user to the getting-started guide.
   const [welcome, setWelcome] = useState(false);
   useEffect(() => {
-    if (user && !isPreview && !localStorage.getItem(`gs_welcomed_${user.id}`)) setWelcome(true);
-  }, [user?.id, isPreview]);
+    if (user && !isPreview && moduleOn(modules, "getting_started") && !localStorage.getItem(`gs_welcomed_${user.id}`)) setWelcome(true);
+  }, [user?.id, isPreview, modules]);
   function dismissWelcome() {
     if (user) localStorage.setItem(`gs_welcomed_${user.id}`, "1");
     setWelcome(false);
