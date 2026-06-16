@@ -73,6 +73,7 @@ export default function OrgPage() {
   const [form, setForm] = useState<FormState | null>(null);
   const [view, setView] = useState<OrgView>("tree");
   const [showAllMembers, setShowAllMembers] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
 
   // editing only allowed on one's OWN tribe (admin: any tribe they select)
   const isOwnTribe = tribeId !== null && tribeId === user?.tribe_id;
@@ -192,6 +193,14 @@ export default function OrgPage() {
   }
   const parentOptions = flatten(tree).filter((f) => !exclude.includes(f.id));
 
+  const treeContent = (
+    <div className="row" style={{ justifyContent: "center", alignItems: "flex-start", gap: 24, flexWrap: "nowrap" }}>
+      {tree.map((n) => (
+        <NodeView key={n.id} node={n} editable={editable} linkSquads={isAdmin || isOwnTribe} forceShowTeam={showAllMembers} onAdd={openCreate} onEdit={openEdit} onDelete={remove} />
+      ))}
+    </div>
+  );
+
   return (
     <div className="stack" style={{ gap: 18 }}>
       <div className="muted small">{editable ? t("org.subtitle_edit") : t("org.subtitle_ro")}</div>
@@ -202,13 +211,23 @@ export default function OrgPage() {
 
       {tree.length > 0 && view === "tree" && (
         <div className="card">
-          <FitScale>
-            <div className="row" style={{ justifyContent: "center", alignItems: "flex-start", gap: 24, flexWrap: "nowrap" }}>
-              {tree.map((n) => (
-                <NodeView key={n.id} node={n} editable={editable} linkSquads={isAdmin || isOwnTribe} forceShowTeam={showAllMembers} onAdd={openCreate} onEdit={openEdit} onDelete={remove} />
-              ))}
-            </div>
-          </FitScale>
+          <div className="between" style={{ marginBottom: 8, alignItems: "center" }}>
+            <span className="small muted">{t("org.fit_hint")}</span>
+            <button className="btn-secondary btn-sm" onClick={() => setFullscreen(true)}>⛶ {t("org.fullscreen")}</button>
+          </div>
+          <FitScale>{treeContent}</FitScale>
+        </div>
+      )}
+
+      {fullscreen && (
+        <div className="org-fullscreen" onClick={() => setFullscreen(false)}>
+          <div className="org-fullscreen-bar">
+            <span className="strong">{t("nav.org")}</span>
+            <button className="btn-secondary btn-sm" onClick={() => setFullscreen(false)}>✕ {t("action.close")}</button>
+          </div>
+          <div className="org-fullscreen-body" onClick={(e) => e.stopPropagation()}>
+            {treeContent}
+          </div>
         </div>
       )}
 
