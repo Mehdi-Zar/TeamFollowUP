@@ -59,7 +59,7 @@ export default function NotificationBell() {
     <div ref={ref} style={{ position: "relative" }}>
       <button
         className="btn-ghost"
-        style={{ color: "#fff", borderColor: "rgba(255,255,255,.3)", position: "relative", padding: "8px 10px" }}
+        style={{ color: "var(--navy)", borderColor: "var(--line)", position: "relative", padding: "8px 10px" }}
         onClick={() => setOpen((o) => !o)}
         title={t("notif.title")}
       >

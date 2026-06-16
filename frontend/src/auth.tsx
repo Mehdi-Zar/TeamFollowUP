@@ -69,14 +69,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Impersonation changes the backend session — a full reload re-initialises the
   // whole app (config, permissions, data) as the new session user, so the
-  // simulation is faithful "all the way down".
+  // simulation is faithful "all the way down". Force a reload even when already
+  // on "/" (assigning the same URL would otherwise be a no-op).
+  function reloadHome() {
+    if (window.location.pathname === "/") window.location.reload();
+    else window.location.assign("/");
+  }
   async function impersonate(userId: number) {
     await api.post("/api/auth/impersonate", { user_id: userId });
-    window.location.href = "/";
+    reloadHome();
   }
   async function stopImpersonation() {
     await api.post("/api/auth/stop-impersonation");
-    window.location.href = "/";
+    reloadHome();
   }
 
   const effectiveRole: Role | null = user ? user.role : null;
