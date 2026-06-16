@@ -262,10 +262,17 @@ function NodeView({
   const { t } = useI18n();
   const [showTeam, setShowTeam] = useState(false);
   const teamVisible = forceShowTeam || showTeam;
+  const isSquad = !!node.squad_id;
   return (
     <div className="org-subtree">
-      <div className="org-box org-node">
-        <div className="strong small">{node.title}</div>
+      <div className={`org-box org-node${isSquad ? " org-node--squad" : ""}`}>
+        {isSquad && linkSquads ? (
+          <Link to={`/squads/${node.squad_id}`} className="strong small org-squad-link" title={t("org.see_squad")}>
+            {node.title} ↗
+          </Link>
+        ) : (
+          <div className="strong small">{node.title}</div>
+        )}
         {node.person_name && <div className="small muted">{node.person_name}</div>}
         {node.squad_id && linkSquads && !forceShowTeam && (
           <div className="inline" style={{ gap: 8, marginTop: 4, justifyContent: "center", flexWrap: "wrap" }}>
