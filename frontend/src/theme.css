@@ -288,6 +288,26 @@ tr:last-child td { border-bottom: none; }
 .org-children > .org-subtree:last-child::after { right: calc(50% - 1px); }
 .org-children > .org-subtree:only-child::after { display: none; }
 
+/* Vertical (stacked) children — a domain's squads in a compact column. */
+.org-children--vertical {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  margin-top: 14px;
+  margin-left: 28px;
+  padding-top: 0;
+}
+.org-children--vertical::before {  /* vertical spine */
+  content: ""; position: absolute; left: -16px; top: -14px; bottom: 40px;
+  width: 2px; background: var(--org-line);
+}
+.org-children--vertical > .org-subtree { align-items: flex-start; }
+.org-children--vertical > .org-subtree::after { content: none; }
+.org-children--vertical > .org-subtree::before {  /* horizontal stub to spine */
+  content: ""; position: absolute; left: -16px; top: 39px; transform: none;
+  width: 16px; height: 2px; background: var(--org-line);
+}
+
 /* Export / share dropdown menu */
 .menu-pop { box-shadow: 0 8px 28px rgba(15, 23, 42, .16); }
 .menu-label { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--grey); padding: 6px 8px 2px; }
@@ -303,7 +323,7 @@ tr:last-child td { border-bottom: none; }
   display: flex; flex-direction: column; }
 .org-fullscreen-bar { display: flex; justify-content: space-between; align-items: center;
   padding: 12px 20px; background: #fff; border-bottom: 1px solid var(--line); box-shadow: var(--shadow); }
-.org-fullscreen-body { flex: 1; overflow: auto; padding: 32px; }
+.org-fullscreen-body { flex: 1; min-height: 0; overflow: hidden; padding: 28px; display: flex; }
 
 /* Clickable squad node */
 .org-node--squad { cursor: pointer; transition: box-shadow .12s, border-color .12s; }
