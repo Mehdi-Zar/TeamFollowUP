@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from ..authconfig import get_auth_config, set_auth_config
 from ..database import get_db
-from ..deps import get_current_user, record_audit, require_admin
+from ..deps import ADMIN, get_current_user, record_audit, require_admin
 from ..generalconfig import get_general, set_general
 from ..models import User
 from ..rbac import (
@@ -29,6 +29,18 @@ def _require_user_manager(actor: User) -> None:
         raise HTTPException(status_code=403, detail="Gestion des utilisateurs réservée aux administrateurs et tribe leaders")
 
 
+def _assert_can_assign(db: Session, actor: User, role: str) -> None:
+    """Admins may assign any existing persona (built-in or custom); others keep
+    their built-in subset."""
+    if actor.role == ADMIN:
+        from ..personasconfig import valid_role_keys
+        if role in valid_role_keys(db):
+            return
+        raise HTTPException(status_code=400, detail="Persona inconnu")
+    if not can_assign_role(actor, role):
+        raise HTTPException(status_code=403, detail=f"Rôle non autorisé (autorisés : {', '.join(assignable_roles(actor))})")
+
+
 @router.get("/users", response_model=list[UserOut])
 def list_users(db: Session = Depends(get_db), actor: User = Depends(get_current_user)):
     _require_user_manager(actor)
@@ -42,8 +54,7 @@ def list_users(db: Session = Depends(get_db), actor: User = Depends(get_current_
 @router.post("/users", response_model=UserOut, status_code=201)
 def create_user(payload: UserCreate, db: Session = Depends(get_db), actor: User = Depends(get_current_user)):
     _require_user_manager(actor)
-    if not can_assign_role(actor, payload.role):
-        raise HTTPException(status_code=403, detail=f"Rôle non autorisé (autorisés : {', '.join(assignable_roles(actor))})")
+    _assert_can_assign(db, actor, payload.role)
     # Tribe leaders can only create users inside their own tribe.
     tribe_id = payload.tribe_id if actor.role == "admin" else actor.tribe_id
     if actor.role != "admin" and payload.tribe_id not in (None, actor.tribe_id):
@@ -85,8 +96,7 @@ def update_user(user_id: int, payload: UserUpdate, db: Session = Depends(get_db)
     if "role" in data and data["role"] is not None:
         if user.is_break_glass and data["role"] != "admin":
             raise HTTPException(status_code=400, detail="Le compte de secours doit rester administrateur")
-        if not can_assign_role(actor, data["role"]):
-            raise HTTPException(status_code=403, detail="Rôle non autorisé")
+        _assert_can_assign(db, actor, data["role"])
     # Only an admin may move a user to another tribe.
     if "tribe_id" in data and actor.role != "admin" and data["tribe_id"] != actor.tribe_id:
         raise HTTPException(status_code=403, detail="Vous ne pouvez pas déplacer un utilisateur hors de votre tribe")
@@ -166,9 +176,31 @@ def test_smtp(payload: dict = Body(...), db: Session = Depends(get_db), admin: U
     cfg = get_smtp(db)
     if not cfg.get("enabled"):
         raise HTTPException(status_code=400, detail="SMTP désactivé")
-    ok = send_email(cfg, to, "Tribe Cockpit — test SMTP",
+    ok = send_email(cfg, to, "Tribe Cockpit - test SMTP",
                     "Ceci est un email de test envoyé depuis Tribe Cockpit. Si vous le recevez, la configuration SMTP fonctionne.")
     return {"ok": ok, "to": to}
+
+
+@router.get("/personas")
+def read_personas(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    from ..personasconfig import get_personas, CAPABILITIES
+    return {"capabilities": CAPABILITIES, "personas": get_personas(db)}
+
+
+@router.put("/personas")
+def update_personas(payload: dict = Body(...), db: Session = Depends(get_db),
+                    admin: User = Depends(require_admin)):
+    from ..personasconfig import set_personas, valid_role_keys, CAPABILITIES
+    personas = set_personas(db, payload.get("personas", []))
+    # Reassign users whose persona was removed, so nobody is left without access.
+    valid = valid_role_keys(db)
+    for u in db.scalars(select(User)).all():
+        if u.role not in valid and not u.is_break_glass:
+            u.role = "member"
+    record_audit(db, admin.id, "personas.update", entity="personas",
+                 detail={"keys": [p["key"] for p in personas]})
+    db.commit()
+    return {"capabilities": CAPABILITIES, "personas": personas}
 
 
 @router.get("/modules-config")
@@ -198,7 +230,7 @@ def read_report_config(db: Session = Depends(get_db), admin: User = Depends(requ
 def update_report_config(payload: dict = Body(...), db: Session = Depends(get_db),
                          admin: User = Depends(require_admin)):
     from ..reportconfig import set_report
-    # last_sent_week is bookkeeping owned by the scheduler — never let the UI set it.
+    # last_sent_week is bookkeeping owned by the scheduler - never let the UI set it.
     payload = {k: v for k, v in (payload or {}).items() if k != "last_sent_week"}
     cfg = set_report(db, payload)
     record_audit(db, admin.id, "report_config.update", entity="weekly_report",
@@ -231,7 +263,7 @@ def test_report_config(payload: dict = Body(default=None), db: Session = Depends
                       "application", "vnd.openxmlformats-officedocument.presentationml.presentation")
     except ImportError:
         pass
-    ok = send_email(cfg, to, f"{data['app_name']} — Rapport hebdomadaire (test)",
+    ok = send_email(cfg, to, f"{data['app_name']} - Rapport hebdomadaire (test)",
                     html_body, attachment=attachment, html=True)
     record_audit(db, admin.id, "report_config.test", entity="weekly_report", detail={"ok": ok, "to": to})
     db.commit()

@@ -4,7 +4,7 @@ import { api } from "../api";
 import { useAuth } from "../auth";
 import { useI18n } from "../i18n";
 import { Member, OrgNode, Squad, SquadDetail, Tribe, Role } from "../types";
-import { Spinner, ErrorBanner, FitScale } from "../components/ui";
+import { Spinner, ErrorBanner, FitScale, Modal } from "../components/ui";
 import { useSetPageChrome } from "../components/pageChrome";
 import { canEditOrg } from "../perms";
 
@@ -28,7 +28,7 @@ interface Flat {
 
 function flatten(nodes: OrgNode[], depth = 0, acc: Flat[] = []): Flat[] {
   for (const n of nodes) {
-    acc.push({ id: n.id, label: `${"— ".repeat(depth)}${n.title}`, depth });
+    acc.push({ id: n.id, label: `${"- ".repeat(depth)}${n.title}`, depth });
     flatten(n.children, depth + 1, acc);
   }
   return acc;
@@ -175,6 +175,7 @@ export default function OrgPage() {
           {!editable && !isOwnTribe && tribeId !== null && (
             <span className="badge badge-grey">{t("org.view_only_other")}</span>
           )}
+          {tribeId !== null && <OrgExportButton tribeId={tribeId} />}
           {editable && (
             <button className="btn-secondary btn-sm" onClick={() => openCreate(null)}>
               + {t("org.add_top")}
@@ -231,7 +232,7 @@ export default function OrgPage() {
             <div key={node.id} className="item-row">
               <div className="grow" style={{ paddingLeft: depth * 22 }}>
                 <span className="strong small">{node.title}</span>
-                {node.person_name && <span className="small muted"> — {node.person_name}</span>}
+                {node.person_name && <span className="small muted"> - {node.person_name}</span>}
                 {node.squad_id && (isAdmin || isOwnTribe) && (
                   <Link className="small" to={`/squads/${node.squad_id}`} style={{ marginLeft: 8 }}>
                     {t("org.see_squad")}
@@ -241,8 +242,8 @@ export default function OrgPage() {
               {editable && (
                 <div className="inline" style={{ gap: 4 }}>
                   <button className="btn-ghost btn-sm" title={t("org.add_below")} onClick={() => openCreate(node.id)}>+</button>
-                  <button className="btn-ghost btn-sm" title={t("action.save")} onClick={() => openEdit(node)}>✎</button>
-                  <button className="btn-danger btn-sm" title={t("action.delete")} onClick={() => remove(node)}>✕</button>
+                  <button className="btn-ghost btn-sm" title={t("action.edit")} aria-label={t("action.edit")} onClick={() => openEdit(node)}>✎</button>
+                  <button className="btn-danger btn-sm" title={t("action.delete")} aria-label={t("action.delete")} onClick={() => remove(node)}>✕</button>
                 </div>
               )}
             </div>
@@ -413,7 +414,7 @@ function NodeForm({
           <div style={{ width: 240 }}>
             <label>{t("org.pick_squad")}</label>
             <select value={form.squad_id} onChange={(e) => onChange({ ...form, squad_id: e.target.value })}>
-              <option value="">—</option>
+              <option value="">-</option>
               {squads.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name}
@@ -452,7 +453,7 @@ function NodeForm({
 }
 
 /** Fullscreen org chart with a zoom (magnifier) control. Starts fitted to the
- *  screen; zoom in to read details — the view becomes pannable (scroll). */
+ *  screen; zoom in to read details - the view becomes pannable (scroll). */
 function OrgFullscreen({ children, onClose }: { children: ReactNode; onClose: () => void }) {
   const { t } = useI18n();
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -531,5 +532,73 @@ function OrgFullscreen({ children, onClose }: { children: ReactNode; onClose: ()
         </div>
       </div>
     </div>
+  );
+}
+
+/** Export the org chart (HTML / PPTX) with a picker for which top-level branches
+ *  to include. Mirrors the roadmap export UX. */
+function OrgExportButton({ tribeId }: { tribeId: number }) {
+  const { t, lang } = useI18n();
+  const [open, setOpen] = useState(false);
+  const [branches, setBranches] = useState<{ id: number; title: string; count: number }[]>([]);
+  const [sel, setSel] = useState<Set<number>>(new Set());
+
+  useEffect(() => {
+    if (!open) return;
+    api.get<{ id: number; title: string; count: number }[]>(`/api/org/export/branches?tribe_id=${tribeId}`)
+      .then((b) => { setBranches(b); setSel(new Set(b.map((x) => x.id))); })
+      .catch(() => setBranches([]));
+  }, [open, tribeId]);
+
+  const selIds = Array.from(sel);
+  const allOn = branches.length > 0 && sel.size === branches.length;
+  const toggle = (id: number) => setSel((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  // No selection = whole chart (the export treats empty node_ids as "all").
+  const url = (fmt: "html" | "pptx") =>
+    `/api/org/export.${fmt}?tribe_id=${tribeId}&lang=${lang}` +
+    (allOn ? "" : selIds.map((id) => `&node_ids=${id}`).join(""));
+  const canExport = branches.length === 0 || selIds.length > 0;
+
+  return (
+    <>
+      <button className="btn-secondary btn-sm" onClick={() => setOpen(true)}>{t("orgexport.btn")}</button>
+      {open && (
+        <Modal
+          width={640}
+          title={t("orgexport.title")}
+          onClose={() => setOpen(false)}
+          footer={
+            <div className="between" style={{ width: "100%", alignItems: "center" }}>
+              <span className="small muted">{t("orgexport.selected", { n: sel.size, total: branches.length })}</span>
+              <div className="inline" style={{ gap: 8 }}>
+                <button className="btn-secondary" onClick={() => setOpen(false)}>{t("action.close")}</button>
+                <a className={`btn btn-secondary${canExport ? "" : " disabled"}`} href={canExport ? url("html") : undefined}
+                   target="_blank" rel="noreferrer" aria-disabled={!canExport} onClick={() => canExport && setOpen(false)}>HTML</a>
+                <a className={`btn${canExport ? "" : " disabled"}`} href={canExport ? url("pptx") : undefined} download
+                   aria-disabled={!canExport} onClick={() => canExport && setOpen(false)}>PPTX</a>
+              </div>
+            </div>
+          }
+        >
+          <div className="between" style={{ marginBottom: 10 }}>
+            <div className="small muted">{t("orgexport.pick")}</div>
+            <button className="btn-ghost btn-sm" onClick={() => setSel(allOn ? new Set() : new Set(branches.map((b) => b.id)))}>
+              {allOn ? t("export.none") : t("export.all")}
+            </button>
+          </div>
+          <div className="rm-pick-grid">
+            {branches.length === 0 ? <div className="small muted">{t("common.loading")}</div> : branches.map((b) => {
+              const on = sel.has(b.id);
+              return (
+                <label key={b.id} className={`rm-pick-chip${on ? " on" : ""}`} onClick={(e) => { e.preventDefault(); toggle(b.id); }}>
+                  <input type="checkbox" checked={on} readOnly />
+                  <span className="rm-pick-name">{b.title} <span className="muted">({b.count})</span></span>
+                </label>
+              );
+            })}
+          </div>
+        </Modal>
+      )}
+    </>
   );
 }

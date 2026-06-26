@@ -9,7 +9,7 @@ from ..deps import (assert_can_edit_squad, assert_tribe_scope, get_current_user,
 from ..models import ReviewAction, Squad, User
 from ..schemas import ReviewActionCreate, ReviewActionOut, ReviewActionUpdate
 
-# Part of the review/COPIL feature — gated by the review module.
+# Part of the review/COPIL feature - gated by the review module.
 router = APIRouter(prefix="/api", tags=["actions"],
                    dependencies=[Depends(require_module("review"))])
 

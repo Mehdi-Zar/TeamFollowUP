@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from .. import status as st
 from ..database import get_db
 from ..deps import (assert_can_edit_squad, get_current_user, record_audit,
-                    require_admin, require_module, require_writer)
+                    require_admin, require_capability, require_module, require_writer)
 from ..models import ProgressUpdate, Squad, Tribe, User, utcnow
 from ..progress import compute_metrics, ensure_weekly, record_progress
 from ..schemas import ProgressNoteIn, ProgressPointOut, ProgressReviewRow
@@ -121,7 +121,7 @@ def aggregate_review(db: Session, scope_tribe: int | None, since_days: int = 7,
             points_in_period=len(in_period), changes=changes,
         ))
 
-    # Worst movers / most blocked first — most useful for the ceremony.
+    # Worst movers / most blocked first - most useful for the ceremony.
     rows.sort(key=lambda r: (-r.blocked_count, r.progress_delta, r.squad_name))
     return rows
 
@@ -129,9 +129,9 @@ def aggregate_review(db: Session, scope_tribe: int | None, since_days: int = 7,
 @router.get("/api/progress/review", response_model=list[ProgressReviewRow],
             dependencies=[Depends(require_module("review"))])
 def aggregated_review(since_days: int = Query(7, ge=1, le=365), tribe_id: int | None = None,
-                      db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    # Readable by everyone (COPIL prep), scoped to their visibility: admins see
-    # all tribes (or a chosen one), everyone else sees their own tribe.
+                      db: Session = Depends(get_db), user: User = Depends(require_capability("review"))):
+    # Gated by the persona "review" capability (Admin → Personas). Scoped to the
+    # caller's visibility: admins see all tribes (or a chosen one), others their own.
     scope_tribe = tribe_id if user.role == "admin" else user.tribe_id
     return aggregate_review(db, scope_tribe, since_days)
 

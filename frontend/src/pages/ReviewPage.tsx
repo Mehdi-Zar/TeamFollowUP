@@ -61,6 +61,56 @@ function Metric({ label, children, help }: { label: string; children: ReactNode;
   );
 }
 
+/** COPIL "meeting mode": one squad per screen, worst first, keyboard-navigable. */
+function ReviewPresentation({ rows, onClose }: { rows: ProgressReviewRow[]; onClose: () => void }) {
+  const { t, formatDateTime } = useI18n();
+  const [i, setI] = useState(0);
+  const ordered = useMemo(
+    () => [...rows].sort((a, b) => (b.blocked_count - a.blocked_count) || (a.progress_delta - b.progress_delta) || a.squad_name.localeCompare(b.squad_name)),
+    [rows],
+  );
+  const last = ordered.length - 1;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+      else if (e.key === "ArrowRight" || e.key === " ") { e.preventDefault(); setI((x) => Math.min(x + 1, last)); }
+      else if (e.key === "ArrowLeft") { e.preventDefault(); setI((x) => Math.max(x - 1, 0)); }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [last, onClose]);
+  if (ordered.length === 0) return null;
+  const r = ordered[Math.min(i, last)];
+  const v = verdictOf(r);
+  return (
+    <div className="present-overlay" role="dialog" aria-modal="true">
+      <div className="present-top">
+        <span className="present-counter">{i + 1} / {ordered.length}</span>
+        <button className="btn-ghost btn-sm" onClick={onClose} aria-label={t("action.close")}>✕</button>
+      </div>
+      <div className="present-slide">
+        <div className="present-tribe">{r.tribe_name}</div>
+        <h1 className="present-name"><Dot status={VERDICT_RAG[v]} decorative /> {r.squad_name}</h1>
+        <div className="present-metrics">
+          <div><div className="present-big">{r.progress_pct}%</div><div className="present-lbl">{t("dash.annual")}</div></div>
+          <div><div className="present-big"><Delta value={r.progress_delta} /></div><div className="present-lbl">{t("review.delta")}</div></div>
+          <div><div className="present-big" style={{ color: r.blocked_count ? "var(--red)" : undefined }}>{r.blocked_count}</div><div className="present-lbl">{t("card.blocked")}</div></div>
+          <div><div className="present-big" style={{ color: r.at_risk_count ? "var(--orange)" : undefined }}>{r.at_risk_count}</div><div className="present-lbl">{t("card.atrisk")}</div></div>
+        </div>
+        <div style={{ marginTop: 8 }}><Confidence value={r.confidence} /></div>
+        {r.note && <div className="present-note">« {r.note} »</div>}
+        {r.changes.length > 0 && <div className="present-changes"><ChangeList changes={r.changes} max={6} /></div>}
+        {r.last_update_at && <div className="small muted" style={{ marginTop: 14 }}>{t("review.last_update")} : {formatDateTime(r.last_update_at)}</div>}
+      </div>
+      <div className="present-nav">
+        <button className="btn-secondary" disabled={i === 0} onClick={() => setI((x) => Math.max(x - 1, 0))}>← {t("review.prev")}</button>
+        <Link to={`/squads/${r.squad_id}`} className="btn-ghost btn-sm" onClick={onClose}>{t("jalon.details")}</Link>
+        <button className="btn" disabled={i >= last} onClick={() => setI((x) => Math.min(x + 1, last))}>{t("review.next")} →</button>
+      </div>
+    </div>
+  );
+}
+
 // Clean line icons (Feather-style) instead of emoji.
 const Svg = ({ children }: { children: ReactNode }) => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -120,7 +170,7 @@ function ActionItems({ squadId, canEdit, onError }: { squadId: number; canEdit: 
           <span className="small" style={{ flex: 1, minWidth: 0, textDecoration: a.done ? "line-through" : "none", color: a.done ? "var(--grey)" : undefined }}>{a.text}</span>
           {a.owner && <span className="badge badge-grey">{a.owner}</span>}
           {a.due_date && <span className="small" style={{ color: overdue(a) ? "var(--red)" : "var(--grey)" }}>{formatDate(a.due_date)}</span>}
-          {canEdit && <button className="btn-ghost btn-sm" onClick={() => run(() => api.del(`/api/actions/${a.id}`))}>✕</button>}
+          {canEdit && <button className="btn-ghost btn-sm" aria-label={t("action.delete")} onClick={() => run(() => api.del(`/api/actions/${a.id}`))}>✕</button>}
         </div>
       ))}
       {canEdit && (
@@ -142,6 +192,7 @@ export default function ReviewPage() {
   const [rows, setRows] = useState<ProgressReviewRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [help, setHelp] = useState(false);
+  const [present, setPresent] = useState(false);
   const { effectiveRole } = useAuth();
   const canCapture = effectiveRole !== "member"; // who may log decisions/actions
 
@@ -167,17 +218,20 @@ export default function ReviewPage() {
                    onChange={(e) => setDays(Math.max(1, Math.min(365, Number(e.target.value) || 1)))} />
             {t("review.days_unit")}
           </label>
+          <button className="btn-secondary btn-sm" disabled={!rows || rows.length === 0} onClick={() => setPresent(true)}>
+            {t("review.present")}
+          </button>
           <ExportMenu sinceDays={days} />
         </div>
       ),
     },
-    [days, t]
+    [days, t, rows]
   );
 
   const byTribe = useMemo(() => {
     const m = new Map<string, ProgressReviewRow[]>();
     for (const r of rows ?? []) {
-      const key = r.tribe_name || "—";
+      const key = r.tribe_name || "-";
       (m.get(key) ?? m.set(key, []).get(key)!).push(r);
     }
     return [...m.entries()];
@@ -195,6 +249,8 @@ export default function ReviewPage() {
 
   if (error) return <ErrorBanner message={error} />;
   if (!rows) return <Spinner />;
+  if (rows.length === 0) return <div className="card muted">{t("review.empty")}</div>;
+  if (present) return <ReviewPresentation rows={rows} onClose={() => setPresent(false)} />;
 
   const attention = (rows ?? []).filter((r) => verdictOf(r) !== "ontrack")
     .sort((a, b) => (b.blocked_count - a.blocked_count) || (a.progress_delta - b.progress_delta));
@@ -251,7 +307,7 @@ export default function ReviewPage() {
         </div>
       )}
 
-      {/* Squads to unblock — the headline for COPIL prep */}
+      {/* Squads to unblock - the headline for COPIL prep */}
       {attention.length > 0 && (
         <div className="card stack" style={{ gap: 10, borderTop: "3px solid var(--red)" }}>
           <div className="strong inline" style={{ gap: 8 }}><IcoAlert /> {t("review.attention_title")} ({attention.length})</div>

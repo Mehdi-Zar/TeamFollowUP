@@ -9,6 +9,7 @@ def test_submit_cycle_creates_immutable_snapshot(client, seeded):
 
     jal = client.post("/api/roadmap-items", json={
         "squad_id": sid, "year": YEAR, "quarter": 2, "title": "Jalon 1", "status": "on_track",
+        "theme": "Landing Zones",
     })
     assert jal.status_code == 201, jal.text
 
@@ -30,6 +31,7 @@ def test_snapshot_history_and_compare(client, seeded):
 
     jal = client.post("/api/roadmap-items", json={
         "squad_id": sid, "year": YEAR, "quarter": 2, "title": "J", "status": "on_track",
+        "theme": "Landing Zones",
     })
     first = client.post(f"/api/squads/{sid}/snapshots", json={"cycle_label": "C1", "year": YEAR}).json()
     client.put(f"/api/roadmap-items/{jal.json()['id']}", json={"status": "blocked"})
@@ -44,11 +46,13 @@ def test_snapshot_history_and_compare(client, seeded):
     assert any(c["type"] == "changed" and "status" in c.get("fields", {}) for c in changes)
 
 
-def test_quarter_progress_persists_and_appears_in_detail(client, seeded):
+def test_quarter_progress_is_derived_from_milestones(client, seeded):
     login(client, seeded["sl_a"])
     sid = seeded["squad_a"]
-    r = client.put(f"/api/squads/{sid}/quarter-progress",
-                   json={"year": YEAR, "quarter": 2, "progress_pct": 75})
-    assert r.status_code == 200, r.text
+    # Progress is auto-derived (share of the quarter's milestones done), not typed.
+    for status in ("done", "on_track"):
+        rr = client.post("/api/roadmap-items", json={
+            "squad_id": sid, "year": YEAR, "quarter": 2, "title": "J", "theme": "X", "status": status})
+        assert rr.status_code == 201, rr.text
     detail = client.get(f"/api/squads/{sid}?year={YEAR}").json()
-    assert detail["quarter_progress"]["2"]["progress_pct"] == 75
+    assert detail["quarter_progress"]["2"]["progress_pct"] == 50

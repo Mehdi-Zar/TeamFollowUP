@@ -1,3 +1,6 @@
+import time
+from collections import defaultdict, deque
+
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select
@@ -20,9 +23,31 @@ def _set_session(response: Response, user_id: int, impersonator_id: int | None =
         value=create_session_token(user_id, impersonator_id),
         max_age=settings.session_max_age_seconds,
         httponly=True,
-        samesite="lax",
-        secure=False,
+        samesite=settings.cookie_samesite,
+        secure=settings.cookie_secure,
     )
+
+
+# Simple in-memory per-IP login throttle (single-replica; see ADR-0009 for scale).
+_login_failures: dict[str, deque] = defaultdict(deque)
+
+
+def _client_ip(request: Request) -> str:
+    xff = request.headers.get("x-forwarded-for")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def _check_login_rate(ip: str) -> None:
+    if settings.login_max_attempts <= 0:
+        return
+    now = time.time()
+    q = _login_failures[ip]
+    while q and now - q[0] > settings.login_window_seconds:
+        q.popleft()
+    if len(q) >= settings.login_max_attempts:
+        raise HTTPException(status_code=429, detail="Trop de tentatives de connexion. Réessayez plus tard.")
 
 
 @router.get("/config", response_model=AuthConfig)
@@ -32,10 +57,14 @@ def auth_config(db: Session = Depends(get_db)):
 
 
 @router.post("/login", response_model=UserOut)
-def login(payload: LoginIn, response: Response, db: Session = Depends(get_db)):
+def login(payload: LoginIn, request: Request, response: Response, db: Session = Depends(get_db)):
+    ip = _client_ip(request)
+    _check_login_rate(ip)
     user = db.scalar(select(User).where(User.email == payload.email.lower().strip()))
     if user is None or not user.password_hash or not verify_password(payload.password, user.password_hash):
+        _login_failures[ip].append(time.time())
         raise HTTPException(status_code=401, detail="Identifiants invalides")
+    _login_failures.pop(ip, None)  # reset throttle on success
     user.last_login_at = utcnow()
     record_audit(db, user.id, "login.breakglass" if user.is_break_glass else "login.local",
                  entity="user", entity_id=user.id, detail={"email": user.email})
@@ -58,7 +87,13 @@ def me(user: User = Depends(get_current_user)):
 @router.get("/me/permissions")
 def my_permissions(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     from ..rbac import permissions_payload
+    from ..personasconfig import persona_caps, get_personas
     payload = permissions_payload(user)
+    # Persona capabilities drive section access in the SPA (and a few endpoints).
+    payload["capabilities"] = persona_caps(db, user.role)
+    # Admins may assign any persona (built-in or custom); others keep their subset.
+    if user.role == "admin":
+        payload["assignable_roles"] = [p["key"] for p in get_personas(db)]
     # Impersonation context, so the SPA can show the "viewing as" banner.
     imp_id = getattr(request.state, "impersonator_id", None)
     payload["impersonating"] = imp_id is not None

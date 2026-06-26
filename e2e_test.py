@@ -106,7 +106,7 @@ check("Onboarding kpis_enabled False", ond["kpis_enabled"] is False, ond["kpis_e
 
 # ---- roadmap CRUD (squad leader on own squad) ----
 s, j = req(sara, "POST", "/api/roadmap-items", {"squad_id": gid, "year": 2026, "quarter": 3, "title": "Test jalon",
-           "status": "blocked", "owner": "Noah Blanc", "description": "desc", "success_criteria": "ok", "risks": "r"})
+           "theme": "Landing Zones", "status": "blocked", "owner": "Noah Blanc", "description": "desc", "success_criteria": "ok", "risks": "r"})
 check("squad leader create rich jalon", s == 201 and j.get("status") == "blocked", (s, j))
 jid = j["id"] if s == 201 else None
 s, j2 = req(sara, "PUT", f"/api/roadmap-items/{jid}", {"status": "done"})
@@ -114,7 +114,7 @@ check("update jalon status", s == 200 and j2["status"] == "done", (s, j2))
 s, _ = req(sara, "DELETE", f"/api/roadmap-items/{jid}")
 check("delete jalon", s == 204, s)
 # squad leader cannot edit other squad
-s, _ = req(sara, "POST", "/api/roadmap-items", {"squad_id": onb_id, "year": 2026, "quarter": 1, "title": "x"})
+s, _ = req(sara, "POST", "/api/roadmap-items", {"squad_id": onb_id, "year": 2026, "quarter": 1, "title": "x", "theme": "Landing Zones"})
 check("squad leader blocked on other squad", s == 403, s)
 
 # ---- objectives: squad leader forbidden, tribe allowed ----

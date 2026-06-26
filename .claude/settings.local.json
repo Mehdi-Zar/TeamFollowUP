@@ -5,7 +5,11 @@
       "Bash(git add *)",
       "Bash(git -c user.name=dev -c user.email=dev@local commit -qm \"Add .gitignore; stop tracking node_modules/dist/.env\")",
       "Bash(git commit *)",
-      "Bash(git -c user.name=dev -c user.email=dev@local commit -q --amend -m \"Add .gitignore; stop tracking node_modules/dist/.env\")"
+      "Bash(git -c user.name=dev -c user.email=dev@local commit -q --amend -m \"Add .gitignore; stop tracking node_modules/dist/.env\")",
+      "Bash(mkdir -p /tmp/rmpptx)",
+      "Read(//tmp/**)",
+      "Bash(rm -rf *)",
+      "Bash(unzip -o \"/c/Claude/TeamFollowUP/Global Roadmap.pptx\" -d .)"
     ]
   }
 }

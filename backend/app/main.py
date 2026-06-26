@@ -14,16 +14,19 @@ from .routers import (
     audit,
     auth,
     dashboard,
-    exports,
     feed,
+    initiatives,
     kpis,
     members,
     notifications,
     objectives,
     org,
+    orgexport,
+    otds,
     progress,
     reports,
     roadmap,
+    roadmapview,
     snapshots,
     squads,
     tribes,
@@ -38,11 +41,24 @@ app = FastAPI(
 )
 
 # Session middleware is required by Authlib (OIDC state/PKCE).
-app.add_middleware(SessionMiddleware, secret_key=settings.secret_key, same_site="lax", https_only=False)
+app.add_middleware(SessionMiddleware, secret_key=settings.secret_key,
+                   same_site=settings.cookie_samesite, https_only=settings.cookie_secure)
 
-for r in (auth, tribes, squads, dashboard, org, objectives, roadmap, kpis,
-          members, snapshots, exports, feed, notifications, admin, audit, progress, reports, actions):
+for r in (auth, tribes, squads, dashboard, org, orgexport, objectives, roadmap, roadmapview, kpis,
+          members, snapshots, feed, notifications, admin, audit, progress, reports,
+          actions, initiatives, otds):
     app.include_router(r.router)
+
+
+@app.on_event("startup")
+async def _warn_on_insecure_defaults():
+    """Fail loud (log) if dev-default secrets are still in use - see docs/05-security.md."""
+    import logging
+    log = logging.getLogger("trt.security")
+    if str(settings.secret_key).startswith("change-me"):
+        log.warning("SECURITY: default SECRET_KEY in use - set a strong SECRET_KEY in production.")
+    if settings.postgres_password == "tribe":
+        log.warning("SECURITY: default POSTGRES_PASSWORD in use - override it in production.")
 
 
 @app.on_event("startup")
@@ -58,9 +74,14 @@ async def _start_weekly_progress_scheduler():
         return
     import asyncio
 
+    from sqlalchemy import text
+
     from .database import SessionLocal
+    from .maintenance import purge_old_records
     from .progress import ensure_weekly
     from .report import send_due_weekly_reports, send_personal_subscriptions
+
+    _LOCK_KEY = 911001  # advisory-lock id: only one replica runs the tick
 
     async def loop():
         # Small initial delay so startup (migrations/seed) settles first.
@@ -68,7 +89,16 @@ async def _start_weekly_progress_scheduler():
         while True:
             try:
                 db = SessionLocal()
+                got_lock = True
                 try:
+                    # Multi-replica safety: skip the tick if another instance holds the lock.
+                    try:
+                        got_lock = bool(db.execute(text("SELECT pg_try_advisory_lock(:k)"),
+                                                   {"k": _LOCK_KEY}).scalar())
+                    except Exception:
+                        got_lock = True  # non-Postgres (tests) - proceed
+                    if not got_lock:
+                        continue
                     n = ensure_weekly(db)
                     if n:
                         logging.getLogger("trt.progress").info("Weekly progress points created: %s", n)
@@ -78,7 +108,14 @@ async def _start_weekly_progress_scheduler():
                     subs = send_personal_subscriptions(db)
                     if subs:
                         logging.getLogger("trt.report").info("Personal report subscriptions emailed: %s", subs)
+                    purge_old_records(db)
                 finally:
+                    if got_lock:
+                        try:
+                            db.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": _LOCK_KEY})
+                            db.commit()
+                        except Exception:
+                            pass
                     db.close()
             except Exception as exc:  # never crash the loop
                 logging.getLogger("trt.progress").warning("weekly scheduler error: %s", exc)
@@ -106,6 +143,12 @@ if os.path.isdir(ASSETS_DIR):
     app.mount("/assets", StaticFiles(directory=ASSETS_DIR), name="assets")
 
 
+# index.html references hash-stamped asset filenames, so it MUST be revalidated on
+# every load - otherwise a cached index keeps pointing at chunks a new build deleted
+# (stale SPA / 404 on old assets). Hashed assets under /assets are immutable & cacheable.
+_INDEX_HEADERS = {"Cache-Control": "no-cache, must-revalidate"}
+
+
 @app.get("/{full_path:path}", include_in_schema=False)
 def spa(full_path: str):
     """Serve the built SPA; client-side routing falls back to index.html."""
@@ -113,10 +156,11 @@ def spa(full_path: str):
         return JSONResponse(status_code=404, content={"detail": "Not Found"})
     candidate = os.path.join(STATIC_DIR, full_path)
     if full_path and os.path.isfile(candidate):
-        return FileResponse(candidate)
+        headers = _INDEX_HEADERS if os.path.basename(candidate) == "index.html" else None
+        return FileResponse(candidate, headers=headers)
     index = os.path.join(STATIC_DIR, "index.html")
     if os.path.isfile(index):
-        return FileResponse(index)
+        return FileResponse(index, headers=_INDEX_HEADERS)
     return JSONResponse(
         status_code=503,
         content={"detail": "Frontend non build. Lancez le build du frontend ou utilisez l'image Docker."},

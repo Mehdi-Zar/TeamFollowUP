@@ -1,10 +1,11 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from .. import status as st
 from ..database import get_db
-from ..deps import get_current_user, get_threshold, require_module, visible_tribe_id
+from ..deps import (get_current_user, get_threshold, require_capability, require_module,
+                    visible_tribe_id)
 from ..models import Squad, User
 from ..schemas import DashboardOut, DashboardSummary
 from ..serializers import squad_card
@@ -13,14 +14,19 @@ router = APIRouter(prefix="/api/dashboard", tags=["dashboard"],
                    dependencies=[Depends(require_module("dashboard"))])
 
 
-@router.get("", response_model=DashboardOut)
+@router.get("", response_model=DashboardOut, dependencies=[Depends(require_capability("dashboard"))])
 def get_dashboard(year: int | None = Query(default=None), tribe_id: int | None = Query(default=None),
                   db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     threshold = get_threshold(db)
     cur_year, cur_q = st.current_year_quarter()
     if year is None:
         year = cur_year
-    q = select(Squad).order_by(Squad.display_order, Squad.id)
+    # Eager-load the relationships squad_card() touches, to avoid N+1 per squad.
+    q = select(Squad).order_by(Squad.display_order, Squad.id).options(
+        selectinload(Squad.objectives), selectinload(Squad.roadmap_items),
+        selectinload(Squad.quarter_progress), selectinload(Squad.members),
+        selectinload(Squad.snapshots), selectinload(Squad.leader),
+    )
     scope = visible_tribe_id(user)
     if scope is not None:
         q = q.where(Squad.tribe_id == scope)

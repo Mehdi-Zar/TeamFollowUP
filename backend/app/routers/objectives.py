@@ -6,6 +6,7 @@ from ..deps import assert_can_manage_objectives, get_current_user, record_audit,
 from ..models import Objective, Squad, User
 from ..progress import capture_progress
 from ..schemas import ObjectiveCreate, ObjectiveOut, ObjectiveUpdate
+from ..serializers import objective_out
 
 router = APIRouter(prefix="/api/objectives", tags=["objectives"],
                    dependencies=[Depends(require_module("squad_content", "objectives"))])
@@ -25,7 +26,7 @@ def create_objective(payload: ObjectiveCreate, db: Session = Depends(get_db),
                  detail={"squad_id": obj.squad_id, "year": obj.year, "title": obj.title})
     db.commit()
     db.refresh(obj)
-    return obj
+    return objective_out(obj, obj.squad)
 
 
 @router.put("/{objective_id}", response_model=ObjectiveOut)
@@ -42,7 +43,7 @@ def update_objective(objective_id: int, payload: ObjectiveUpdate, db: Session = 
     capture_progress(db, obj.squad_id, obj.year, user)
     db.commit()
     db.refresh(obj)
-    return obj
+    return objective_out(obj, obj.squad)
 
 
 @router.delete("/{objective_id}", status_code=204)

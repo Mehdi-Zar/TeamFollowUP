@@ -2,10 +2,10 @@ import { Role, SquadDetail } from "./types";
 
 export const ALL_ROLES: Role[] = ["admin", "tribe_leader", "squad_leader", "member"];
 
-// Admin tabs a role may open — mirrors backend app/rbac.py ADMIN_TABS.
+// Admin tabs a role may open - mirrors backend app/rbac.py ADMIN_TABS.
 // Used so the admin "preview as role" reflects the scoped tab set.
-export const ADMIN_TABS_BY_ROLE: Record<Role, string[]> = {
-  admin: ["tribes", "squads", "users", "modules", "moderation", "auth", "smtp", "report", "logs", "settings", "audit"],
+export const ADMIN_TABS_BY_ROLE: Record<string, string[]> = {
+  admin: ["tribes", "squads", "users", "personas", "modules", "moderation", "auth", "smtp", "report", "logs", "settings", "audit"],
   tribe_leader: ["tribe", "users"],
   squad_leader: [],
   member: [],

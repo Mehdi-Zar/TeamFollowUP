@@ -21,6 +21,52 @@ def test_build_report_data_combines_scope(db, seeded):
     assert "Squad C" not in scoped_names
 
 
+def test_build_report_data_squad_ids_subset(db, seeded):
+    year = st.current_year_quarter()[0]
+    # Restrict a global report to a chosen subset of squads.
+    data = build_report_data(db, None, year, 7, squad_ids=[seeded["squad_a"], seeded["squad_c"]])
+    names = {r["name"] for blk in data["tribes"] for r in blk["squads"]}
+    assert names == {"Squad A", "Squad C"}
+    assert data["summary"]["squads_total"] == 2
+
+
+def test_roadmap_pptx_endpoint_squad_ids(client, seeded):
+    import pytest
+    pytest.importorskip("pptx")
+    login(client, seeded["admin"])
+    r = client.get(f"/api/reports/roadmap.html?squad_ids={seeded['squad_a']}")
+    assert r.status_code == 200
+    assert "Squad A" in r.text and "Squad B" not in r.text
+
+
+def test_dashboard_export_html_squad_selection(client, seeded):
+    login(client, seeded["admin"])
+    # Dashboard export honours the squad selection (same granularity as the roadmap).
+    r = client.get(f"/api/reports/dashboard.html?squad_ids={seeded['squad_a']}")
+    assert r.status_code == 200
+    assert "Squad A" in r.text and "Squad B" not in r.text
+    # Single-squad export (the squad-detail case).
+    r2 = client.get(f"/api/reports/dashboard.html?squad_id={seeded['squad_b']}")
+    assert r2.status_code == 200 and "Squad B" in r2.text
+
+
+def test_dashboard_export_pptx(client, seeded):
+    import pytest
+    pytest.importorskip("pptx")
+    login(client, seeded["admin"])
+    r = client.get("/api/reports/dashboard.pptx")
+    assert r.status_code == 200
+    assert "presentationml" in r.headers["content-type"]
+    assert r.content[:2] == b"PK"
+
+
+def test_dashboard_export_gated_by_dashboard_module(client, seeded):
+    login(client, seeded["admin"])
+    client.put("/api/admin/modules-config", json={"dashboard": {"enabled": False}})
+    assert client.get("/api/reports/dashboard.html").status_code == 404
+    client.put("/api/admin/modules-config", json={"dashboard": {"enabled": True}})
+
+
 def test_render_html_contains_squads(db, seeded):
     year = st.current_year_quarter()[0]
     html = render_html(build_report_data(db, None, year, 7))
@@ -48,11 +94,45 @@ def test_weekly_html_endpoint_lang_query(client, seeded):
 def test_render_pptx_produces_valid_deck(db, seeded):
     pptx = pytest.importorskip("pptx")
     year = st.current_year_quarter()[0]
-    blob = render_pptx(build_report_data(db, None, year, 7))
+    data = build_report_data(db, None, year, 7)
+    blob = render_pptx(data)
     assert blob[:2] == b"PK"  # zip/OOXML magic
     import io
     prs = pptx.Presentation(io.BytesIO(blob))
-    assert len(prs.slides) == 1  # single branded one-pager
+    n_squads = sum(len(blk["squads"]) for blk in data["tribes"])
+    # Summary one-pager + one full detail slide (objectives + roadmap) per squad.
+    assert len(prs.slides) == 1 + n_squads
+
+
+def test_render_roadmap_swimlane_pptx(db, seeded):
+    pptx = pytest.importorskip("pptx")
+    from app.report import render_roadmap_pptx
+    import io
+    year = st.current_year_quarter()[0]
+    data = build_report_data(db, None, year, 7)
+    prs = pptx.Presentation(io.BytesIO(render_roadmap_pptx(data)))
+    # The roadmap export always fits on a single page (one slide), whatever the count.
+    assert len(prs.slides) == 1
+    texts = [sh.text_frame.text for sh in prs.slides[0].shapes if sh.has_text_frame]
+    # Quarter headers (Q1..Q4 with the year) and the swimlane labels (squad names) are present.
+    assert any(t == f"Q1 {year}" for t in texts) and any(t == f"Q4 {year}" for t in texts)
+    names = {sq["name"] for blk in data["tribes"] for sq in blk["squads"]}
+    assert names & set(texts)
+
+
+def test_roadmap_pptx_single_page_even_with_many_squads(db, seeded):
+    pptx = pytest.importorskip("pptx")
+    from app.report import render_roadmap_pptx
+    from app.models import Squad
+    import io
+    # Add many squads; the deck must still be exactly one slide.
+    for i in range(20):
+        db.add(Squad(name=f"Extra {i}", tribe_id=seeded["t1"], display_order=10 + i))
+    db.commit()
+    year = st.current_year_quarter()[0]
+    data = build_report_data(db, None, year, 7)
+    prs = pptx.Presentation(io.BytesIO(render_roadmap_pptx(data)))
+    assert len(prs.slides) == 1
 
 
 # ---- config sanitization -------------------------------------------------------

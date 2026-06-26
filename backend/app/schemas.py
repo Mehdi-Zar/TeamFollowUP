@@ -6,9 +6,15 @@ from pydantic import BaseModel, ConfigDict, Field
 Role = Literal["admin", "tribe_leader", "squad_leader", "member"]
 Rag = Literal["green", "amber", "red"]
 RoadmapStatus = Literal["on_track", "at_risk", "blocked", "done"]
+DependencyKind = Literal["text", "squad", "tribe"]
+ReleaseStage = Literal["EA", "GA"]  # Early Access | General Availability
 QuarterHealth = Literal["on_track", "at_risk", "blocked"]
 Trend = Literal["on_target", "under_pressure", "missed"]
 Quarter = Literal[1, 2, 3, 4]
+# Open-ended: "product" (roadmap) and "transverse" (initiatives/OTD) ship today, but
+# any custom type key is accepted so new squad types can be added without a schema change.
+SquadType = str
+OtdStatus = Literal["on_track", "at_risk", "late", "delivered"]
 
 
 class ORMModel(BaseModel):
@@ -30,7 +36,7 @@ class UserOut(ORMModel):
     id: int
     email: str
     display_name: str
-    role: Role
+    role: str  # built-in role or custom persona key
     tribe_id: Optional[int] = None
     is_break_glass: bool
     auth_subject: Optional[str] = None
@@ -41,14 +47,14 @@ class UserOut(ORMModel):
 class UserCreate(BaseModel):
     email: str
     display_name: str
-    role: Role = "member"
+    role: str = "member"
     tribe_id: Optional[int] = None
     password: Optional[str] = None
 
 
 class UserUpdate(BaseModel):
     display_name: Optional[str] = None
-    role: Optional[Role] = None
+    role: Optional[str] = None
     tribe_id: Optional[int] = None
     password: Optional[str] = None
 
@@ -74,26 +80,26 @@ class TribeOut(ORMModel):
     display_order: int
 
 
-# ---------- Objective (annual, set by tribe leader) ----------
+# ---------- Objective (annual; status is auto-derived, not entered by hand) ----------
 class ObjectiveCreate(BaseModel):
     squad_id: int
     year: int
     title: str
     description: Optional[str] = None
-    target_date: Optional[datetime] = None
-    rag_status: Rag = "green"
+    target_date: Optional[datetime] = None  # optional deadline
     weight: int = 1
     is_active: bool = True
+    initiative_id: Optional[int] = None  # tribe initiative this objective answers
 
 
 class ObjectiveUpdate(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
     target_date: Optional[datetime] = None
-    rag_status: Optional[Rag] = None
     weight: Optional[int] = None
     is_active: Optional[bool] = None
     year: Optional[int] = None
+    initiative_id: Optional[int] = None
 
 
 class ObjectiveOut(ORMModel):
@@ -106,6 +112,7 @@ class ObjectiveOut(ORMModel):
     rag_status: Rag
     weight: int
     is_active: bool
+    initiative_id: Optional[int] = None
 
 
 # ---------- Roadmap item (jalon) ----------
@@ -114,22 +121,34 @@ class RoadmapItemCreate(BaseModel):
     year: int
     quarter: Quarter
     title: str
+    theme: str = Field(min_length=1, max_length=120)  # mandatory, reusable grouping
+    release_stage: ReleaseStage = "EA"  # mandatory EA/GA stage
     description: Optional[str] = None
     success_criteria: Optional[str] = None
     user_benefit: Optional[str] = None
     dependencies: Optional[str] = None
+    dependency_kind: Optional[DependencyKind] = None
+    dependency_squad_id: Optional[int] = None
+    dependency_tribe_id: Optional[int] = None
     risks: Optional[str] = None
     owner: Optional[str] = None
     status: RoadmapStatus = "on_track"
     display_order: int = 0
+    objective_id: Optional[int] = None  # squad objective this milestone answers
 
 
 class RoadmapItemUpdate(BaseModel):
     title: Optional[str] = None
+    theme: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    objective_id: Optional[int] = None
+    release_stage: Optional[ReleaseStage] = None
     description: Optional[str] = None
     success_criteria: Optional[str] = None
     user_benefit: Optional[str] = None
     dependencies: Optional[str] = None
+    dependency_kind: Optional[DependencyKind] = None
+    dependency_squad_id: Optional[int] = None
+    dependency_tribe_id: Optional[int] = None
     risks: Optional[str] = None
     owner: Optional[str] = None
     year: Optional[int] = None
@@ -144,14 +163,111 @@ class RoadmapItemOut(ORMModel):
     year: int
     quarter: int
     title: str
+    theme: Optional[str] = None
+    release_stage: ReleaseStage
     description: Optional[str] = None
     success_criteria: Optional[str] = None
     user_benefit: Optional[str] = None
     dependencies: Optional[str] = None
+    dependency_kind: Optional[DependencyKind] = None
+    dependency_squad_id: Optional[int] = None
+    dependency_tribe_id: Optional[int] = None
+    dependency_label: Optional[str] = None  # resolved display label (squad/tribe name or free text)
     risks: Optional[str] = None
     owner: Optional[str] = None
     status: RoadmapStatus
     display_order: int
+    objective_id: Optional[int] = None
+    otd_id: Optional[int] = None  # set only from the OTD side (tribe/admin)
+    otd_label: Optional[str] = None  # resolved OTD title
+
+
+# ---------- Initiative (tribe-level) & OTD ----------
+class InitiativeCreate(BaseModel):
+    tribe_id: int
+    year: int
+    title: str = Field(min_length=1, max_length=300)
+    squad_id: Optional[int] = None
+    owner: Optional[str] = None
+    deadline: Optional[datetime] = None
+    description: Optional[str] = None
+    display_order: int = 0
+    is_active: bool = True
+
+
+class InitiativeUpdate(BaseModel):
+    title: Optional[str] = Field(default=None, min_length=1, max_length=300)
+    squad_id: Optional[int] = None
+    owner: Optional[str] = None
+    deadline: Optional[datetime] = None
+    description: Optional[str] = None
+    year: Optional[int] = None
+    display_order: Optional[int] = None
+    is_active: Optional[bool] = None
+
+
+class InitiativeOut(ORMModel):
+    id: int
+    tribe_id: int
+    year: int
+    title: str
+    squad_id: Optional[int] = None
+    squad_name: Optional[str] = None
+    owner: Optional[str] = None
+    deadline: Optional[datetime] = None
+    description: Optional[str] = None
+    display_order: int
+    is_active: bool
+
+
+class OtdCreate(BaseModel):
+    tribe_id: int
+    year: int
+    title: str = Field(min_length=1, max_length=300)
+    description: Optional[str] = None
+    budget_ref: Optional[str] = None
+    committed_date: Optional[datetime] = None
+    owner_user_id: Optional[int] = None
+    display_order: int = 0
+
+
+class OtdUpdate(BaseModel):
+    title: Optional[str] = Field(default=None, min_length=1, max_length=300)
+    description: Optional[str] = None
+    budget_ref: Optional[str] = None
+    committed_date: Optional[datetime] = None
+    owner_user_id: Optional[int] = None
+    year: Optional[int] = None
+    display_order: Optional[int] = None
+
+
+class OtdOut(ORMModel):
+    id: int
+    tribe_id: int
+    year: int
+    title: str
+    description: Optional[str] = None
+    budget_ref: Optional[str] = None
+    committed_date: Optional[datetime] = None
+    owner_user_id: Optional[int] = None
+    display_order: int
+
+
+class OtdMembers(BaseModel):
+    """Set of milestone ids that make up an OTD (tribe/admin manages membership)."""
+    jalon_ids: list[int] = []
+
+
+class DependentItemOut(BaseModel):
+    """A milestone in another squad that depends on the squad being viewed."""
+    squad_id: int
+    squad_name: str
+    tribe_name: Optional[str] = None
+    year: int
+    quarter: int
+    title: str
+    status: RoadmapStatus
+    via: DependencyKind  # 'squad' = direct, 'tribe' = via this squad's tribe
 
 
 # ---------- Quarter progress ----------
@@ -238,6 +354,9 @@ class SquadCreate(BaseModel):
     leader_user_id: Optional[int] = None
     display_order: int = 0
     kpis_enabled: bool = True
+    squad_type: SquadType = "product"
+    products: list[str] = []
+    hardware: list[str] = []
 
 
 class SquadUpdate(BaseModel):
@@ -246,7 +365,11 @@ class SquadUpdate(BaseModel):
     leader_user_id: Optional[int] = None
     display_order: Optional[int] = None
     kpis_enabled: Optional[bool] = None
+    budget_enabled: Optional[bool] = None
     tribe_id: Optional[int] = None
+    squad_type: Optional[SquadType] = None
+    products: Optional[list[str]] = None
+    hardware: Optional[list[str]] = None
 
 
 class SquadOut(ORMModel):
@@ -257,6 +380,60 @@ class SquadOut(ORMModel):
     leader_user_id: Optional[int] = None
     display_order: int
     kpis_enabled: bool
+    budget_enabled: bool = False
+    squad_type: SquadType = "product"
+    products: list[str] = []
+    hardware: list[str] = []
+
+
+# ---------- Budget (split entry, privileged-visible) ----------
+BudgetStatus = Literal["on_track", "at_risk", "over"]
+
+
+class SquadBudgetIn(BaseModel):
+    total: Optional[float] = None      # envelope - tribe leader only (ignored from a squad leader)
+    spent: Optional[float] = None      # consumed to date - squad leader
+    forecast: Optional[float] = None   # projected landing - squad leader
+    comment: Optional[str] = None
+
+
+class SquadBudgetOut(BaseModel):
+    total: Optional[float] = None
+    spent: Optional[float] = None
+    forecast: Optional[float] = None
+    comment: Optional[str] = None
+    status: BudgetStatus = "on_track"   # derived from forecast (else spent) vs total
+    spent_pct: Optional[int] = None     # spent as % of total
+    forecast_pct: Optional[int] = None  # forecast as % of total
+    overrun: float = 0.0               # max(0, reference - total)
+    overrun_pct: int = 0               # overrun as % of total
+    updated_at: Optional[datetime] = None
+
+
+# ---------- Key messages (curated success / alert / risk) ----------
+KeyMessageKind = Literal["success", "alert", "risk"]
+
+
+class KeyMessageCreate(BaseModel):
+    kind: KeyMessageKind = "success"
+    text: str
+    display_order: int = 0
+
+
+class KeyMessageUpdate(BaseModel):
+    kind: Optional[KeyMessageKind] = None
+    text: Optional[str] = None
+    display_order: Optional[int] = None
+
+
+class KeyMessageOut(ORMModel):
+    id: int
+    squad_id: int
+    year: int
+    kind: KeyMessageKind
+    text: str
+    display_order: int
+    created_at: datetime
 
 
 class LeaderInfo(BaseModel):
@@ -276,6 +453,8 @@ class SquadDetail(SquadOut):
     roadmap_items: list[RoadmapItemOut]
     kpis: list[KpiOut]
     members: list[MemberOut]
+    key_messages: list[KeyMessageOut] = []
+    budget: Optional[SquadBudgetOut] = None   # only populated for privileged viewers
 
 
 # ---------- Dashboard ----------
