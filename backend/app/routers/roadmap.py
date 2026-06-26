@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..deps import assert_can_edit_squad, record_audit, require_module, require_writer
+from ..changenotify import notify_change
 from ..models import RoadmapItem, Squad, User
 from ..progress import capture_progress
 from ..schemas import RoadmapItemCreate, RoadmapItemOut, RoadmapItemUpdate
@@ -68,6 +69,7 @@ def create_item(payload: RoadmapItemCreate, db: Session = Depends(get_db),
     capture_progress(db, item.squad_id, item.year, user)
     db.commit()
     db.refresh(item)
+    notify_change(item.squad_id, "roadmap", user.display_name, item.year)
     return roadmap_item_out(item)
 
 
@@ -89,6 +91,7 @@ def update_item(item_id: int, payload: RoadmapItemUpdate, db: Session = Depends(
     capture_progress(db, item.squad_id, item.year, user)
     db.commit()
     db.refresh(item)
+    notify_change(item.squad_id, "roadmap", user.display_name, item.year)
     return roadmap_item_out(item)
 
 
@@ -98,7 +101,9 @@ def delete_item(item_id: int, db: Session = Depends(get_db), user: User = Depend
     if item is None:
         raise HTTPException(status_code=404, detail="Jalon introuvable")
     assert_can_edit_squad(db, user, item.squad_id)
+    sq_id, yr = item.squad_id, item.year
     record_audit(db, user.id, "roadmap.delete", entity="roadmap_item", entity_id=item.id,
                  detail={"squad_id": item.squad_id})
     db.delete(item)
     db.commit()
+    notify_change(sq_id, "roadmap", user.display_name, yr)
