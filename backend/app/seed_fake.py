@@ -31,7 +31,6 @@ from .models import (
     Notification,
     Objective,
     OrgNode,
-    ProgressUpdate,
     QuarterProgress,
     ReportSnapshot,
     RoadmapItem,
@@ -39,7 +38,6 @@ from .models import (
     Tribe,
     User,
 )
-from .progress import compute_metrics
 from .routers.snapshots import build_payload
 from .security import hash_password
 
@@ -280,9 +278,6 @@ def run(db: Session) -> None:
                                   submitted_at=now - timedelta(days=delta),
                                   payload=build_payload(s, year), cycle_label=label))
 
-    # ---- Progress-review timeline ----
-    _seed_timeline(db, squads, year, now)
-
     # ---- Feed (tweet zone) ----
     by_name = {s.name: (s, leader) for s, _, _, leader in squads}
     gcp_s, gcp_l = by_name["GCP / S3NS"]
@@ -325,46 +320,6 @@ def run(db: Session) -> None:
     db.commit()
     logger.info("Fake data seedée : tribe '%s', %d squads, users/membres/jalons/KPIs/fil/frise. "
                 "Mot de passe : '%s' (tribe leader : thomas.tl@local).", TRIBE_NAME, len(squads), PASSWORD)
-
-
-def _seed_timeline(db: Session, squads, year: int, now: datetime) -> None:
-    n_points = 9
-    for s, profile, domain, leader in squads:
-        metrics = compute_metrics(s, year)
-        cur_pct, total = metrics["progress_pct"], metrics["total_count"]
-        cur_blocked, cur_at_risk, cur_done = metrics["blocked_count"], metrics["at_risk_count"], metrics["done_count"]
-        base_conf = PROFILES[profile]["conf"]
-        notes = [
-            f"Avancement régulier sur {s.name}. Socle en place.",
-            f"Point d'attention sur {s.name} : dépendances à lever." if profile != "green"
-            else f"{s.name} sous contrôle, cible tenue.",
-        ]
-        prev_pct = 0
-        for i in range(n_points):
-            frac = (i + 1) / n_points
-            pct = round(cur_pct * frac)
-            done = round(cur_done * frac)
-            blocked = cur_blocked if i >= n_points - 3 else 0
-            at_risk = cur_at_risk if i >= n_points - 5 else max(0, cur_at_risk - 1)
-            created = now - timedelta(days=(n_points - 1 - i) * 7 + 1, hours=9)
-            changes = []
-            if pct != prev_pct:
-                changes.append({"kind": "quarter_pct", "label": "Q2", "from": prev_pct, "to": pct})
-            kind, note, confidence, created_by = "weekly", None, None, None
-            review_slots = {n_points - 1: 0, n_points - 4: 1}
-            if i in review_slots and review_slots[i] < len(notes):
-                kind = "review"
-                note = notes[review_slots[i]]
-                confidence = max(1, min(5, base_conf + (0 if i == n_points - 1 else -1)))
-                created_by = s.leader_user_id
-            db.add(ProgressUpdate(
-                squad_id=s.id, year=year, created_at=created, created_by_user_id=created_by,
-                kind=kind, note=note, confidence=confidence, progress_pct=pct,
-                blocked_count=blocked, at_risk_count=at_risk, done_count=done,
-                total_count=total, state=None, changes=changes,
-            ))
-            prev_pct = pct
-
 
 def main() -> None:
     db = SessionLocal()

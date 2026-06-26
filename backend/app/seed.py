@@ -23,7 +23,6 @@ from .models import (
     Notification,
     Objective,
     OrgNode,
-    ProgressUpdate,
     QuarterProgress,
     ReportSnapshot,
     RoadmapItem,
@@ -31,7 +30,6 @@ from .models import (
     Tribe,
     User,
 )
-from .progress import compute_metrics
 from .routers.snapshots import build_payload
 from .security import hash_password
 
@@ -405,7 +403,6 @@ def run_seed(db: Session) -> None:
                                   payload=build_payload(s, year), cycle_label=label))
 
     # ---- Progress-review timeline (weekly + review points, deltas, confidence) ----
-    seed_progress(db, all_squads, year, now)
 
     # ---- Tweet zone (fil live) ----
     p1 = FeedPost(tribe_id=tribe_a.id, author_user_id=leaders["gcp"].id, kind="incident", squad_id=gcp.id, is_pinned=True,
@@ -447,91 +444,3 @@ def run_seed(db: Session) -> None:
     db.commit()
     logger.info("Seed appliqué : %d squads (année %d), objectifs datés, jalons détaillés, "
                 "frise de progression, fil live. Mot de passe démo : 'demo'.", len(all_squads), year)
-
-
-# Per-squad narrative for the progress timeline: confidence trend + review notes.
-_PROGRESS_NARRATIVE = {
-    "AWS": (4, [
-        "Audit FinOps livré, base solide. Confiance haute sur la cible annuelle.",
-        "RI souscrites, tagging bien avancé. On tient le rythme.",
-    ]),
-    "GCP": (2, [
-        "Pipeline d'ingestion bloqué par une dépendance réseau Infra. Point d'attention fort.",
-        "Toujours en attente de l'ouverture réseau. Escalade en cours auprès de l'Infra.",
-    ]),
-    "Azure": (4, [
-        "SSO livré, déploiement MFA lancé. Tout est sous contrôle.",
-        "Couverture MFA au-dessus de la cible intermédiaire.",
-    ]),
-    "Paiements": (2, [
-        "Bascule PSP freinée par des incidents récurrents. Taux d'échec au-dessus de la cible.",
-        "Stabilisation en cours avec le PSP, montée en charge prudente.",
-    ]),
-    "Onboarding": (3, [
-        "Formulaire KYC refondu et livré. Optimisation écran 1 démarrée.",
-    ]),
-    "Support produit": (2, [
-        "Base publique bloquée par la validation juridique. Délai de réponse encore au-dessus de la cible.",
-    ]),
-    "Data Platform": (4, [
-        "Orchestrateur refondu sans régression. Monitoring qualité en cours.",
-    ]),
-    "Analytics": (3, [
-        "Datamart finance à risque sur la qualité des sources amont. Adoption à stimuler.",
-    ]),
-    "Sécurité": (3, [
-        "Scan automatisé en place. Reste 4 vulnérabilités critiques et le pentest à planifier.",
-    ]),
-}
-
-
-def seed_progress(db: Session, squads: list[Squad], year: int, now: datetime) -> None:
-    """Create a believable multi-week progress timeline for each squad."""
-    n_points = 9  # ~2 months of weekly points
-    for s in squads:
-        metrics = compute_metrics(s, year)
-        cur_pct = metrics["progress_pct"]
-        total = metrics["total_count"]
-        cur_blocked = metrics["blocked_count"]
-        cur_at_risk = metrics["at_risk_count"]
-        cur_done = metrics["done_count"]
-        base_conf, notes = _PROGRESS_NARRATIVE.get(s.name, (3, []))
-
-        prev_pct = 0
-        for i in range(n_points):  # oldest -> newest
-            frac = (i + 1) / n_points
-            pct = round(cur_pct * frac)
-            done = round(cur_done * frac)
-            # Risks/blockers appear in the second half of the timeline.
-            blocked = cur_blocked if i >= n_points - 3 else 0
-            at_risk = cur_at_risk if i >= n_points - 5 else max(0, cur_at_risk - 1)
-            created = now - timedelta(days=(n_points - 1 - i) * 7 + 1, hours=9)
-
-            changes = []
-            if pct != prev_pct:
-                # attribute the bump to the most-advanced active quarter
-                changes.append({"kind": "quarter_pct", "label": "Q2", "from": prev_pct, "to": pct})
-            if blocked and i == n_points - 3:
-                changes.append({"kind": "jalon_status", "label": "Jalon critique",
-                                "from": "at_risk", "to": "blocked"})
-
-            kind = "weekly"
-            note = None
-            confidence = None
-            created_by = None
-            # Turn a couple of points into explicit reviews with note + confidence.
-            review_slots = {n_points - 1: 0, n_points - 4: 1}
-            if i in review_slots and review_slots[i] < len(notes):
-                kind = "review"
-                note = notes[review_slots[i]]
-                # confidence dips earlier, recovers (or not) at the latest point
-                confidence = max(1, min(5, base_conf + (0 if i == n_points - 1 else -1)))
-                created_by = s.leader_user_id
-
-            db.add(ProgressUpdate(
-                squad_id=s.id, year=year, created_at=created, created_by_user_id=created_by,
-                kind=kind, note=note, confidence=confidence, progress_pct=pct,
-                blocked_count=blocked, at_risk_count=at_risk, done_count=done,
-                total_count=total, state=None, changes=changes,
-            ))
-            prev_pct = pct

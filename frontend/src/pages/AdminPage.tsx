@@ -30,7 +30,7 @@ const TAB_LABEL: Record<string, string> = {
 // Admin sections grouped by purpose (only the items a role may open are shown).
 const ADMIN_GROUPS: { titleKey: string; items: string[] }[] = [
   { titleKey: "admin.group.org", items: ["tribes", "tribe", "squads", "my_squads", "users", "personas"] },
-  { titleKey: "admin.group.config", items: ["modules", "settings", "report"] },
+  { titleKey: "admin.group.config", items: ["modules", "report", "settings"] },
   { titleKey: "admin.group.access", items: ["auth", "smtp"] },
   { titleKey: "admin.group.oversight", items: ["moderation", "logs", "audit"] },
 ];
@@ -96,10 +96,10 @@ export default function AdminPage() {
         {tab === "personas" && <PersonasAdmin />}
         {tab === "my_squads" && <MySquadsAdmin />}
         {tab === "modules" && <ModulesAdmin />}
+        {tab === "report" && <ReportingAdmin />}
         {tab === "moderation" && <ModerationAdmin />}
         {tab === "auth" && <AuthAdmin />}
         {tab === "smtp" && <SmtpAdmin />}
-        {tab === "report" && <><WeeklyReportAdmin /><ChangeNotifyAdmin /></>}
         {tab === "logs" && <LogExportAdmin />}
         {tab === "settings" && <SettingsAdmin />}
         {tab === "audit" && <AuditAdmin />}
@@ -185,7 +185,7 @@ const MODULE_TREE: { key: ModuleKey; features: string[] }[] = [
   { key: "org", features: [] },
   { key: "reporting", features: [] },
   { key: "feed", features: ["reactions", "replies", "pin", "kinds"] },
-  { key: "review", features: ["notes", "weekly_report"] },
+  { key: "review", features: ["weekly_report"] },
   { key: "squad_content", features: ["objectives", "roadmap", "kpis"] },
   { key: "notifications", features: ["inapp", "email"] },
   { key: "exports_csv", features: [] },
@@ -260,187 +260,166 @@ function ModulesAdmin() {
 
 const WEEKDAYS_FR = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"];
 
-function WeeklyReportAdmin() {
+const WEEKDAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+
+/** Single, unified reporting menu: automatic report + change notifications,
+ *  one full (advanced) view — no simple/advanced toggle. Shown in the Admin
+ *  "Reporting" tab and inside the reporting popup for admins. */
+export function ReportingAdmin() {
   const { t } = useI18n();
-  const [cfg, setCfg] = useState<any | null>(null);
-  const [saved, setSaved] = useState(false);
-  const [testMsg, setTestMsg] = useState<string | null>(null);
-  const [testing, setTesting] = useState(false);
-  const { error, wrap } = useErr();
-
-  useEffect(() => { api.get<any>("/api/admin/report-config").then(setCfg); }, []);
-  if (!cfg) return <div className="spinner">{t("common.loading")}</div>;
-  const set = (k: string, v: any) => setCfg({ ...cfg, [k]: v });
-  const recipientsText = Array.isArray(cfg.recipients) ? cfg.recipients.join("\n") : (cfg.recipients ?? "");
-
-  async function save() {
-    await wrap(async () => {
-      const out = await api.put<any>("/api/admin/report-config", cfg);
-      setCfg(out);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
-    });
-  }
-  async function test() {
-    setTestMsg(null);
-    setTesting(true);
-    try {
-      const r = await api.post<any>("/api/admin/report-config/test", {});
-      setTestMsg(r.ok ? t("report.test_ok", { to: r.to }) : t("report.test_fail"));
-    } catch (e: any) {
-      setTestMsg(e.message);
-    } finally {
-      setTesting(false);
-    }
-  }
-
-  return (
-    <div className="stack" style={{ maxWidth: 640 }}>
-      {error && <ErrorBanner message={error} />}
-      <div className="banner">{t("report.intro")}</div>
-      <div className="card stack" style={{ gap: 12 }}>
-        <label className="switch">
-          <input type="checkbox" checked={!!cfg.enabled} onChange={(e) => set("enabled", e.target.checked)} />
-          <span className="track"><span className="knob" /></span>
-          <span className="strong">{t("report.enabled")}</span>
-        </label>
-        <div>
-          <label>{t("report.recipients")}</label>
-          <textarea
-            rows={4}
-            value={recipientsText}
-            placeholder="dir@exemple.com&#10;copil@exemple.com"
-            onChange={(e) => set("recipients", e.target.value.split("\n"))}
-          />
-          <div className="small muted">{t("report.recipients_hint")}</div>
-        </div>
-        <div className="row">
-          <div style={{ flex: 1, minWidth: 160 }}>
-            <label>{t("report.weekday")}</label>
-            <select value={cfg.weekday ?? 0} onChange={(e) => set("weekday", Number(e.target.value))}>
-              {WEEKDAYS_FR.map((d, i) => <option key={i} value={i}>{d}</option>)}
-            </select>
-          </div>
-          <div style={{ width: 120 }}>
-            <label>{t("report.hour")}</label>
-            <input type="number" min={0} max={23} value={cfg.hour ?? 8} onChange={(e) => set("hour", Number(e.target.value))} />
-          </div>
-          <div style={{ width: 140 }}>
-            <label>{t("report.since_days")}</label>
-            <input type="number" min={1} max={120} value={cfg.since_days ?? 7} onChange={(e) => set("since_days", Number(e.target.value))} />
-          </div>
-        </div>
-        <div className="small muted">{t("report.schedule_hint")}</div>
-        {cfg.last_sent_week && <div className="small muted">{t("report.last_sent", { week: cfg.last_sent_week })}</div>}
-      </div>
-      <div className="inline">
-        <button onClick={save}>{t("action.save")}</button>
-        <button className="btn-secondary" onClick={test} disabled={testing}>{t("report.test")}</button>
-        {saved && <span style={{ color: "var(--green)" }}>{t("admin.saved")}</span>}
-        {testMsg && <span className="small muted">{testMsg}</span>}
-      </div>
-    </div>
-  );
-}
-
-function ChangeNotifyAdmin() {
-  const { t } = useI18n();
-  const [cfg, setCfg] = useState<any | null>(null);
+  const [rep, setRep] = useState<any | null>(null);
+  const [chg, setChg] = useState<any | null>(null);
   const [squads, setSquads] = useState<Squad[]>([]);
   const [saved, setSaved] = useState(false);
   const [testMsg, setTestMsg] = useState<string | null>(null);
-  const [testing, setTesting] = useState(false);
   const { error, wrap } = useErr();
 
   useEffect(() => {
-    api.get<any>("/api/admin/change-notify-config").then(setCfg).catch(() => {});
+    api.get<any>("/api/admin/report-config").then(setRep).catch(() => {});
+    api.get<any>("/api/admin/change-notify-config").then(setChg).catch(() => {});
     api.get<Squad[]>("/api/squads").then(setSquads).catch(() => {});
   }, []);
-  if (!cfg) return <div className="spinner">{t("common.loading")}</div>;
-  const set = (k: string, v: any) => setCfg({ ...cfg, [k]: v });
-  const events: string[] = cfg._all_events ?? ["progress", "roadmap", "objectives", "budget", "key_message"];
-  const toggleEvent = (e: string) =>
-    set("events", (cfg.events ?? []).includes(e) ? cfg.events.filter((x: string) => x !== e) : [...(cfg.events ?? []), e]);
-  const toggleSquad = (id: number) =>
-    set("scope_squads", (cfg.scope_squads ?? []).includes(id) ? cfg.scope_squads.filter((x: number) => x !== id) : [...(cfg.scope_squads ?? []), id]);
-  const recipientsText = Array.isArray(cfg.recipients) ? cfg.recipients.join("\n") : (cfg.recipients ?? "");
+  if (!rep || !chg) return <div className="spinner">{t("common.loading")}</div>;
+
+  const setR = (k: string, v: any) => setRep({ ...rep, [k]: v });
+  const setC = (k: string, v: any) => setChg({ ...chg, [k]: v });
+  const repRecipients = Array.isArray(rep.recipients) ? rep.recipients.join("\n") : (rep.recipients ?? "");
+  const chgRecipients = Array.isArray(chg.recipients) ? chg.recipients.join("\n") : (chg.recipients ?? "");
+  const weekdays: number[] = rep.weekdays ?? [rep.weekday ?? 0];
+  const toggleWeekday = (i: number) => setR("weekdays", weekdays.includes(i) ? weekdays.filter((x) => x !== i) : [...weekdays, i].sort());
+  const events: string[] = chg._all_events ?? ["progress", "roadmap", "objectives", "budget", "key_message"];
+  const toggleEvent = (e: string) => setC("events", (chg.events ?? []).includes(e) ? chg.events.filter((x: string) => x !== e) : [...(chg.events ?? []), e]);
+  const toggleSquad = (id: number) => setC("scope_squads", (chg.scope_squads ?? []).includes(id) ? chg.scope_squads.filter((x: number) => x !== id) : [...(chg.scope_squads ?? []), id]);
+  const Chip = ({ on, onClick, children }: any) => (
+    <label className={`rm-pick-chip${on ? " on" : ""}`} onClick={(e) => { e.preventDefault(); onClick(); }}>
+      <input type="checkbox" checked={on} readOnly /><span className="rm-pick-name">{children}</span>
+    </label>
+  );
 
   async function save() {
     await wrap(async () => {
-      const out = await api.put<any>("/api/admin/change-notify-config", cfg);
-      setCfg(out); setSaved(true); setTimeout(() => setSaved(false), 2000);
+      const [r, c] = await Promise.all([
+        api.put<any>("/api/admin/report-config", rep),
+        api.put<any>("/api/admin/change-notify-config", chg),
+      ]);
+      setRep(r); setChg({ ...c, _all_events: chg._all_events });
+      setSaved(true); setTimeout(() => setSaved(false), 2000);
     });
   }
-  async function test() {
-    setTestMsg(null); setTesting(true);
-    try {
-      const r = await api.post<any>("/api/admin/change-notify-config/test", {});
-      setTestMsg(r.ok ? t("changenotify.test_ok", { to: r.to, squad: r.squad }) : t("changenotify.test_fail"));
-    } catch (e: any) { setTestMsg(e.message); } finally { setTesting(false); }
+  async function testWeekly() {
+    setTestMsg(null);
+    try { const r = await api.post<any>("/api/admin/report-config/test", {}); setTestMsg(r.ok ? t("report.test_ok", { to: r.to }) : t("report.test_fail")); }
+    catch (e: any) { setTestMsg(e.message); }
+  }
+  async function testChange() {
+    setTestMsg(null);
+    try { const r = await api.post<any>("/api/admin/change-notify-config/test", {}); setTestMsg(r.ok ? t("changenotify.test_ok", { to: r.to, squad: r.squad }) : t("changenotify.test_fail")); }
+    catch (e: any) { setTestMsg(e.message); }
   }
 
+  // One shared recipients list and one shared "attach PPTX", written to both
+  // delivery triggers — that's the whole point of merging the two menus.
+  const recipients = Array.isArray(rep.recipients) ? rep.recipients.join("\n") : (rep.recipients ?? "");
+  const setRecipients = (text: string) => {
+    const list = text.split("\n");
+    setRep({ ...rep, recipients: list });
+    setChg({ ...chg, recipients: list });
+  };
+  const setAttach = (v: boolean) => { setRep({ ...rep, attach_pptx: v }); setChg({ ...chg, attach_pptx: v }); };
+  const sep = { borderTop: "1px solid var(--line)", paddingTop: 12 } as const;
+
   return (
-    <div className="stack" style={{ maxWidth: 640 }}>
+    <div className="stack" style={{ maxWidth: 700 }}>
       {error && <ErrorBanner message={error} />}
-      <h2 style={{ marginBottom: 0 }}>{t("changenotify.title")}</h2>
-      <div className="banner">{t("changenotify.intro")}</div>
-      <div className="card stack" style={{ gap: 12 }}>
-        <label className="switch">
-          <input type="checkbox" checked={!!cfg.enabled} onChange={(e) => set("enabled", e.target.checked)} />
-          <span className="track"><span className="knob" /></span>
-          <span className="strong">{t("changenotify.enabled")}</span>
-        </label>
+      <div className="between" style={{ alignItems: "center" }}>
+        <h2 style={{ margin: 0 }}>{t("reporting.title")}</h2>
+      </div>
+
+      <div className="card stack" style={{ gap: 14 }}>
+        <div className="small muted">{t("reporting.merged_hint")}</div>
+
+        {/* Shared recipients */}
         <div>
           <label>{t("changenotify.recipients")}</label>
-          <textarea rows={3} value={recipientsText} placeholder="dir@exemple.com&#10;copil@exemple.com"
-                    onChange={(e) => set("recipients", e.target.value.split("\n"))} />
-          <div className="small muted">{t("changenotify.recipients_hint")}</div>
+          <textarea rows={2} value={recipients} placeholder="dir@exemple.com&#10;copil@exemple.com"
+                    onChange={(e) => setRecipients(e.target.value)} />
+          <div className="small muted">{t("reporting.recipients_hint")}</div>
         </div>
-        <div>
-          <label>{t("changenotify.events")}</label>
-          <div className="inline" style={{ gap: 12, flexWrap: "wrap" }}>
-            {events.map((e) => (
-              <label key={e} className="inline small" style={{ gap: 6, cursor: "pointer" }}>
-                <input type="checkbox" checked={(cfg.events ?? []).includes(e)} onChange={() => toggleEvent(e)} />
-                {t(`changenotify.event.${e}`)}
-              </label>
-            ))}
-          </div>
+
+        <div className="strong" style={{ marginTop: 2 }}>{t("reporting.when")}</div>
+
+        {/* Trigger 1 — scheduled */}
+        <div className="stack" style={{ gap: 10, ...sep }}>
+          <label className="switch">
+            <input type="checkbox" checked={!!rep.enabled} onChange={(e) => setR("enabled", e.target.checked)} />
+            <span className="track"><span className="knob" /></span>
+            <span className="strong">{t("reporting.sched_enabled")}</span>
+          </label>
+          {rep.enabled && (
+            <>
+              <div>
+                <label>{t("reporting.days")}</label>
+                <div className="inline" style={{ gap: 8, flexWrap: "wrap" }}>
+                  {WEEKDAY_KEYS.map((k, i) => <Chip key={i} on={weekdays.includes(i)} onClick={() => toggleWeekday(i)}>{t(`reporting.day.${k}`)}</Chip>)}
+                </div>
+              </div>
+              <div className="row" style={{ gap: 12 }}>
+                <div style={{ width: 120 }}><label>{t("report.hour")}</label>
+                  <input type="number" min={0} max={23} value={rep.hour ?? 8} onChange={(e) => setR("hour", Number(e.target.value))} /></div>
+                <div style={{ width: 150 }}><label>{t("report.since_days")}</label>
+                  <input type="number" min={1} max={120} value={rep.since_days ?? 7} onChange={(e) => setR("since_days", Number(e.target.value))} /></div>
+              </div>
+              <div className="inline">
+                <button className="btn-secondary btn-sm" onClick={testWeekly}>{t("reporting.test_sched")}</button>
+                {rep.last_sent_day && <span className="small muted">{t("reporting.last_sent_day", { date: rep.last_sent_day })}</span>}
+              </div>
+            </>
+          )}
         </div>
-        <div className="row" style={{ gap: 12 }}>
-          <div style={{ width: 180 }}>
-            <label>{t("changenotify.interval")}</label>
-            <input type="number" min={0} max={1440} value={cfg.min_interval_minutes ?? 0}
-                   onChange={(e) => set("min_interval_minutes", Number(e.target.value))} />
-            <div className="small muted">{t("changenotify.interval_hint")}</div>
-          </div>
-          <div className="stack" style={{ gap: 8, justifyContent: "flex-end" }}>
-            <label className="inline small" style={{ gap: 6 }}>
-              <input type="checkbox" checked={!!cfg.attach_pptx} onChange={(e) => set("attach_pptx", e.target.checked)} />
-              {t("changenotify.attach_pptx")}
-            </label>
-            <label className="inline small" style={{ gap: 6 }}>
-              <input type="checkbox" checked={!!cfg.current_year_only} onChange={(e) => set("current_year_only", e.target.checked)} />
-              {t("changenotify.current_year_only")}
-            </label>
-          </div>
+
+        {/* Trigger 2 — on change */}
+        <div className="stack" style={{ gap: 10, ...sep }}>
+          <label className="switch">
+            <input type="checkbox" checked={!!chg.enabled} onChange={(e) => setC("enabled", e.target.checked)} />
+            <span className="track"><span className="knob" /></span>
+            <span className="strong">{t("reporting.change_enabled")}</span>
+          </label>
+          {chg.enabled && (
+            <>
+              <div>
+                <label>{t("changenotify.events")}</label>
+                <div className="inline" style={{ gap: 8, flexWrap: "wrap" }}>
+                  {events.map((e) => <Chip key={e} on={(chg.events ?? []).includes(e)} onClick={() => toggleEvent(e)}>{t(`changenotify.event.${e}`)}</Chip>)}
+                </div>
+              </div>
+              <div className="row" style={{ gap: 12 }}>
+                <div style={{ width: 180 }}><label>{t("changenotify.interval")}</label>
+                  <input type="number" min={0} max={1440} value={chg.min_interval_minutes ?? 0} onChange={(e) => setC("min_interval_minutes", Number(e.target.value))} /></div>
+                <label className="inline small" style={{ gap: 6, alignSelf: "flex-end" }}>
+                  <input type="checkbox" checked={chg.current_year_only !== false} onChange={(e) => setC("current_year_only", e.target.checked)} />{t("changenotify.current_year_only")}</label>
+              </div>
+              <div>
+                <label>{t("changenotify.scope")}</label>
+                <div className="small muted" style={{ marginBottom: 4 }}>{t("changenotify.scope_all_hint")}</div>
+                <div className="inline" style={{ gap: 8, flexWrap: "wrap" }}>
+                  {squads.map((s) => <Chip key={s.id} on={(chg.scope_squads ?? []).includes(s.id)} onClick={() => toggleSquad(s.id)}>{s.name}</Chip>)}
+                </div>
+              </div>
+              <div className="inline"><button className="btn-secondary btn-sm" onClick={testChange}>{t("reporting.test_change")}</button></div>
+            </>
+          )}
         </div>
-        <div>
-          <label>{t("changenotify.scope")}</label>
-          <div className="small muted" style={{ marginBottom: 6 }}>{t("changenotify.scope_all_hint")}</div>
-          <div className="inline" style={{ gap: 10, flexWrap: "wrap" }}>
-            {squads.map((s) => (
-              <label key={s.id} className="inline small" style={{ gap: 6, cursor: "pointer" }}>
-                <input type="checkbox" checked={(cfg.scope_squads ?? []).includes(s.id)} onChange={() => toggleSquad(s.id)} />
-                {s.name}
-              </label>
-            ))}
-          </div>
-        </div>
+
+        {/* Shared option */}
+        {(rep.enabled || chg.enabled) && (
+          <label className="inline small" style={{ gap: 6, ...sep }}>
+            <input type="checkbox" checked={rep.attach_pptx !== false} onChange={(e) => setAttach(e.target.checked)} />{t("reporting.attach_pptx")}
+          </label>
+        )}
       </div>
+
       <div className="inline">
         <button onClick={save}>{t("action.save")}</button>
-        <button className="btn-secondary" onClick={test} disabled={testing}>{t("changenotify.test")}</button>
         {saved && <span style={{ color: "var(--green)" }}>{t("admin.saved")}</span>}
         {testMsg && <span className="small muted">{testMsg}</span>}
       </div>

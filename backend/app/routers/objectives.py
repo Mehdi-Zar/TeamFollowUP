@@ -5,7 +5,6 @@ from ..database import get_db
 from ..deps import assert_can_manage_objectives, get_current_user, record_audit, require_module
 from ..changenotify import notify_change
 from ..models import Objective, Squad, User
-from ..progress import capture_progress
 from ..schemas import ObjectiveCreate, ObjectiveOut, ObjectiveUpdate
 from ..serializers import objective_out
 
@@ -42,7 +41,6 @@ def update_objective(objective_id: int, payload: ObjectiveUpdate, db: Session = 
     for k, v in data.items():
         setattr(obj, k, v)
     record_audit(db, user.id, "objective.update", entity="objective", entity_id=obj.id, detail=data)
-    capture_progress(db, obj.squad_id, obj.year, user)
     db.commit()
     db.refresh(obj)
     notify_change(obj.squad_id, "objectives", user.display_name, obj.year)

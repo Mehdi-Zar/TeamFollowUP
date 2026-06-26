@@ -6,7 +6,6 @@ from ..database import get_db
 from ..deps import assert_can_edit_squad, record_audit, require_module, require_writer
 from ..changenotify import notify_change
 from ..models import RoadmapItem, Squad, User
-from ..progress import capture_progress
 from ..schemas import RoadmapItemCreate, RoadmapItemOut, RoadmapItemUpdate
 from ..serializers import roadmap_item_out
 
@@ -66,7 +65,6 @@ def create_item(payload: RoadmapItemCreate, db: Session = Depends(get_db),
     db.flush()
     record_audit(db, user.id, "roadmap.create", entity="roadmap_item", entity_id=item.id,
                  detail={"squad_id": item.squad_id, "year": item.year, "quarter": item.quarter, "title": item.title})
-    capture_progress(db, item.squad_id, item.year, user)
     db.commit()
     db.refresh(item)
     notify_change(item.squad_id, "roadmap", user.display_name, item.year)
@@ -88,7 +86,6 @@ def update_item(item_id: int, payload: RoadmapItemUpdate, db: Session = Depends(
     if "objective_id" in data:
         _validate_objective(db, item)
     record_audit(db, user.id, "roadmap.update", entity="roadmap_item", entity_id=item.id, detail=data)
-    capture_progress(db, item.squad_id, item.year, user)
     db.commit()
     db.refresh(item)
     notify_change(item.squad_id, "roadmap", user.display_name, item.year)

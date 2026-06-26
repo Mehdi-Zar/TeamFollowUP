@@ -5,19 +5,45 @@ import { useConfig, useModule } from "../config";
 import { useAuth } from "../auth";
 import { Squad, Tribe } from "../types";
 import { Modal } from "./ui";
+import { HtmlPreviewModal } from "./HtmlPreview";
 
 /** One tidy "Export / Share" dropdown that groups every export & email action
- *  (HTML/PPTX report, roadmap with squad selection, printable view, send by mail,
- *  auto-subscribe). Items appear only when their module/SMTP allows it. */
+ *  (HTML/PPTX report, roadmap with squad selection, send by mail). HTML opens in
+ *  an in-app window (not a new tab). Items appear only when their module/SMTP
+ *  allows it. Report subscriptions live in the "Subscribe to a report" popup. */
 type Props = {
   year?: number;
   squadId?: number;
   sinceDays?: number;
 };
 
-type Sub = { interval_days: number };
-type View = "menu" | "emailReport" | "subscribe";
-const INTERVALS = [7, 14, 30];
+type View = "menu" | "emailReport";
+type Preview = { url: string; title: string };
+
+/** Render an export's HTML to a JPG (image equivalent of the HTML export):
+ *  fetch the HTML, lay it out in an isolated off-screen iframe, html2canvas it. */
+async function renderHtmlToJpg(url: string, filename: string): Promise<void> {
+  const iframe = document.createElement("iframe");
+  try {
+    const html = await (await fetch(url, { credentials: "include" })).text();
+    Object.assign(iframe.style, { position: "fixed", left: "-10000px", top: "0", width: "1160px", height: "1200px", border: "0" });
+    document.body.appendChild(iframe);
+    await new Promise<void>((resolve) => { iframe.onload = () => resolve(); iframe.srcdoc = html; });
+    await new Promise((r) => setTimeout(r, 400)); // let fonts / layout settle
+    const doc = iframe.contentDocument!;
+    const body = doc.body;
+    const w = Math.max(1160, body.scrollWidth);
+    const h = Math.max(body.scrollHeight, doc.documentElement.scrollHeight);
+    iframe.style.height = h + "px";
+    const html2canvas = (await import("html2canvas")).default;
+    const canvas = await html2canvas(body, { scale: 2, backgroundColor: "#F5F7FA", useCORS: true, windowWidth: w, windowHeight: h, width: w, height: h });
+    const a = document.createElement("a");
+    a.href = canvas.toDataURL("image/jpeg", 0.95);
+    a.download = filename; a.click();
+  } finally {
+    iframe.remove();
+  }
+}
 
 export default function ExportMenu({ year, squadId, sinceDays = 7 }: Props) {
   const { t, lang } = useI18n();
@@ -32,9 +58,10 @@ export default function ExportMenu({ year, squadId, sinceDays = 7 }: Props) {
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<View>("menu");
   const [to, setTo] = useState(user?.email || "");
-  const [sub, setSub] = useState<Sub | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // HTML exports open in this in-app window rather than a new browser tab.
+  const [preview, setPreview] = useState<Preview | null>(null);
   // Global roadmap / dashboard: pick which squads appear (in a dedicated modal).
   const [roadmapModal, setRoadmapModal] = useState(false);
   const [dashModal, setDashModal] = useState(false);
@@ -54,13 +81,7 @@ export default function ExportMenu({ year, squadId, sinceDays = 7 }: Props) {
     return () => document.removeEventListener("mousedown", onDoc);
   }, []);
 
-  useEffect(() => {
-    if (open && view === "subscribe" && reportOn) {
-      api.get<Sub>(`/api/reports/subscription${squadId ? `?squad_id=${squadId}` : ""}`).then(setSub).catch(() => {});
-    }
-  }, [open, view, squadId, reportOn]);
-
-  const hasDownloads = reportOn || roadmapAvail || dashboardOn;
+  const hasDownloads = roadmapAvail || dashboardOn;
   const hasEmail = smtp_enabled && reportOn;
   if (!hasDownloads && !hasEmail) return null;
 
@@ -72,13 +93,17 @@ export default function ExportMenu({ year, squadId, sinceDays = 7 }: Props) {
       setMsg(t("export.sent", { to: to.trim() }));
     } catch (e) { setMsg(e instanceof ApiError ? e.message : "Erreur"); } finally { setBusy(false); }
   }
-  async function subscribe(days: number) {
-    setMsg(null);
+  // JPG equivalent of an HTML export (renders the export HTML to an image).
+  async function htmlToJpg(url: string, filename: string) {
+    setOpen(false); setBusy(true); setMsg(t("export.jpg_busy"));
     try {
-      const out = await api.put<Sub>("/api/reports/subscription", { interval_days: days, squad_id: squadId ?? null });
-      setSub(out);
-      setMsg(days ? t("sub.saved_on", { n: days }) : t("sub.saved_off"));
-    } catch (e) { setMsg(e instanceof ApiError ? e.message : "Erreur"); }
+      await renderHtmlToJpg(url, filename);
+      setMsg(null);
+    } catch {
+      setMsg(t("export.jpg_fail"));
+    } finally {
+      setBusy(false);
+    }
   }
 
   const Item = ({ children, onClick, href, download }: any) =>
@@ -87,6 +112,17 @@ export default function ExportMenu({ year, squadId, sinceDays = 7 }: Props) {
     ) : (
       <button className="menu-item" onClick={onClick}>{children}</button>
     );
+  // One row per document; the three formats are compact buttons next to it.
+  const ExportRow = ({ label, html, pptx }: { label: string; html: string; pptx: string }) => (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "6px 10px" }}>
+      <span className="small strong">{label}</span>
+      <span className="inline" style={{ gap: 4 }}>
+        <button className="btn-secondary btn-sm" onClick={() => { setPreview({ url: html, title: label }); setOpen(false); }}>HTML</button>
+        <button className="btn-secondary btn-sm" onClick={() => htmlToJpg(html, `${label}.jpg`)}>JPG</button>
+        <a className="btn-secondary btn-sm" href={pptx} download onClick={() => setOpen(false)}>PPTX</a>
+      </span>
+    </div>
+  );
 
   return (
     <div ref={ref} style={{ position: "relative", display: "inline-block" }}>
@@ -94,22 +130,17 @@ export default function ExportMenu({ year, squadId, sinceDays = 7 }: Props) {
         {t("export.menu")} ▾
       </button>
       {open && (
-        <div className="card menu-pop" style={{ position: "absolute", right: 0, top: 38, zIndex: 60, width: 268, padding: 8 }}>
+        <div className="card menu-pop" style={{ position: "absolute", right: 0, top: 38, zIndex: 60, width: 320, padding: 8 }}>
           {view === "menu" && (
             <>
               {hasDownloads && <div className="menu-label">{t("export.group_download")}</div>}
-              {dashboardOn && squadId && <Item href={`/api/reports/dashboard.html?${rqs}`}>{t("export.dashboard_html")}</Item>}
-              {dashboardOn && squadId && <Item href={`/api/reports/dashboard.pptx?${rqs}`} download>{t("export.dashboard_pptx")}</Item>}
-              {dashboardOn && !squadId && <Item onClick={() => { setDashModal(true); setOpen(false); }}>{t("export.dashboard")} …</Item>}
-              {reportOn && <Item href={`/api/reports/weekly.html?${rqs}`}>{t("export.report_html")}</Item>}
-              {reportOn && <Item href={`/api/reports/weekly.pptx?${rqs}`} download>{t("export.report_pptx")}</Item>}
-              {roadmapAvail && squadId && <Item href={`${roadmapBase}.html?${roadmapQs}`}>{t("export.roadmap_html")}</Item>}
-              {roadmapAvail && squadId && <Item href={`${roadmapBase}.pptx?${roadmapQs}`} download>{t("export.roadmap_pptx")}</Item>}
-              {roadmapAvail && !squadId && <Item onClick={() => { setRoadmapModal(true); setOpen(false); }}>{t("export.roadmap")} …</Item>}
+              {dashboardOn && squadId && <ExportRow label={t("export.doc_dashboard")} html={`/api/reports/dashboard.html?${rqs}`} pptx={`/api/reports/dashboard.pptx?${rqs}`} />}
+              {dashboardOn && !squadId && <Item onClick={() => { setDashModal(true); setOpen(false); }}>{t("export.doc_dashboard")} …</Item>}
+              {roadmapAvail && squadId && <ExportRow label={t("export.doc_roadmap")} html={`${roadmapBase}.html?${roadmapQs}`} pptx={`${roadmapBase}.pptx?${roadmapQs}`} />}
+              {roadmapAvail && !squadId && <Item onClick={() => { setRoadmapModal(true); setOpen(false); }}>{t("export.doc_roadmap")} …</Item>}
 
               {hasEmail && <div className="menu-label" style={{ marginTop: 6 }}>{t("export.group_email")}</div>}
-              {smtp_enabled && reportOn && <Item onClick={() => { setView("emailReport"); setMsg(null); }}>{t("export.send_report")} …</Item>}
-              {reportOn && smtp_enabled && <Item onClick={() => { setView("subscribe"); setMsg(null); }}>{t("export.auto") } …</Item>}
+              {hasEmail && <Item onClick={() => { setView("emailReport"); setMsg(null); }}>{t("export.send_report")} …</Item>}
             </>
           )}
 
@@ -122,46 +153,38 @@ export default function ExportMenu({ year, squadId, sinceDays = 7 }: Props) {
             </div>
           )}
 
-          {view === "subscribe" && (
-            <div className="stack" style={{ gap: 6, padding: 6 }}>
-              <button className="btn-ghost btn-sm" style={{ alignSelf: "flex-start" }} onClick={() => setView("menu")}>← {t("action.cancel")}</button>
-              <div className="small muted">{t("sub.intro")}</div>
-              {INTERVALS.map((d) => (
-                <button key={d} className={sub?.interval_days === d ? "btn-sm" : "btn-secondary btn-sm"} onClick={() => subscribe(d)}>
-                  {t(`sub.every.${d}`)}{sub?.interval_days === d ? " ✓" : ""}
-                </button>
-              ))}
-              {(sub?.interval_days ?? 0) > 0 && <button className="btn-ghost btn-sm" onClick={() => subscribe(0)}>{t("sub.unsubscribe")}</button>}
-            </div>
-          )}
-
           {msg && <div className="small muted" style={{ padding: "6px 8px 2px" }}>{msg}</div>}
         </div>
       )}
       {roadmapModal && (
         <SquadExportPicker base="roadmap" title={t("export.roadmap_modal_title")}
           htmlLabel={t("export.roadmap_html")} pptxLabel={t("export.roadmap_pptx")}
-          sinceDays={sinceDays} year={year} lang={lang} onClose={() => setRoadmapModal(false)} />
+          sinceDays={sinceDays} year={year} lang={lang} onClose={() => setRoadmapModal(false)}
+          onPreview={(url, title) => setPreview({ url, title })} />
       )}
       {dashModal && (
         <SquadExportPicker base="dashboard" title={t("export.dashboard_modal_title")}
           htmlLabel={t("export.dashboard_html")} pptxLabel={t("export.dashboard_pptx")}
-          sinceDays={sinceDays} year={year} lang={lang} onClose={() => setDashModal(false)} />
+          sinceDays={sinceDays} year={year} lang={lang} onClose={() => setDashModal(false)}
+          onPreview={(url, title) => setPreview({ url, title })} />
       )}
+      {preview && <HtmlPreviewModal url={preview.url} title={preview.title} onClose={() => setPreview(null)} />}
     </div>
   );
 }
 
 /** Wide, easy-to-use modal to pick which squads (grouped by tribe) appear in a
  *  global export (roadmap or dashboard). Responsive multi-column grid. */
-function SquadExportPicker({ base, title, htmlLabel, pptxLabel, sinceDays, year, lang, onClose }: {
+function SquadExportPicker({ base, title, htmlLabel, pptxLabel, sinceDays, year, lang, onClose, onPreview }: {
   base: "roadmap" | "dashboard"; title: string; htmlLabel: string; pptxLabel: string;
   sinceDays: number; year?: number; lang: string; onClose: () => void;
+  onPreview: (url: string, title: string) => void;
 }) {
   const { t } = useI18n();
   const [squads, setSquads] = useState<Squad[]>([]);
   const [tribes, setTribes] = useState<Tribe[]>([]);
   const [sel, setSel] = useState<Set<number>>(new Set());
+  const [jpgBusy, setJpgBusy] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -207,9 +230,13 @@ function SquadExportPicker({ base, title, htmlLabel, pptxLabel, sinceDays, year,
           <span className="small muted">{t("export.roadmap_selected", { n: sel.size, total: squads.length })}</span>
           <div className="inline" style={{ gap: 8 }}>
             <button className="btn-secondary" onClick={onClose}>{t("action.close")}</button>
-            <a className={`btn btn-secondary${selIds.length ? "" : " disabled"}`}
-               href={selIds.length ? url("html") : undefined} target="_blank" rel="noreferrer"
-               aria-disabled={!selIds.length} onClick={() => selIds.length && onClose()}>{htmlLabel}</a>
+            <button className={`btn btn-secondary${selIds.length ? "" : " disabled"}`}
+               disabled={!selIds.length}
+               onClick={() => { if (!selIds.length) return; onPreview(url("html"), title); onClose(); }}>{htmlLabel}</button>
+            <button className="btn btn-secondary" disabled={!selIds.length || jpgBusy}
+                    onClick={async () => { if (!selIds.length) return; setJpgBusy(true); try { await renderHtmlToJpg(url("html"), `${base}.jpg`); onClose(); } finally { setJpgBusy(false); } }}>
+              {jpgBusy ? "…" : t("export.jpg")}
+            </button>
             <a className={`btn${selIds.length ? "" : " disabled"}`}
                href={selIds.length ? url("pptx") : undefined} download
                aria-disabled={!selIds.length} onClick={() => selIds.length && onClose()}>{pptxLabel}</a>
