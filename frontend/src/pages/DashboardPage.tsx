@@ -5,7 +5,7 @@ import { useI18n } from "../i18n";
 import { useConfig } from "../config";
 import { useAuth } from "../auth";
 import { DashboardOut, SquadCard, Tribe } from "../types";
-import { Dot, FreshnessBadge, ProgressBar, Spinner, ErrorBanner } from "../components/ui";
+import { Dot, FreshnessBadge, ProgressBar, Spinner, ErrorBanner, EmptyState } from "../components/ui";
 import ExportMenu from "../components/ExportMenu";
 import { useSetPageChrome } from "../components/pageChrome";
 
@@ -23,6 +23,10 @@ export default function DashboardPage() {
   const { default_year } = useConfig();
   const { effectiveRole } = useAuth();
   const isAdmin = effectiveRole === "admin";
+  const navigate = useNavigate();
+  // Dashboard + Initiatives are merged under one menu: everyone gets the Initiatives
+  // tab (read-only list, editable by the tribe leader); the overview stays as-is.
+  const showInitiatives = true;
   const [data, setData] = useState<DashboardOut | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [year, setYear] = useState<number | null>(null);
@@ -31,6 +35,7 @@ export default function DashboardPage() {
   const [freshFilter, setFreshFilter] = useState<"all" | "stale" | "fresh">("all");
   const [tribes, setTribes] = useState<Tribe[]>([]);
   const [tribeFilter, setTribeFilter] = useState<string>("");
+  const [query, setQuery] = useState("");
 
   useEffect(() => {
     if (year === null && default_year) setYear(default_year);
@@ -48,7 +53,9 @@ export default function DashboardPage() {
 
   const cards = useMemo(() => {
     if (!data) return [];
+    const needle = query.trim().toLowerCase();
     let r = data.cards.filter((c) => {
+      if (needle && !c.name.toLowerCase().includes(needle)) return false;
       if (health !== "all" && healthOf(c) !== health) return false;
       if (freshFilter === "stale" && !c.freshness.is_stale) return false;
       if (freshFilter === "fresh" && c.freshness.is_stale) return false;
@@ -60,11 +67,16 @@ export default function DashboardPage() {
     else if (sort === "name") r.sort((a, b) => a.name.localeCompare(b.name));
     else if (sort === "fresh") r.sort((a, b) => (b.freshness.age_days ?? 1e9) - (a.freshness.age_days ?? 1e9));
     return r;
-  }, [data, health, freshFilter, sort]);
+  }, [data, health, freshFilter, sort, query]);
 
   useSetPageChrome(
     data
       ? {
+          tabs: showInitiatives
+            ? [{ key: "overview", label: t("dash.tab_overview") }, { key: "initiatives", label: t("nav.initiatives") }]
+            : undefined,
+          activeTab: "overview",
+          onTab: (k) => { if (k === "initiatives") navigate("/initiatives"); },
           actions: (
             <>
               <div className="seg">
@@ -72,22 +84,17 @@ export default function DashboardPage() {
                   <button key={y} className={y === data.year ? "active" : ""} onClick={() => setYear(y)}>{y}</button>
                 ))}
               </div>
-              <ExportMenu
-                year={data.year}
-                csvHref={`/api/exports/dashboard.csv?year=${data.year}`}
-                csvEmailEndpoint="/api/exports/dashboard/email"
-              />
+              <ExportMenu year={data.year} />
             </>
           ),
         }
       : {},
-    [data?.year]
+    [data?.year, showInitiatives, t]
   );
 
   if (error) return <ErrorBanner message={error} />;
   if (!data) return <Spinner />;
 
-  const focusQ = data.year === data.current_year ? data.current_quarter : undefined;
   const s = data.summary;
 
   return (
@@ -103,6 +110,10 @@ export default function DashboardPage() {
 
       <div className="card" style={{ padding: 14 }}>
         <div className="row" style={{ alignItems: "flex-end", gap: 12 }}>
+          <div style={{ width: 200 }}>
+            <label htmlFor="dash-search">{t("roadmap.search")}</label>
+            <input id="dash-search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("roadmap.search")} />
+          </div>
           {isAdmin && (
             <div style={{ width: 200 }}>
               <label>{t("admin.tribe")}</label>
@@ -143,41 +154,47 @@ export default function DashboardPage() {
 
       <div className="inline small muted" style={{ gap: 16, flexWrap: "wrap" }}>
         <span className="strong">{t("dash.legend")} :</span>
-        <span className="inline"><Dot status="red" /> {roadmap("blocked")}</span>
-        <span className="inline"><Dot status="amber" /> {roadmap("at_risk")}</span>
-        <span className="inline"><Dot status="green" /> {roadmap("done")}</span>
+        <span className="inline"><Dot status="red" decorative /> {roadmap("blocked")}</span>
+        <span className="inline"><Dot status="amber" decorative /> {roadmap("at_risk")}</span>
+        <span className="inline"><Dot status="green" decorative /> {roadmap("done")}</span>
       </div>
 
       {cards.length === 0 ? (
-        <div className="card muted">{t("dash.none")}</div>
+        <EmptyState message={t("dash.none")} />
       ) : (
         <div className="squad-grid-2">
-          {cards.map((c) => <Card key={c.squad_id} card={c} focusQ={focusQ} showTribe={isAdmin} />)}
+          {cards.map((c) => <Card key={c.squad_id} card={c} showTribe={isAdmin} />)}
         </div>
       )}
     </div>
   );
 }
 
-function Card({ card, focusQ, showTribe }: { card: SquadCard; focusQ?: number; showTribe?: boolean }) {
+function Card({ card, showTribe }: { card: SquadCard; showTribe?: boolean }) {
   const navigate = useNavigate();
   const { t, roadmap } = useI18n();
   const h = healthOf(card);
   const sClass = h === "blocked" ? "s-red" : h === "at_risk" ? "s-orange" : "s-green";
+  const statusDot = h === "blocked" ? "red" : h === "at_risk" ? "amber" : "green";
+  // Simplified card: identity + annual progress + a one-line health readout.
+  // The full quarter-by-quarter breakdown lives on the squad detail page.
   return (
-    <button className={`squad-card squad-card-lg ${sClass}`} onClick={() => navigate(`/squads/${card.squad_id}`)}>
+    <button className={`squad-card ${sClass}`} onClick={() => navigate(`/squads/${card.squad_id}`)}>
       <div className="between" style={{ alignItems: "flex-start" }}>
-        <div>
-          <div className="strong sc-name" style={{ color: "var(--navy)" }}>{card.name}</div>
-          <div className="muted small" style={{ marginTop: 2 }}>
-            {card.leader?.display_name || t("card.no_leader")} · {card.members_count} {t("card.members")}
+        <div className="inline" style={{ gap: 8, alignItems: "flex-start" }}>
+          <Dot status={statusDot} />
+          <div>
+            <div className="strong sc-name" style={{ color: "var(--navy)" }}>{card.name}</div>
+            <div className="muted small" style={{ marginTop: 2 }}>
+              {card.leader?.display_name || t("card.no_leader")} · {card.members_count} {t("card.members")}
+            </div>
           </div>
         </div>
         {showTribe && card.tribe_name && <span className="badge badge-navy">{card.tribe_name}</span>}
       </div>
 
       {/* Annual progress */}
-      <div style={{ marginTop: 14 }}>
+      <div style={{ marginTop: 12 }}>
         <div className="between" style={{ marginBottom: 4 }}>
           <span className="small strong" style={{ color: "var(--navy)" }}>{t("dash.annual")}</span>
           <span className="small muted">{card.annual_progress}%</span>
@@ -185,31 +202,14 @@ function Card({ card, focusQ, showTribe }: { card: SquadCard; focusQ?: number; s
         <ProgressBar pct={card.annual_progress} />
       </div>
 
-      {/* 4 quarters in columns */}
-      <div className="quarters" style={{ marginTop: 14 }}>
-        {[1, 2, 3, 4].map((q) => {
-          const bd = card.quarter_breakdowns[String(q)] || { total: 0, blocked: 0, at_risk: 0, done: 0, on_track: 0 };
-          const pct = card.quarter_progress[String(q)] ?? 0;
-          return (
-            <div key={q} className={`q ${focusQ === q ? "current" : ""}`}>
-              <div className="qlabel">Q{q}{focusQ === q ? " ·" : ""}</div>
-              <div className="qbar"><div style={{ width: `${pct}%` }} /></div>
-              <div className="qpct">{pct}%</div>
-              <div className="small" style={{ marginTop: 4, lineHeight: 1.5 }}>
-                {bd.blocked > 0 && <div style={{ color: "var(--red)" }}>● {bd.blocked} {roadmap("blocked")}</div>}
-                {bd.at_risk > 0 && <div style={{ color: "var(--orange)" }}>● {bd.at_risk} {roadmap("at_risk")}</div>}
-                <div className="muted">{bd.done}/{bd.total} {t("card.done")}</div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      <div className="between" style={{ marginTop: 16, gap: 12, flexWrap: "wrap" }}>
-        <span className="inline rag-counts" title="Objectives">
-          <span style={{ color: "var(--red)" }}><Dot status="red" /> {card.counts.objectives_red}</span>
-          <span style={{ color: "var(--orange)" }}><Dot status="amber" /> {card.counts.objectives_amber}</span>
-          <span style={{ color: "var(--green)" }}><Dot status="green" /> {card.counts.objectives_green}</span>
+      {/* One-line health readout */}
+      <div className="between" style={{ marginTop: 12, gap: 8, flexWrap: "wrap" }}>
+        <span className="inline" style={{ gap: 8 }}>
+          {card.blocked_count > 0 && <span className="badge badge-red">{card.blocked_count} {t("card.blocked")}</span>}
+          {card.at_risk_count > 0 && <span className="badge badge-orange">{card.at_risk_count} {t("card.atrisk")}</span>}
+          {card.blocked_count === 0 && card.at_risk_count === 0 && (
+            <span className="small muted">{roadmap("on_track")}</span>
+          )}
         </span>
         <FreshnessBadge freshness={card.freshness} />
       </div>

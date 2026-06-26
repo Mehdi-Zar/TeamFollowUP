@@ -1,4 +1,27 @@
-export type Role = "admin" | "tribe_leader" | "squad_leader" | "member";
+// Built-in roles plus any admin-created custom persona key.
+export type Role = "admin" | "tribe_leader" | "squad_leader" | "member" | (string & {});
+
+export type Capability = "dashboard" | "roadmap" | "org" | "feed" | "reporting" | "review" | "mysquads";
+
+export interface RoadmapCellItem {
+  title: string;
+  status: RoadmapStatus;
+  owner?: string | null;
+  stage?: string | null;
+  theme?: string | null;
+  dependency?: string | null;
+}
+export interface RoadmapMatrixQuarter { q: number; pct: number; comment?: string | null; items: RoadmapCellItem[]; }
+export interface RoadmapMatrixSquad { squad_id: number; name: string; annual_pct: number; quarters: RoadmapMatrixQuarter[]; }
+export interface RoadmapMatrixTribe { tribe_id: number | null; tribe_name: string; squads: RoadmapMatrixSquad[]; }
+export interface RoadmapMatrix { year: number; scope_name: string; tribes: RoadmapMatrixTribe[]; }
+
+export interface Persona {
+  key: string;
+  label: string;
+  builtin: boolean;
+  caps: Record<string, boolean>;
+}
 
 export interface Permissions {
   role: Role;
@@ -8,11 +31,71 @@ export interface Permissions {
   assignable_roles: Role[];
   can_create_tribe: boolean;
   can_manage_users: boolean;
+  capabilities?: Record<string, boolean>;
 }
 export type Rag = "green" | "amber" | "red";
 export type RoadmapStatus = "on_track" | "at_risk" | "blocked" | "done";
 export type QuarterHealth = "on_track" | "at_risk" | "blocked";
 export type Trend = "on_target" | "under_pressure" | "missed";
+export type DependencyKind = "text" | "squad" | "tribe";
+export type ReleaseStage = "EA" | "GA";
+// "product" and "transverse" ship today; any custom key is allowed (extensible).
+export type SquadType = "product" | "transverse" | (string & {});
+export type OtdStatus = "on_track" | "at_risk" | "late" | "delivered";
+
+export interface Initiative {
+  id: number;
+  tribe_id: number;
+  year: number;
+  title: string;
+  squad_id?: number | null;
+  squad_name?: string | null;
+  owner?: string | null;
+  deadline?: string | null;
+  description?: string | null;
+  display_order: number;
+  is_active: boolean;
+}
+
+export interface Otd {
+  id: number;
+  tribe_id: number;
+  year: number;
+  title: string;
+  description?: string | null;
+  budget_ref?: string | null;
+  committed_date?: string | null;
+  owner_user_id?: number | null;
+  display_order: number;
+}
+
+// Reporting (read) shapes returned by the report endpoints.
+export interface ReportJalon {
+  id: number; title: string; theme?: string | null; quarter: number; stage?: string | null;
+  status: RoadmapStatus; squad_id: number; squad_name: string;
+  otd_id?: number | null; otd_title?: string | null; owner?: string | null;
+}
+export interface ReportObjective {
+  id: number; title: string; squad_id: number; squad_name: string; rag: Rag;
+  status: RoadmapStatus; jalons: ReportJalon[];
+}
+export interface ReportInitiative {
+  id: number; title: string; description?: string | null; owner_name?: string | null;
+  status: RoadmapStatus; progress: number;
+  counts: { total: number; done: number; blocked: number; at_risk: number };
+  objectives: ReportObjective[];
+}
+export interface InitiativeReport {
+  year: number; scope_name: string; initiatives: ReportInitiative[];
+}
+export interface OtdReport extends Otd {
+  owner_name?: string | null;
+  status: OtdStatus;
+  counts: { total: number; done: number; blocked: number; at_risk: number };
+  jalons: { id: number; title: string; quarter: number; stage?: string | null; status: RoadmapStatus; squad_id: number; squad_name: string }[];
+}
+export interface CandidateObjective { id: number; title: string; squad_id: number; squad_name: string; initiative_id?: number | null; }
+export interface CandidateJalon { id: number; title: string; quarter: number; theme?: string | null; squad_id: number; squad_name: string; otd_id?: number | null; }
 
 export interface User {
   id: number;
@@ -68,6 +151,7 @@ export interface Objective {
   rag_status: Rag;
   weight: number;
   is_active: boolean;
+  initiative_id?: number | null;
 }
 
 export interface RoadmapItem {
@@ -76,14 +160,34 @@ export interface RoadmapItem {
   year: number;
   quarter: number;
   title: string;
+  theme?: string | null;
+  release_stage: ReleaseStage;
   description?: string | null;
   success_criteria?: string | null;
   user_benefit?: string | null;
   dependencies?: string | null;
+  dependency_kind?: DependencyKind | null;
+  dependency_squad_id?: number | null;
+  dependency_tribe_id?: number | null;
+  dependency_label?: string | null;
   risks?: string | null;
   owner?: string | null;
   status: RoadmapStatus;
   display_order: number;
+  objective_id?: number | null;
+  otd_id?: number | null;
+  otd_label?: string | null;
+}
+
+export interface DependentItem {
+  squad_id: number;
+  squad_name: string;
+  tribe_name?: string | null;
+  year: number;
+  quarter: number;
+  title: string;
+  status: RoadmapStatus;
+  via: DependencyKind;
 }
 
 export interface Kpi {
@@ -115,6 +219,37 @@ export interface Squad {
   leader_user_id?: number | null;
   display_order: number;
   kpis_enabled: boolean;
+  budget_enabled?: boolean;
+  squad_type?: SquadType;
+  products?: string[];
+  hardware?: string[];
+}
+
+export type KeyMessageKind = "success" | "alert" | "risk";
+
+export interface KeyMessage {
+  id: number;
+  squad_id: number;
+  year: number;
+  kind: KeyMessageKind;
+  text: string;
+  display_order: number;
+  created_at: string;
+}
+
+export type BudgetStatus = "on_track" | "at_risk" | "over";
+
+export interface Budget {
+  total?: number | null;
+  spent?: number | null;
+  forecast?: number | null;
+  comment?: string | null;
+  status: BudgetStatus;
+  spent_pct?: number | null;
+  forecast_pct?: number | null;
+  overrun: number;
+  overrun_pct: number;
+  updated_at?: string | null;
 }
 
 export interface QuarterCell {
@@ -133,6 +268,8 @@ export interface SquadDetail extends Squad {
   roadmap_items: RoadmapItem[];
   kpis: Kpi[];
   members: Member[];
+  key_messages: KeyMessage[];
+  budget?: Budget | null;
 }
 
 export interface Breakdown {

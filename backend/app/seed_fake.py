@@ -2,7 +2,7 @@
 
 Keeps the real squad names but generates fake users, members, objectives,
 milestones (jalons), KPIs, quarter progress, snapshots (varied freshness), an
-org chart, a live feed and a multi-week progress-review timeline — so the app
+org chart, a live feed and a multi-week progress-review timeline - so the app
 can be exercised end to end.
 
 Wipes business data first (preserves app_settings config and the break-glass
@@ -24,8 +24,10 @@ from .models import (
     FeedPost,
     FeedReaction,
     FeedReply,
+    Initiative,
     Kpi,
     Member,
+    Otd,
     Notification,
     Objective,
     OrgNode,
@@ -141,14 +143,18 @@ def run(db: Session) -> None:
     db.flush()
 
     squads = []
+    squad_refs = []  # (squad, squad_type, objectives, jalons) - for initiatives/OTD wiring
     used_names = set()
     for order, (name, leader_name, slug, profile, domain) in enumerate(SQUADS, start=1):
         leader = User(email=f"{slug}@local", display_name=leader_name, role="squad_leader",
                       tribe_id=tribe.id, password_hash=pw, created_at=now)
         db.add(leader)
         db.flush()
-        s = Squad(name=name, description=f"Squad {name} — {domain}.", tribe_id=tribe.id,
-                  leader_user_id=leader.id, display_order=order)
+        # Pilotage / Opérations squads are cross-cutting → transverse (initiatives/OTD);
+        # the rest deliver a product roadmap.
+        squad_type = "transverse" if domain in ("Pilotage", "Opérations") else "product"
+        s = Squad(name=name, description=f"Squad {name} - {domain}.", tribe_id=tribe.id,
+                  leader_user_id=leader.id, display_order=order, squad_type=squad_type)
         db.add(s)
         db.flush()
         squads.append((s, profile, domain, leader))
@@ -159,28 +165,45 @@ def run(db: Session) -> None:
             f"Industrialiser {name}",
             f"Améliorer la fiabilité de {name}",
         ]
+        squad_objectives = []
         for oi, (title, rag) in enumerate(zip(obj_titles, prof["objs"])):
-            db.add(Objective(squad_id=s.id, year=year, title=title, rag_status=rag, weight=2 - oi,
-                             description=f"Objectif {oi+1} de la squad {name} pour l'année {year}.",
-                             target_date=qdate(2 + oi)))
+            obj = Objective(squad_id=s.id, year=year, title=title, rag_status=rag, weight=2 - oi,
+                            description=f"Objectif {oi+1} de la squad {name} pour l'année {year}.",
+                            target_date=qdate(2 + oi))
+            db.add(obj)
+            squad_objectives.append(obj)
+        db.flush()
 
-        # Milestones (jalons) across quarters
+        # Milestones (jalons) across quarters - grouped by reusable theme.
         jalon_titles = [
             "Cadrage & architecture", "Mise en place du socle", "Industrialisation",
             "Mise en production", "Bilan & optimisation",
         ]
+        jalon_themes = [
+            "Landing Zones", "Managed Services", "Managed Services",
+            "Landing Zones", "Software Factory",
+        ]
+        jalon_stages = ["EA", "EA", "GA", "GA", "GA"]
         quarters = [1, 2, 2, 3, 4]
-        for ji, (jt, q, status) in enumerate(zip(jalon_titles, quarters, prof["jalon"])):
+        squad_jalons = []
+        for ji, (jt, theme, stage, q, status) in enumerate(
+                zip(jalon_titles, jalon_themes, jalon_stages, quarters, prof["jalon"])):
             owner = f"{rng.choice(FIRST)} {rng.choice(LAST)}"
-            db.add(RoadmapItem(
-                squad_id=s.id, year=year, quarter=q, title=f"{jt} — {name}",
+            # Each milestone answers one of the squad's objectives (round-robin).
+            jal = RoadmapItem(
+                squad_id=s.id, year=year, quarter=q, title=jt,
+                theme=theme, release_stage=stage,
                 status=status, display_order=ji, owner=owner,
+                objective_id=squad_objectives[ji % len(squad_objectives)].id,
                 description=f"{jt} pour la squad {name}.",
                 success_criteria="Critères de succès définis et validés avec les parties prenantes.",
                 user_benefit="Bénéfice concret pour les utilisateurs et la fiabilité du service.",
                 dependencies="Disponibilité des environnements et validation sécurité.",
                 risks="Dépendances externes et fenêtres de maintenance." if status in ("at_risk", "blocked") else None,
-            ))
+            )
+            db.add(jal)
+            squad_jalons.append(jal)
+        squad_refs.append((s, squad_type, squad_objectives, squad_jalons))
 
         # Quarter progress
         comments = ["Cadrage terminé, socle posé.", "Industrialisation en cours.", None, None]
@@ -211,6 +234,24 @@ def run(db: Session) -> None:
         ms = sorted(s.members, key=lambda m: m.display_order)
         if len(ms) >= 3:
             ms[2].manager_id = ms[1].id
+    db.flush()
+
+    # ---- Initiatives: a flat list set by the tribe leader, one assigned per squad
+    # (owner + deadline), so each surfaces in its squad's report/dashboard.
+    init_specs = [
+        ("Portail self-service unifié", 9),
+        ("Industrialisation multi-cloud", 11),
+        ("Excellence opérationnelle & FinOps", 6),
+        ("Sécurisation des landing zones", 3),
+        ("Catalogue de services managés", 5),
+        ("Observabilité unifiée", 8),
+    ]
+    for io, (title, month) in enumerate(init_specs):
+        s = squads[io % len(squads)][0]
+        owner = f"{rng.choice(FIRST)} {rng.choice(LAST)}"
+        db.add(Initiative(tribe_id=tribe.id, year=year, title=title, squad_id=s.id,
+                          owner=owner, deadline=datetime(year, month, 28, tzinfo=timezone.utc),
+                          display_order=io))
     db.flush()
 
     # ---- Org chart (grouped by domain) ----
@@ -253,7 +294,7 @@ def run(db: Session) -> None:
                  content="Incident sur l'ingestion GCP / S3NS : pipeline en pause, investigation en cours.",
                  created_at=now - timedelta(hours=3)),
         FeedPost(tribe_id=tribe.id, author_user_id=tl.id, kind="info",
-                 content="Revue trimestrielle Cloud Foundations vendredi 14h — merci de préparer vos statuts.",
+                 content="Revue trimestrielle Cloud Foundations vendredi 14h - merci de préparer vos statuts.",
                  created_at=now - timedelta(hours=9)),
         FeedPost(tribe_id=tribe.id, author_user_id=aws_l.id, kind="success", squad_id=aws_s.id,
                  content="Migration FinOps AWS terminée : -12% sur la facture ce trimestre 🎉",

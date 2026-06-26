@@ -68,16 +68,31 @@ class Squad(Base):
     leader_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     display_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     kpis_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # Budget tracking is opt-in per squad: the tribe leader turns it on, then the
+    # squad leader reports the figures. The amounts (SquadBudget) are visible only
+    # to the squad leader, its tribe leader and admins.
+    budget_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # "product" squads report via the roadmap (EA/GA milestones); "transverse"
+    # squads report via initiatives + OTD. Open-ended so new types can be added.
+    squad_type: Mapped[str] = mapped_column(String(32), nullable=False, default="product")
+    # Product name(s) the squad owns, and optional hardware name(s). Free lists of
+    # strings (set on squad create/edit, shown at the top of the squad page).
+    products: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    hardware: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
 
     tribe: Mapped["Tribe"] = relationship(back_populates="squads")
     leader: Mapped["User | None"] = relationship(back_populates="led_squads", foreign_keys=[leader_user_id])
     objectives: Mapped[list["Objective"]] = relationship(back_populates="squad", cascade="all, delete-orphan")
-    roadmap_items: Mapped[list["RoadmapItem"]] = relationship(back_populates="squad", cascade="all, delete-orphan")
+    roadmap_items: Mapped[list["RoadmapItem"]] = relationship(
+        back_populates="squad", cascade="all, delete-orphan",
+        foreign_keys="RoadmapItem.squad_id")
     quarter_progress: Mapped[list["QuarterProgress"]] = relationship(back_populates="squad", cascade="all, delete-orphan")
     kpis: Mapped[list["Kpi"]] = relationship(back_populates="squad", cascade="all, delete-orphan")
     members: Mapped[list["Member"]] = relationship(back_populates="squad", cascade="all, delete-orphan")
     snapshots: Mapped[list["ReportSnapshot"]] = relationship(back_populates="squad", cascade="all, delete-orphan")
     progress_updates: Mapped[list["ProgressUpdate"]] = relationship(back_populates="squad", cascade="all, delete-orphan")
+    budgets: Mapped[list["SquadBudget"]] = relationship(back_populates="squad", cascade="all, delete-orphan")
+    key_messages: Mapped[list["KeyMessage"]] = relationship(back_populates="squad", cascade="all, delete-orphan")
 
 
 class Member(Base):
@@ -109,6 +124,51 @@ class OrgNode(Base):
     display_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
 
+class Initiative(Base):
+    """A strategic initiative set by the tribe leader and assigned to one squad.
+    Shown as a flat list (initiative / owner / squad / deadline) and surfaced in
+    that squad's report + dashboard. Read-only for squad leaders and members."""
+    __tablename__ = "initiatives"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tribe_id: Mapped[int] = mapped_column(ForeignKey("tribes.id"), nullable=False, index=True)
+    year: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(300), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # The squad the initiative is assigned to (so it shows in that squad's report).
+    squad_id: Mapped[int | None] = mapped_column(
+        ForeignKey("squads.id", ondelete="SET NULL"), nullable=True, index=True)
+    owner: Mapped[str | None] = mapped_column(String(255), nullable=True)  # free-text owner
+    deadline: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    owner_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)  # legacy, unused
+    display_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    objectives: Mapped[list["Objective"]] = relationship(back_populates="initiative")
+    squad: Mapped["Squad | None"] = relationship(foreign_keys=[squad_id])
+
+
+class Otd(Base):
+    """A One-Time / On-Time Delivery commitment fixed by top management to track a
+    budget milestone. It groups milestones (RoadmapItem.otd_id) and carries a single
+    committed date; its on-time status is derived from those milestones."""
+    __tablename__ = "otds"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tribe_id: Mapped[int] = mapped_column(ForeignKey("tribes.id"), nullable=False, index=True)
+    year: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(300), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    budget_ref: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    committed_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    owner_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    display_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    roadmap_items: Mapped[list["RoadmapItem"]] = relationship(back_populates="otd",
+                                                              foreign_keys="RoadmapItem.otd_id")
+    owner: Mapped["User | None"] = relationship(foreign_keys=[owner_user_id])
+
+
 class Objective(Base):
     __tablename__ = "objectives"
 
@@ -121,8 +181,14 @@ class Objective(Base):
     rag_status: Mapped[str] = mapped_column(String(10), nullable=False, default="green")
     weight: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # Which tribe initiative this objective contributes to (optional).
+    initiative_id: Mapped[int | None] = mapped_column(
+        ForeignKey("initiatives.id", ondelete="SET NULL"), nullable=True, index=True)
 
     squad: Mapped["Squad"] = relationship(back_populates="objectives")
+    initiative: Mapped["Initiative | None"] = relationship(back_populates="objectives")
+    jalons: Mapped[list["RoadmapItem"]] = relationship(
+        back_populates="objective", foreign_keys="RoadmapItem.objective_id")
 
 
 class RoadmapItem(Base):
@@ -133,16 +199,36 @@ class RoadmapItem(Base):
     year: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     quarter: Mapped[int] = mapped_column(Integer, nullable=False)  # 1..4
     title: Mapped[str] = mapped_column(String(500), nullable=False)
+    # Reusable theme/lane (e.g. "Landing Zones", "Managed Services") used to group
+    # milestones in the roadmap view and exports. Mandatory at the API layer; kept
+    # nullable in the DB so pre-existing rows remain valid.
+    theme: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
+    release_stage: Mapped[str] = mapped_column(String(2), nullable=False, default="EA")  # EA|GA
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     success_criteria: Mapped[str | None] = mapped_column(Text, nullable=True)
     user_benefit: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Free-text dependency note (kept for the "text" kind and as a fallback label).
     dependencies: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Structured dependency: a dependency can target a squad, a tribe, or be free text.
+    dependency_kind: Mapped[str | None] = mapped_column(String(10), nullable=True)  # text|squad|tribe
+    dependency_squad_id: Mapped[int | None] = mapped_column(ForeignKey("squads.id"), nullable=True)
+    dependency_tribe_id: Mapped[int | None] = mapped_column(ForeignKey("tribes.id"), nullable=True)
     risks: Mapped[str | None] = mapped_column(Text, nullable=True)
     owner: Mapped[str | None] = mapped_column(String(255), nullable=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="on_track")  # on_track|at_risk|blocked|done
     display_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # Which squad objective this milestone answers (objective → tribe initiative).
+    objective_id: Mapped[int | None] = mapped_column(
+        ForeignKey("objectives.id", ondelete="SET NULL"), nullable=True, index=True)
+    # Which top-management OTD (budget delivery commitment) this milestone belongs to.
+    otd_id: Mapped[int | None] = mapped_column(
+        ForeignKey("otds.id", ondelete="SET NULL"), nullable=True, index=True)
 
-    squad: Mapped["Squad"] = relationship(back_populates="roadmap_items")
+    squad: Mapped["Squad"] = relationship(back_populates="roadmap_items", foreign_keys=[squad_id])
+    dependency_squad: Mapped["Squad | None"] = relationship(foreign_keys=[dependency_squad_id])
+    dependency_tribe: Mapped["Tribe | None"] = relationship(foreign_keys=[dependency_tribe_id])
+    objective: Mapped["Objective | None"] = relationship(back_populates="jalons", foreign_keys=[objective_id])
+    otd: Mapped["Otd | None"] = relationship(back_populates="roadmap_items", foreign_keys=[otd_id])
 
 
 class QuarterProgress(Base):
@@ -157,6 +243,44 @@ class QuarterProgress(Base):
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     squad: Mapped["Squad"] = relationship(back_populates="quarter_progress")
+
+
+class SquadBudget(Base):
+    """Per-squad, per-year budget envelope. The tribe leader enables budget on the
+    squad (Squad.budget_enabled); the squad leader reports `total` (allocated) and
+    `spent` (consumed/forecast). On-track and overrun are derived from those two.
+    Restricted to the squad leader, its tribe leader and admins."""
+    __tablename__ = "squad_budgets"
+    __table_args__ = (UniqueConstraint("squad_id", "year", name="uq_squad_budget"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    squad_id: Mapped[int] = mapped_column(ForeignKey("squads.id"), nullable=False, index=True)
+    year: Mapped[int] = mapped_column(Integer, nullable=False)
+    total: Mapped[float | None] = mapped_column(Numeric(14, 2), nullable=True)      # envelope, set by tribe leader
+    spent: Mapped[float | None] = mapped_column(Numeric(14, 2), nullable=True)      # consumed to date, by squad leader
+    forecast: Mapped[float | None] = mapped_column(Numeric(14, 2), nullable=True)   # projected landing, by squad leader
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow,
+                                                 nullable=False)
+
+    squad: Mapped["Squad"] = relationship(back_populates="budgets")
+
+
+class KeyMessage(Base):
+    """A hand-curated executive message for a squad/year: a success, an alert or a
+    risk. Surfaced on the squad page below the roadmap to give a narrative readout."""
+    __tablename__ = "key_messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    squad_id: Mapped[int] = mapped_column(ForeignKey("squads.id"), nullable=False, index=True)
+    year: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False, default="success")  # success|alert|risk
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    display_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+
+    squad: Mapped["Squad"] = relationship(back_populates="key_messages")
 
 
 class Kpi(Base):

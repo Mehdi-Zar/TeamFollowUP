@@ -9,6 +9,27 @@ fraîcheur** des données.
 
 Charte graphique alignée sur l'application RunAssessment (thème navy `#1E2761`).
 
+## 📚 Documentation complète
+
+La documentation produit/technique/ops **à jour et faisant foi** se trouve dans **[`docs/`](docs/README.md)** :
+architecture (diagrammes Mermaid), [modèle de données + ERD](docs/03-data-model.md),
+[référence API](docs/04-api-reference.md) (+ `docs/openapi.json`), [sécurité](docs/05-security.md),
+[runbook d'exploitation](docs/06-operations-runbook.md), [guide développeur](docs/07-developer-guide.md),
+[stratégie de tests](docs/08-testing-strategy.md), [rapport d'audit](docs/09-audit-report.md),
+[dette & risques](docs/10-tech-debt-and-risk-register.md),
+[roadmap & enterprise-readiness](docs/11-roadmap-and-enterprise-readiness.md),
+le **[guide de déploiement (VMware · GCP · S3NS · AWS · Azure)](docs/12-deployment-guide.md)** et les
+[ADR](docs/adr/README.md).
+
+> **Déploiement en production** (cloud ou on-prem) : voir le
+> **[guide de déploiement](docs/12-deployment-guide.md)**. En prod, mettez
+> `SEED_DEMO=false`, `COOKIE_SECURE=true`, et un `SECRET_KEY` / mot de passe DB
+> issus d'un coffre de secrets.
+
+> Note : certaines sections ci-dessous décrivent le produit initial ; en cas de divergence,
+> **`docs/` fait référence** (ex. le statut RAG des objectifs est désormais *dérivé de l'avancement*,
+> et l'accès aux sections est piloté par la matrice **Personas → capacités**).
+
 ## Démarrage en une commande
 
 Prérequis : Docker + Docker Compose.
@@ -45,8 +66,9 @@ Tous les comptes de démonstration utilisent le mot de passe `demo`.
 
 ## Modèle
 
-- **Squad** : liste plate, chaque squad a un **responsable** (squad leader) et une **équipe**
-  (membres : fiches personnes, optionnellement reliées à un compte).
+- **Squad** : liste plate, chaque squad a un **responsable** (squad leader), une **équipe**
+  (membres : fiches personnes, optionnellement reliées à un compte), un ou plusieurs
+  **produits** et, en option, du **hardware**.
 - **Roadmap** : des **jalons** rattachés à un **quarter** (`année` + `Q1..Q4`) avec un
   statut (planifié / en cours / livré / à risque / en retard). Chaque quarter porte un
   **curseur d'avancement** (0-100 %) saisi par le squad leader.
@@ -60,16 +82,23 @@ Tous les comptes de démonstration utilisent le mot de passe `demo`.
   carte affichant la pastille de statut, les **4 mini-barres Q1→Q4**, le détail des objectifs
   (R/A/V), les jalons livrés/en retard, le nombre de membres et la fraîcheur. Sélecteur
   d'**année**, filtres **statut / fraîcheur**. Clic → détail.
-- **Détail squad** : roadmap par quarter, objectifs annuels, KPIs, **équipe (organigramme de
-  la squad)**, historique + comparaison, exports.
+- **Détail squad** : en-tête avec **produits & hardware** de la squad + le squad leader ;
+  **OTD** (objectifs annuels engagés), **roadmap détaillée** par quarter, **messages clés**
+  (succès / alerte / risque, horodatés), **budget** (total / consommé / prévision + statut
+  RAG, visible uniquement par l'admin, le tribe leader et le squad leader concerné), KPIs,
+  **équipe (organigramme)**, historique + comparaison, **exports HTML & PPTX** au rendu
+  fidèle à l'écran.
 - **Saisie (guidée)** : page unique avec bandeau explicatif et **checklist de complétion** ;
   édition de la roadmap (jalons + curseur), des KPIs et de l'**équipe** ; objectifs en lecture
   seule pour le squad leader ; bouton **« Soumettre »** → instantané immuable + fraîcheur.
 - **Organigramme global** : arbre éditable de la tribe (un nœud peut être relié à une squad
   pour afficher son statut), **modifiable par le tribe leader** ; clic sur un nœud relié → détail.
 - **Aperçu persona** : l'admin peut voir l'app « en tant que » chaque rôle (lecture seule).
-- **Administration** (admin) : CRUD squads (nom, responsable, ordre), CRUD utilisateurs &
-  rôles, réglage du seuil de fraîcheur, journal d'audit.
+- **Administration** (admin) : **navigation latérale groupée** (Organisation · Configuration ·
+  Authentification & Email · Modération & Journaux) ; CRUD squads (nom, responsable, ordre,
+  **produits & hardware**), CRUD utilisateurs & rôles, modules, personas, réglages, journal
+  d'audit. Gestion des squads aussi via **« Manage my squads »** (produits/hardware, budget,
+  activation des KPIs).
 - **Exports** : rapport imprimable / PDF (dashboard et par squad, format unifié, via
   l'impression du navigateur) et export CSV.
 - **API REST documentée** : Swagger sur **http://localhost:8080/docs**.
@@ -147,10 +176,12 @@ quarter, snapshot immuable + comparaison, et contrôle d'accès par rôle.
 ├── docker-compose.yml          # services app + db, volume persistant
 ├── Dockerfile                  # multi-stage : build React → runtime FastAPI
 ├── .env.example                # toutes les variables, commentées
-├── README.md / DECISIONS.md / REFONTE_SPEC.md
+├── README.md / DECISIONS.md
+├── docs/                       # doc produit/tech/ops (faisant foi) + guide de déploiement (12)
 ├── backend/
-│   ├── app/                    # FastAPI : models, routers, auth, seed, status
+│   ├── app/                    # FastAPI : models, routers, auth, seed, status, report
 │   ├── alembic/                # migrations (appliquées au démarrage)
+│   ├── scripts/                # scripts ponctuels (seed de l'org réel, prune users)
 │   └── tests/                  # pytest
 └── frontend/                   # React + Vite + TS (charte navy, sans Tailwind)
 ```

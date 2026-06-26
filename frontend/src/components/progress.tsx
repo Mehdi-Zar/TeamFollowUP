@@ -133,7 +133,7 @@ export function ProgressCurve({ points, height = 130 }: { points: ProgressPoint[
       {pts.map((p, i) => (
         <circle key={p.id} cx={x(i)} cy={y(p.progress_pct)} r={3}
           fill={p.blocked_count > 0 ? "var(--red)" : p.at_risk_count > 0 ? "var(--orange)" : "var(--accent)"}>
-          <title>{`${new Date(p.created_at).toLocaleDateString()} — ${p.progress_pct}%`}</title>
+          <title>{`${new Date(p.created_at).toLocaleDateString()} - ${p.progress_pct}%`}</title>
         </circle>
       ))}
     </svg>

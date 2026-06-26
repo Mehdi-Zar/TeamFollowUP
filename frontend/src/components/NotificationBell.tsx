@@ -62,6 +62,7 @@ export default function NotificationBell() {
         style={{ color: "var(--navy)", borderColor: "var(--line)", position: "relative", padding: "8px 10px" }}
         onClick={() => setOpen((o) => !o)}
         title={t("notif.title")}
+        aria-label={t("notif.title")}
       >
         <BellIcon />
         {data.unread_count > 0 && <span className="notif-badge">{data.unread_count}</span>}

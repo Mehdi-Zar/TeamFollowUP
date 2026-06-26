@@ -1,0 +1,89 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  backend:
+    name: Backend (pytest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Run tests
+        working-directory: backend
+        run: python -m pytest -p no:warnings -q
+
+  frontend:
+    name: Frontend (typecheck + build + i18n parity)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci || npm install
+      - name: Type-check
+        working-directory: frontend
+        run: npx tsc --noEmit
+      - name: Unit tests (Vitest)
+        working-directory: frontend
+        run: npm test
+      - name: i18n FR/EN parity
+        working-directory: frontend
+        run: |
+          node -e '
+            const fs=require("fs");
+            const txt=fs.readFileSync("src/i18n.tsx","utf8");
+            const block=(a)=>{const m=txt.search(new RegExp(a+"\\s*:\\s*\\{"));let i=txt.indexOf("{",m),d=0;for(let j=i;j<txt.length;j++){if(txt[j]==="{")d++;else if(txt[j]==="}"){d--;if(d===0)return txt.slice(i,j+1);}}};
+            const keys=(s)=>new Set([...s.matchAll(/"([\w.]+)":/g)].map(m=>m[1]));
+            const fr=keys(block("\\n  fr")), en=keys(block("\\n  en"));
+            const only=(a,b)=>[...a].filter(k=>!b.has(k));
+            const miss=[...only(fr,en).map(k=>"FR-only:"+k), ...only(en,fr).map(k=>"EN-only:"+k)];
+            if(miss.length){console.error("i18n parity FAILED\n"+miss.join("\n"));process.exit(1);}
+            console.log("i18n parity OK ("+fr.size+" keys)");
+          '
+      - name: Build
+        working-directory: frontend
+        run: npm run build
+
+  docker:
+    name: Docker image builds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t tribe-cockpit:ci .
+
+  audit:
+    name: Dependency audit (non-blocking)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: pip-audit (backend)
+        run: |
+          pip install pip-audit
+          pip-audit -r backend/requirements.txt || true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: npm audit (frontend)
+        working-directory: frontend
+        run: |
+          npm install --package-lock-only
+          npm audit --omit=dev || true

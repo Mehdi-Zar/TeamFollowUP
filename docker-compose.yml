@@ -46,6 +46,12 @@ services:
       SAML_ACS_URL: ${SAML_ACS_URL:-http://localhost:8080/api/auth/saml/acs}
       SAML_SP_CERT: ${SAML_SP_CERT:-}
       SAML_SP_KEY: ${SAML_SP_KEY:-}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      COOKIE_SAMESITE: ${COOKIE_SAMESITE:-lax}
+      LOGIN_MAX_ATTEMPTS: ${LOGIN_MAX_ATTEMPTS:-10}
+      LOGIN_WINDOW_SECONDS: ${LOGIN_WINDOW_SECONDS:-300}
+      AUDIT_RETENTION_DAYS: ${AUDIT_RETENTION_DAYS:-0}
+      PROGRESS_RETENTION_DAYS: ${PROGRESS_RETENTION_DAYS:-0}
     ports:
       - "${APP_PORT:-8080}:8000"
     healthcheck:
@@ -53,6 +59,35 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+
+  # Automated daily logical backups (pg_dump) with rotation. Opt-in profile so it
+  # only runs when requested:  docker compose --profile backup up -d
+  backup:
+    image: postgres:16-alpine
+    profiles: ["backup"]
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGHOST: db
+      PGUSER: ${POSTGRES_USER:-tribe}
+      PGDATABASE: ${POSTGRES_DB:-tribe}
+      PGPASSWORD: ${POSTGRES_PASSWORD:-tribe}
+      BACKUP_KEEP: ${BACKUP_KEEP:-14}
+      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-86400}
+    volumes:
+      - ./backups:/backups
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "[backup] sidecar started";
+        while true; do
+          ts=$$(date +%Y%m%d_%H%M%S);
+          if pg_dump > /backups/tribe_$$ts.sql; then echo "[backup] tribe_$$ts.sql ok"; else echo "[backup] FAILED"; fi;
+          ls -1t /backups/*.sql 2>/dev/null | tail -n +$$((BACKUP_KEEP+1)) | xargs -r rm -f;
+          sleep $$BACKUP_INTERVAL_SECONDS;
+        done
 
 volumes:
   db_data:

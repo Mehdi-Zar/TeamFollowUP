@@ -1,7 +1,7 @@
 """Server-side computation: per-quarter squad health, progress, freshness.
 
 Statuses (jalons): on_track | at_risk | blocked | done.
-There is no single all-time status for a whole squad — health is scoped to a
+There is no single all-time status for a whole squad - health is scoped to a
 quarter (the current quarter by default), which is far less ambiguous.
 """
 from datetime import datetime, timezone
@@ -35,11 +35,51 @@ def squad_status(squad: Squad, year: int, quarter: int | None = None) -> str:
 
 
 def year_progress(squad: Squad, year: int) -> dict[int, int]:
+    """Per-quarter advancement (0..100), AUTO-DERIVED from the quarter's milestones:
+    the share of that quarter's jalons that are done. Not hand-entered."""
     out = {q: 0 for q in (1, 2, 3, 4)}
-    for qp in squad.quarter_progress:
-        if qp.year == year and qp.quarter in out:
-            out[qp.quarter] = max(0, min(100, qp.progress_pct))
+    for q in (1, 2, 3, 4):
+        items = [r for r in squad.roadmap_items if r.year == year and r.quarter == q]
+        if items:
+            out[q] = round(100 * sum(1 for r in items if r.status == "done") / len(items))
     return out
+
+
+def annual_progress_pct(squad: Squad, year: int) -> int:
+    """Mean of the four quarter percentages (0..100). Mirrors serializers.annual_progress."""
+    p = year_progress(squad, year)
+    return round(sum(p.values()) / 4)
+
+
+def objective_status(obj, squad: Squad, now: datetime | None = None) -> str:
+    """Derive an objective's RAG ('green'|'amber'|'red') from the squad's advancement.
+
+    The status is no longer entered by hand: it is deduced from whether the squad's
+    annual progress keeps pace with the calendar, measured against the objective's
+    optional deadline (target_date) - or the end of the year when none is set.
+
+      green  : on/ahead of pace (or already at 100%).
+      amber  : slipping 10-25 points behind the expected pace.
+      red    : badly behind (>25 pts) or the deadline has passed without completion.
+    """
+    now = _aware(now) or datetime.now(timezone.utc)
+    actual = annual_progress_pct(squad, obj.year)
+    if actual >= 100:
+        return "green"
+    start = datetime(obj.year, 1, 1, tzinfo=timezone.utc)
+    end = _aware(getattr(obj, "target_date", None)) or datetime(obj.year, 12, 31, 23, 59, 59, tzinfo=timezone.utc)
+    if now >= end:
+        return "red"  # deadline reached and not complete
+    if end <= start or now <= start:
+        expected = 0.0
+    else:
+        expected = 100.0 * (now - start).total_seconds() / (end - start).total_seconds()
+    gap = expected - actual
+    if gap > 25:
+        return "red"
+    if gap > 10:
+        return "amber"
+    return "green"
 
 
 def quarter_comments(squad: Squad, year: int) -> dict[int, str | None]:
@@ -73,11 +113,12 @@ def at_risk_count(squad: Squad, year: int, quarter: int | None = None) -> int:
 def counts(squad: Squad, year: int) -> dict:
     objectives = [o for o in squad.objectives if o.is_active and o.year == year]
     items = [r for r in squad.roadmap_items if r.year == year]
+    obj_rags = [objective_status(o, squad) for o in objectives]
     return {
         "objectives_total": len(objectives),
-        "objectives_red": sum(1 for o in objectives if o.rag_status == "red"),
-        "objectives_amber": sum(1 for o in objectives if o.rag_status == "amber"),
-        "objectives_green": sum(1 for o in objectives if o.rag_status == "green"),
+        "objectives_red": sum(1 for r in obj_rags if r == "red"),
+        "objectives_amber": sum(1 for r in obj_rags if r == "amber"),
+        "objectives_green": sum(1 for r in obj_rags if r == "green"),
         "roadmap_total": len(items),
         "roadmap_done": sum(1 for r in items if r.status == "done"),
         "roadmap_blocked": sum(1 for r in items if r.status == "blocked"),
@@ -106,3 +147,47 @@ def freshness(squad: Squad, threshold: int | None = None, now: datetime | None =
 
 def risk_rank(status: str) -> int:
     return {"blocked": 3, "at_risk": 2, "on_track": 1}.get(status, 0)
+
+
+# ----- Initiative / OTD roll-ups (derived from milestone statuses) ---------------
+
+def rollup_status(jalons) -> str:
+    """Worst-of roll-up for a set of milestones: blocked > at_risk > done(all) > on_track."""
+    statuses = [j.status for j in jalons]
+    if not statuses:
+        return "on_track"
+    if any(s == "blocked" for s in statuses):
+        return "blocked"
+    if any(s == "at_risk" for s in statuses):
+        return "at_risk"
+    if all(s == "done" for s in statuses):
+        return "done"
+    return "on_track"
+
+
+def rollup_progress(jalons) -> int:
+    """Percentage of milestones marked done (0..100)."""
+    jalons = list(jalons)
+    if not jalons:
+        return 0
+    return round(100 * sum(1 for j in jalons if j.status == "done") / len(jalons))
+
+
+def otd_status(jalons, committed_date, now: datetime | None = None) -> str:
+    """On-time delivery status of an OTD from its milestones + committed date:
+
+      delivered : every milestone is done.
+      late      : the committed date has passed and not everything is done.
+      at_risk   : a milestone is blocked or at risk (and not yet late).
+      on_track  : otherwise.
+    """
+    jalons = list(jalons)
+    now = _aware(now) or datetime.now(timezone.utc)
+    if jalons and all(j.status == "done" for j in jalons):
+        return "delivered"
+    committed = _aware(committed_date)
+    if committed is not None and now > committed:
+        return "late"
+    if any(j.status in ("blocked", "at_risk") for j in jalons):
+        return "at_risk"
+    return "on_track"

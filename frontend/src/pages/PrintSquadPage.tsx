@@ -3,6 +3,7 @@ import { useParams, useSearchParams } from "react-router-dom";
 import { api } from "../api";
 import { useI18n } from "../i18n";
 import { SquadDetail } from "../types";
+import { useModule } from "../config";
 
 export function ReportHeader({ title }: { title: string }) {
   return (
@@ -45,6 +46,7 @@ export default function PrintSquadPage() {
   const [params] = useSearchParams();
   const year = params.get("year");
   const { t, rag, roadmap, trend, freshness } = useI18n();
+  const kpisOn = useModule()("squad_content", "kpis");
   const [squad, setSquad] = useState<SquadDetail | null>(null);
 
   useEffect(() => {
@@ -63,7 +65,7 @@ export default function PrintSquadPage() {
       <table style={{ marginBottom: 16 }}>
         <tbody>
           <tr><td className="muted" style={{ width: 200 }}>{t("dash.annual")}</td><td className="strong">{squad.annual_progress}%</td></tr>
-          <tr><td className="muted">{t("squad.responsible")}</td><td>{squad.leader?.display_name || "—"}</td></tr>
+          <tr><td className="muted">{t("squad.responsible")}</td><td>{squad.leader?.display_name || "-"}</td></tr>
           <tr><td className="muted">{t("dash.filter.fresh")}</td><td>{freshness(squad.freshness)}{squad.freshness.is_stale ? ` (${t("fresh.stale_suffix")})` : ""}</td></tr>
         </tbody>
       </table>
@@ -74,7 +76,7 @@ export default function PrintSquadPage() {
         return (
           <div key={q} style={{ marginBottom: 12, breakInside: "avoid" }}>
             <h3 style={{ borderBottom: "1px solid var(--line)", paddingBottom: 4 }}>
-              Q{q} — {cell?.progress_pct ?? 0}%
+              Q{q} - {cell?.progress_pct ?? 0}%
             </h3>
             {items.length === 0 ? (
               <div className="small muted">{t("squad.no_jalon")}</div>
@@ -90,7 +92,7 @@ export default function PrintSquadPage() {
         {squad.objectives.length === 0 ? <div className="small muted">{t("squad.no_obj")}</div> : squad.objectives.map((o) => <Line key={o.id} left={o.title} right={rag(o.rag_status)} />)}
       </div>
 
-      {squad.kpis_enabled && (
+      {kpisOn && squad.kpis_enabled && (
         <div style={{ marginBottom: 12, breakInside: "avoid" }}>
           <h3 style={{ borderBottom: "1px solid var(--line)", paddingBottom: 4 }}>{t("squad.kpis")}</h3>
           {squad.kpis.length === 0 ? <div className="small muted">{t("squad.no_kpi")}</div> : squad.kpis.map((k) => (
