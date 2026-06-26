@@ -270,6 +270,64 @@ def test_report_config(payload: dict = Body(default=None), db: Session = Depends
     return {"ok": ok, "to": to, "pptx": bool(attachment)}
 
 
+# ---------- Change-notification emails (on modification) ----------
+@router.get("/change-notify-config")
+def read_change_notify_config(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    from ..changeconfig import get_change_notify, ALL_EVENTS
+    cfg = get_change_notify(db)
+    cfg["_all_events"] = ALL_EVENTS  # let the UI render every available condition
+    return cfg
+
+
+@router.put("/change-notify-config")
+def update_change_notify_config(payload: dict = Body(...), db: Session = Depends(get_db),
+                                admin: User = Depends(require_admin)):
+    from ..changeconfig import set_change_notify
+    payload = {k: v for k, v in (payload or {}).items() if not k.startswith("_")}
+    cfg = set_change_notify(db, payload)
+    record_audit(db, admin.id, "change_notify_config.update", entity="change_notify",
+                 detail={"enabled": cfg["enabled"], "events": cfg["events"],
+                         "recipients": len(cfg["recipients"]),
+                         "min_interval_minutes": cfg["min_interval_minutes"]})
+    db.commit()
+    return cfg
+
+
+@router.post("/change-notify-config/test")
+def test_change_notify_config(payload: dict = Body(default=None), db: Session = Depends(get_db),
+                              admin: User = Depends(require_admin)):
+    """Send a sample change-notification (a real squad's export) to verify setup."""
+    from ..smtpconfig import get_smtp
+    from ..mail import send_email
+    from ..report import build_report_data, render_html, render_pptx
+    from ..models import Squad
+    from .. import status as st
+
+    to = (payload or {}).get("to") or admin.email
+    squad_id = (payload or {}).get("squad_id")
+    cfg = get_smtp(db)
+    if not cfg.get("enabled"):
+        raise HTTPException(status_code=400, detail="SMTP désactivé")
+    squad = db.get(Squad, squad_id) if squad_id else db.scalars(select(Squad).order_by(Squad.display_order, Squad.id)).first()
+    if squad is None:
+        raise HTTPException(status_code=400, detail="Aucune squad disponible pour le test")
+    year = st.current_year_quarter()[0]
+    data = build_report_data(db, None, year, 7, squad_id=squad.id)
+    html_body = render_html(data, standalone=True)
+    attachment = None
+    try:
+        pptx_bytes = render_pptx(data)
+        attachment = (f"{squad.name}_{year}.pptx", pptx_bytes,
+                      "application", "vnd.openxmlformats-officedocument.presentationml.presentation")
+    except Exception:
+        pass
+    ok = send_email(cfg, to, f"[Reporting] {squad.name} — test", html_body, attachment=attachment, html=True)
+    record_audit(db, admin.id, "change_notify_config.test", entity="change_notify",
+                 detail={"ok": ok, "to": to, "squad": squad.name})
+    db.commit()
+    return {"ok": ok, "to": to, "squad": squad.name}
+
+
 @router.get("/log-export-config")
 def read_log_export_config(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     from ..logexportconfig import get_log_export

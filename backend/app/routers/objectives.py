@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..deps import assert_can_manage_objectives, get_current_user, record_audit, require_module
+from ..changenotify import notify_change
 from ..models import Objective, Squad, User
 from ..progress import capture_progress
 from ..schemas import ObjectiveCreate, ObjectiveOut, ObjectiveUpdate
@@ -26,6 +27,7 @@ def create_objective(payload: ObjectiveCreate, db: Session = Depends(get_db),
                  detail={"squad_id": obj.squad_id, "year": obj.year, "title": obj.title})
     db.commit()
     db.refresh(obj)
+    notify_change(obj.squad_id, "objectives", user.display_name, obj.year)
     return objective_out(obj, obj.squad)
 
 
@@ -43,6 +45,7 @@ def update_objective(objective_id: int, payload: ObjectiveUpdate, db: Session = 
     capture_progress(db, obj.squad_id, obj.year, user)
     db.commit()
     db.refresh(obj)
+    notify_change(obj.squad_id, "objectives", user.display_name, obj.year)
     return objective_out(obj, obj.squad)
 
 
@@ -52,7 +55,9 @@ def delete_objective(objective_id: int, db: Session = Depends(get_db), user: Use
     if obj is None:
         raise HTTPException(status_code=404, detail="Objectif introuvable")
     assert_can_manage_objectives(user, obj.squad)
+    sq_id, yr = obj.squad_id, obj.year
     record_audit(db, user.id, "objective.delete", entity="objective", entity_id=obj.id,
                  detail={"squad_id": obj.squad_id})
     db.delete(obj)
     db.commit()
+    notify_change(sq_id, "objectives", user.display_name, yr)

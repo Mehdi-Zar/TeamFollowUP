@@ -84,6 +84,11 @@ export default function DashboardPage() {
                   <button key={y} className={y === data.year ? "active" : ""} onClick={() => setYear(y)}>{y}</button>
                 ))}
               </div>
+              {isAdmin && (
+                <button className="btn-secondary btn-sm" onClick={() => navigate("/admin?section=report")}>
+                  {t("dash.reporting")}
+                </button>
+              )}
               <ExportMenu year={data.year} />
             </>
           ),

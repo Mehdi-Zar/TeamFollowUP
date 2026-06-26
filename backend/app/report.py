@@ -94,8 +94,8 @@ _RT = {
         "h_progress_long": "Progression", "h_delta": "Δ sem.", "h_blocked": "Bloqués",
         "h_atrisk": "À risque", "h_facts": "Faits de la semaine",
         "squad_scope": "Squad {name}", "more_squads": "… +{n} autres squads",
-        "subject": "Rapport hebdomadaire - semaine {w}", "synthesis": "Synthèse",
-        "subject_personal": "Rapport - {n} j",
+        "subject": "Rapport hebdomadaire — {scope} — semaine {w}", "synthesis": "Synthèse",
+        "subject_personal": "Rapport — {scope} — {n} j",
         "detail_title": "Détail par squad", "h_objectives": "Objectifs annuels",
         "h_roadmap": "Roadmap & jalons", "deadline": "échéance", "no_obj": "Aucun objectif",
         "no_jalon": "Aucun jalon", "dep": "Dép.", "roadmap_report": "Roadmap",
@@ -123,8 +123,8 @@ _RT = {
         "h_progress_long": "Progress", "h_delta": "Δ wk", "h_blocked": "Blocked",
         "h_atrisk": "At risk", "h_facts": "This week",
         "squad_scope": "Squad {name}", "more_squads": "… +{n} more squads",
-        "subject": "Weekly report - week {w}", "synthesis": "Summary",
-        "subject_personal": "Report - {n}d",
+        "subject": "Weekly report — {scope} — week {w}", "synthesis": "Summary",
+        "subject_personal": "Report — {scope} — {n}d",
         "detail_title": "Detail by squad", "h_objectives": "Annual objectives",
         "h_roadmap": "Roadmap & milestones", "deadline": "due", "no_obj": "No objective",
         "no_jalon": "No milestone", "dep": "Dep.", "roadmap_report": "Roadmap",
@@ -444,7 +444,7 @@ def _squad_detail_parts(r: dict, lang: str, e, *, with_title: bool = True) -> li
     # Budget (present only when the viewer may see this squad's figures)
     bud = det.get("budget")
     if bud is not None:
-        fmtn = lambda v: "-" if v is None else f"{v:,.0f}"
+        fmtn = lambda v: "-" if v is None else f"{v:,.0f} €"
         st_rag = {"on_track": "green", "at_risk": "amber", "over": "red"}[bud["status"]]
         st_lbl = rt(lang, {"on_track": "b_on_track", "at_risk": "b_at_risk", "over": "b_over"}[bud["status"]])
         over = f' (+{fmtn(bud["overrun"])} · {bud["overrun_pct"]}%)' if bud["status"] == "over" else ""
@@ -495,7 +495,7 @@ def _dot(rag: str) -> str:
 def _squad_app_cards(det: dict, lang: str, e, year: int) -> list[str]:
     """The squad page's cards, in page order: Initiatives → OTD → Roadmap →
     Key messages → Budget, using the application's own component classes."""
-    fmtn = lambda v: "-" if v is None else f"{v:,.0f}"
+    fmtn = lambda v: "-" if v is None else f"{v:,.0f} €"
     C: list[str] = []
 
     inits = det.get("initiatives") or []
@@ -1061,7 +1061,7 @@ def render_pptx(data: dict) -> bytes:
         # Budget line (status + figures), just under the header band.
         bud = det.get("budget")
         if bud is not None:
-            f = lambda v: "-" if v is None else f"{v:,.0f}"
+            f = lambda v: "-" if v is None else f"{v:,.0f} €"
             st_color = {"on_track": "green", "at_risk": "amber", "over": "red"}[bud["status"]]
             st_lbl = rt(lang, {"on_track": "b_on_track", "at_risk": "b_at_risk", "over": "b_over"}[bud["status"]])
             bline = f'{rt(lang, "h_budget")}: {st_lbl} · {rt(lang, "b_total")} {f(bud["total"])}'
@@ -1254,7 +1254,7 @@ def render_pptx(data: dict) -> bytes:
         if bud is None:
             textbox(s, bx, Emu(int(my) + int(Inches(0.48))), bw, Inches(0.3), rt(lang, "no_budget"), 9.5, color=B["muted"])
         else:
-            f = lambda v: "-" if v is None else f"{v:,.0f}"
+            f = lambda v: "-" if v is None else f"{v:,.0f} €"
             st_color = {"on_track": "green", "at_risk": "amber", "over": "red"}[bud["status"]]
             st_lbl = rt(lang, {"on_track": "b_on_track", "at_risk": "b_at_risk", "over": "b_over"}[bud["status"]])
             cw = Inches(0.26 + 0.082 * len(st_lbl))
@@ -1641,7 +1641,7 @@ def send_due_weekly_reports(db: Session, now: datetime | None = None) -> int:
             rendered[scope] = (html_body, pptx_bytes)
         return rendered[scope]
 
-    subject = rt(lang, "subject", w=now.isocalendar()[1])
+    subject = rt(lang, "subject", scope=rt(lang, "all_tribes"), w=now.isocalendar()[1])
     sent = 0
 
     def send_to(addr: str, scope: int | None) -> None:
@@ -1679,7 +1679,7 @@ def send_personal_subscriptions(db: Session, now: datetime | None = None) -> int
     """
     from .smtpconfig import get_smtp
     from .mail import send_email
-    from .models import ReportSubscription, User
+    from .models import ReportSubscription, Squad, Tribe, User
     from .modulesconfig import get_modules, is_active
 
     now = now or utcnow()
@@ -1724,7 +1724,15 @@ def send_personal_subscriptions(db: Session, now: datetime | None = None) -> int
         if pptx_bytes:
             attachment = (f"rapport_{now.date().isoformat()}.pptx", pptx_bytes,
                           "application", "vnd.openxmlformats-officedocument.presentationml.presentation")
-        subject = rt(lang, "subject_personal", n=sub.interval_days)
+        if sub.squad_id is not None:
+            sq = db.get(Squad, sub.squad_id)
+            scope_lbl = sq.name if sq else rt(lang, "h_squad")
+        elif user.role == "admin":
+            scope_lbl = rt(lang, "all_tribes")
+        else:
+            tr = db.get(Tribe, user.tribe_id) if user.tribe_id else None
+            scope_lbl = tr.name if tr else rt(lang, "all_tribes")
+        subject = rt(lang, "subject_personal", scope=scope_lbl, n=sub.interval_days)
         if send_email(smtp, user.email, subject, html_body, attachment=attachment, html=True):
             sub.last_sent_at = now
             if sub.squad_id is None:

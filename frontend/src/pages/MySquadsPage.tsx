@@ -490,7 +490,7 @@ function BudgetEditor({ squadId, year, enabled, budget, canToggle, onToggle, onE
   const [spent, setSpent] = useState(budget?.spent != null ? String(budget.spent) : "");
   const [forecast, setForecast] = useState(budget?.forecast != null ? String(budget.forecast) : "");
   const [comment, setComment] = useState(budget?.comment ?? "");
-  const fmt = (n?: number | null) => (n == null ? "-" : n.toLocaleString());
+  const fmt = (n?: number | null) => (n == null ? "-" : `${n.toLocaleString()} €`);
 
   // canToggle == tribe leader / admin: they own the envelope (total). A squad
   // leader only reports spent / forecast / comment, and sees total read-only.

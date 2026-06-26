@@ -31,7 +31,7 @@ const STEPS: Record<"fr" | "en", Record<Role, { hello: string; steps: Step[] }>>
       hello: "Vous pilotez votre tribe. Cadrez vos squads, puis suivez leur avancement.",
       steps: [
         { icon: "squads", title: "Définissez vos squads", desc: "Créez vos squads et désignez un responsable (squad leader) pour chacune.", to: "/mes-squads", cta: "Aller à Mes squads" },
-        { icon: "squads", title: "Objectifs annuels", desc: "Pour chaque squad : fixez les objectifs de l'année.", to: "/mes-squads", cta: "Mes squads → Éditer" },
+        { icon: "squads", title: "OTD (objectifs annuels)", desc: "Pour chaque squad : fixez les OTD (objectifs engagés de l'année).", to: "/mes-squads", cta: "Mes squads → Éditer" },
         { icon: "org", title: "Construisez l'organigramme", desc: "Organisez vos squads par domaine pour une vue claire de la tribe.", to: "/organigramme", cta: "Aller à l'Organigramme" },
         { icon: "review", title: "Animez la revue", desc: "Chaque semaine, regardez ce qui a bougé : avancement, blocages, confiance.", to: "/revue", cta: "Voir la Revue" },
         { icon: "mail", title: "Recevez le rapport", desc: "Abonnez-vous pour recevoir le rapport par email à la fréquence de votre choix.", to: "/", cta: "Dashboard → Exporter" },
@@ -72,7 +72,7 @@ const STEPS: Record<"fr" | "en", Record<Role, { hello: string; steps: Step[] }>>
       hello: "You lead your tribe. Set up your squads, then track their progress.",
       steps: [
         { icon: "squads", title: "Define your squads", desc: "Create squads and assign a squad leader to each.", to: "/mes-squads", cta: "Go to My squads" },
-        { icon: "squads", title: "Annual objectives", desc: "Per squad: set this year's objectives.", to: "/mes-squads", cta: "My squads → Edit" },
+        { icon: "squads", title: "OTD (annual objectives)", desc: "Per squad: set the OTD (this year's committed objectives).", to: "/mes-squads", cta: "My squads → Edit" },
         { icon: "org", title: "Build the org chart", desc: "Organise squads by domain for a clear view of the tribe.", to: "/organigramme", cta: "Go to Org chart" },
         { icon: "review", title: "Run the review", desc: "Each week, see what moved: progress, blockers, confidence.", to: "/revue", cta: "Open Review" },
         { icon: "mail", title: "Get the report", desc: "Subscribe to receive the report by email at your chosen cadence.", to: "/", cta: "Dashboard → Export" },
