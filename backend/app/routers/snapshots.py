@@ -19,12 +19,13 @@ def build_payload(squad: Squad, year: int) -> dict:
     return {
         "year": year,
         "objectives": [
-            {"id": o.id, "title": o.title, "rag_status": o.rag_status, "weight": o.weight,
+            {"id": o.id, "title": o.title, "rag_status": st.objective_status(o, squad), "weight": o.weight,
              "is_active": o.is_active, "target_date": o.target_date.isoformat() if o.target_date else None}
             for o in sorted(squad.objectives, key=lambda x: x.id) if o.year == year
         ],
         "roadmap_items": [
-            {"id": r.id, "title": r.title, "quarter": r.quarter, "status": r.status}
+            {"id": r.id, "title": r.title, "quarter": r.quarter, "status": r.status,
+             "release_stage": r.release_stage}
             for r in sorted(squad.roadmap_items, key=lambda x: (x.quarter, x.display_order, x.id))
             if r.year == year
         ],

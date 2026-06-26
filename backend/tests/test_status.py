@@ -15,7 +15,7 @@ YEAR = 2026
 
 def make_squad(objectives=(), roadmap=(), progress=()):
     return SimpleNamespace(
-        objectives=[SimpleNamespace(rag_status=r, is_active=a, year=YEAR) for (r, a) in objectives],
+        objectives=[SimpleNamespace(rag_status=r, is_active=a, year=YEAR, target_date=None) for (r, a) in objectives],
         roadmap_items=[SimpleNamespace(status=s, year=YEAR, quarter=q, display_order=0, id=i)
                        for i, (q, s) in enumerate(roadmap)],
         quarter_progress=[SimpleNamespace(year=YEAR, quarter=q, progress_pct=p) for (q, p) in progress],
@@ -54,14 +54,17 @@ def test_quarter_none_aggregates_year():
     assert squad_status(s, YEAR, None) == "blocked"
 
 
-def test_year_progress_maps_quarters():
-    s = make_squad(progress=[(1, 100), (2, 50)])
+def test_year_progress_is_derived_from_milestones():
+    # Q1: 2 of 2 done → 100%. Q2: 1 of 2 done → 50%. Others have no jalons → 0%.
+    s = make_squad(roadmap=[(1, "done"), (1, "done"), (2, "done"), (2, "on_track")])
     p = year_progress(s, YEAR)
     assert p[1] == 100 and p[2] == 50 and p[3] == 0 and p[4] == 0
 
 
-def test_progress_clamped():
-    assert year_progress(make_squad(progress=[(2, 150)]), YEAR)[2] == 100
+def test_year_progress_rounds_share_done():
+    # 1 of 3 done → 33%. Not hand-entered; blocked/at_risk count as not-done.
+    s = make_squad(roadmap=[(2, "done"), (2, "blocked"), (2, "at_risk")])
+    assert year_progress(s, YEAR)[2] == 33
 
 
 def test_risk_rank_order():
@@ -82,7 +85,11 @@ def test_blocked_count_scoped():
 
 
 def test_counts():
-    s = make_squad(objectives=[("red", True)], roadmap=[(2, "blocked"), (3, "done")])
+    # Objective RAG is now derived from advancement, not entered: an objective with
+    # a deadline already in the past and no progress is necessarily red.
+    from datetime import datetime, timezone
+    s = make_squad(objectives=[("green", True)], roadmap=[(2, "blocked"), (3, "done")])
+    s.objectives[0].target_date = datetime(YEAR, 1, 1, tzinfo=timezone.utc)  # past deadline
     c = counts(s, YEAR)
     assert c["objectives_red"] == 1
     assert c["roadmap_total"] == 2 and c["roadmap_blocked"] == 1 and c["roadmap_done"] == 1

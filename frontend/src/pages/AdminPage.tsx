@@ -1,10 +1,10 @@
 import { Fragment, useEffect, useState } from "react";
 import { api, ApiError } from "../api";
 import { useI18n } from "../i18n";
-import { useReloadConfig } from "../config";
+import { useModule, useReloadConfig } from "../config";
 import { useAuth } from "../auth";
-import { AuditEntry, ModuleKey, Permissions, Role, Squad, SquadDetail, Tribe, User } from "../types";
-import { ErrorBanner, Spinner } from "../components/ui";
+import { AuditEntry, ModuleKey, Permissions, Persona, Role, Squad, SquadDetail, Tribe, User } from "../types";
+import { ErrorBanner, Spinner, Dot } from "../components/ui";
 import { ADMIN_TABS_BY_ROLE, ALL_ROLES } from "../perms";
 import { useSetPageChrome } from "../components/pageChrome";
 
@@ -14,6 +14,7 @@ const TAB_LABEL: Record<string, string> = {
   tribe: "admin.tab.my_tribe",
   squads: "admin.tab.squads",
   users: "admin.tab.users",
+  personas: "admin.tab.personas",
   my_squads: "admin.tab.my_squads",
   modules: "admin.tab.modules",
   moderation: "admin.tab.moderation",
@@ -24,6 +25,14 @@ const TAB_LABEL: Record<string, string> = {
   settings: "admin.tab.settings",
   audit: "admin.tab.audit",
 };
+
+// Admin sections grouped by purpose (only the items a role may open are shown).
+const ADMIN_GROUPS: { titleKey: string; items: string[] }[] = [
+  { titleKey: "admin.group.org", items: ["tribes", "tribe", "squads", "my_squads", "users", "personas"] },
+  { titleKey: "admin.group.config", items: ["modules", "settings", "report"] },
+  { titleKey: "admin.group.access", items: ["auth", "smtp"] },
+  { titleKey: "admin.group.oversight", items: ["moderation", "logs", "audit"] },
+];
 
 export default function AdminPage() {
   const { t } = useI18n();
@@ -48,34 +57,47 @@ export default function AdminPage() {
   useEffect(() => {
     setTab((cur) => (cur && tabKeys.includes(cur) ? cur : tabKeys[0] ?? ""));
   }, [tabKeys.join(",")]);
-  useSetPageChrome(
-    {
-      title: t("admin.title"),
-      tabs: tabKeys.map((k) => ({ key: k, label: t(TAB_LABEL[k] ?? k) })),
-      activeTab: tab,
-      onTab: setTab,
-    },
-    [tab, perms, t]
-  );
+  useSetPageChrome({ title: t("admin.title") }, [perms, t]);
 
   if (loadError) return <ErrorBanner message={loadError} />;
   if (!perms) return <Spinner />;
 
+  // Keep only groups/items the current role may open; drop empty groups.
+  const groups = ADMIN_GROUPS
+    .map((g) => ({ ...g, items: g.items.filter((k) => tabKeys.includes(k)) }))
+    .filter((g) => g.items.length > 0);
+
   return (
-    <div className="stack" style={{ gap: 16 }}>
-      {tab === "tribes" && <TribesAdmin />}
-      {tab === "tribe" && <TribeSelfAdmin perms={perms} />}
-      {tab === "squads" && <SquadsAdmin perms={perms} />}
-      {tab === "users" && <UsersAdmin perms={perms} />}
-      {tab === "my_squads" && <MySquadsAdmin />}
-      {tab === "modules" && <ModulesAdmin />}
-      {tab === "moderation" && <ModerationAdmin />}
-      {tab === "auth" && <AuthAdmin />}
-      {tab === "smtp" && <SmtpAdmin />}
-      {tab === "report" && <WeeklyReportAdmin />}
-      {tab === "logs" && <LogExportAdmin />}
-      {tab === "settings" && <SettingsAdmin />}
-      {tab === "audit" && <AuditAdmin />}
+    <div className="admin-layout">
+      <nav className="admin-nav" aria-label={t("admin.title")}>
+        {groups.map((g) => (
+          <div key={g.titleKey} className="admin-nav-group">
+            <div className="admin-nav-title">{t(g.titleKey)}</div>
+            {g.items.map((k) => (
+              <button key={k} className={`admin-nav-item ${tab === k ? "active" : ""}`}
+                      onClick={() => setTab(k)} aria-current={tab === k ? "page" : undefined}>
+                {t(TAB_LABEL[k] ?? k)}
+              </button>
+            ))}
+          </div>
+        ))}
+      </nav>
+      <div className="admin-content stack" style={{ gap: 16 }}>
+        {tab === "tribes" && <TribesAdmin />}
+        {tab === "tribe" && <TribeSelfAdmin perms={perms} />}
+        {tab === "squads" && <SquadsAdmin perms={perms} />}
+        {tab === "users" && <UsersAdmin perms={perms} />}
+        {tab === "personas" && <PersonasAdmin />}
+        {tab === "my_squads" && <MySquadsAdmin />}
+        {tab === "modules" && <ModulesAdmin />}
+        {tab === "moderation" && <ModerationAdmin />}
+        {tab === "auth" && <AuthAdmin />}
+        {tab === "smtp" && <SmtpAdmin />}
+        {tab === "report" && <WeeklyReportAdmin />}
+        {tab === "logs" && <LogExportAdmin />}
+        {tab === "settings" && <SettingsAdmin />}
+        {tab === "audit" && <AuditAdmin />}
+      </div>
     </div>
   );
 }
@@ -545,7 +567,7 @@ function SquadSelfCard({ squadId }: { squadId: number }) {
         {squad.members.map((m) => (
           <div key={m.id} className="item-row">
             <span className="grow">{m.full_name}{m.role_title ? <span className="muted small"> · {m.role_title}</span> : null}</span>
-            <button className="btn-ghost btn-sm" onClick={() => delMember(m.id)}>✕</button>
+            <button className="btn-ghost btn-sm" aria-label={t("action.delete")} onClick={() => delMember(m.id)}>✕</button>
           </div>
         ))}
         <div className="row" style={{ alignItems: "flex-end", marginTop: 8 }}>
@@ -665,7 +687,7 @@ function ModerationAdmin() {
               {p.replies.map((r: any) => (
                 <div key={r.id} className="feed-reply between">
                   <span className="small"><span className="strong">{r.author?.display_name || "?"}</span> · {r.content}</span>
-                  <button className="btn-ghost btn-sm" onClick={() => delReply(r.id)}>✕</button>
+                  <button className="btn-ghost btn-sm" aria-label={t("action.delete")} onClick={() => delReply(r.id)}>✕</button>
                 </div>
               ))}
             </div>
@@ -764,7 +786,7 @@ function AuthAdmin() {
             <select className="w-auto" value={m.role} onChange={(e) => setMapping(i, { role: e.target.value })}>
               {roles.map((r) => (<option key={r} value={r}>{roleLabel(r)}</option>))}
             </select>
-            <button className="btn-danger btn-sm" onClick={() => set("group_role_mappings", mappings.filter((_, j) => j !== i))}>✕</button>
+            <button className="btn-danger btn-sm" aria-label={t("action.delete")} onClick={() => set("group_role_mappings", mappings.filter((_, j) => j !== i))}>✕</button>
           </div>
         ))}
         <button className="btn-secondary btn-sm" style={{ marginTop: 8 }} onClick={() => set("group_role_mappings", [...mappings, { group: "", role: "member" }])}>
@@ -795,11 +817,12 @@ function useErr() {
 }
 
 // Tribe-leader / admin per-squad settings: KPIs on/off + annual objectives.
-// (No team management here — that's the squad leader's job in reporting.)
+// (No team management here - that's the squad leader's job in reporting.)
 const RAGS: Array<"green" | "amber" | "red"> = ["green", "amber", "red"];
 
 function SquadParamsPanel({ squadId }: { squadId: number }) {
   const { t, rag } = useI18n();
+  const kpisModuleOn = useModule()("squad_content", "kpis");
   const [squad, setSquad] = useState<SquadDetail | null>(null);
   const [newObj, setNewObj] = useState("");
   const { error, wrap } = useErr();
@@ -814,7 +837,7 @@ function SquadParamsPanel({ squadId }: { squadId: number }) {
   const toggleKpis = (on: boolean) => wrap(async () => { await api.put(`/api/squads/${squadId}`, { kpis_enabled: on }); await load(); });
   const addObj = () => wrap(async () => {
     if (!newObj.trim()) return;
-    await api.post("/api/objectives", { squad_id: squadId, year: squad.year, title: newObj.trim(), rag_status: "green" });
+    await api.post("/api/objectives", { squad_id: squadId, year: squad.year, title: newObj.trim() });
     setNewObj("");
     await load();
   });
@@ -824,24 +847,29 @@ function SquadParamsPanel({ squadId }: { squadId: number }) {
   return (
     <div className="stack" style={{ gap: 14, padding: "6px 2px" }}>
       {error && <ErrorBanner message={error} />}
-      <label className="switch">
-        <input type="checkbox" checked={!!squad.kpis_enabled} onChange={(e) => toggleKpis(e.target.checked)} />
-        <span className="track"><span className="knob" /></span>
-        <span className="small strong">{t("admin.kpis_enabled")}</span>
-      </label>
+      {kpisModuleOn && (
+        <label className="switch">
+          <input type="checkbox" checked={!!squad.kpis_enabled} onChange={(e) => toggleKpis(e.target.checked)} />
+          <span className="track"><span className="knob" /></span>
+          <span className="small strong">{t("admin.kpis_enabled")}</span>
+        </label>
+      )}
 
       <div>
-        <div className="small muted" style={{ marginBottom: 6 }}>{t("squad.objectives", { year: squad.year })} — {t("admin.objectives_hint")}</div>
+        <div className="small muted" style={{ marginBottom: 6 }}>{t("squad.objectives", { year: squad.year })} - {t("admin.objectives_hint")}</div>
         {squad.objectives.length === 0 && <div className="small muted">{t("squad.no_obj")}</div>}
         {squad.objectives.map((o) => (
           <div key={o.id} className="item-row" style={{ gap: 8 }}>
+            <Dot status={o.rag_status} />
             <input style={{ flex: 1 }} defaultValue={o.title} onBlur={(e) => e.target.value !== o.title && updObj(o.id, { title: e.target.value })} />
-            <select className="w-auto" value={o.rag_status} onChange={(e) => updObj(o.id, { rag_status: e.target.value })}>
-              {RAGS.map((r) => <option key={r} value={r}>{rag(r)}</option>)}
-            </select>
-            <button className="btn-ghost btn-sm" onClick={() => delObj(o.id)}>✕</button>
+            <span className="small muted" style={{ minWidth: 56 }}>{rag(o.rag_status)}</span>
+            <input type="date" className="w-auto" style={{ maxWidth: 150 }} title={t("obj.deadline")}
+                   value={o.target_date ? o.target_date.slice(0, 10) : ""}
+                   onChange={(e) => updObj(o.id, { target_date: e.target.value || null })} />
+            <button className="btn-ghost btn-sm" aria-label={t("action.delete")} onClick={() => delObj(o.id)}>✕</button>
           </div>
         ))}
+        <div className="small muted" style={{ marginTop: 2 }}>{t("obj.status_auto")}</div>
         <div className="row" style={{ alignItems: "flex-end", marginTop: 8 }}>
           <div style={{ flex: 1, minWidth: 200 }}>
             <label>{t("admin.new_objective")}</label>
@@ -875,7 +903,7 @@ function SquadsAdmin({ perms }: { perms: Permissions }) {
   }, []);
 
   const leaders = users.filter((u) => u.role === "squad_leader" || u.role === "tribe_leader" || u.role === "admin");
-  const tribeName = (id: number) => tribes.find((tr) => tr.id === id)?.name || "—";
+  const tribeName = (id: number) => tribes.find((tr) => tr.id === id)?.name || "-";
 
   async function create() {
     await wrap(async () => {
@@ -933,7 +961,7 @@ function SquadsAdmin({ perms }: { perms: Permissions }) {
                 </td>
                 <td>
                   <select className="w-auto" value={s.leader_user_id ?? ""} onChange={(e) => update(s, { leader_user_id: e.target.value ? Number(e.target.value) : null })}>
-                    <option value="">—</option>
+                    <option value="">-</option>
                     {leaders.map((u) => (
                       <option key={u.id} value={u.id}>
                         {u.display_name}
@@ -978,7 +1006,7 @@ function SquadsAdmin({ perms }: { perms: Permissions }) {
             <div style={{ width: 200 }}>
               <label>{t("admin.tribe")}</label>
               <select value={form.tribe_id} onChange={(e) => setForm({ ...form, tribe_id: e.target.value })}>
-                <option value="">—</option>
+                <option value="">-</option>
                 {tribes.map((tr) => (<option key={tr.id} value={tr.id}>{tr.name}</option>))}
               </select>
             </div>
@@ -986,7 +1014,7 @@ function SquadsAdmin({ perms }: { perms: Permissions }) {
           <div style={{ width: 200 }}>
             <label>{t("admin.responsible")}</label>
             <select value={form.leader_user_id} onChange={(e) => setForm({ ...form, leader_user_id: e.target.value })}>
-              <option value="">—</option>
+              <option value="">-</option>
               {leaders.map((u) => (
                 <option key={u.id} value={u.id}>
                   {u.display_name}
@@ -1009,6 +1037,8 @@ function UsersAdmin({ perms }: { perms: Permissions }) {
   const roleOptions = perms.assignable_roles.length ? perms.assignable_roles : ALL_ROLES;
   const [users, setUsers] = useState<User[]>([]);
   const [tribes, setTribes] = useState<Tribe[]>([]);
+  const [personaLabels, setPersonaLabels] = useState<Record<string, string>>({});
+  const labelFor = (key: string) => personaLabels[key] ?? roleLabel(key);
   const { error, wrap } = useErr();
   const [form, setForm] = useState({
     email: "", display_name: "", role: roleOptions[roleOptions.length - 1] as Role,
@@ -1019,6 +1049,13 @@ function UsersAdmin({ perms }: { perms: Permissions }) {
     setUsers(await api.get<User[]>("/api/admin/users"));
     const allTribes = await api.get<Tribe[]>("/api/tribes");
     setTribes(isAdmin ? allTribes : allTribes.filter((tr) => tr.id === perms.tribe_id));
+    if (isAdmin) {
+      // Custom persona labels for the role dropdowns.
+      try {
+        const out = await api.get<{ personas: Persona[] }>("/api/admin/personas");
+        setPersonaLabels(Object.fromEntries(out.personas.filter((p) => !p.builtin).map((p) => [p.key, p.label])));
+      } catch { /* ignore */ }
+    }
   }
   useEffect(() => {
     load();
@@ -1051,7 +1088,7 @@ function UsersAdmin({ perms }: { perms: Permissions }) {
     });
   }
   async function resetPassword(u: User) {
-    const pw = prompt(`${t("admin.password")} — ${u.display_name}`);
+    const pw = prompt(`${t("admin.password")} - ${u.display_name}`);
     if (pw) await update(u, { password: pw });
   }
 
@@ -1080,9 +1117,9 @@ function UsersAdmin({ perms }: { perms: Permissions }) {
                 <td>{u.email}</td>
                 <td>
                   <select className="w-auto" value={u.role} disabled={!canManage(u)} onChange={(e) => update(u, { role: e.target.value as Role })}>
-                    {(isAdmin ? ALL_ROLES : Array.from(new Set([u.role, ...roleOptions]))).map((r) => (
+                    {(isAdmin ? roleOptions : Array.from(new Set([u.role, ...roleOptions]))).map((r) => (
                       <option key={r} value={r}>
-                        {roleLabel(r)}
+                        {labelFor(r)}
                       </option>
                     ))}
                   </select>
@@ -1094,7 +1131,7 @@ function UsersAdmin({ perms }: { perms: Permissions }) {
                       {tribes.map((tr) => (<option key={tr.id} value={tr.id}>{tr.name}</option>))}
                     </select>
                   ) : (
-                    <span className="muted">{tribes.find((tr) => tr.id === u.tribe_id)?.name ?? "—"}</span>
+                    <span className="muted">{tribes.find((tr) => tr.id === u.tribe_id)?.name ?? "-"}</span>
                   )}
                 </td>
                 <td className="muted">{formatDateTime(u.last_login_at)}</td>
@@ -1112,6 +1149,9 @@ function UsersAdmin({ perms }: { perms: Permissions }) {
                 </td>
               </tr>
             ))}
+            {users.length === 0 && (
+              <tr><td colSpan={6} className="muted" style={{ textAlign: "center", padding: 20 }}>{t("admin.no_users")}</td></tr>
+            )}
           </tbody>
         </table>
       </div>
@@ -1120,40 +1160,126 @@ function UsersAdmin({ perms }: { perms: Permissions }) {
         <h3>{t("admin.new_user")}</h3>
         <div className="row" style={{ alignItems: "flex-end" }}>
           <div style={{ width: 180 }}>
-            <label>{t("admin.name")}</label>
-            <input value={form.display_name} onChange={(e) => setForm({ ...form, display_name: e.target.value })} />
+            <label htmlFor="nu-name">{t("admin.name")}</label>
+            <input id="nu-name" value={form.display_name} onChange={(e) => setForm({ ...form, display_name: e.target.value })} />
           </div>
           <div style={{ width: 200 }}>
-            <label>{t("admin.email")}</label>
-            <input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+            <label htmlFor="nu-email">{t("admin.email")}</label>
+            <input id="nu-email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
           </div>
           <div style={{ width: 150 }}>
-            <label>{t("admin.role")}</label>
-            <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as Role })}>
+            <label htmlFor="nu-role">{t("admin.role")}</label>
+            <select id="nu-role" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as Role })}>
               {roleOptions.map((r) => (
                 <option key={r} value={r}>
-                  {roleLabel(r)}
+                  {labelFor(r)}
                 </option>
               ))}
             </select>
           </div>
           {isAdmin && (
             <div style={{ width: 160 }}>
-              <label>{t("admin.tribe")}</label>
-              <select value={form.tribe_id} onChange={(e) => setForm({ ...form, tribe_id: e.target.value })}>
+              <label htmlFor="nu-tribe">{t("admin.tribe")}</label>
+              <select id="nu-tribe" value={form.tribe_id} onChange={(e) => setForm({ ...form, tribe_id: e.target.value })}>
                 <option value="">{t("admin.no_tribe")}</option>
                 {tribes.map((tr) => (<option key={tr.id} value={tr.id}>{tr.name}</option>))}
               </select>
             </div>
           )}
           <div style={{ width: 150 }}>
-            <label>{t("admin.password_local")}</label>
-            <input value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
+            <label htmlFor="nu-pass">{t("admin.password_local")}</label>
+            <input id="nu-pass" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
           </div>
           <button onClick={create} disabled={!form.email.trim() || !form.display_name.trim()}>
             {t("admin.create")}
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// Personas & permissions: a single matrix of persona × section-access toggles,
+// plus custom persona creation. Mirrors Admin → Modules wiring.
+function PersonasAdmin() {
+  const { t, role: roleLabel } = useI18n();
+  const [caps, setCaps] = useState<string[]>([]);
+  const [personas, setPersonas] = useState<Persona[]>([]);
+  const [newLabel, setNewLabel] = useState("");
+  const [saved, setSaved] = useState(false);
+  const { error, wrap } = useErr();
+
+  async function load() {
+    const out = await wrap(() => api.get<{ capabilities: string[]; personas: Persona[] }>("/api/admin/personas"));
+    if (out) { setCaps(out.capabilities); setPersonas(out.personas); }
+  }
+  useEffect(() => { load(); }, []);
+
+  const setCap = (key: string, cap: string, val: boolean) =>
+    setPersonas((ps) => ps.map((p) => (p.key === key ? { ...p, caps: { ...p.caps, [cap]: val } } : p)));
+  const setLabel = (key: string, label: string) =>
+    setPersonas((ps) => ps.map((p) => (p.key === key ? { ...p, label } : p)));
+  const removePersona = (key: string) => setPersonas((ps) => ps.filter((p) => p.key !== key));
+  function addPersona() {
+    if (!newLabel.trim()) return;
+    setPersonas((ps) => [...ps, { key: newLabel.trim(), label: newLabel.trim(), builtin: false,
+      caps: Object.fromEntries(caps.map((c) => [c, false])) }]);
+    setNewLabel("");
+  }
+  async function save() {
+    const out = await wrap(() => api.put<{ capabilities: string[]; personas: Persona[] }>("/api/admin/personas", { personas }));
+    if (out) { setCaps(out.capabilities); setPersonas(out.personas); setSaved(true); setTimeout(() => setSaved(false), 1500); }
+  }
+
+  return (
+    <div className="stack" style={{ gap: 14, maxWidth: 920 }}>
+      {error && <ErrorBanner message={error} />}
+      <div className="banner">{t("personas.intro")}</div>
+      <div style={{ overflowX: "auto" }}>
+        <table className="persona-matrix">
+          <thead>
+            <tr>
+              <th style={{ textAlign: "left" }}>{t("personas.persona")}</th>
+              {caps.map((c) => <th key={c}>{t(`cap.${c}`)}</th>)}
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {personas.map((p) => {
+              const locked = p.key === "admin";  // superuser stays all-on
+              return (
+                <tr key={p.key}>
+                  <td style={{ textAlign: "left" }}>
+                    {p.builtin
+                      ? <span className="strong">{roleLabel(p.key)}</span>
+                      : <input style={{ width: 150 }} value={p.label} onChange={(e) => setLabel(p.key, e.target.value)} />}
+                  </td>
+                  {caps.map((c) => (
+                    <td key={c} style={{ textAlign: "center" }}>
+                      <input type="checkbox" checked={locked ? true : !!p.caps[c]} disabled={locked}
+                             aria-label={`${p.builtin ? roleLabel(p.key) : p.label} - ${t(`cap.${c}`)}`}
+                             onChange={(e) => setCap(p.key, c, e.target.checked)} />
+                    </td>
+                  ))}
+                  <td style={{ textAlign: "center" }}>
+                    {!p.builtin && <button className="btn-ghost btn-sm" title={t("action.delete")}
+                                           aria-label={`${t("action.delete")} - ${p.label}`}
+                                           onClick={() => removePersona(p.key)}>✕</button>}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <div className="inline" style={{ gap: 8 }}>
+        <input placeholder={t("personas.new_ph")} value={newLabel}
+               onChange={(e) => setNewLabel(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addPersona()} />
+        <button className="btn-secondary btn-sm" onClick={addPersona} disabled={!newLabel.trim()}>{t("personas.add")}</button>
+      </div>
+      <div className="inline">
+        <button onClick={save}>{t("action.save")}</button>
+        {saved && <span style={{ color: "var(--green)" }}>{t("admin.saved")}</span>}
       </div>
     </div>
   );
@@ -1241,10 +1367,13 @@ function SettingsAdmin() {
 
 function AuditAdmin() {
   const { t, formatDateTime } = useI18n();
-  const [entries, setEntries] = useState<AuditEntry[]>([]);
+  const [entries, setEntries] = useState<AuditEntry[] | null>(null);
+  const { error, wrap } = useErr();
   useEffect(() => {
-    api.get<AuditEntry[]>("/api/audit-log").then(setEntries).catch(() => {});
+    wrap(() => api.get<AuditEntry[]>("/api/audit-log")).then((d) => d && setEntries(d));
   }, []);
+  if (error) return <ErrorBanner message={error} />;
+  if (!entries) return <Spinner />;
   return (
     <div className="card" style={{ padding: 0, overflowX: "auto" }}>
       <table>
@@ -1261,11 +1390,11 @@ function AuditAdmin() {
           {entries.map((e) => (
             <tr key={e.id}>
               <td className="muted" style={{ whiteSpace: "nowrap" }}>{formatDateTime(e.timestamp)}</td>
-              <td>{e.user_id ?? "—"}</td>
+              <td>{e.user_id ?? "-"}</td>
               <td style={{ fontFamily: "monospace", fontSize: 12 }}>{e.action}</td>
-              <td className="muted">{e.entity ? `${e.entity}${e.entity_id ? ` #${e.entity_id}` : ""}` : "—"}</td>
+              <td className="muted">{e.entity ? `${e.entity}${e.entity_id ? ` #${e.entity_id}` : ""}` : "-"}</td>
               <td className="muted small" style={{ maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {e.detail ? JSON.stringify(e.detail) : "—"}
+                {e.detail ? JSON.stringify(e.detail) : "-"}
               </td>
             </tr>
           ))}

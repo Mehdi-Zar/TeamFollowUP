@@ -4,7 +4,7 @@ import { useAuth } from "../auth";
 import { useI18n } from "../i18n";
 import { useModule } from "../config";
 import { FeedKind, FeedPost, Role, Squad } from "../types";
-import { Spinner, ErrorBanner } from "../components/ui";
+import { Spinner, ErrorBanner, EmptyState } from "../components/ui";
 import { useSetPageChrome } from "../components/pageChrome";
 import { isWriter } from "../perms";
 
@@ -126,7 +126,7 @@ export default function FeedPage() {
       {!posts ? (
         <Spinner />
       ) : posts.length === 0 ? (
-        <div className="card muted">{t("feed.empty")}</div>
+        <EmptyState message={t("feed.empty")} />
       ) : (
         posts.map((p) => (
           <PostCard key={p.id} post={p} canPin={canPin && pinOn} reactionsOn={reactionsOn} repliesOn={repliesOn}
@@ -203,7 +203,7 @@ function PostCard({ post, canPin, reactionsOn, repliesOn, canDelete, userId, onC
                     <span className="small"><span className="strong">{r.author?.display_name || "?"}</span> · {r.content}</span>
                     <span className="inline" style={{ gap: 6 }}>
                       <span className="small muted">{formatDateTime(r.created_at)}</span>
-                      {(r.author?.id === userId) && <button className="btn-ghost btn-sm" onClick={() => delReply(r.id)}>✕</button>}
+                      {(r.author?.id === userId) && <button className="btn-ghost btn-sm" aria-label={t("action.delete")} onClick={() => delReply(r.id)}>✕</button>}
                     </span>
                   </div>
                 </div>

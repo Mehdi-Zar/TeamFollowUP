@@ -98,6 +98,18 @@ def assert_can_edit_squad(db: Session, user: User, squad_id: int) -> None:
         raise HTTPException(status_code=403, detail="Vous ne pouvez éditer que votre squad")
 
 
+def is_squad_privileged(user: User, squad: Squad) -> bool:
+    """Can see a squad's restricted data (objectives, KPIs, budget): admin, the
+    squad's tribe leader, or the squad's own leader."""
+    if user.role == ADMIN:
+        return True
+    if user.role == TRIBE:
+        return squad.tribe_id == user.tribe_id
+    if user.role == SQUAD:
+        return squad.leader_user_id == user.id
+    return False
+
+
 def assert_can_manage_objectives(user: User, squad=None) -> None:
     """Objectives are set by the tribe leader (or admin), within their tribe."""
     if user.role == ADMIN:
@@ -107,10 +119,33 @@ def assert_can_manage_objectives(user: User, squad=None) -> None:
     raise HTTPException(status_code=403, detail="Les objectifs sont définis par le tribe leader de la tribe")
 
 
+def assert_can_manage_tribe_reporting(user: User, tribe_id: int | None) -> None:
+    """Initiatives + OTD are set by the tribe leader (or admin), within their tribe."""
+    if user.role == ADMIN:
+        return
+    if user.role == TRIBE and tribe_id is not None and tribe_id == user.tribe_id:
+        return
+    raise HTTPException(status_code=403,
+                        detail="Initiatives et OTD sont gérés par le tribe leader de la tribe")
+
+
 def require_org_editor(user: User = Depends(get_current_user)) -> User:
     if user.role not in (ADMIN, TRIBE):
         raise HTTPException(status_code=403, detail="L'organigramme est géré par le tribe leader")
     return user
+
+
+def require_capability(capability: str):
+    """Dependency that 403s when the caller's persona lacks a section capability.
+
+    Capabilities (persona access toggles) are managed in Admin → Personas.
+    """
+    def _dep(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> User:
+        from .personasconfig import can
+        if can(db, user, capability):
+            return user
+        raise HTTPException(status_code=403, detail="Accès non autorisé pour votre rôle")
+    return _dep
 
 
 def require_module(module: str, feature: str | None = None):

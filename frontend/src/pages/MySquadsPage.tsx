@@ -2,9 +2,10 @@ import { useEffect, useState } from "react";
 import { api, ApiError } from "../api";
 import { useI18n } from "../i18n";
 import { useAuth } from "../auth";
-import { Member, Squad, SquadDetail, Tribe, User } from "../types";
-import { ErrorBanner, Spinner, Dot, Modal } from "../components/ui";
+import { Budget, Member, Squad, SquadDetail, Tribe, User } from "../types";
+import { ErrorBanner, Spinner, Dot, Modal, EmptyState } from "../components/ui";
 import { useSetPageChrome } from "../components/pageChrome";
+import { useModule } from "../config";
 
 const RAGS: Array<"green" | "amber" | "red"> = ["green", "amber", "red"];
 
@@ -54,7 +55,7 @@ function TribeLeaderSquads() {
       {error && <ErrorBanner message={error} />}
       <div className="muted small">{t("mysquads.intro")}</div>
 
-      {squads.length === 0 && <div className="card muted">{t("mysquads.empty")}</div>}
+      {squads.length === 0 && <EmptyState message={t("mysquads.empty")} />}
       <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 16 }}>
         {squads.map((s) => (
           <SquadCard key={s.id} squadId={s.id} leaders={leaders} onChanged={load} onError={setError} />
@@ -94,6 +95,7 @@ function SquadCard({ squadId, leaders, onChanged, onError }: {
     catch (e) { onError(e instanceof ApiError ? e.message : "Erreur"); }
   }
   useEffect(() => { load(); }, [squadId]);
+  const kpisOn = useModule()("squad_content", "kpis");
   if (!d) return <div className="card spinner">{t("common.loading")}</div>;
 
   const counts = ragCounts(d.objectives);
@@ -105,12 +107,14 @@ function SquadCard({ squadId, leaders, onChanged, onError }: {
         <button className="btn-secondary btn-sm" onClick={() => setEdit(true)}>✎ {t("action.edit")}</button>
       </div>
 
-      <div className="small muted">{t("squad.squad_leader")} : <span className="strong">{d.leader?.display_name || "—"}</span></div>
+      <div className="small muted">{t("squad.squad_leader")} : <span className="strong">{d.leader?.display_name || "-"}</span></div>
 
       <div className="inline" style={{ gap: 8, flexWrap: "wrap" }}>
-        <span className={`badge ${d.kpis_enabled ? "badge-green" : "badge-grey"}`}>
-          {d.kpis_enabled ? t("mysquads.kpis_on") : t("mysquads.kpis_off")}
-        </span>
+        {kpisOn && (
+          <span className={`badge ${d.kpis_enabled ? "badge-green" : "badge-grey"}`}>
+            {d.kpis_enabled ? t("mysquads.kpis_on") : t("mysquads.kpis_off")}
+          </span>
+        )}
         <span className="badge badge-navy">{t("mysquads.n_objectives", { n: d.objectives.length })}</span>
         {counts.red > 0 && <span className="inline small" style={{ gap: 3 }}><Dot status="red" />{counts.red}</span>}
         {counts.amber > 0 && <span className="inline small" style={{ gap: 3 }}><Dot status="amber" />{counts.amber}</span>}
@@ -144,6 +148,7 @@ function EditSquadModal({ detail, leaders, onClose, onError }: {
   detail: SquadDetail; leaders: User[]; onClose: () => void; onError: (m: string) => void;
 }) {
   const { t, rag } = useI18n();
+  const kpisOn = useModule()("squad_content", "kpis");
   const [d, setD] = useState<SquadDetail>(detail);
   const [newObj, setNewObj] = useState("");
 
@@ -155,11 +160,11 @@ function EditSquadModal({ detail, leaders, onClose, onError }: {
     try { await fn(); await reload(); } catch (e) { onError(e instanceof ApiError ? e.message : "Erreur"); }
   }
   const patch = (p: any) => run(() => api.put(`/api/squads/${d.id}`, p));
-  const addObj = () => { if (newObj.trim()) run(async () => { await api.post("/api/objectives", { squad_id: d.id, year: d.year, title: newObj.trim(), rag_status: "green" }); setNewObj(""); }); };
+  const addObj = () => { if (newObj.trim()) run(async () => { await api.post("/api/objectives", { squad_id: d.id, year: d.year, title: newObj.trim() }); setNewObj(""); }); };
 
   return (
     <Modal
-      title={`${t("action.edit")} — ${d.name}`}
+      title={`${t("action.edit")} - ${d.name}`}
       onClose={onClose}
       footer={
         <>
@@ -179,33 +184,64 @@ function EditSquadModal({ detail, leaders, onClose, onError }: {
           <div style={{ flex: 1, minWidth: 160 }}>
             <label>{t("admin.responsible")}</label>
             <select value={d.leader_user_id ?? ""} onChange={(e) => patch({ leader_user_id: e.target.value ? Number(e.target.value) : null })}>
-              <option value="">—</option>
+              <option value="">-</option>
               {leaders.map((u) => <option key={u.id} value={u.id}>{u.display_name}</option>)}
             </select>
           </div>
+          <div style={{ flex: 1, minWidth: 160 }}>
+            <label>{t("squad.type")}</label>
+            <SquadTypeField value={d.squad_type ?? "product"} onChange={(v) => patch({ squad_type: v })} t={t} />
+          </div>
         </div>
 
-        <label className="switch">
-          <input type="checkbox" checked={!!d.kpis_enabled} onChange={(e) => patch({ kpis_enabled: e.target.checked })} />
-          <span className="track"><span className="knob" /></span>
-          <span className="small">{t("admin.kpis_enabled")}</span>
-        </label>
+        <div className="row" style={{ gap: 12 }}>
+          <div style={{ flex: 1, minWidth: 200 }}>
+            <label>{t("squad.products")}</label>
+            <TagListEditor value={d.products ?? []} placeholder={t("squad.products_ph")}
+                           onChange={(v) => patch({ products: v })} />
+          </div>
+          <div style={{ flex: 1, minWidth: 200 }}>
+            <label>{t("squad.hardware")}</label>
+            <TagListEditor value={d.hardware ?? []} placeholder={t("squad.hardware_ph")}
+                           onChange={(v) => patch({ hardware: v })} />
+          </div>
+        </div>
+
+        {kpisOn && (
+          <label className="switch">
+            <input type="checkbox" checked={!!d.kpis_enabled} onChange={(e) => patch({ kpis_enabled: e.target.checked })} />
+            <span className="track"><span className="knob" /></span>
+            <span className="small">{t("admin.kpis_enabled")}</span>
+          </label>
+        )}
+
+        <div className="stack" style={{ gap: 6, borderTop: "1px solid var(--line)", paddingTop: 12 }}>
+          <div className="small strong">{t("budget.title")}</div>
+          <BudgetEditor
+            squadId={d.id} year={d.year}
+            enabled={!!d.budget_enabled} budget={d.budget}
+            canToggle onToggle={(v) => patch({ budget_enabled: v })}
+            onError={onError}
+          />
+        </div>
 
         <div>
           <div className="small muted" style={{ marginBottom: 6 }}>
-            {t("squad.objectives", { year: d.year })} — {t("admin.objectives_hint")}
+            {t("squad.objectives", { year: d.year })} - {t("admin.objectives_hint")}
           </div>
           {d.objectives.length === 0 && <div className="small muted">{t("squad.no_obj")}</div>}
           {d.objectives.map((o) => (
             <div key={o.id} className="item-row" style={{ gap: 8 }}>
               <Dot status={o.rag_status} />
               <input style={{ flex: 1 }} defaultValue={o.title} onBlur={(e) => e.target.value !== o.title && run(() => api.put(`/api/objectives/${o.id}`, { title: e.target.value }))} />
-              <select className="w-auto" value={o.rag_status} onChange={(e) => run(() => api.put(`/api/objectives/${o.id}`, { rag_status: e.target.value }))}>
-                {RAGS.map((r) => <option key={r} value={r}>{rag(r)}</option>)}
-              </select>
-              <button className="btn-ghost btn-sm" onClick={() => run(() => api.del(`/api/objectives/${o.id}`))}>✕</button>
+              <span className="small muted" style={{ minWidth: 56 }}>{rag(o.rag_status)}</span>
+              <input type="date" className="w-auto" style={{ maxWidth: 150 }} title={t("obj.deadline")}
+                     value={o.target_date ? o.target_date.slice(0, 10) : ""}
+                     onChange={(e) => run(() => api.put(`/api/objectives/${o.id}`, { target_date: e.target.value || null }))} />
+              <button className="btn-ghost btn-sm" aria-label={t("action.delete")} onClick={() => run(() => api.del(`/api/objectives/${o.id}`))}>✕</button>
             </div>
           ))}
+          <div className="small muted" style={{ marginTop: 2 }}>{t("obj.status_auto")}</div>
           <div className="inline" style={{ gap: 8, marginTop: 8 }}>
             <input style={{ flex: 1 }} placeholder={t("admin.new_objective")} value={newObj}
                    onChange={(e) => setNewObj(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addObj()} />
@@ -222,7 +258,8 @@ function CreateSquadModal({ isAdmin, tribes, leaders, defaultTribeId, onClose, o
   onClose: () => void; onCreated: () => void; onError: (m: string) => void;
 }) {
   const { t } = useI18n();
-  const [form, setForm] = useState({ name: "", leader_user_id: "", tribe_id: isAdmin ? "" : String(defaultTribeId ?? "") });
+  const [form, setForm] = useState<{ name: string; leader_user_id: string; tribe_id: string; products: string[]; hardware: string[] }>(
+    { name: "", leader_user_id: "", tribe_id: isAdmin ? "" : String(defaultTribeId ?? ""), products: [], hardware: [] });
 
   async function create() {
     try {
@@ -230,6 +267,8 @@ function CreateSquadModal({ isAdmin, tribes, leaders, defaultTribeId, onClose, o
         name: form.name.trim(),
         tribe_id: form.tribe_id ? Number(form.tribe_id) : (isAdmin ? null : defaultTribeId),
         leader_user_id: form.leader_user_id ? Number(form.leader_user_id) : null,
+        products: form.products,
+        hardware: form.hardware,
       });
       onCreated();
     } catch (e) { onError(e instanceof ApiError ? e.message : "Erreur"); }
@@ -255,7 +294,7 @@ function CreateSquadModal({ isAdmin, tribes, leaders, defaultTribeId, onClose, o
           <div>
             <label>{t("admin.tribe")}</label>
             <select value={form.tribe_id} onChange={(e) => setForm({ ...form, tribe_id: e.target.value })}>
-              <option value="">—</option>
+              <option value="">-</option>
               {tribes.map((tr) => <option key={tr.id} value={tr.id}>{tr.name}</option>)}
             </select>
           </div>
@@ -263,9 +302,19 @@ function CreateSquadModal({ isAdmin, tribes, leaders, defaultTribeId, onClose, o
         <div>
           <label>{t("admin.responsible")}</label>
           <select value={form.leader_user_id} onChange={(e) => setForm({ ...form, leader_user_id: e.target.value })}>
-            <option value="">—</option>
+            <option value="">-</option>
             {leaders.map((u) => <option key={u.id} value={u.id}>{u.display_name}</option>)}
           </select>
+        </div>
+        <div>
+          <label>{t("squad.products")}</label>
+          <TagListEditor value={form.products} placeholder={t("squad.products_ph")}
+                         onChange={(v) => setForm({ ...form, products: v })} />
+        </div>
+        <div>
+          <label>{t("squad.hardware")}</label>
+          <TagListEditor value={form.hardware} placeholder={t("squad.hardware_ph")}
+                         onChange={(v) => setForm({ ...form, hardware: v })} />
         </div>
       </div>
     </Modal>
@@ -325,7 +374,7 @@ function SLSquadCard({ squadId, onError }: { squadId: number; onError: (m: strin
         <div className="strong" style={{ fontSize: 16 }}>{d.name}</div>
         <button className="btn-secondary btn-sm" onClick={() => setOpen(true)}>✎ {t("mysquad.manage_team")}</button>
       </div>
-      <span className="badge badge-navy">{t("squad.team_collapsed_hint", { n: d.members.length }).split(" — ")[0]}</span>
+      <span className="badge badge-navy">{t("squad.team_collapsed_hint", { n: d.members.length }).split(" - ")[0]}</span>
       {d.members.length === 0 && <div className="small muted">{t("squad.no_members")}</div>}
       <div className="stack" style={{ gap: 4 }}>
         {d.members.slice(0, 5).map((m) => (
@@ -361,7 +410,7 @@ function TeamModal({ detail, onClose, onError }: { detail: SquadDetail; onClose:
 
   return (
     <Modal
-      title={`${t("mysquad.manage_team")} — ${detail.name}`}
+      title={`${t("mysquad.manage_team")} - ${detail.name}`}
       onClose={onClose}
       footer={<button className="btn-sm" onClick={onClose}>{t("action.close")}</button>}
     >
@@ -369,6 +418,16 @@ function TeamModal({ detail, onClose, onError }: { detail: SquadDetail; onClose:
         <div>
           <label>{t("admin.squad")}</label>
           <input defaultValue={name} onBlur={(e) => { if (e.target.value !== name) { setName(e.target.value); run(() => api.put(`/api/squads/${detail.id}`, { name: e.target.value })); } }} />
+        </div>
+
+        <div className="stack" style={{ gap: 6, borderTop: "1px solid var(--line)", paddingTop: 12 }}>
+          <div className="small strong">{t("budget.title")}</div>
+          <BudgetEditor
+            squadId={detail.id} year={detail.year}
+            enabled={!!detail.budget_enabled} budget={detail.budget}
+            canToggle={false} onToggle={() => {}}
+            onError={onError}
+          />
         </div>
 
         <div>
@@ -388,11 +447,11 @@ function TeamModal({ detail, onClose, onError }: { detail: SquadDetail; onClose:
                 <div style={{ width: 130 }}>
                   <label className="small muted">{t("mysquad.reports_to")}</label>
                   <select className="w-auto" value={m.manager_id ?? ""} onChange={(e) => run(() => api.put(`/api/members/${m.id}`, { manager_id: e.target.value ? Number(e.target.value) : null }))}>
-                    <option value="">—</option>
+                    <option value="">-</option>
                     {managerOptions(m.id).map((mm) => <option key={mm.id} value={mm.id}>{mm.full_name}</option>)}
                   </select>
                 </div>
-                <button className="btn-ghost btn-sm" onClick={() => run(() => api.del(`/api/members/${m.id}`))}>✕</button>
+                <button className="btn-ghost btn-sm" aria-label={t("action.delete")} onClick={() => run(() => api.del(`/api/members/${m.id}`))}>✕</button>
               </div>
             ))}
           </div>
@@ -413,5 +472,146 @@ function TeamModal({ detail, onClose, onError }: { detail: SquadDetail; onClose:
         </div>
       </div>
     </Modal>
+  );
+}
+
+/** Budget management, reusable in Manage-my-squads. Tribe leaders/admins can
+ *  toggle tracking on/off (canToggle); the squad leader fills total/spent.
+ *  Saves on blur and keeps its own readout from the API response. */
+const BUDGET_BADGE: Record<string, string> = { on_track: "badge-green", at_risk: "badge-orange", over: "badge-red" };
+
+function BudgetEditor({ squadId, year, enabled, budget, canToggle, onToggle, onError }: {
+  squadId: number; year: number; enabled: boolean; budget?: Budget | null;
+  canToggle: boolean; onToggle: (v: boolean) => void; onError: (m: string) => void;
+}) {
+  const { t } = useI18n();
+  const [b, setB] = useState<Budget | null | undefined>(budget);
+  const [total, setTotal] = useState(budget?.total != null ? String(budget.total) : "");
+  const [spent, setSpent] = useState(budget?.spent != null ? String(budget.spent) : "");
+  const [forecast, setForecast] = useState(budget?.forecast != null ? String(budget.forecast) : "");
+  const [comment, setComment] = useState(budget?.comment ?? "");
+  const fmt = (n?: number | null) => (n == null ? "-" : n.toLocaleString());
+
+  // canToggle == tribe leader / admin: they own the envelope (total). A squad
+  // leader only reports spent / forecast / comment, and sees total read-only.
+  const save = async () => {
+    try {
+      const res = await api.put<Budget>(`/api/squads/${squadId}/budget?year=${year}`, {
+        total: total === "" ? null : Number(total),   // ignored server-side unless tribe/admin
+        spent: spent === "" ? null : Number(spent),
+        forecast: forecast === "" ? null : Number(forecast),
+        comment: comment.trim() || null,
+      });
+      setB(res);
+    } catch (e) { onError(e instanceof ApiError ? e.message : "Erreur"); }
+  };
+
+  return (
+    <div className="stack" style={{ gap: 8 }}>
+      {canToggle && (
+        <label className="switch">
+          <input type="checkbox" checked={enabled} onChange={(e) => onToggle(e.target.checked)} />
+          <span className="track"><span className="knob" /></span>
+          <span className="small">{t("budget.enable_label")}</span>
+        </label>
+      )}
+      {enabled ? (
+        <>
+          <div className="small muted">{t("budget.hint")}</div>
+          <div className="row" style={{ gap: 8 }}>
+            <div style={{ flex: 1, minWidth: 100 }}>
+              <label className="small muted">{t("budget.total")}</label>
+              {canToggle
+                ? <input type="number" value={total} onChange={(e) => setTotal(e.target.value)} onBlur={save} />
+                : <input type="number" value={total} disabled title={t("budget.total_locked")} />}
+            </div>
+            <div style={{ flex: 1, minWidth: 100 }}>
+              <label className="small muted" title={t("budget.spent_hint")}>{t("budget.spent")}</label>
+              <input type="number" value={spent} onChange={(e) => setSpent(e.target.value)} onBlur={save} />
+            </div>
+            <div style={{ flex: 1, minWidth: 100 }}>
+              <label className="small muted" title={t("budget.forecast_hint")}>{t("budget.forecast")}</label>
+              <input type="number" value={forecast} onChange={(e) => setForecast(e.target.value)} onBlur={save} />
+            </div>
+          </div>
+          <label className="small muted">{t("budget.comment")}
+            <textarea rows={2} value={comment} onChange={(e) => setComment(e.target.value)} onBlur={save} />
+          </label>
+          {b && (b.total != null && (b.spent != null || b.forecast != null)) && (
+            <span className={`badge ${BUDGET_BADGE[b.status] ?? "badge-grey"}`}>
+              {t(`budget.status.${b.status}`)}
+              {b.status === "over" && ` ${t("budget.overrun_val", { amount: fmt(b.overrun), pct: b.overrun_pct })}`}
+            </span>
+          )}
+        </>
+      ) : (
+        !canToggle && <div className="small muted">{t("budget.disabled")}</div>
+      )}
+    </div>
+  );
+}
+
+/** Edit a list of names (products / hardware) as removable chips + an add input. */
+function TagListEditor({ value, onChange, placeholder }: {
+  value: string[]; onChange: (v: string[]) => void; placeholder?: string;
+}) {
+  const { t } = useI18n();
+  const [text, setText] = useState("");
+  const add = () => {
+    const v = text.trim();
+    if (v && !value.includes(v)) onChange([...value, v]);
+    setText("");
+  };
+  return (
+    <div className="stack" style={{ gap: 6 }}>
+      {value.length > 0 && (
+        <div className="inline" style={{ gap: 6, flexWrap: "wrap" }}>
+          {value.map((p) => (
+            <span key={p} className="badge badge-navy" style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
+              {p}
+              <button className="btn-ghost btn-sm" style={{ padding: "0 3px", lineHeight: 1 }}
+                      aria-label={t("action.delete")} onClick={() => onChange(value.filter((x) => x !== p))}>×</button>
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="inline" style={{ gap: 6 }}>
+        <input style={{ flex: 1 }} value={text} placeholder={placeholder}
+               onChange={(e) => setText(e.target.value)}
+               onKeyDown={(e) => { if (e.key === "Enter" || e.key === ",") { e.preventDefault(); add(); } }} />
+        <button className="btn-secondary btn-sm" onClick={add} disabled={!text.trim()}>{t("action.add")}</button>
+      </div>
+    </div>
+  );
+}
+
+const KNOWN_SQUAD_TYPES = ["product", "transverse"];
+
+/** Squad type picker: the built-in types, plus a "custom…" option that lets you
+ *  define a new type key - the model is open-ended (future-proofing). */
+function SquadTypeField({ value, onChange, t }: { value: string; onChange: (v: string) => void; t: any }) {
+  const [custom, setCustom] = useState(!!value && !KNOWN_SQUAD_TYPES.includes(value));
+  return (
+    <div className="stack" style={{ gap: 6 }}>
+      <select
+        value={custom ? "__custom" : value || "product"}
+        onChange={(e) => {
+          if (e.target.value === "__custom") setCustom(true);
+          else { setCustom(false); onChange(e.target.value); }
+        }}
+      >
+        <option value="product">{t("squad.type_product")}</option>
+        <option value="transverse">{t("squad.type_transverse")}</option>
+        <option value="__custom">{t("squad.type_custom")}</option>
+      </select>
+      {custom && (
+        <input
+          autoFocus
+          defaultValue={KNOWN_SQUAD_TYPES.includes(value) ? "" : value}
+          placeholder={t("squad.type_custom_ph")}
+          onBlur={(e) => { const v = e.target.value.trim(); if (v) onChange(v); }}
+        />
+      )}
+    </div>
   );
 }

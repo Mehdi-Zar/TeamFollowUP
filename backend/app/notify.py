@@ -19,7 +19,7 @@ def _emit(db: Session, smtp: dict, mods: dict, user: User, kind: str, actor: str
         db.add(Notification(user_id=user.id, kind=kind, actor_name=actor, excerpt=excerpt, link=link))
     email_on = is_active(mods, "notifications", "email")
     if email_on and user.email_notifications and user.email and smtp.get("enabled"):
-        body = f"{actor} — {excerpt}\n\nOuvrir : (votre instance Tribe Cockpit){link}"
+        body = f"{actor} - {excerpt}\n\nOuvrir : (votre instance Tribe Cockpit){link}"
         send_async(smtp, user.email, subject, body)
 
 
@@ -34,7 +34,7 @@ def notify_new_post(db: Session, post: FeedPost) -> None:
     if post.tribe_id is not None:
         q = q.where(User.tribe_id == post.tribe_id)
     for user in db.scalars(q).all():
-        _emit(db, smtp, mods, user, "tweet", actor, excerpt, "/fil", f"Nouveau message — {actor}")
+        _emit(db, smtp, mods, user, "tweet", actor, excerpt, "/fil", f"Nouveau message - {actor}")
 
 
 def notify_reply(db: Session, post: FeedPost, reply: FeedReply) -> None:
@@ -48,4 +48,4 @@ def notify_reply(db: Session, post: FeedPost, reply: FeedReply) -> None:
         return
     smtp = get_smtp(db)
     actor = reply.author.display_name if reply.author else "Quelqu'un"
-    _emit(db, smtp, mods, target, "reply", actor, _excerpt(reply.content), "/fil", f"Réponse à votre message — {actor}")
+    _emit(db, smtp, mods, target, "reply", actor, _excerpt(reply.content), "/fil", f"Réponse à votre message - {actor}")

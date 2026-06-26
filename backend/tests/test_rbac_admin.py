@@ -175,9 +175,13 @@ def test_stop_without_impersonation_fails(client, seeded):
     assert client.post("/api/auth/stop-impersonation").status_code == 400
 
 
-def test_review_readable_by_everyone_scoped(client, seeded):
-    # Members can now read the review (COPIL prep), scoped to their tribe.
+def test_review_restricted_to_configured_roles_scoped(client, seeded):
+    # The review tab is gated by the persona 'review' capability (default: tribe_leader).
+    # A member lacks it → 403.
     login(client, seeded["member"])  # tribe 1
+    assert client.get("/api/progress/review").status_code == 403
+    # A tribe leader is allowed, scoped to their own tribe.
+    login(client, seeded["tribe"])  # tribe 1
     r = client.get("/api/progress/review")
     assert r.status_code == 200
     assert all(row["tribe_id"] == seeded["t1"] for row in r.json())

@@ -1,4 +1,4 @@
-"""Idempotent demo seed — rich, fully-populated dataset to exercise every feature:
+"""Idempotent demo seed - rich, fully-populated dataset to exercise every feature:
 9 squads across 2 tribes, annual objectives (with target dates), a quarterly
 roadmap with fully-filled milestones, quarter progress + comments, KPIs with
 values/targets/comments, squad members (with manager hierarchy), an editable org
@@ -134,7 +134,7 @@ def run_seed(db: Session) -> None:
         for i, (name, role_title, user_id) in enumerate(people):
             db.add(Member(squad_id=s.id, full_name=name, role_title=role_title, user_id=user_id, display_order=i))
 
-    # ============================ AWS — sain ============================
+    # ============================ AWS - sain ============================
     obj(aws, "Optimiser le coût de la facture AWS", "green", 2,
         desc="Réduire de 15% la facture mensuelle via FinOps et instances réservées.", q=2)
     obj(aws, "Migrer 80% des charges vers du managé", "green", 1,
@@ -173,7 +173,7 @@ def run_seed(db: Session) -> None:
     members(aws, [("Léo Martin", "Squad leader", leaders["aws"].id),
                   ("Hugo Renaud", "Ingénieur cloud", hugo.id), ("Camille Roux", "SRE", None)])
 
-    # ============================ GCP — rouge ============================
+    # ============================ GCP - rouge ============================
     obj(gcp, "Mettre en place le data lake GCP", "amber", 2,
         desc="Socle d'ingestion temps réel vers BigQuery pour le décisionnel.", q=2)
     obj(gcp, "Industrialiser l'IaC GCP", "red", 1,
@@ -188,7 +188,7 @@ def run_seed(db: Session) -> None:
         desc="Pipeline d'ingestion temps réel des événements vers BigQuery.",
         success="Ingestion < 4h de bout en bout, 99% de complétude.",
         benefit="Données fraîches pour le reporting décisionnel.",
-        deps="Ouverture réseau vers l'amont (équipe Infra) — bloquée.",
+        deps="Ouverture réseau vers l'amont (équipe Infra) - bloquée.",
         risks="Dépendance réseau non résolue : tout le quarter est à l'arrêt.")
     jal(gcp, 2, "IAM et cloisonnement", "at_risk", 1, owner="Sara Dubois",
         desc="Cloisonnement des accès par projet GCP.",
@@ -208,7 +208,7 @@ def run_seed(db: Session) -> None:
     members(gcp, [("Sara Dubois", "Squad leader", leaders["gcp"].id),
                   ("Noah Blanc", "Data engineer", None), ("Yuki Tanaka", "Data engineer", None)])
 
-    # ============================ Azure — sain, périmé ============================
+    # ============================ Azure - sain, périmé ============================
     obj(azure, "Sécuriser les identités (Entra ID)", "green", 2,
         desc="MFA généralisé et SSO sur toutes les applications internes.", q=2)
     jal(azure, 1, "Connecteur SSO", "done", 0, owner="Inès Marchand",
@@ -229,7 +229,7 @@ def run_seed(db: Session) -> None:
     members(azure, [("Kevin Roy", "Squad leader", leaders["azure"].id),
                     ("Inès Marchand", "Ingénieure cloud", None)])
 
-    # ============================ Paiements — rouge ============================
+    # ============================ Paiements - rouge ============================
     obj(paiements, "Réduire le taux d'échec sous 1%", "red", 3,
         desc="Fiabiliser la chaîne d'autorisation pour passer sous 1% d'échec.", q=2)
     obj(paiements, "Migrer vers le nouveau PSP", "amber", 2,
@@ -256,7 +256,7 @@ def run_seed(db: Session) -> None:
     members(paiements, [("Ana Costa", "Squad leader", leaders["paiements"].id),
                         ("Marc Olivier", "Backend", None), ("Sophie Nguyen", "QA", None)])
 
-    # ============================ Onboarding — orange, sans KPI ============================
+    # ============================ Onboarding - orange, sans KPI ============================
     obj(onboarding, "Atteindre 70% de complétion KYC", "amber", 2,
         desc="Optimiser le parcours pour augmenter le taux de complétion.", q=2)
     jal(onboarding, 1, "Nouveau formulaire KYC", "done", 0, owner="Julie Lopez",
@@ -274,7 +274,7 @@ def run_seed(db: Session) -> None:
     members(onboarding, [("Tom Bernard", "Squad leader", leaders["onboarding"].id),
                          ("Julie Lopez", "Product", None)])
 
-    # ============================ Support — rouge ============================
+    # ============================ Support - rouge ============================
     obj(support, "Réduire le temps de première réponse", "amber", 2,
         desc="Passer sous 4h de délai de première réponse.", q=2)
     jal(support, 1, "Base de connaissance interne", "done", 0, owner="Sofiane Atallah",
@@ -294,7 +294,7 @@ def run_seed(db: Session) -> None:
     members(support, [("Lina Faure", "Squad leader", leaders["support"].id),
                       ("Sofiane Atallah", "Support lead", None)])
 
-    # ============================ Data Platform — sain, périmé ============================
+    # ============================ Data Platform - sain, périmé ============================
     obj(dataplat, "Fiabiliser les pipelines temps réel", "green", 2,
         desc="Refondre l'orchestration et la supervision qualité.", q=2)
     jal(dataplat, 1, "Refonte orchestrateur", "done", 0, owner="Chloé Mercier",
@@ -312,7 +312,7 @@ def run_seed(db: Session) -> None:
     members(dataplat, [("Yanis Petit", "Squad leader", leaders["dataplat"].id),
                        ("Chloé Mercier", "Data engineer", None)])
 
-    # ============================ Analytics — orange ============================
+    # ============================ Analytics - orange ============================
     obj(analytics, "Livrer le datamart finance", "amber", 2,
         desc="Datamart finance v1 et adoption par les équipes métier.", q=2)
     jal(analytics, 1, "Modèle de données", "done", 0, owner="Adam Schmitt",
@@ -331,7 +331,7 @@ def run_seed(db: Session) -> None:
     members(analytics, [("Emma Girard", "Squad leader", leaders["analytics"].id),
                         ("Adam Schmitt", "Analyste", None)])
 
-    # ============================ Sécurité — orange ============================
+    # ============================ Sécurité - orange ============================
     obj(secu, "Fermer les vulnérabilités critiques", "amber", 2,
         desc="Aucune vulnérabilité critique ouverte en fin de trimestre.", q=2)
     obj(secu, "Industrialiser le pentest", "amber", 1,

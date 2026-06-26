@@ -1,9 +1,9 @@
-import { ReactNode, useLayoutEffect, useRef, useState } from "react";
+import { ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Freshness, QuarterHealth, Rag } from "../types";
 import { badgeClass, dotClass, qhToRag, ragClass } from "../labels";
 import { useI18n } from "../i18n";
 
-/** Scales its content down (never up) so it always fits the available space —
+/** Scales its content down (never up) so it always fits the available space -
  *  keeps the org chart readable on one page without scrollbars. With fitHeight
  *  it fits BOTH width and height of its container (for a fullscreen view). */
 export function FitScale({ children, fitHeight }: { children: ReactNode; fitHeight?: boolean }) {
@@ -49,20 +49,34 @@ export function FitScale({ children, fitHeight }: { children: ReactNode; fitHeig
   );
 }
 
-export function Dot({ status }: { status: Rag }) {
-  return <span className={`dot ${dotClass(status)}`} aria-hidden />;
+export function Dot({ status, decorative }: { status: Rag; decorative?: boolean }) {
+  const { rag } = useI18n();
+  // Status conveyed by colour needs a text alternative (colour-blind + SR), unless
+  // an adjacent text label already says it (decorative → hidden from the a11y tree).
+  if (decorative) return <span className={`dot ${dotClass(status)}`} aria-hidden />;
+  return <span className={`dot ${dotClass(status)}`} role="img" aria-label={rag(status)} title={rag(status)} />;
 }
 
 /** Centered modal dialog with an overlay. */
 export function Modal({ title, onClose, children, footer, width = 560 }: {
   title: ReactNode; onClose: () => void; children: ReactNode; footer?: ReactNode; width?: number;
 }) {
+  const { t } = useI18n();
+  const cardRef = useRef<HTMLDivElement>(null);
+  // Close on Escape and move focus into the dialog when it opens.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    cardRef.current?.focus();
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-card" style={{ maxWidth: width }} onClick={(e) => e.stopPropagation()}>
+      <div ref={cardRef} className="modal-card" role="dialog" aria-modal="true" tabIndex={-1}
+           style={{ maxWidth: `min(${width}px, calc(100vw - 32px))` }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <h3 style={{ margin: 0 }}>{title}</h3>
-          <button className="btn-ghost btn-sm" onClick={onClose} aria-label="close">✕</button>
+          <button className="btn-ghost btn-sm" onClick={onClose} aria-label={t("action.close")}>✕</button>
         </div>
         <div className="modal-body">{children}</div>
         {footer && <div className="modal-foot">{footer}</div>}
@@ -90,8 +104,12 @@ export function Collapsible({
     <div className="card collapsible">
       <div
         className="between collapsible-head"
+        role="button"
+        tabIndex={0}
+        aria-expanded={open}
         style={{ cursor: "pointer", alignItems: "center", gap: 10 }}
         onClick={() => setOpen((o) => !o)}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpen((o) => !o); } }}
       >
         <div className="inline" style={{ gap: 10, alignItems: "center" }}>
           <span className="collapsible-caret" style={{ transition: "transform .15s", transform: open ? "rotate(90deg)" : "none", color: "var(--accent)" }}>▸</span>
@@ -111,7 +129,7 @@ export function StatusBadge({ status }: { status: Rag }) {
   const { rag } = useI18n();
   return (
     <span className={`badge ${badgeClass(status)}`}>
-      <Dot status={status} />
+      <Dot status={status} decorative />
       {rag(status)}
     </span>
   );
@@ -178,9 +196,14 @@ export function QuarterBars({ progress, currentQuarter }: { progress: Record<str
 
 export function Spinner({ label }: { label?: string }) {
   const { t } = useI18n();
-  return <div className="spinner">{label ?? t("common.loading")}</div>;
+  return <div className="spinner" role="status" aria-live="polite">{label ?? t("common.loading")}</div>;
 }
 
 export function ErrorBanner({ message }: { message: string }) {
-  return <div className="banner banner-red">{message}</div>;
+  return <div className="banner banner-red" role="alert">{message}</div>;
+}
+
+/** Shared friendly empty-state card (replaces ad-hoc `.card muted` blocks). */
+export function EmptyState({ message }: { message: ReactNode }) {
+  return <div className="card muted" style={{ textAlign: "center", padding: 28 }}>{message}</div>;
 }

@@ -5,13 +5,14 @@ from sqlalchemy.orm import Session
 from .. import status as st
 from ..database import get_db
 from ..deps import (ADMIN, assert_tribe_scope, get_current_user, record_audit,
-                    require_module, require_org_editor, visible_tribe_id)
+                    require_capability, require_module, require_org_editor, visible_tribe_id)
 from ..models import OrgNode, Squad, Tribe, User
 from ..schemas import OrgNodeCreate, OrgNodeTree, OrgNodeUpdate
 from ..serializers import build_org_tree
 
 router = APIRouter(prefix="/api/org", tags=["org"],
-                   dependencies=[Depends(require_module("org"))])
+                   dependencies=[Depends(require_module("org")),
+                                 Depends(require_capability("org"))])
 
 
 def _squad_status_map(db: Session) -> dict[int, str]:

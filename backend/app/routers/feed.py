@@ -7,7 +7,8 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import or_
 
 from ..database import get_db
-from ..deps import get_current_user, record_audit, require_module, require_writer, visible_tribe_id
+from ..deps import (get_current_user, record_audit, require_capability, require_module,
+                    require_writer, visible_tribe_id)
 from ..generalconfig import get_general
 from ..models import FeedPost, FeedReaction, FeedReply, Squad, User
 from ..notify import notify_new_post, notify_reply
@@ -22,7 +23,8 @@ from ..schemas import (
 )
 
 router = APIRouter(prefix="/api/feed", tags=["feed"],
-                   dependencies=[Depends(require_module("feed"))])
+                   dependencies=[Depends(require_module("feed")),
+                                 Depends(require_capability("feed"))])
 
 ADMIN_TRIBE = ("admin", "tribe_leader")
 

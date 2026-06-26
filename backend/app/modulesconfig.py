@@ -21,7 +21,7 @@ def _defaults() -> dict:
         "reporting": {"enabled": True},
         "feed": {"enabled": True, "reactions": True, "replies": True, "pin": True, "kinds": True},
         "review": {"enabled": True, "notes": True, "weekly_report": True},
-        "squad_content": {"enabled": True, "objectives": True, "roadmap": True, "kpis": True},
+        "squad_content": {"enabled": True, "objectives": True, "roadmap": True, "kpis": False},
         "notifications": {"enabled": True, "inapp": True, "email": True},
         "exports_csv": {"enabled": True},
         "getting_started": {"enabled": True},

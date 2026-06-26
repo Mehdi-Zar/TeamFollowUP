@@ -11,10 +11,13 @@ state snapshot used to compute human-readable `changes` vs the previous point.
 """
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger("trt.progress")
 
 from . import status as st
 from .models import ProgressUpdate, Squad, User, utcnow
@@ -41,7 +44,7 @@ def compute_state(squad: Squad, year: int) -> dict:
         },
         "quarters": {str(q): {"pct": progress[q], "comment": comments[q]} for q in (1, 2, 3, 4)},
         "objectives": {
-            str(o.id): {"title": o.title, "rag": o.rag_status}
+            str(o.id): {"title": o.title, "rag": st.objective_status(o, squad)}
             for o in squad.objectives if o.year == year
         },
         "kpis": {
@@ -171,7 +174,8 @@ def capture_progress(db: Session, squad_id: int, year: int, user: User | None,
         if squad is not None:
             record_progress(db, squad, year, user, kind=kind, note=note, confidence=confidence)
     except Exception:
-        pass
+        # Never let progress capture break the main write, but don't lose the signal.
+        logger.exception("capture_progress failed for squad_id=%s year=%s", squad_id, year)
 
 
 def ensure_weekly(db: Session, now: datetime | None = None) -> int:

@@ -24,7 +24,7 @@ export default function PrintDashboardPage() {
 
   return (
     <div style={{ maxWidth: 900, margin: "0 auto", padding: 32 }}>
-      <ReportHeader title={`${t("dash.title")} — ${data.year}`} />
+      <ReportHeader title={`${t("dash.title")} - ${data.year}`} />
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 16, textAlign: "center" }}>
         <Stat label={t("dash.kpi.squads")} value={s.squads_total} />

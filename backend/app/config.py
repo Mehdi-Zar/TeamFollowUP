@@ -10,6 +10,15 @@ class Settings(BaseSettings):
     secret_key: str = "change-me-in-prod-please-32chars-min-secret"
     session_cookie: str = "trt_session"
     session_max_age_seconds: int = 60 * 60 * 12  # 12h
+    # Session cookie hardening - set COOKIE_SECURE=true behind TLS in production.
+    cookie_secure: bool = False
+    cookie_samesite: str = "lax"  # lax | strict | none
+
+    # --- Hardening / retention ---
+    login_max_attempts: int = 10        # per IP per window (0 = disabled)
+    login_window_seconds: int = 300     # 5 min
+    audit_retention_days: int = 0       # 0 = keep forever
+    progress_retention_days: int = 0    # 0 = keep forever
 
     # --- Database ---
     postgres_host: str = "db"

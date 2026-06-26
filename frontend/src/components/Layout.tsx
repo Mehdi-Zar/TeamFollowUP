@@ -4,9 +4,10 @@ import { api } from "../api";
 import { useAuth } from "../auth";
 import { useI18n } from "../i18n";
 import { useConfig, moduleOn } from "../config";
-import { ModuleKey, Role } from "../types";
-import { canSeeAdmin, canSeeSaisie, isGlobalAdmin } from "../perms";
+import { Capability, ModuleKey, Role } from "../types";
+import { canSeeAdmin, isGlobalAdmin } from "../perms";
 import NotificationBell from "./NotificationBell";
+import CommandPalette from "./CommandPalette";
 import { Modal } from "./ui";
 import { usePageChrome } from "./pageChrome";
 import {
@@ -31,31 +32,29 @@ type NavItem = {
   visible: (role: Role) => boolean;
   /** When set, the entry is hidden if that module is disabled in the admin. */
   module?: ModuleKey;
+  /** Optional sub-feature of `module` (e.g. squad_content → roadmap). */
+  feature?: string;
+  /** When set, the entry needs that persona capability (Admin → Personas). */
+  cap?: Capability;
 };
 
 const NAV: NavItem[] = [
   { to: "/prise-en-main", labelKey: "nav.gettingstarted", titleKey: "gs.title", Icon: IconHelp, visible: () => true, module: "getting_started" },
-  { to: "/", end: true, labelKey: "nav.dashboard", titleKey: "nav.dashboard", Icon: IconDashboard, visible: () => true, module: "dashboard" },
-  { to: "/organigramme", labelKey: "nav.org", titleKey: "nav.org", Icon: IconOrg, visible: () => true, module: "org" },
+  { to: "/", end: true, labelKey: "nav.dashboard", titleKey: "nav.dashboard", Icon: IconDashboard, visible: () => true, module: "dashboard", cap: "dashboard" },
+  { to: "/roadmap", labelKey: "nav.roadmap", titleKey: "nav.roadmap", Icon: IconEntry, visible: () => true, module: "squad_content", feature: "roadmap", cap: "roadmap" },
+  { to: "/organigramme", labelKey: "nav.org", titleKey: "nav.org", Icon: IconOrg, visible: () => true, module: "org", cap: "org" },
   { to: "/tribus", labelKey: "nav.tribes", titleKey: "nav.tribes", Icon: IconTribes, visible: isGlobalAdmin },
-  { to: "/saisie", labelKey: "nav.entry", titleKey: "nav.entry", Icon: IconEntry, visible: canSeeSaisie, module: "reporting" },
-  { to: "/fil", labelKey: "nav.feed", titleKey: "nav.feed", Icon: IconFeed, visible: () => true, module: "feed" },
-  { to: "/revue", labelKey: "nav.review", titleKey: "review.title", Icon: IconReview, visible: () => true, module: "review" },
-  { to: "/mes-squads", labelKey: "nav.mysquads", titleKey: "mysquads.title", Icon: IconTribes, visible: (r) => r === "tribe_leader" || r === "squad_leader" },
+  { to: "/saisie", labelKey: "nav.entry", titleKey: "nav.entry", Icon: IconEntry, visible: () => true, module: "reporting", cap: "reporting" },
+  { to: "/fil", labelKey: "nav.feed", titleKey: "nav.feed", Icon: IconFeed, visible: () => true, module: "feed", cap: "feed" },
+  { to: "/revue", labelKey: "nav.review", titleKey: "review.title", Icon: IconReview, visible: () => true, module: "review", cap: "review" },
+  { to: "/mes-squads", labelKey: "nav.mysquads", titleKey: "mysquads.title", Icon: IconTribes, visible: () => true, cap: "mysquads" },
   { to: "/admin", labelKey: "nav.admin", titleKey: "nav.admin", Icon: IconAdmin, visible: canSeeAdmin },
 ];
 
 const COLLAPSE_KEY = "sidebar.collapsed";
 
-const whiteSelect: React.CSSProperties = {
-  width: "auto",
-  background: "rgba(255,255,255,.12)",
-  color: "#fff",
-  border: "1px solid rgba(255,255,255,.25)",
-};
-
 export default function Layout() {
-  const { user, logout, effectiveRole, isPreview, impersonate, stopImpersonation } = useAuth();
+  const { user, logout, effectiveRole, isPreview, impersonate, stopImpersonation, can } = useAuth();
   const { t, role: roleLabel, lang, setLang } = useI18n();
   const { app_name, modules } = useConfig();
   const [people, setPeople] = useState<{ id: number; display_name: string; role: string }[]>([]);
@@ -74,13 +73,19 @@ export default function Layout() {
     if (user) localStorage.setItem(`gs_welcomed_${user.id}`, "1");
     setWelcome(false);
   }
-  const navVisible = (n: NavItem) => n.visible(role) && (!n.module || moduleOn(modules, n.module));
+  const navVisible = (n: NavItem) =>
+    n.visible(role) &&
+    (!n.module || moduleOn(modules, n.module, n.feature)) &&
+    (!n.cap || can(n.cap));
   const navigate = useNavigate();
   const location = useLocation();
   const chrome = usePageChrome();
   const role = (effectiveRole ?? "member") as Role;
 
   const [collapsed, setCollapsed] = useState<boolean>(() => localStorage.getItem(COLLAPSE_KEY) === "1");
+  const [mobileOpen, setMobileOpen] = useState(false);
+  // Close the mobile drawer whenever the route changes.
+  useEffect(() => { setMobileOpen(false); }, [location.pathname]);
   function toggleCollapsed() {
     setCollapsed((c) => {
       const next = !c;
@@ -105,8 +110,9 @@ export default function Layout() {
       : app_name);
 
   return (
-    <div className={`app-shell${collapsed ? " collapsed" : ""}`}>
-      <aside className="sidebar no-print">
+    <div className={`app-shell${collapsed ? " collapsed" : ""}${mobileOpen ? " mobile-open" : ""}`}>
+      {mobileOpen && <div className="sidebar-overlay no-print" onClick={() => setMobileOpen(false)} />}
+      <aside className={`sidebar no-print${mobileOpen ? " mobile-open" : ""}`}>
         <div className="sidebar-brand" onClick={() => navigate("/")} title={app_name}>
           <span className="sidebar-logo">{app_name.slice(0, 1).toUpperCase()}</span>
           {!collapsed && <span className="sidebar-brand-text">{app_name}</span>}
@@ -120,6 +126,7 @@ export default function Layout() {
               end={end}
               className={({ isActive }) => `sidebar-link${isActive ? " active" : ""}`}
               title={collapsed ? t(labelKey) : undefined}
+              onClick={() => setMobileOpen(false)}
             >
               <Icon size={19} />
               {!collapsed && <span className="sidebar-link-text">{t(labelKey)}</span>}
@@ -136,6 +143,7 @@ export default function Layout() {
       <div className="app-main">
         <header className="topbar no-print">
           <div className="topbar-row">
+            <button className="topbar-hamburger" aria-label={t("nav.menu")} onClick={() => setMobileOpen(true)}>☰</button>
             <h1 className="topbar-title">{pageTitle}</h1>
 
             <div className="topbar-actions">
@@ -152,7 +160,7 @@ export default function Layout() {
                       .filter((p) => p.id !== user?.id)
                       .map((p) => (
                         <option key={p.id} value={p.id}>
-                          {p.display_name} — {roleLabel(p.role as Role)}
+                          {p.display_name} - {roleLabel(p.role as Role)}
                         </option>
                       ))}
                   </select>
@@ -160,6 +168,11 @@ export default function Layout() {
               )}
 
               <NotificationBell />
+
+              <button className="btn-ghost btn-sm cmd-trigger" title={t("cmd.placeholder")} aria-label={t("cmd.placeholder")}
+                      onClick={() => window.dispatchEvent(new Event("cmdk:open"))}>
+                <span aria-hidden>⌕</span><kbd className="cmd-kbd">⌘K</kbd>
+              </button>
 
               <select value={lang} onChange={(e) => setLang(e.target.value as any)} className="w-auto">
                 <option value="fr">FR</option>
@@ -202,7 +215,7 @@ export default function Layout() {
           <div className="no-print preview-banner">
             <span>
               {t("preview.viewing_as")} <strong>{user?.display_name}</strong>
-              {" "}({user ? roleLabel(user.role) : ""}) — {t("preview.banner")}
+              {" "}({user ? roleLabel(user.role) : ""}) - {t("preview.banner")}
             </span>
             <button className="btn-secondary btn-sm" onClick={() => stopImpersonation()}>
               {t("preview.back")}
@@ -230,6 +243,8 @@ export default function Layout() {
           </Modal>
         )}
       </div>
+
+      <CommandPalette pages={NAV.filter(navVisible).map((n) => ({ to: n.to, label: t(n.labelKey) }))} />
     </div>
   );
 }

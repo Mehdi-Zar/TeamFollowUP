@@ -3,8 +3,8 @@ import { api, ApiError } from "../api";
 import { useAuth } from "../auth";
 import { useI18n } from "../i18n";
 import { useConfig, useModule } from "../config";
-import { Kpi, Member, Objective, Rag, RoadmapItem, RoadmapStatus, Squad, SquadDetail, Trend, Role } from "../types";
-import { Dot, FreshnessBadge, Spinner, ErrorBanner } from "../components/ui";
+import { Kpi, Member, Objective, RoadmapItem, RoadmapStatus, Squad, SquadDetail, Tribe, Trend, Role } from "../types";
+import { Dot, FreshnessBadge, Spinner, ErrorBanner, EmptyState } from "../components/ui";
 import { canEditSquad, canManageObjectives } from "../perms";
 import { useSetPageChrome } from "../components/pageChrome";
 import { roadmapRag } from "../labels";
@@ -22,6 +22,7 @@ export default function EntryPage() {
   const reviewNotesOn = moduleOn("review", "notes");
   const role = (effectiveRole ?? "member") as Role;
   const [squads, setSquads] = useState<Squad[]>([]);
+  const [tribes, setTribes] = useState<Tribe[]>([]);
   const [squadId, setSquadId] = useState<number | null>(null);
   const [year, setYear] = useState<number>(default_year);
   const [yearTouched, setYearTouched] = useState(false);
@@ -36,6 +37,7 @@ export default function EntryPage() {
 
   useEffect(() => {
     api.get<Squad[]>("/api/squads").then(setSquads).catch((e) => setError(e.message));
+    api.get<Tribe[]>("/api/tribes").then(setTribes).catch(() => {});
   }, []);
   useEffect(() => {
     if (editable.length && squadId === null) setSquadId(editable[0].id);
@@ -92,26 +94,13 @@ export default function EntryPage() {
   );
 
   if (error) return <ErrorBanner message={error} />;
-  if (editable.length === 0) return <div className="card muted">{t("entry.no_squad")}</div>;
+  if (editable.length === 0) return <EmptyState message={t("entry.no_squad")} />;
 
   const objAllowed = canManageObjectives(role);
-  const steps = [t("entry.gs.s1"), t("entry.gs.s2"), t("entry.gs.s3"), t("entry.gs.s4")];
 
   return (
     <div className="stack" style={{ gap: 18 }}>
-      <div className="muted small">{t("entry.subtitle")}</div>
-
-      <div className="card">
-        <h3 style={{ marginBottom: 12 }}>{t("entry.gs.title")}</h3>
-        <div className="steps">
-          {steps.map((stp, i) => (
-            <div key={i} className="step">
-              <div className="step-num">{i + 1}</div>
-              <div className="step-txt">{stp}</div>
-            </div>
-          ))}
-        </div>
-      </div>
+      <ReportIntro t={t} />
 
       {message && <div className="banner banner-green">{message}</div>}
 
@@ -123,7 +112,7 @@ export default function EntryPage() {
             <div>
               <div className="strong" style={{ fontSize: 16, color: "var(--navy)" }}>{squad.name}</div>
               <div className="small muted" style={{ marginTop: 2 }}>
-                {t("squad.squad_leader")} : <span className="strong">{squad.leader?.display_name || "—"}</span>
+                {t("squad.squad_leader")} : <span className="strong">{squad.leader?.display_name || "-"}</span>
                 {" · "}{t("entry.last_submit")} : {freshness(squad.freshness)}
               </div>
             </div>
@@ -131,10 +120,31 @@ export default function EntryPage() {
           </div>
           {!writeAllowed && <div className="banner" style={{ background: "var(--ice-soft)" }}>{t("entry.readonly")}</div>}
 
-          {roadmapOn && <RoadmapEditor squad={squad} year={year} onChange={reload} readonly={!writeAllowed} t={t} roadmap={roadmap} />}
-          {objectivesOn && <ObjectivesEditor squad={squad} year={year} onChange={reload} editable={objAllowed} t={t} rag={rag} />}
-          {kpisOn && squad.kpis_enabled && <KpisEditor squad={squad} onChange={reload} readonly={!writeAllowed} t={t} trend={trend} />}
-          {reviewNotesOn && <ProgressReviewEditor squadId={squad.id} year={year} readonly={!writeAllowed} onSaved={() => flash(t("progress.review_saved"))} t={t} />}
+          {(() => {
+            const secs = [
+              objectivesOn && { id: "sec-obj", label: t("squad.objectives", { year }), done: squad.objectives.length > 0 },
+              roadmapOn && { id: "sec-roadmap", label: t("squad.roadmap", { year }), done: squad.roadmap_items.length > 0 },
+              (kpisOn && squad.kpis_enabled) && { id: "sec-kpis", label: t("squad.kpis"), done: squad.kpis.length > 0 },
+              reviewNotesOn && { id: "sec-review", label: t("progress.title"), optional: true },
+            ].filter(Boolean) as Array<{ id: string; label: string; done?: boolean; optional?: boolean }>;
+            if (secs.length < 2) return null;
+            return (
+              <nav className="section-nav" aria-label={t("entry.sections")}>
+                {secs.map((s) => (
+                  <button key={s.id} type="button" className="section-pill"
+                          onClick={() => document.getElementById(s.id)?.scrollIntoView({ behavior: "smooth", block: "start" })}>
+                    <span className={`section-tick${s.done ? " done" : ""}${s.optional ? " opt" : ""}`}>{s.optional ? "•" : s.done ? "✓" : "○"}</span>
+                    {s.label}
+                  </button>
+                ))}
+              </nav>
+            );
+          })()}
+
+          {objectivesOn && <div id="sec-obj"><ObjectivesEditor squad={squad} year={year} onChange={reload} editable={objAllowed} t={t} rag={rag} /></div>}
+          {roadmapOn && <div id="sec-roadmap"><RoadmapEditor squad={squad} year={year} onChange={reload} readonly={!writeAllowed} t={t} roadmap={roadmap} squads={squads} tribes={tribes} /></div>}
+          {kpisOn && squad.kpis_enabled && <div id="sec-kpis"><KpisEditor squad={squad} onChange={reload} readonly={!writeAllowed} t={t} trend={trend} /></div>}
+          {reviewNotesOn && <div id="sec-review"><ProgressReviewEditor squadId={squad.id} year={year} readonly={!writeAllowed} onSaved={() => flash(t("progress.review_saved"))} t={t} /></div>}
         </>
       )}
 
@@ -190,6 +200,7 @@ function ProgressReviewEditor({ squadId, year, readonly, onSaved, t }: any) {
 }
 
 function SubmitRecap({ squad, onConfirm, onCancel, t }: any) {
+  const [busy, setBusy] = useState(false);
   const hasJalons = squad.roadmap_items.length > 0;
   const hasProgress = [1, 2, 3, 4].some((q: number) => (squad.quarter_progress[String(q)]?.progress_pct ?? 0) > 0);
   const hasKpis = !squad.kpis_enabled || squad.kpis.length > 0;
@@ -213,8 +224,10 @@ function SubmitRecap({ squad, onConfirm, onCancel, t }: any) {
           ))}
         </div>
         <div className="inline" style={{ justifyContent: "flex-end", gap: 8 }}>
-          <button className="btn-secondary" onClick={onCancel}>{t("action.cancel")}</button>
-          <button onClick={onConfirm}>{t("entry.submit_confirm")}</button>
+          <button className="btn-secondary" onClick={onCancel} disabled={busy}>{t("action.cancel")}</button>
+          <button disabled={busy} onClick={async () => { setBusy(true); try { await onConfirm(); } finally { setBusy(false); } }}>
+            {t("entry.submit_confirm")}
+          </button>
         </div>
       </div>
     </div>
@@ -235,10 +248,11 @@ function Card({ title, hint, action, children }: any) {
 }
 
 function emptyJalon(year: number, quarter: number): Partial<RoadmapItem> {
-  return { year, quarter, title: "", description: "", success_criteria: "", user_benefit: "", dependencies: "", risks: "", owner: "", status: "on_track" };
+  return { year, quarter, title: "", theme: "", release_stage: "EA", description: "", success_criteria: "", user_benefit: "", dependencies: "", dependency_kind: null, dependency_squad_id: null, dependency_tribe_id: null, risks: "", owner: "", status: "on_track", objective_id: null };
 }
 
-function RoadmapEditor({ squad, year, onChange, readonly, t, roadmap }: any) {
+function RoadmapEditor({ squad, year, onChange, readonly, t, roadmap, squads, tribes }: any) {
+  const { lang } = useI18n();
   const [editing, setEditing] = useState<Partial<RoadmapItem> | null>(null);
 
   async function save(data: Partial<RoadmapItem>) {
@@ -257,7 +271,13 @@ function RoadmapEditor({ squad, year, onChange, readonly, t, roadmap }: any) {
   }
 
   return (
-    <Card title={t("squad.roadmap", { year })} hint={t("entry.roadmap_hint")}>
+    <Card title={t("squad.roadmap", { year })} hint={t("entry.roadmap_hint")}
+          action={
+            <a className="btn btn-secondary btn-sm" download
+               href={`/api/squads/${squad.id}/roadmap.pptx?year=${year}&lang=${lang}`}>
+              {t("export.roadmap_btn")}
+            </a>
+          }>
       <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" }}>
         {[1, 2, 3, 4].map((q) => (
           <QuarterEditor
@@ -276,39 +296,37 @@ function RoadmapEditor({ squad, year, onChange, readonly, t, roadmap }: any) {
         ))}
       </div>
       {editing && (
-        <JalonModal jalon={editing} members={squad.members} onSave={save} onCancel={() => setEditing(null)} t={t} roadmap={roadmap} />
+        <JalonModal jalon={editing} members={squad.members} objectives={squad.objectives} onSave={save} onCancel={() => setEditing(null)} t={t} roadmap={roadmap} squads={squads} tribes={tribes} currentSquadId={squad.id} />
       )}
     </Card>
   );
 }
 
-function QuarterEditor({ squad, year, quarter, onChange, readonly, t, onAdd, onEdit }: any) {
-  const cell = squad.quarter_progress[String(quarter)];
-  const [pct, setPct] = useState<number>(cell?.progress_pct ?? 0);
+function QuarterEditor({ squad, quarter, readonly, t, onAdd, onEdit }: any) {
   const items = squad.roadmap_items.filter((r: RoadmapItem) => r.quarter === quarter);
-
-  useEffect(() => {
-    setPct(squad.quarter_progress[String(quarter)]?.progress_pct ?? 0);
-  }, [squad, quarter]);
-
-  async function saveProgress(value: number) {
-    await api.put(`/api/squads/${squad.id}/quarter-progress`, { year, quarter, progress_pct: value });
-    onChange();
-  }
+  // Progress is auto-derived from milestone advancement (share done), never typed.
+  const total = items.length;
+  const done = items.filter((r: RoadmapItem) => r.status === "done").length;
+  const pct = total ? Math.round((100 * done) / total) : 0;
 
   return (
     <div className="quarter-block">
       <div className="between">
         <h4>Q{quarter}</h4>
-        <span className="small muted">{pct}%</span>
+        <span className="small muted" title={t("entry.progress_auto")}>{pct}% · {done}/{total}</span>
       </div>
-      <input type="range" min={0} max={100} step={5} value={pct} disabled={readonly}
-             onChange={(e) => setPct(Number(e.target.value))} onMouseUp={() => saveProgress(pct)} onTouchEnd={() => saveProgress(pct)} style={{ padding: 0 }} />
+      <div style={{ height: 8, background: "var(--line)", borderRadius: 6, overflow: "hidden", marginBottom: 4 }} aria-label={`${pct}%`}>
+        <div style={{ width: `${pct}%`, height: "100%", background: "var(--navy)" }} />
+      </div>
       <div style={{ marginTop: 8 }}>
         {items.map((r: RoadmapItem) => (
           <div key={r.id} className="item-row" style={{ cursor: readonly ? "default" : "pointer" }} onClick={() => !readonly && onEdit(r)}>
             <Dot status={roadmapRag(r.status)} />
-            <span className="grow small">{r.title}</span>
+            <span className="grow small">
+              {r.theme ? <span className="strong" style={{ color: "#002060" }}>{r.theme} · </span> : null}
+              {r.title}
+            </span>
+            <span className="badge badge-navy" style={{ fontSize: 10 }}>{r.release_stage}</span>
             {r.owner ? <span className="small muted">{r.owner}</span> : null}
           </div>
         ))}
@@ -320,9 +338,16 @@ function QuarterEditor({ squad, year, quarter, onChange, readonly, t, onAdd, onE
   );
 }
 
-function JalonModal({ jalon, members, onSave, onCancel, t, roadmap }: any) {
+function JalonModal({ jalon, members, objectives, onSave, onCancel, t, roadmap, squads, tribes, currentSquadId }: any) {
   const [f, setF] = useState<Partial<RoadmapItem>>(jalon);
+  const [themes, setThemes] = useState<string[]>([]);
   const set = (k: string, v: any) => setF((p) => ({ ...p, [k]: v }));
+  // Existing themes for reuse: pick one from the list or type a new one.
+  useEffect(() => { api.get<string[]>("/api/roadmap-items/themes").then(setThemes).catch(() => {}); }, []);
+  // A dependency can be: free text, another squad, or a tribe.
+  const depKind: "text" | "squad" | "tribe" = (f.dependency_kind as any) || "text";
+  const setDepKind = (k: "text" | "squad" | "tribe") =>
+    setF((p) => ({ ...p, dependency_kind: k, dependency_squad_id: null, dependency_tribe_id: null, dependencies: k === "text" ? (p.dependencies ?? "") : null }));
   const field = (label: string, key: string, area = false) => (
     <div>
       <label>{label}</label>
@@ -336,9 +361,17 @@ function JalonModal({ jalon, members, onSave, onCancel, t, roadmap }: any) {
   return (
     <div className="modal-overlay" onClick={onCancel}>
       <div className="modal" style={{ maxWidth: 560, maxHeight: "85vh", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
-        <h3>{f.id ? t("jalon.edit") : t("jalon.new")} — Q{f.quarter}</h3>
+        <h3>{f.id ? t("jalon.edit") : t("jalon.new")} - Q{f.quarter}</h3>
         <div className="stack" style={{ gap: 10, marginTop: 10 }}>
           {field(t("jalon.title") + " *", "title")}
+          <div>
+            <label>{t("jalon.theme") + " *"}</label>
+            <input list="jalon-themes" placeholder={t("jalon.theme_ph")} value={f.theme ?? ""}
+                   onChange={(e) => set("theme", e.target.value)} />
+            <datalist id="jalon-themes">
+              {themes.map((th) => <option key={th} value={th} />)}
+            </datalist>
+          </div>
           <div className="row">
             <div className="col">
               <label>{t("jalon.status")}</label>
@@ -349,6 +382,15 @@ function JalonModal({ jalon, members, onSave, onCancel, t, roadmap }: any) {
               </select>
             </div>
             <div className="col">
+              <label>{t("jalon.stage")} *</label>
+              <select value={f.release_stage ?? "EA"} onChange={(e) => set("release_stage", e.target.value)}>
+                <option value="EA">EA - {t("jalon.stage_ea")}</option>
+                <option value="GA">GA - {t("jalon.stage_ga")}</option>
+              </select>
+            </div>
+          </div>
+          <div className="row">
+            <div className="col">
               <label>{t("jalon.owner")}</label>
               <input list="jalon-owners" placeholder={t("jalon.owner_ph")} value={f.owner ?? ""} onChange={(e) => set("owner", e.target.value)} />
               <datalist id="jalon-owners">
@@ -356,15 +398,52 @@ function JalonModal({ jalon, members, onSave, onCancel, t, roadmap }: any) {
               </datalist>
             </div>
           </div>
+          {objectives && objectives.length > 0 && (
+            <div>
+              <label>{t("jalon.objective")}</label>
+              <select value={f.objective_id ?? ""} onChange={(e) => set("objective_id", e.target.value ? Number(e.target.value) : null)}>
+                <option value="">{t("jalon.objective_none")}</option>
+                {objectives.map((o: Objective) => <option key={o.id} value={o.id}>{o.title}</option>)}
+              </select>
+            </div>
+          )}
           {field(t("jalon.desc"), "description", true)}
           {field(t("jalon.success"), "success_criteria", true)}
           {field(t("jalon.benefit"), "user_benefit", true)}
-          {field(t("jalon.deps"), "dependencies", true)}
+          <div>
+            <label>{t("jalon.deps")}</label>
+            <div className="row" style={{ gap: 8 }}>
+              <select className="w-auto" value={depKind} onChange={(e) => setDepKind(e.target.value as any)}>
+                <option value="squad">{t("jalon.dep_squad")}</option>
+                <option value="tribe">{t("jalon.dep_tribe")}</option>
+                <option value="text">{t("jalon.dep_text")}</option>
+              </select>
+              {depKind === "text" && (
+                <input className="grow" value={f.dependencies ?? ""} onChange={(e) => set("dependencies", e.target.value)} />
+              )}
+              {depKind === "squad" && (
+                <select className="grow" value={f.dependency_squad_id ?? ""} onChange={(e) => set("dependency_squad_id", e.target.value ? Number(e.target.value) : null)}>
+                  <option value="">-</option>
+                  {squads.filter((s: Squad) => s.id !== currentSquadId).map((s: Squad) => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
+              )}
+              {depKind === "tribe" && (
+                <select className="grow" value={f.dependency_tribe_id ?? ""} onChange={(e) => set("dependency_tribe_id", e.target.value ? Number(e.target.value) : null)}>
+                  <option value="">-</option>
+                  {tribes.map((tr: Tribe) => (
+                    <option key={tr.id} value={tr.id}>{tr.name}</option>
+                  ))}
+                </select>
+              )}
+            </div>
+          </div>
           {field(t("jalon.risks"), "risks", true)}
         </div>
         <div className="inline" style={{ justifyContent: "flex-end", gap: 8, marginTop: 14 }}>
           <button className="btn-secondary" onClick={onCancel}>{t("action.cancel")}</button>
-          <button onClick={() => onSave(f)} disabled={!f.title?.trim()}>{t("action.save")}</button>
+          <button onClick={() => onSave(f)} disabled={!f.title?.trim() || !f.theme?.trim()}>{t("action.save")}</button>
         </div>
       </div>
     </div>
@@ -375,7 +454,7 @@ function ObjectivesEditor({ squad, year, onChange, editable, t, rag }: any) {
   const [title, setTitle] = useState("");
   async function add() {
     if (!title.trim()) return;
-    await api.post("/api/objectives", { squad_id: squad.id, year, title: title.trim(), rag_status: "green" });
+    await api.post("/api/objectives", { squad_id: squad.id, year, title: title.trim() });
     setTitle("");
     onChange();
   }
@@ -391,16 +470,25 @@ function ObjectivesEditor({ squad, year, onChange, editable, t, rag }: any) {
     <Card title={t("squad.objectives", { year })} hint={editable ? t("entry.obj_hint_edit") : t("entry.obj_hint_ro")}>
       {squad.objectives.length === 0 && <div className="small muted">{t("squad.no_obj")}</div>}
       {squad.objectives.map((o: Objective) => (
-        <div key={o.id} className="item-row">
+        <div key={o.id} className="item-row" style={{ gap: 8 }}>
+          {/* Status is auto-derived from advancement - shown, never edited here. */}
+          <span className="inline" style={{ gap: 6 }} title={t("obj.status_auto")}>
+            <Dot status={o.rag_status} />
+          </span>
           {editable ? (
             <input className="grow" defaultValue={o.title} onBlur={(e) => e.target.value !== o.title && update(o, { title: e.target.value })} />
           ) : (
             <span className="grow">{o.title}</span>
           )}
-          <select className="w-auto" style={{ maxWidth: 150 }} value={o.rag_status} disabled={!editable} onChange={(e) => update(o, { rag_status: e.target.value as Rag })}>
-            {(["green", "amber", "red"] as Rag[]).map((r) => (<option key={r} value={r}>{rag(r)}</option>))}
-          </select>
-          {editable && <button className="btn-danger btn-sm" onClick={() => remove(o)}>✕</button>}
+          <span className="small muted" style={{ minWidth: 60 }}>{rag(o.rag_status)}</span>
+          {editable ? (
+            <input type="date" className="w-auto" style={{ maxWidth: 150 }} title={t("obj.deadline")}
+                   value={o.target_date ? o.target_date.slice(0, 10) : ""}
+                   onChange={(e) => update(o, { target_date: (e.target.value || null) as any })} />
+          ) : (
+            o.target_date && <span className="small muted">{o.target_date.slice(0, 10)}</span>
+          )}
+          {editable && <button className="btn-danger btn-sm" onClick={() => remove(o)} aria-label={`${t("action.delete")} - ${o.title}`}>✕</button>}
         </div>
       ))}
       {editable && (
@@ -445,7 +533,7 @@ function KpisEditor({ squad, onChange, readonly, t, trend }: any) {
               <input className="w-auto" style={{ width: 70 }} placeholder="val." disabled={readonly} defaultValue={k.current_value ?? ""} onBlur={(e) => update(k, { current_value: num(e.target.value) })} />
               <input className="w-auto" style={{ width: 70 }} placeholder="target" disabled={readonly} defaultValue={k.target_value ?? ""} onBlur={(e) => update(k, { target_value: num(e.target.value) })} />
               <input className="w-auto" style={{ width: 70 }} placeholder="unit" disabled={readonly} defaultValue={k.unit ?? ""} onBlur={(e) => e.target.value !== (k.unit ?? "") && update(k, { unit: e.target.value || null })} />
-              {!readonly && <button className="btn-danger btn-sm" onClick={() => remove(k)}>✕</button>}
+              {!readonly && <button className="btn-danger btn-sm" onClick={() => remove(k)} aria-label={`${t("action.delete")} - ${k.name}`}>✕</button>}
             </div>
           ))}
           {!readonly && (
@@ -459,3 +547,61 @@ function KpisEditor({ squad, onChange, readonly, t, trend }: any) {
   );
 }
 
+
+/* ---- Visual "how to report" intro: a hero line + a 4-step graphic flow ---- */
+const FLOW_ICONS = {
+  target: (
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="5" /><circle cx="12" cy="12" r="1.5" fill="currentColor" />
+    </svg>
+  ),
+  flag: (
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M5 21V4" /><path d="M5 4h11l-2 3 2 3H5" />
+    </svg>
+  ),
+  check: (
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="9" /><path d="M8.5 12.5l2.5 2.5 4.5-5" />
+    </svg>
+  ),
+  send: (
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M22 2L11 13" /><path d="M22 2l-7 20-4-9-9-4 20-7z" />
+    </svg>
+  ),
+};
+
+function ReportIntro({ t }: { t: any }) {
+  const flow = [
+    { key: "s1", icon: FLOW_ICONS.target, color: "#1E2761" },
+    { key: "s2", icon: FLOW_ICONS.flag, color: "#175CD3" },
+    { key: "s3", icon: FLOW_ICONS.check, color: "#027A48" },
+    { key: "s4", icon: FLOW_ICONS.send, color: "#B54708" },
+  ];
+  return (
+    <div className="report-intro">
+      <div className="report-hero">
+        <div className="report-hero-badge">{FLOW_ICONS.target}</div>
+        <div>
+          <div className="report-hero-title">{t("entry.purpose_title")}</div>
+          <div className="report-hero-text">{t("entry.purpose")}</div>
+        </div>
+      </div>
+      <div className="report-flow">
+        {flow.map((s, i) => (
+          <div key={s.key} className="flow-step">
+            <span className="flow-ico" style={{ background: s.color }}>{s.icon}</span>
+            <span className="flow-num">{i + 1}</span>
+            <div className="flow-body">
+              <div className="flow-title">{t(`entry.flow.${s.key}_t`)}</div>
+              <div className="flow-desc">{t(`entry.flow.${s.key}_d`)}</div>
+            </div>
+            {i < flow.length - 1 && <span className="flow-chevron" aria-hidden>›</span>}
+          </div>
+        ))}
+      </div>
+      <div className="report-auto"><span className="report-auto-spark">⚡</span>{t("entry.flow.auto")}</div>
+    </div>
+  );
+}

@@ -19,9 +19,9 @@ def test_member_is_read_only(client, seeded):
 
 def test_squad_leader_edits_only_own_roadmap(client, seeded):
     login(client, seeded["sl_a"])
-    ok = client.post("/api/roadmap-items", json={"squad_id": seeded["squad_a"], "year": YEAR, "quarter": 1, "title": "Mine"})
+    ok = client.post("/api/roadmap-items", json={"squad_id": seeded["squad_a"], "year": YEAR, "quarter": 1, "title": "Mine", "theme": "Landing Zones"})
     assert ok.status_code == 201, ok.text
-    ko = client.post("/api/roadmap-items", json={"squad_id": seeded["squad_b"], "year": YEAR, "quarter": 1, "title": "No"})
+    ko = client.post("/api/roadmap-items", json={"squad_id": seeded["squad_b"], "year": YEAR, "quarter": 1, "title": "No", "theme": "Landing Zones"})
     assert ko.status_code == 403
 
 

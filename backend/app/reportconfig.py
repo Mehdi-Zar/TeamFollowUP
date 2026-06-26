@@ -15,7 +15,7 @@ REPORT_KEY = "weekly_report"
 def _defaults() -> dict:
     return {
         "enabled": False,
-        # Fixed recipients (admins set these) — they receive the GLOBAL report.
+        # Fixed recipients (admins set these) - they receive the GLOBAL report.
         "recipients": [],
         # 0 = Monday … 6 = Sunday (Python weekday()).
         "weekday": 0,

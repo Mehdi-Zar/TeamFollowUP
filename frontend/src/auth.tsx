@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { api, ApiError } from "./api";
-import { AuthConfig, Role, User } from "./types";
+import { AuthConfig, Capability, Role, User } from "./types";
 
 interface AuthState {
   user: User | null;
@@ -12,6 +12,9 @@ interface AuthState {
   isPreview: boolean; // true while an admin views the app as another user
   impersonating: boolean;
   impersonatorName: string | null;
+  /** Persona section-access capabilities for the current (effective) user. */
+  capabilities: Record<string, boolean> | null;
+  can: (cap: Capability | string) => boolean;
   impersonate: (userId: number) => Promise<void>;
   stopImpersonation: () => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
@@ -27,19 +30,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [config, setConfig] = useState<AuthConfig>({ oidc_enabled: false, saml_enabled: false });
   const [impersonating, setImpersonating] = useState(false);
   const [impersonatorName, setImpersonatorName] = useState<string | null>(null);
+  const [capabilities, setCapabilities] = useState<Record<string, boolean> | null>(null);
+
+  async function loadPermissions() {
+    try {
+      const p = await api.get<any>("/api/auth/me/permissions");
+      setImpersonating(!!p.impersonating);
+      setImpersonatorName(p.impersonator_name ?? null);
+      setCapabilities(p.capabilities ?? null);
+    } catch {
+      setImpersonating(false);
+      setImpersonatorName(null);
+      setCapabilities(null);
+    }
+  }
 
   async function refresh() {
     try {
       const me = await api.get<User>("/api/auth/me");
       setUser(me);
-      try {
-        const p = await api.get<any>("/api/auth/me/permissions");
-        setImpersonating(!!p.impersonating);
-        setImpersonatorName(p.impersonator_name ?? null);
-      } catch {
-        setImpersonating(false);
-        setImpersonatorName(null);
-      }
+      await loadPermissions();
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) setUser(null);
     }
@@ -60,6 +70,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   async function login(email: string, password: string) {
     const u = await api.post<User>("/api/auth/login", { email, password });
     setUser(u);
+    await loadPermissions();
   }
 
   async function logout() {
@@ -67,7 +78,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   }
 
-  // Impersonation changes the backend session — a full reload re-initialises the
+  // Impersonation changes the backend session - a full reload re-initialises the
   // whole app (config, permissions, data) as the new session user, so the
   // simulation is faithful "all the way down". Force a reload even when already
   // on "/" (assigning the same URL would otherwise be a no-op).
@@ -85,6 +96,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const effectiveRole: Role | null = user ? user.role : null;
+  // Optimistic before load (avoid hiding the whole nav on first paint).
+  const can = (cap: Capability | string) => (capabilities ? !!capabilities[cap] : true);
 
   return (
     <AuthContext.Provider
@@ -96,6 +109,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isPreview: impersonating,
         impersonating,
         impersonatorName,
+        capabilities,
+        can,
         impersonate,
         stopImpersonation,
         login,

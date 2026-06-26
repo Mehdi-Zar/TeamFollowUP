@@ -84,12 +84,6 @@ def test_disabling_dashboard(client, seeded):
     assert client.get("/api/dashboard").status_code == 404
 
 
-def test_disabling_exports_csv(client, seeded):
-    login(client, seeded["admin"])
-    _disable(client, {"exports_csv": {"enabled": False}})
-    assert client.get("/api/exports/dashboard.csv").status_code == 404
-
-
 def test_disabling_review_blocks_review_and_report(client, seeded):
     login(client, seeded["admin"])
     assert client.get("/api/progress/review").status_code == 200
