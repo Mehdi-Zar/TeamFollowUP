@@ -28,6 +28,7 @@ from ..models import (
     SquadBudget,
     User,
 )
+from ..changenotify import notify_change
 from ..progress import capture_progress
 from ..schemas import (
     DependentItemOut,
@@ -232,6 +233,7 @@ def set_quarter_progress(squad_id: int, payload: QuarterProgressIn, db: Session 
     capture_progress(db, squad_id, payload.year, user)
     db.commit()
     db.refresh(row)
+    notify_change(squad_id, "progress", user.display_name, payload.year)
     return row
 
 
@@ -263,6 +265,7 @@ def set_squad_budget(squad_id: int, payload: SquadBudgetIn, year: int | None = Q
                  detail={"year": year, "total": float(row.total) if row.total is not None else None,
                          "spent": payload.spent, "forecast": payload.forecast})
     db.commit()
+    notify_change(squad_id, "budget", user.display_name, year)
     return budget_out(squad, year)
 
 
@@ -294,6 +297,7 @@ def create_key_message(squad_id: int, payload: KeyMessageCreate, year: int | Non
                  detail={"year": year, "kind": payload.kind})
     db.commit()
     db.refresh(km)
+    notify_change(squad_id, "key_message", user.display_name, year)
     return km
 
 
@@ -304,8 +308,10 @@ def update_key_message(squad_id: int, msg_id: int, payload: KeyMessageUpdate,
     for k, v in payload.model_dump(exclude_unset=True).items():
         setattr(km, k, v)
     record_audit(db, user.id, "key_message.update", entity="squad", entity_id=squad_id, detail={"id": msg_id})
+    km_year = km.year
     db.commit()
     db.refresh(km)
+    notify_change(squad_id, "key_message", user.display_name, km_year)
     return km
 
 
@@ -313,6 +319,8 @@ def update_key_message(squad_id: int, msg_id: int, payload: KeyMessageUpdate,
 def delete_key_message(squad_id: int, msg_id: int,
                        db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     km = _get_key_message(db, user, squad_id, msg_id)
+    km_year = km.year
     record_audit(db, user.id, "key_message.delete", entity="squad", entity_id=squad_id, detail={"id": msg_id})
     db.delete(km)
     db.commit()
+    notify_change(squad_id, "key_message", user.display_name, km_year)

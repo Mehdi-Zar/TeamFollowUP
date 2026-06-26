@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { api, ApiError } from "../api";
 import { useI18n } from "../i18n";
 import { useModule, useReloadConfig } from "../config";
@@ -39,6 +40,7 @@ export default function AdminPage() {
   const { effectiveRole } = useAuth();
   const [perms, setPerms] = useState<Permissions | null>(null);
   const [tab, setTab] = useState<string>("");
+  const [params] = useSearchParams();
 
   const [loadError, setLoadError] = useState<string | null>(null);
   useEffect(() => {
@@ -55,8 +57,12 @@ export default function AdminPage() {
       : perms?.admin_tabs ?? [];
 
   useEffect(() => {
-    setTab((cur) => (cur && tabKeys.includes(cur) ? cur : tabKeys[0] ?? ""));
-  }, [tabKeys.join(",")]);
+    const want = params.get("section");
+    setTab((cur) => {
+      if (want && tabKeys.includes(want)) return want;
+      return cur && tabKeys.includes(cur) ? cur : tabKeys[0] ?? "";
+    });
+  }, [tabKeys.join(","), params]);
   useSetPageChrome({ title: t("admin.title") }, [perms, t]);
 
   if (loadError) return <ErrorBanner message={loadError} />;
@@ -93,7 +99,7 @@ export default function AdminPage() {
         {tab === "moderation" && <ModerationAdmin />}
         {tab === "auth" && <AuthAdmin />}
         {tab === "smtp" && <SmtpAdmin />}
-        {tab === "report" && <WeeklyReportAdmin />}
+        {tab === "report" && <><WeeklyReportAdmin /><ChangeNotifyAdmin /></>}
         {tab === "logs" && <LogExportAdmin />}
         {tab === "settings" && <SettingsAdmin />}
         {tab === "audit" && <AuditAdmin />}
@@ -330,6 +336,111 @@ function WeeklyReportAdmin() {
       <div className="inline">
         <button onClick={save}>{t("action.save")}</button>
         <button className="btn-secondary" onClick={test} disabled={testing}>{t("report.test")}</button>
+        {saved && <span style={{ color: "var(--green)" }}>{t("admin.saved")}</span>}
+        {testMsg && <span className="small muted">{testMsg}</span>}
+      </div>
+    </div>
+  );
+}
+
+function ChangeNotifyAdmin() {
+  const { t } = useI18n();
+  const [cfg, setCfg] = useState<any | null>(null);
+  const [squads, setSquads] = useState<Squad[]>([]);
+  const [saved, setSaved] = useState(false);
+  const [testMsg, setTestMsg] = useState<string | null>(null);
+  const [testing, setTesting] = useState(false);
+  const { error, wrap } = useErr();
+
+  useEffect(() => {
+    api.get<any>("/api/admin/change-notify-config").then(setCfg).catch(() => {});
+    api.get<Squad[]>("/api/squads").then(setSquads).catch(() => {});
+  }, []);
+  if (!cfg) return <div className="spinner">{t("common.loading")}</div>;
+  const set = (k: string, v: any) => setCfg({ ...cfg, [k]: v });
+  const events: string[] = cfg._all_events ?? ["progress", "roadmap", "objectives", "budget", "key_message"];
+  const toggleEvent = (e: string) =>
+    set("events", (cfg.events ?? []).includes(e) ? cfg.events.filter((x: string) => x !== e) : [...(cfg.events ?? []), e]);
+  const toggleSquad = (id: number) =>
+    set("scope_squads", (cfg.scope_squads ?? []).includes(id) ? cfg.scope_squads.filter((x: number) => x !== id) : [...(cfg.scope_squads ?? []), id]);
+  const recipientsText = Array.isArray(cfg.recipients) ? cfg.recipients.join("\n") : (cfg.recipients ?? "");
+
+  async function save() {
+    await wrap(async () => {
+      const out = await api.put<any>("/api/admin/change-notify-config", cfg);
+      setCfg(out); setSaved(true); setTimeout(() => setSaved(false), 2000);
+    });
+  }
+  async function test() {
+    setTestMsg(null); setTesting(true);
+    try {
+      const r = await api.post<any>("/api/admin/change-notify-config/test", {});
+      setTestMsg(r.ok ? t("changenotify.test_ok", { to: r.to, squad: r.squad }) : t("changenotify.test_fail"));
+    } catch (e: any) { setTestMsg(e.message); } finally { setTesting(false); }
+  }
+
+  return (
+    <div className="stack" style={{ maxWidth: 640 }}>
+      {error && <ErrorBanner message={error} />}
+      <h2 style={{ marginBottom: 0 }}>{t("changenotify.title")}</h2>
+      <div className="banner">{t("changenotify.intro")}</div>
+      <div className="card stack" style={{ gap: 12 }}>
+        <label className="switch">
+          <input type="checkbox" checked={!!cfg.enabled} onChange={(e) => set("enabled", e.target.checked)} />
+          <span className="track"><span className="knob" /></span>
+          <span className="strong">{t("changenotify.enabled")}</span>
+        </label>
+        <div>
+          <label>{t("changenotify.recipients")}</label>
+          <textarea rows={3} value={recipientsText} placeholder="dir@exemple.com&#10;copil@exemple.com"
+                    onChange={(e) => set("recipients", e.target.value.split("\n"))} />
+          <div className="small muted">{t("changenotify.recipients_hint")}</div>
+        </div>
+        <div>
+          <label>{t("changenotify.events")}</label>
+          <div className="inline" style={{ gap: 12, flexWrap: "wrap" }}>
+            {events.map((e) => (
+              <label key={e} className="inline small" style={{ gap: 6, cursor: "pointer" }}>
+                <input type="checkbox" checked={(cfg.events ?? []).includes(e)} onChange={() => toggleEvent(e)} />
+                {t(`changenotify.event.${e}`)}
+              </label>
+            ))}
+          </div>
+        </div>
+        <div className="row" style={{ gap: 12 }}>
+          <div style={{ width: 180 }}>
+            <label>{t("changenotify.interval")}</label>
+            <input type="number" min={0} max={1440} value={cfg.min_interval_minutes ?? 0}
+                   onChange={(e) => set("min_interval_minutes", Number(e.target.value))} />
+            <div className="small muted">{t("changenotify.interval_hint")}</div>
+          </div>
+          <div className="stack" style={{ gap: 8, justifyContent: "flex-end" }}>
+            <label className="inline small" style={{ gap: 6 }}>
+              <input type="checkbox" checked={!!cfg.attach_pptx} onChange={(e) => set("attach_pptx", e.target.checked)} />
+              {t("changenotify.attach_pptx")}
+            </label>
+            <label className="inline small" style={{ gap: 6 }}>
+              <input type="checkbox" checked={!!cfg.current_year_only} onChange={(e) => set("current_year_only", e.target.checked)} />
+              {t("changenotify.current_year_only")}
+            </label>
+          </div>
+        </div>
+        <div>
+          <label>{t("changenotify.scope")}</label>
+          <div className="small muted" style={{ marginBottom: 6 }}>{t("changenotify.scope_all_hint")}</div>
+          <div className="inline" style={{ gap: 10, flexWrap: "wrap" }}>
+            {squads.map((s) => (
+              <label key={s.id} className="inline small" style={{ gap: 6, cursor: "pointer" }}>
+                <input type="checkbox" checked={(cfg.scope_squads ?? []).includes(s.id)} onChange={() => toggleSquad(s.id)} />
+                {s.name}
+              </label>
+            ))}
+          </div>
+        </div>
+      </div>
+      <div className="inline">
+        <button onClick={save}>{t("action.save")}</button>
+        <button className="btn-secondary" onClick={test} disabled={testing}>{t("changenotify.test")}</button>
         {saved && <span style={{ color: "var(--green)" }}>{t("admin.saved")}</span>}
         {testMsg && <span className="small muted">{testMsg}</span>}
       </div>

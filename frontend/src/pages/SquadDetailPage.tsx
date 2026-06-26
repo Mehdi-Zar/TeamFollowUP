@@ -389,7 +389,7 @@ function BudgetPanel({ squad, canEdit, canToggle, onChange }:
   const [forecast, setForecast] = useState("");
   const [comment, setComment] = useState("");
 
-  const fmt = (n?: number | null) => (n == null ? "-" : n.toLocaleString());
+  const fmt = (n?: number | null) => (n == null ? "-" : `${n.toLocaleString()} €`);
 
   if (!squad.budget_enabled) {
     return (
