@@ -7,6 +7,7 @@ import { useAuth } from "../auth";
 import { DashboardOut, SquadCard, Tribe } from "../types";
 import { Dot, FreshnessBadge, ProgressBar, Spinner, ErrorBanner, EmptyState } from "../components/ui";
 import ExportMenu from "../components/ExportMenu";
+import { ReportingButton } from "../components/ReportingModal";
 import { useSetPageChrome } from "../components/pageChrome";
 
 type SortKey = "risk" | "progress" | "name" | "fresh";
@@ -84,11 +85,7 @@ export default function DashboardPage() {
                   <button key={y} className={y === data.year ? "active" : ""} onClick={() => setYear(y)}>{y}</button>
                 ))}
               </div>
-              {isAdmin && (
-                <button className="btn-secondary btn-sm" onClick={() => navigate("/admin?section=report")}>
-                  {t("dash.reporting")}
-                </button>
-              )}
+              <ReportingButton />
               <ExportMenu year={data.year} />
             </>
           ),

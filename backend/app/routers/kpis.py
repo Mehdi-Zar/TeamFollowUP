@@ -1,11 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from .. import status as st
 from ..database import get_db
 from ..deps import assert_can_edit_squad, record_audit, require_module, require_writer
 from ..models import Kpi, Squad, User
-from ..progress import capture_progress
 from ..schemas import KpiCreate, KpiOut, KpiUpdate
 
 router = APIRouter(prefix="/api/kpis", tags=["kpis"],
@@ -39,7 +37,6 @@ def update_kpi(kpi_id: int, payload: KpiUpdate, db: Session = Depends(get_db),
     for k, v in data.items():
         setattr(item, k, v)
     record_audit(db, user.id, "kpi.update", entity="kpi", entity_id=item.id, detail=data)
-    capture_progress(db, item.squad_id, st.current_year_quarter()[0], user)
     db.commit()
     db.refresh(item)
     return item

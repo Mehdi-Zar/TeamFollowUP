@@ -84,19 +84,17 @@ def test_disabling_dashboard(client, seeded):
     assert client.get("/api/dashboard").status_code == 404
 
 
-def test_disabling_review_blocks_review_and_report(client, seeded):
+def test_disabling_review_blocks_report(client, seeded):
     login(client, seeded["admin"])
-    assert client.get("/api/progress/review").status_code == 200
+    assert client.get("/api/reports/weekly.html").status_code == 200
     _disable(client, {"review": {"enabled": False}})
-    assert client.get("/api/progress/review").status_code == 404
     assert client.get("/api/reports/weekly.html").status_code == 404
 
 
 def test_disabling_weekly_report_only(client, seeded):
     login(client, seeded["admin"])
     _disable(client, {"review": {"weekly_report": False}})
-    # Review still works, only the weekly report is gone.
-    assert client.get("/api/progress/review").status_code == 200
+    # Only the weekly report is gated off.
     assert client.get("/api/reports/weekly.html").status_code == 404
 
 

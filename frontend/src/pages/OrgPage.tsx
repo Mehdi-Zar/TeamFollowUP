@@ -5,6 +5,7 @@ import { useAuth } from "../auth";
 import { useI18n } from "../i18n";
 import { Member, OrgNode, Squad, SquadDetail, Tribe, Role } from "../types";
 import { Spinner, ErrorBanner, FitScale, Modal } from "../components/ui";
+import { HtmlPreviewButton } from "../components/HtmlPreview";
 import { useSetPageChrome } from "../components/pageChrome";
 import { canEditOrg } from "../perms";
 
@@ -572,8 +573,8 @@ function OrgExportButton({ tribeId }: { tribeId: number }) {
               <span className="small muted">{t("orgexport.selected", { n: sel.size, total: branches.length })}</span>
               <div className="inline" style={{ gap: 8 }}>
                 <button className="btn-secondary" onClick={() => setOpen(false)}>{t("action.close")}</button>
-                <a className={`btn btn-secondary${canExport ? "" : " disabled"}`} href={canExport ? url("html") : undefined}
-                   target="_blank" rel="noreferrer" aria-disabled={!canExport} onClick={() => canExport && setOpen(false)}>HTML</a>
+                <HtmlPreviewButton url={canExport ? url("html") : ""} title={t("orgexport.title")} label="HTML"
+                   className="btn btn-secondary" disabled={!canExport} />
                 <a className={`btn${canExport ? "" : " disabled"}`} href={canExport ? url("pptx") : undefined} download
                    aria-disabled={!canExport} onClick={() => canExport && setOpen(false)}>PPTX</a>
               </div>
