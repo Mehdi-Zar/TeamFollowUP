@@ -18,7 +18,6 @@ const PreferencesPage = lazy(() => import("./pages/PreferencesPage"));
 const AdminPage = lazy(() => import("./pages/AdminPage"));
 const MySquadsPage = lazy(() => import("./pages/MySquadsPage"));
 const GettingStartedPage = lazy(() => import("./pages/GettingStartedPage"));
-const ReviewPage = lazy(() => import("./pages/ReviewPage"));
 const RoadmapPage = lazy(() => import("./pages/RoadmapPage"));
 const InitiativesPage = lazy(() => import("./pages/InitiativesPage"));
 const PrintSquadPage = lazy(() => import("./pages/PrintSquadPage"));
@@ -46,7 +45,6 @@ const MODULE_HOME: { module: ModuleKey; path: string }[] = [
   { module: "dashboard", path: "/" },
   { module: "org", path: "/organigramme" },
   { module: "feed", path: "/fil" },
-  { module: "review", path: "/revue" },
   { module: "reporting", path: "/saisie" },
 ];
 
@@ -85,7 +83,6 @@ export default function App() {
         <Route path="/initiatives" element={<Protected><InitiativesPage /></Protected>} />
         <Route path="/squads/:id" element={<SquadDetailPage />} />
         <Route path="/fil" element={<Section module="feed" cap="feed"><FeedPage /></Section>} />
-        <Route path="/revue" element={<Section module="review" cap="review"><ReviewPage /></Section>} />
         <Route path="/preferences" element={<PreferencesPage />} />
         <Route path="/prise-en-main" element={<ModuleGuard module="getting_started"><GettingStartedPage /></ModuleGuard>} />
         <Route path="/saisie" element={<Section module="reporting" cap="reporting"><EntryPage /></Section>} />

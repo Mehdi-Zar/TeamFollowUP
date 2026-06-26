@@ -23,7 +23,6 @@ from .routers import (
     org,
     orgexport,
     otds,
-    progress,
     reports,
     roadmap,
     roadmapview,
@@ -45,7 +44,7 @@ app.add_middleware(SessionMiddleware, secret_key=settings.secret_key,
                    same_site=settings.cookie_samesite, https_only=settings.cookie_secure)
 
 for r in (auth, tribes, squads, dashboard, org, orgexport, objectives, roadmap, roadmapview, kpis,
-          members, snapshots, feed, notifications, admin, audit, progress, reports,
+          members, snapshots, feed, notifications, admin, audit, reports,
           actions, initiatives, otds):
     app.include_router(r.router)
 
@@ -65,10 +64,10 @@ async def _warn_on_insecure_defaults():
 async def _start_weekly_progress_scheduler():
     """Lightweight in-process scheduler.
 
-    Runs hourly and, when due, (1) ensures a weekly progress point per squad
-    (>= 7 days since the last weekly) and (2) sends the weekly HTML/PPTX report
-    by email on the configured weekday/hour. Both steps are idempotent and
-    self-healing. Disabled in tests via DISABLE_SCHEDULER=1.
+    Runs hourly and, when due, sends the weekly HTML/PPTX report by email on the
+    configured weekday/hour and the personal subscriptions, then purges old
+    records. All steps are idempotent and self-healing. Disabled in tests via
+    DISABLE_SCHEDULER=1.
     """
     if os.environ.get("DISABLE_SCHEDULER") == "1":
         return
@@ -78,7 +77,6 @@ async def _start_weekly_progress_scheduler():
 
     from .database import SessionLocal
     from .maintenance import purge_old_records
-    from .progress import ensure_weekly
     from .report import send_due_weekly_reports, send_personal_subscriptions
 
     _LOCK_KEY = 911001  # advisory-lock id: only one replica runs the tick
@@ -99,9 +97,6 @@ async def _start_weekly_progress_scheduler():
                         got_lock = True  # non-Postgres (tests) - proceed
                     if not got_lock:
                         continue
-                    n = ensure_weekly(db)
-                    if n:
-                        logging.getLogger("trt.progress").info("Weekly progress points created: %s", n)
                     sent = send_due_weekly_reports(db)
                     if sent:
                         logging.getLogger("trt.report").info("Weekly reports emailed: %s", sent)

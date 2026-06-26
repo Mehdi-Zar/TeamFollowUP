@@ -143,6 +143,8 @@ def _sub_out(db: Session, sub, squad_id: int | None) -> ReportSubscriptionOut:
     return ReportSubscriptionOut(
         squad_id=squad_id, squad_name=name,
         interval_days=sub.interval_days if sub else 0,
+        weekdays=(sub.weekdays or []) if sub else [],
+        hour=sub.hour if sub else 8,
         last_sent_at=sub.last_sent_at if sub else None,
     )
 
@@ -166,12 +168,13 @@ def set_my_subscription(payload: ReportSubscriptionIn, db: Session = Depends(get
     from ..subscriptions import set_subscription, user_can_see_squad
     if payload.squad_id is not None and not user_can_see_squad(db, user, payload.squad_id):
         raise HTTPException(status_code=404, detail="Squad introuvable")
-    sub = set_subscription(db, user, payload.squad_id, payload.interval_days)
+    sub = set_subscription(db, user, payload.squad_id, payload.interval_days, payload.weekdays, payload.hour)
     # Keep the legacy global flags in sync (dashboard subscription only).
     if payload.squad_id is None:
+        active = bool(payload.weekdays) or payload.interval_days > 0
         user.report_interval_days = payload.interval_days
-        user.subscribe_weekly_report = payload.interval_days > 0
-        if payload.interval_days <= 0:
+        user.subscribe_weekly_report = active
+        if not active:
             user.report_last_sent_at = None
     db.commit()
     return _sub_out(db, sub, payload.squad_id)

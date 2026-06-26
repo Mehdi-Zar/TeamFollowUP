@@ -5,6 +5,7 @@ import { useI18n } from "../i18n";
 import { useAuth } from "../auth";
 import { Initiative, Squad, Tribe } from "../types";
 import { Spinner, ErrorBanner, EmptyState, Modal } from "../components/ui";
+import { HtmlPreviewButton } from "../components/HtmlPreview";
 import { useSetPageChrome } from "../components/pageChrome";
 
 const CUR_YEAR = new Date().getFullYear();
@@ -172,7 +173,7 @@ function ExportModal({ qs, onClose, t }: { qs: string; onClose: () => void; t: a
       footer={
         <div className="inline" style={{ gap: 8 }}>
           <button className="btn-secondary" onClick={onClose}>{t("action.close")}</button>
-          <a className="btn btn-secondary" href={`/api/initiatives/report.html${qs}`} target="_blank" rel="noreferrer" onClick={onClose}>HTML</a>
+          <HtmlPreviewButton url={`/api/initiatives/report.html${qs}`} title={t("init.export_title")} label="HTML" className="btn btn-secondary" />
           <a className="btn" href={`/api/initiatives/report.pptx${qs}`} download onClick={onClose}>PPTX</a>
         </div>
       }>

@@ -5,7 +5,7 @@ from tests.conftest import login
 def test_get_personas_returns_builtins_and_catalog(client, seeded):
     login(client, seeded["admin"])
     out = client.get("/api/admin/personas").json()
-    assert out["capabilities"] == ["dashboard", "roadmap", "org", "feed", "reporting", "review", "mysquads"]
+    assert out["capabilities"] == ["dashboard", "roadmap", "org", "feed", "reporting", "mysquads"]
     keys = [p["key"] for p in out["personas"]]
     assert keys[:4] == ["admin", "tribe_leader", "squad_leader", "member"]
     assert all(p["builtin"] for p in out["personas"])
@@ -37,13 +37,13 @@ def test_create_custom_persona_and_assign(client, seeded, db):
     personas = client.get("/api/admin/personas").json()["personas"]
     personas.append({"key": "Auditeur Externe", "label": "Auditeur Externe", "builtin": False,
                      "caps": {"dashboard": True, "org": True, "feed": False,
-                              "reporting": False, "review": True, "mysquads": False}})
+                              "reporting": False, "mysquads": False}})
     saved = client.put("/api/admin/personas", json={"personas": personas}).json()["personas"]
     custom = [p for p in saved if not p["builtin"]]
     assert len(custom) == 1
     key = custom[0]["key"]
     assert key == "auditeur_externe"  # slugified
-    assert custom[0]["caps"]["review"] is True and custom[0]["caps"]["feed"] is False
+    assert custom[0]["caps"]["dashboard"] is True and custom[0]["caps"]["feed"] is False
 
     # The custom persona is now assignable to a user.
     u = client.post("/api/admin/users", json={
@@ -51,7 +51,7 @@ def test_create_custom_persona_and_assign(client, seeded, db):
     assert u.status_code == 201, u.text
     assert u.json()["role"] == key
 
-    # That user can reach the review (capability granted) but not the feed.
+    # That user can reach the dashboard (capability granted) but not the feed.
     from app.models import User
     from app.security import hash_password
     from sqlalchemy import select
@@ -59,7 +59,7 @@ def test_create_custom_persona_and_assign(client, seeded, db):
     usr.password_hash = hash_password("pw")
     db.commit()
     login(client, "aud@test")
-    assert client.get("/api/progress/review").status_code == 200
+    assert client.get("/api/dashboard").status_code == 200
     assert client.get("/api/feed").status_code == 403
 
 
@@ -68,7 +68,7 @@ def test_deleting_persona_reassigns_users_to_member(client, seeded, db):
     personas = client.get("/api/admin/personas").json()["personas"]
     personas.append({"key": "temp", "label": "Temp", "builtin": False,
                      "caps": {c: True for c in
-                              ["dashboard", "org", "feed", "reporting", "review", "mysquads"]}})
+                              ["dashboard", "org", "feed", "reporting", "mysquads"]}})
     client.put("/api/admin/personas", json={"personas": personas})
     client.post("/api/admin/users", json={
         "email": "temp@test", "display_name": "T", "role": "temp", "tribe_id": seeded["t1"]})

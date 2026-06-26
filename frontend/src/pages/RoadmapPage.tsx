@@ -7,6 +7,7 @@ import { RoadmapCellItem, RoadmapMatrix, Tribe } from "../types";
 import { Spinner, ErrorBanner, EmptyState } from "../components/ui";
 import { useSetPageChrome } from "../components/pageChrome";
 import ExportMenu from "../components/ExportMenu";
+import { ReportingButton } from "../components/ReportingModal";
 
 const QS = [1, 2, 3, 4];
 
@@ -68,6 +69,7 @@ export default function RoadmapPage() {
         )}
         <input className="w-auto" style={{ width: 190 }} placeholder={t("roadmap.search")}
                aria-label={t("roadmap.search")} value={q} onChange={(e) => setQ(e.target.value)} />
+        <ReportingButton />
         <ExportMenu />
       </div>
     ),

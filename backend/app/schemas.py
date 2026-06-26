@@ -640,12 +640,16 @@ class ReportSubscriptionOut(BaseModel):
     squad_id: Optional[int] = None
     squad_name: Optional[str] = None
     interval_days: int
+    weekdays: list[int] = []
+    hour: int = 8
     last_sent_at: Optional[datetime] = None
 
 
 class ReportSubscriptionIn(BaseModel):
     squad_id: Optional[int] = None  # None = dashboard (user's visibility scope)
-    interval_days: int = Field(ge=0, le=90)  # 0 = unsubscribe
+    interval_days: int = Field(default=0, ge=0, le=90)  # legacy; 0 = ignore
+    weekdays: Optional[list[int]] = None   # 0=Mon..6=Sun; empty/None = unsubscribe
+    hour: Optional[int] = None             # 0..23 (UTC)
 
 
 # ---------- Audit ----------
@@ -659,13 +663,7 @@ class AuditOut(ORMModel):
     detail: Optional[dict] = None
 
 
-# ---------- Progress review ----------
-class ProgressNoteIn(BaseModel):
-    year: Optional[int] = None
-    note: Optional[str] = None
-    confidence: Optional[int] = Field(default=None, ge=1, le=5)
-
-
+# ---------- Review actions ----------
 class ReviewActionOut(ORMModel):
     id: int
     squad_id: int
@@ -687,39 +685,6 @@ class ReviewActionUpdate(BaseModel):
     owner: Optional[str] = None
     due_date: Optional[datetime] = None
     done: Optional[bool] = None
-
-
-class ProgressPointOut(BaseModel):
-    id: int
-    squad_id: int
-    year: int
-    created_at: datetime
-    kind: str
-    author_name: Optional[str] = None
-    note: Optional[str] = None
-    confidence: Optional[int] = None
-    progress_pct: int
-    blocked_count: int
-    at_risk_count: int
-    done_count: int
-    total_count: int
-    changes: list = []
-
-
-class ProgressReviewRow(BaseModel):
-    squad_id: int
-    squad_name: str
-    tribe_id: Optional[int] = None
-    tribe_name: Optional[str] = None
-    progress_pct: int
-    progress_delta: int
-    blocked_count: int
-    at_risk_count: int
-    confidence: Optional[int] = None
-    note: Optional[str] = None
-    last_update_at: Optional[datetime] = None
-    points_in_period: int
-    changes: list = []
 
 
 # ---------- Settings ----------

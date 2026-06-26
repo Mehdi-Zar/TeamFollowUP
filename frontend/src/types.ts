@@ -1,7 +1,7 @@
 // Built-in roles plus any admin-created custom persona key.
 export type Role = "admin" | "tribe_leader" | "squad_leader" | "member" | (string & {});
 
-export type Capability = "dashboard" | "roadmap" | "org" | "feed" | "reporting" | "review" | "mysquads";
+export type Capability = "dashboard" | "roadmap" | "org" | "feed" | "reporting" | "mysquads";
 
 export interface RoadmapCellItem {
   title: string;
@@ -303,7 +303,7 @@ export interface ModulesConfig {
   org: { enabled: boolean };
   reporting: { enabled: boolean };
   feed: { enabled: boolean; reactions: boolean; replies: boolean; pin: boolean; kinds: boolean };
-  review: { enabled: boolean; notes: boolean; weekly_report: boolean };
+  review: { enabled: boolean; weekly_report: boolean };
   squad_content: { enabled: boolean; objectives: boolean; roadmap: boolean; kpis: boolean };
   notifications: { enabled: boolean; inapp: boolean; email: boolean };
   exports_csv: { enabled: boolean };
@@ -443,45 +443,3 @@ export interface FeedPost {
   my_reactions: string[];
 }
 
-// ---------- Progress review ----------
-export interface ProgressChange {
-  kind: string;
-  label: string;
-  from?: string | number | null;
-  to?: string | number | null;
-}
-
-export type ProgressKind = "auto" | "weekly" | "review";
-
-export interface ProgressPoint {
-  id: number;
-  squad_id: number;
-  year: number;
-  created_at: string;
-  kind: ProgressKind;
-  author_name?: string | null;
-  note?: string | null;
-  confidence?: number | null;
-  progress_pct: number;
-  blocked_count: number;
-  at_risk_count: number;
-  done_count: number;
-  total_count: number;
-  changes: ProgressChange[];
-}
-
-export interface ProgressReviewRow {
-  squad_id: number;
-  squad_name: string;
-  tribe_id?: number | null;
-  tribe_name?: string | null;
-  progress_pct: number;
-  progress_delta: number;
-  blocked_count: number;
-  at_risk_count: number;
-  confidence?: number | null;
-  note?: string | null;
-  last_update_at?: string | null;
-  points_in_period: number;
-  changes: ProgressChange[];
-}

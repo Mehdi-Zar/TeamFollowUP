@@ -17,7 +17,7 @@ from .models import AppSetting
 PERSONAS_KEY = "personas"
 
 # Section-access capabilities (the catalog shown in the admin matrix).
-CAPABILITIES = ["dashboard", "roadmap", "org", "feed", "reporting", "review", "mysquads"]
+CAPABILITIES = ["dashboard", "roadmap", "org", "feed", "reporting", "mysquads"]
 _CAP_SET = set(CAPABILITIES)
 
 BUILTINS = ["admin", "tribe_leader", "squad_leader", "member"]
@@ -29,7 +29,7 @@ def _default_caps(key: str) -> dict:
         return {c: True for c in CAPABILITIES}
     caps = {c: False for c in CAPABILITIES}
     if key == "tribe_leader":
-        caps.update(dashboard=True, roadmap=True, org=True, feed=True, review=True, mysquads=True)
+        caps.update(dashboard=True, roadmap=True, org=True, feed=True, mysquads=True)
     elif key == "squad_leader":
         caps.update(dashboard=True, roadmap=True, org=True, feed=True, reporting=True, mysquads=True)
     elif key == "member":

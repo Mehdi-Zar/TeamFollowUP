@@ -21,20 +21,29 @@ def get_subscription(db: Session, user_id: int, squad_id: int | None) -> ReportS
     return db.scalar(stmt)
 
 
-def set_subscription(db: Session, user: User, squad_id: int | None, interval_days: int) -> ReportSubscription | None:
-    """Upsert a subscription. interval_days <= 0 removes it. Does not commit."""
+def set_subscription(db: Session, user: User, squad_id: int | None, interval_days: int = 0,
+                     weekdays: list[int] | None = None, hour: int | None = None) -> ReportSubscription | None:
+    """Upsert a subscription. A subscription is active if it has weekdays (the new
+    schedule) OR a positive interval (legacy). Empty/none of both removes it.
+    Does not commit."""
+    wd = sorted({int(d) for d in (weekdays or []) if 0 <= int(d) <= 6})
+    hr = max(0, min(23, int(hour))) if hour is not None else None
+    active = bool(wd) or interval_days > 0
     row = get_subscription(db, user.id, squad_id)
-    if interval_days <= 0:
+    if not active:
         if row is not None:
             db.delete(row)
         return None
     if row is None:
-        row = ReportSubscription(user_id=user.id, squad_id=squad_id, interval_days=interval_days)
+        row = ReportSubscription(user_id=user.id, squad_id=squad_id)
         db.add(row)
-    else:
-        if row.interval_days != interval_days:
-            row.last_sent_at = None  # restart the clock on a cadence change
-        row.interval_days = interval_days
+    # Reset the send clock when the schedule changes.
+    if row.interval_days != interval_days or row.weekdays != wd or (hr is not None and row.hour != hr):
+        row.last_sent_at = None
+    row.interval_days = interval_days
+    row.weekdays = wd
+    if hr is not None:
+        row.hour = hr
     return row
 
 

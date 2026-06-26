@@ -96,7 +96,7 @@ _RT = {
         "squad_scope": "Squad {name}", "more_squads": "… +{n} autres squads",
         "subject": "Rapport hebdomadaire — {scope} — semaine {w}", "synthesis": "Synthèse",
         "subject_personal": "Rapport — {scope} — {n} j",
-        "detail_title": "Détail par squad", "h_objectives": "Objectifs annuels",
+        "detail_title": "Détail par squad", "h_objectives": "OTD",
         "h_roadmap": "Roadmap & jalons", "deadline": "échéance", "no_obj": "Aucun objectif",
         "no_jalon": "Aucun jalon", "dep": "Dép.", "roadmap_report": "Roadmap",
         "roadmap_subject": "Roadmap {year}",
@@ -125,7 +125,7 @@ _RT = {
         "squad_scope": "Squad {name}", "more_squads": "… +{n} more squads",
         "subject": "Weekly report — {scope} — week {w}", "synthesis": "Summary",
         "subject_personal": "Report — {scope} — {n}d",
-        "detail_title": "Detail by squad", "h_objectives": "Annual objectives",
+        "detail_title": "Detail by squad", "h_objectives": "OTD",
         "h_roadmap": "Roadmap & milestones", "deadline": "due", "no_obj": "No objective",
         "no_jalon": "No milestone", "dep": "Dep.", "roadmap_report": "Roadmap",
         "roadmap_subject": "Roadmap {year}",
@@ -189,15 +189,11 @@ def build_report_data(db: Session, scope_tribe: int | None, year: int | None = N
     the caller's tribe scope) - used to pick which squads appear in a global roadmap.
     lang, when set, picks the report language; otherwise the general default_lang.
     """
-    from .routers.progress import aggregate_review  # local import avoids a cycle
-
     now = now or utcnow()
     cfg = get_general(db)
     threshold = cfg.get("staleness_threshold_days")
     year = year or st.current_year_quarter(now)[0]
     lang = _lang(lang or cfg.get("default_lang"))
-
-    review_rows = {r.squad_id: r for r in aggregate_review(db, scope_tribe, since_days, year)}
 
     tribes = {t.id: t for t in db.scalars(select(Tribe)).all()}
     q = select(Squad).order_by(Squad.display_order, Squad.id).options(
@@ -241,7 +237,6 @@ def build_report_data(db: Session, scope_tribe: int | None, year: int | None = N
         f = st.freshness(s, threshold, now)
         prog = st.year_progress(s, year)
         comments = st.quarter_comments(s, year)
-        rv = review_rows.get(s.id)
         ann = annual_progress(s, year)
         # Full per-squad content (objectives + roadmap by quarter + advancement),
         # so the report/PPTX can show everything, not just the dashboard summary.
@@ -288,11 +283,11 @@ def build_report_data(db: Session, scope_tribe: int | None, year: int | None = N
             "objectives_red": c["objectives_red"],
             "age_days": f.get("age_days"),
             "is_stale": bool(f.get("is_stale")),
-            "delta": rv.progress_delta if rv else 0,
-            "confidence": rv.confidence if rv else None,
-            "note": rv.note if rv else None,
-            "points_in_period": rv.points_in_period if rv else 0,
-            "changes": rv.changes if rv else [],
+            "delta": 0,
+            "confidence": None,
+            "note": None,
+            "points_in_period": 0,
+            "changes": [],
             "detail": detail,
         }
         by_tribe.setdefault(s.tribe_id, []).append(row)
@@ -498,16 +493,20 @@ def _squad_app_cards(det: dict, lang: str, e, year: int) -> list[str]:
     fmtn = lambda v: "-" if v is None else f"{v:,.0f} €"
     C: list[str] = []
 
+    # Initiatives — always shown (even empty), to mirror the squad page.
     inits = det.get("initiatives") or []
+    C.append(f'<div class="card"><h2>{e(rt(lang, "h_initiatives"))}</h2>')
     if inits:
-        C.append(f'<div class="card"><h2>{e(rt(lang, "h_initiatives"))}</h2>'
-                 '<table class="init-tbl"><thead><tr>'
+        C.append('<table class="init-tbl"><thead><tr>'
                  f'<th>{e(rt(lang, "h_initiatives"))}</th><th>{e(rt(lang, "h_leader"))}</th>'
                  f'<th>{e(rt(lang, "deadline"))}</th></tr></thead><tbody>')
         for ini in inits:
             C.append(f'<tr><td><strong>{e(ini["title"])}</strong></td>'
                      f'<td>{e(ini.get("owner") or "-")}</td><td>{e(ini.get("deadline") or "-")}</td></tr>')
-        C.append('</tbody></table></div>')
+        C.append('</tbody></table>')
+    else:
+        C.append(f'<div class="muted small">{e(rt(lang, "no_initiative"))}</div>')
+    C.append('</div>')
 
     # OTD (annual objectives)
     C.append(f'<div class="card"><h2>{e(rt(lang, "h_otd_section"))} {year}</h2>')
@@ -1617,10 +1616,10 @@ def send_due_weekly_reports(db: Session, now: datetime | None = None) -> int:
     smtp = get_smtp(db)
     if not smtp.get("enabled"):
         return 0
-    if now.weekday() != cfg["weekday"] or now.hour < cfg["hour"]:
+    if now.weekday() not in cfg["weekdays"] or now.hour < cfg["hour"]:
         return 0
-    week = _iso_week_key(now)
-    if cfg.get("last_sent_week") == week:
+    today = now.date().isoformat()
+    if cfg.get("last_sent_day") == today:
         return 0
 
     since = cfg.get("since_days", 7)
@@ -1648,8 +1647,8 @@ def send_due_weekly_reports(db: Session, now: datetime | None = None) -> int:
         nonlocal sent
         html_body, pptx_bytes = render_scope(scope)
         attachment = None
-        if pptx_bytes:
-            attachment = (f"rapport_hebdo_{week}.pptx", pptx_bytes,
+        if pptx_bytes and cfg.get("attach_pptx", True):
+            attachment = (f"rapport_hebdo_{today}.pptx", pptx_bytes,
                           "application", "vnd.openxmlformats-officedocument.presentationml.presentation")
         if send_email(smtp, addr, subject, html_body, attachment=attachment, html=True):
             sent += 1
@@ -1664,7 +1663,7 @@ def send_due_weekly_reports(db: Session, now: datetime | None = None) -> int:
         seen.add(key)
         send_to(addr, None)
 
-    cfg["last_sent_week"] = week
+    cfg["last_sent_day"] = today
     set_report(db, cfg)
     db.commit()
     return sent
@@ -1707,14 +1706,26 @@ def send_personal_subscriptions(db: Session, now: datetime | None = None) -> int
         return rendered[key]
 
     sent = 0
-    for sub in db.scalars(select(ReportSubscription).where(ReportSubscription.interval_days > 0)).all():
+    for sub in db.scalars(select(ReportSubscription)).all():
+        wd = sub.weekdays or []
+        if not wd and sub.interval_days <= 0:
+            continue  # inactive subscription
         user = db.get(User, sub.user_id)
         if user is None or not user.email:
             continue
         last = _aware(sub.last_sent_at)
-        if last is not None and (now - last) < timedelta(days=sub.interval_days):
-            continue
-        since = max(sub.interval_days, 7)
+        if wd:
+            # Weekday schedule: fire on a chosen day, past the hour, once per day.
+            if now.weekday() not in wd or now.hour < sub.hour:
+                continue
+            if last is not None and last.date() == now.date():
+                continue
+            since = 7
+        else:
+            # Legacy "every N days" cadence.
+            if last is not None and (now - last) < timedelta(days=sub.interval_days):
+                continue
+            since = max(sub.interval_days, 7)
         if sub.squad_id is not None:
             html_body, pptx_bytes = render(None, sub.squad_id, since)
         else:

@@ -19,7 +19,6 @@ export default function EntryPage() {
   const roadmapOn = moduleOn("squad_content", "roadmap");
   const objectivesOn = moduleOn("squad_content", "objectives");
   const kpisOn = moduleOn("squad_content", "kpis");
-  const reviewNotesOn = moduleOn("review", "notes");
   const role = (effectiveRole ?? "member") as Role;
   const [squads, setSquads] = useState<Squad[]>([]);
   const [tribes, setTribes] = useState<Tribe[]>([]);
@@ -125,7 +124,6 @@ export default function EntryPage() {
               objectivesOn && { id: "sec-obj", label: t("squad.objectives", { year }), done: squad.objectives.length > 0 },
               roadmapOn && { id: "sec-roadmap", label: t("squad.roadmap", { year }), done: squad.roadmap_items.length > 0 },
               (kpisOn && squad.kpis_enabled) && { id: "sec-kpis", label: t("squad.kpis"), done: squad.kpis.length > 0 },
-              reviewNotesOn && { id: "sec-review", label: t("progress.title"), optional: true },
             ].filter(Boolean) as Array<{ id: string; label: string; done?: boolean; optional?: boolean }>;
             if (secs.length < 2) return null;
             return (
@@ -144,57 +142,10 @@ export default function EntryPage() {
           {objectivesOn && <div id="sec-obj"><ObjectivesEditor squad={squad} year={year} onChange={reload} editable={objAllowed} t={t} rag={rag} /></div>}
           {roadmapOn && <div id="sec-roadmap"><RoadmapEditor squad={squad} year={year} onChange={reload} readonly={!writeAllowed} t={t} roadmap={roadmap} squads={squads} tribes={tribes} /></div>}
           {kpisOn && squad.kpis_enabled && <div id="sec-kpis"><KpisEditor squad={squad} onChange={reload} readonly={!writeAllowed} t={t} trend={trend} /></div>}
-          {reviewNotesOn && <div id="sec-review"><ProgressReviewEditor squadId={squad.id} year={year} readonly={!writeAllowed} onSaved={() => flash(t("progress.review_saved"))} t={t} /></div>}
         </>
       )}
 
       {recap && squad && <SubmitRecap squad={squad} onConfirm={confirmSubmit} onCancel={() => setRecap(false)} t={t} />}
-    </div>
-  );
-}
-
-function ProgressReviewEditor({ squadId, year, readonly, onSaved, t }: any) {
-  const [note, setNote] = useState("");
-  const [confidence, setConfidence] = useState<number | null>(null);
-  const [saving, setSaving] = useState(false);
-  const empty = !note.trim() && !confidence;
-
-  async function save() {
-    if (empty) return;
-    setSaving(true);
-    try {
-      await api.post(`/api/squads/${squadId}/progress`, { year, note: note.trim() || null, confidence });
-      setNote("");
-      setConfidence(null);
-      onSaved();
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div className="card stack" style={{ gap: 12 }}>
-      <div>
-        <h3 style={{ margin: 0 }}>{t("progress.title")}</h3>
-        <div className="small muted">{t("progress.review_intro")}</div>
-      </div>
-      <div>
-        <label>{t("progress.confidence_q")}</label>
-        <div className="confidence-seg">
-          {[1, 2, 3, 4, 5].map((n) => (
-            <button key={n} type="button" className={confidence === n ? "active" : ""} disabled={readonly} onClick={() => setConfidence(n)}>
-              {n}
-            </button>
-          ))}
-        </div>
-      </div>
-      <div>
-        <label>{t("progress.note_label")}</label>
-        <textarea rows={3} placeholder={t("progress.note_ph")} value={note} disabled={readonly} onChange={(e) => setNote(e.target.value)} />
-      </div>
-      <div>
-        <button onClick={save} disabled={readonly || saving || empty}>{t("progress.save_review")}</button>
-      </div>
     </div>
   );
 }

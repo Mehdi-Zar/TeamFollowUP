@@ -46,7 +46,6 @@ const NAV: NavItem[] = [
   { to: "/tribus", labelKey: "nav.tribes", titleKey: "nav.tribes", Icon: IconTribes, visible: isGlobalAdmin },
   { to: "/saisie", labelKey: "nav.entry", titleKey: "nav.entry", Icon: IconEntry, visible: () => true, module: "reporting", cap: "reporting" },
   { to: "/fil", labelKey: "nav.feed", titleKey: "nav.feed", Icon: IconFeed, visible: () => true, module: "feed", cap: "feed" },
-  { to: "/revue", labelKey: "nav.review", titleKey: "review.title", Icon: IconReview, visible: () => true, module: "review", cap: "review" },
   { to: "/mes-squads", labelKey: "nav.mysquads", titleKey: "mysquads.title", Icon: IconTribes, visible: () => true, cap: "mysquads" },
   { to: "/admin", labelKey: "nav.admin", titleKey: "nav.admin", Icon: IconAdmin, visible: canSeeAdmin },
 ];

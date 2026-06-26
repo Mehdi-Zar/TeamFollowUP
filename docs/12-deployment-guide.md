@@ -6,6 +6,53 @@ target platforms. The application ships as **one container image** plus a
 
 ---
 
+## 0. In plain words — the whole deployment, start to finish
+
+If you have never deployed anything before, read this section first. It is the
+entire process in order, with no jargon. Each step points to the detailed section
+that follows.
+
+The app is just **two things talking to each other**: a *program* (one Docker
+image) and a *database* (PostgreSQL, where all the data is stored). Deploying =
+starting the database, then starting the program and telling it where the database
+is. That's it. Everything below is detail around those two moves.
+
+**Do them in this order:**
+
+1. **Get a machine (or a cloud project).** A Linux VM, a Kubernetes cluster, or a
+   cloud account — whatever you have. This is where the app will run. → see your
+   platform's section (4 VMware, 5 GCP, 6 S3NS, 7 AWS, 8 Azure).
+2. **Create the database.** Stand up a PostgreSQL 16 instance and write down 5
+   things: its **host**, **port** (usually 5432), **database name**, **user**, and
+   **password**. You'll hand these to the app in the next step. → §3, §4.
+3. **Prepare the settings (environment variables).** Copy `.env.example` and fill
+   in: the 5 database values above, a long random `SECRET_KEY`, and a
+   `BREAKGLASS_EMAIL` (the emergency admin login). In production also set
+   `COOKIE_SECURE=true` and `SEED_DEMO=false`. → §2.
+4. **Get the program (the image).** Either build it from the source
+   (`docker build`) or pull a pre-built image. If your servers have **no internet**,
+   you build it on a connected machine, save it to a file, carry the file over, and
+   load it on the other side. → §9 (build), §6.x (air-gapped transfer).
+5. **Start it.** Run the image and pass it the settings from step 3. On the very
+   first start the app **creates all its tables automatically** (it runs the
+   database migrations for you) and creates the emergency admin account. → §3, §4.
+6. **Put HTTPS in front.** The app listens on plain port 8000; never expose that
+   directly. Place a load balancer / reverse proxy (or the cloud's ingress) in
+   front to handle the `https://` certificate. → each platform section.
+7. **Check it works.** Open the site, log in with the break-glass admin, and click
+   around. Then configure SSO, SMTP (for emails), backups, etc. from the admin UI. → §10.
+
+**When a new version comes out later**, you do **not** redo all this. You only
+swap the image for the newer one and restart — the data stays in the database
+untouched. That update procedure has its own document: **`13-maintenance-and-updates.md`**.
+
+> **The one rule that protects your data:** the database is the only thing that
+> holds state. As long as you don't delete the database (or its disk/volume), you
+> can stop, restart, upgrade, or rebuild the program as often as you like without
+> losing anything. Back up the database (§10) before any upgrade.
+
+---
+
 ## 1. Architecture recap (what you deploy)
 
 ```
@@ -134,20 +181,214 @@ Serverless, scales to zero, managed Postgres.
 
 ## 6. S3NS — "Cloud de Confiance" (sovereign GCP)
 
-S3NS exposes GCP services under European sovereignty controls, so the **GCP
-recipe (section 5) applies unchanged**: Artifact Registry + Cloud Run (or GKE) +
-Cloud SQL, within your S3NS-controlled project/organization.
+S3NS is GCP under European sovereignty controls, with three constraints that make
+it different from a vanilla GCP deployment:
 
-Sovereignty-specific points:
-- Provision **all** resources (Artifact Registry repo, Cloud SQL, Cloud Run/GKE)
-  in **S3NS-approved regions** and under the S3NS organization, so data and keys
-  stay within the trusted boundary.
-- Use **CMEK** (customer-managed encryption keys) via the S3NS key management for
-  Cloud SQL and the registry where required by your sovereignty posture.
-- Keep **SSO** internal: point `OIDC_*` / `SAML_*` at your sovereign IdP
-  (e.g. PingFederate via SAML — already supported).
-- No code change is needed — the app is cloud-agnostic; only the project,
-  region, keys and IdP differ from a standard GCP deployment.
+1. **No Cloud Run** — the only container runtime is **GKE Autopilot**. So you run
+   the app as a Kubernetes Deployment (section 6.2), not as a Cloud Run service.
+2. **No CMEK** — you use **Google-managed encryption keys** (the default). Nothing
+   to configure; data is encrypted at rest by Google's keys within the S3NS
+   boundary.
+3. **Often air-gapped** — the environment has **no internet access**. You cannot
+   `docker pull`/`build` public images from inside. But you **can push images to
+   your S3NS Artifact Registry**, and GKE pulls from it internally. Section 6.1
+   walks you through this step by step.
+
+Keep all resources (Artifact Registry, GKE, Cloud SQL) in your **S3NS project /
+region**, and point SSO (`OIDC_*` / `SAML_*`) at your **internal IdP** (e.g.
+PingFederate via SAML — already supported). No application code change is needed.
+
+---
+
+### 6.1 Get the image into the S3NS Artifact Registry (air-gapped, step by step)
+
+**The problem.** Your vendor/S3NS environment has no internet. A `docker build`
+downloads base images (`node`, `python`) from the internet, and GKE would
+normally pull images from the internet too — both impossible here. **The trick:**
+prepare every image on a machine **that has internet**, carry them into the S3NS
+zone, push them to your **S3NS Artifact Registry**, then let GKE pull from there
+(internal, no internet needed).
+
+**What you need:**
+- A **build machine WITH internet** (your laptop or an external VM) with **Docker**.
+- A way to move files into the air-gapped zone (approved USB / secure transfer).
+- An **inside machine** (in the S3NS zone) that can reach the S3NS Artifact
+  Registry, with **Docker** and **gcloud** installed.
+- *(If one machine has BOTH internet and access to the S3NS registry, skip the
+  save/transfer/load steps and push directly.)*
+
+> Replace `REGION` / `PROJECT` / `REPO` everywhere with your S3NS values
+> (e.g. region `europe-west9`, your project id, and your Artifact Registry repo name).
+
+**Step 1 — On the internet machine: get the source**
+```bash
+git clone https://github.com/Mehdi-Zar/TeamFollowUP.git
+cd TeamFollowUP
+```
+
+**Step 2 — Build the application image** (this is the only build; it downloads
+`node` + `python` and bakes the React frontend + FastAPI backend into one image):
+```bash
+docker build -t tribe-run-tracker:1.0 .
+```
+
+**Step 3 — Also fetch the database image you'll use.** Two choices:
+- **Cloud SQL** (managed Postgres on S3NS, recommended): you don't need a Postgres
+  image, but you need the Cloud SQL connector:
+  ```bash
+  docker pull gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.11.0
+  ```
+- **Postgres inside the cluster** (simpler to reason about, no managed DB):
+  ```bash
+  docker pull postgres:16-alpine
+  ```
+
+**Step 4 — Save the images to files** (so you can carry them):
+```bash
+docker save tribe-run-tracker:1.0 -o app.tar
+docker save postgres:16-alpine    -o postgres.tar          # if in-cluster Postgres
+# or
+docker save gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.11.0 -o sqlproxy.tar   # if Cloud SQL
+```
+
+**Step 5 — Move the `.tar` files into the S3NS zone** (approved USB / transfer).
+
+**Step 6 — On the inside machine: load the images back into Docker**
+```bash
+docker load -i app.tar
+docker load -i postgres.tar        # or sqlproxy.tar
+```
+
+**Step 7 — Log in to your S3NS Artifact Registry**
+```bash
+gcloud auth login                                   # with your S3NS credentials
+gcloud auth configure-docker REGION-docker.pkg.dev  # lets docker push to that registry
+```
+
+**Step 8 — Re-tag the images to point at YOUR registry, then push**
+```bash
+# App image
+docker tag tribe-run-tracker:1.0 \
+  REGION-docker.pkg.dev/PROJECT/REPO/tribe-run-tracker:1.0
+docker push REGION-docker.pkg.dev/PROJECT/REPO/tribe-run-tracker:1.0
+
+# Postgres (only if running it in-cluster)
+docker tag postgres:16-alpine \
+  REGION-docker.pkg.dev/PROJECT/REPO/postgres:16-alpine
+docker push REGION-docker.pkg.dev/PROJECT/REPO/postgres:16-alpine
+```
+
+Your images now live in the S3NS Artifact Registry. GKE can pull them with **no
+internet**. For every new version, repeat steps 2 → 8 with a new tag (`:1.1`, …).
+
+---
+
+### 6.2 Deploy on GKE Autopilot
+
+**Create the cluster** (Autopilot, in your S3NS region):
+```bash
+gcloud container clusters create-auto tribe-cluster --region REGION
+gcloud container clusters get-credentials tribe-cluster --region REGION
+```
+
+**Secrets** (`tribe-secrets.yaml` — never commit real values):
+```yaml
+apiVersion: v1
+kind: Secret
+metadata: { name: tribe-secrets }
+type: Opaque
+stringData:
+  SECRET_KEY: "<32+ random chars>"
+  POSTGRES_PASSWORD: "<db password>"
+  BREAKGLASS_PASSWORD: "<admin password>"
+```
+
+**Database — option A: Postgres in the cluster** (`postgres.yaml`, uses the image
+you pushed in 6.1):
+```yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: { name: postgres }
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector: { matchLabels: { app: postgres } }
+  template:
+    metadata: { labels: { app: postgres } }
+    spec:
+      containers:
+        - name: postgres
+          image: REGION-docker.pkg.dev/PROJECT/REPO/postgres:16-alpine
+          env:
+            - { name: POSTGRES_DB, value: tribe }
+            - { name: POSTGRES_USER, value: tribe }
+            - { name: POSTGRES_PASSWORD, valueFrom: { secretKeyRef: { name: tribe-secrets, key: POSTGRES_PASSWORD } } }
+          ports: [{ containerPort: 5432 }]
+          volumeMounts: [{ name: data, mountPath: /var/lib/postgresql/data }]
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec: { accessModes: [ReadWriteOnce], resources: { requests: { storage: 10Gi } } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: postgres }
+spec:
+  selector: { app: postgres }
+  ports: [{ port: 5432, targetPort: 5432 }]
+```
+*(Option B — Cloud SQL: create a Cloud SQL for PostgreSQL 16 instance and add the
+`cloud-sql-proxy` image you pushed as a sidecar in the app pod; set
+`POSTGRES_HOST=127.0.0.1`. Skip the StatefulSet above.)*
+
+**The application** (`app.yaml`):
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: tribe-app }
+spec:
+  replicas: 1                      # keep 1 for the first rollout (migrations); scale up after
+  selector: { matchLabels: { app: tribe-app } }
+  template:
+    metadata: { labels: { app: tribe-app } }
+    spec:
+      containers:
+        - name: app
+          image: REGION-docker.pkg.dev/PROJECT/REPO/tribe-run-tracker:1.0
+          ports: [{ containerPort: 8000 }]
+          env:
+            - { name: POSTGRES_HOST, value: postgres }   # or 127.0.0.1 with Cloud SQL proxy
+            - { name: POSTGRES_DB, value: tribe }
+            - { name: POSTGRES_USER, value: tribe }
+            - { name: SEED_DEMO, value: "false" }
+            - { name: COOKIE_SECURE, value: "true" }
+            - { name: BREAKGLASS_EMAIL, value: admin@local }
+            - { name: SECRET_KEY, valueFrom: { secretKeyRef: { name: tribe-secrets, key: SECRET_KEY } } }
+            - { name: POSTGRES_PASSWORD, valueFrom: { secretKeyRef: { name: tribe-secrets, key: POSTGRES_PASSWORD } } }
+            - { name: BREAKGLASS_PASSWORD, valueFrom: { secretKeyRef: { name: tribe-secrets, key: BREAKGLASS_PASSWORD } } }
+          readinessProbe: { httpGet: { path: /api/health, port: 8000 }, initialDelaySeconds: 20, periodSeconds: 10 }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tribe-app
+  annotations: { networking.gke.io/load-balancer-type: "Internal" }   # internal LB (sovereign)
+spec:
+  type: LoadBalancer
+  selector: { app: tribe-app }
+  ports: [{ port: 443, targetPort: 8000 }]
+```
+
+**Apply, then check:**
+```bash
+kubectl apply -f tribe-secrets.yaml -f postgres.yaml -f app.yaml
+kubectl rollout status deployment/tribe-app
+kubectl logs deploy/tribe-app | grep -i "migration\|secours"   # migrations + break-glass
+```
+The container entrypoint runs `alembic upgrade head` on start, so the first pod
+migrates the DB. Put TLS termination on the internal load balancer / Ingress and
+forward `X-Forwarded-*` (the app runs with `--proxy-headers`). Once healthy, scale
+with `kubectl scale deployment/tribe-app --replicas=3` (the in-process scheduler
+is multi-replica safe via a Postgres advisory lock).
 
 ---
 

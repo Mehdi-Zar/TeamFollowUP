@@ -3,8 +3,7 @@ import { Link, useParams, useSearchParams } from "react-router-dom";
 import { api } from "../api";
 import { useI18n } from "../i18n";
 import { useModule } from "../config";
-import { Budget, DependentItem, Initiative, KeyMessageKind, Member, ProgressPoint, RoadmapItem, SnapshotMeta, SquadDetail } from "../types";
-import { ProgressCurve, ProgressTimeline } from "../components/progress";
+import { Budget, DependentItem, Initiative, KeyMessageKind, Member, RoadmapItem, SnapshotMeta, SquadDetail } from "../types";
 import { Dot, FreshnessBadge, ProgressBar, Spinner, ErrorBanner, Collapsible } from "../components/ui";
 import { useAuth } from "../auth";
 import ExportMenu from "../components/ExportMenu";
@@ -21,14 +20,12 @@ export default function SquadDetailPage() {
   const [snapshots, setSnapshots] = useState<SnapshotMeta[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [openJalon, setOpenJalon] = useState<RoadmapItem | null>(null);
-  const [progress, setProgress] = useState<ProgressPoint[]>([]);
   const [dependents, setDependents] = useState<DependentItem[]>([]);
   const [initiatives, setInitiatives] = useState<Initiative[]>([]);
   const moduleOn = useModule();
   const roadmapOn = moduleOn("squad_content", "roadmap");
   const objectivesOn = moduleOn("squad_content", "objectives");
   const kpisOn = moduleOn("squad_content", "kpis");
-  const reviewOn = moduleOn("review");
   const { user, effectiveRole } = useAuth();
 
   // Re-fetch the squad in place (no spinner flash) after a budget / key-message edit.
@@ -46,7 +43,6 @@ export default function SquadDetailPage() {
 
   useEffect(() => {
     if (!squad) return;
-    api.get<ProgressPoint[]>(`/api/squads/${squadId}/progress?year=${squad.year}`).then(setProgress).catch(() => {});
     api.get<DependentItem[]>(`/api/squads/${squadId}/dependents?year=${squad.year}`).then(setDependents).catch(() => {});
     api.get<Initiative[]>(`/api/initiatives?year=${squad.year}&squad_id=${squadId}`).then(setInitiatives).catch(() => {});
   }, [squadId, squad?.year]);
@@ -116,10 +112,13 @@ export default function SquadDetailPage() {
 
       {squad.description && <div className="muted small">{squad.description}</div>}
 
-      {/* Initiatives assignées à la squad (définies par le tribe leader) - tout en haut, au-dessus des OTD */}
-      {initiatives.length > 0 && (
-        <div className="card">
-          <h2>{t("nav.initiatives")}</h2>
+      {/* Initiatives assignées à la squad (définies par le tribe leader) - tout en haut, au-dessus des OTD.
+          Toujours affichées, même vides, pour rendre visible qu'aucune n'est encore assignée. */}
+      <div className="card">
+        <h2>{t("nav.initiatives")}</h2>
+        {initiatives.length === 0 ? (
+          <div className="small muted">{t("init.empty")}</div>
+        ) : (
           <table className="init-tbl">
             <thead><tr>
               <th>{t("init.h_initiative")}</th><th>{t("init.h_owner")}</th><th>{t("init.h_deadline")}</th>
@@ -134,8 +133,8 @@ export default function SquadDetailPage() {
               ))}
             </tbody>
           </table>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* OTD - objectifs annuels engagés, en tête de page (définis par le tribe leader) */}
       {objectivesOn && privileged && (
@@ -246,24 +245,6 @@ export default function SquadDetailPage() {
             </div>
           ))}
         </div>
-      )}
-
-      {/* Revue de progression - carte dépliable */}
-      {reviewOn && (
-        <Collapsible title={t("progress.title")} subtitle={t("progress.collapsed_hint")}>
-          <div className="small muted" style={{ marginBottom: 12 }}>{t("progress.hint")}</div>
-          <div className="banner" style={{ marginBottom: 12 }}>{t("progress.how_it_works")}</div>
-          {progress.length === 0 ? (
-            <div className="small muted">{t("progress.no_data")}</div>
-          ) : (
-            <>
-              <ProgressCurve points={progress} />
-              <div style={{ marginTop: 12 }}>
-                <ProgressTimeline points={progress} />
-              </div>
-            </>
-          )}
-        </Collapsible>
       )}
 
       {/* Équipe / organigramme de la squad - carte dépliable */}

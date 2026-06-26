@@ -22,6 +22,7 @@ understand, run, operate and extend the product **without further explanation**.
 | 10 | [Technical Debt & Risk Register](10-tech-debt-and-risk-register.md) | Tech leads |
 | 11 | [Roadmap & Enterprise Readiness](11-roadmap-and-enterprise-readiness.md) | Exec / Architects |
 | 12 | [Deployment Guide (VMware · GCP · S3NS · AWS · Azure)](12-deployment-guide.md) | Ops / Architects |
+| 13 | [Maintenance & Updates (ship new versions, keep data)](13-maintenance-and-updates.md) | Ops / Architects |
 | — | [Architecture Decision Records (ADR)](adr/README.md) | Engineers / Architects |
 
 ## At a glance

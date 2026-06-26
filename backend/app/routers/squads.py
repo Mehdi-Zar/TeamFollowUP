@@ -29,7 +29,6 @@ from ..models import (
     User,
 )
 from ..changenotify import notify_change
-from ..progress import capture_progress
 from ..schemas import (
     DependentItemOut,
     KeyMessageCreate,
@@ -230,7 +229,6 @@ def set_quarter_progress(squad_id: int, payload: QuarterProgressIn, db: Session 
         row.comment = payload.comment
     record_audit(db, user.id, "quarter_progress.set", entity="squad", entity_id=squad_id,
                  detail={"year": payload.year, "quarter": payload.quarter, "progress_pct": payload.progress_pct})
-    capture_progress(db, squad_id, payload.year, user)
     db.commit()
     db.refresh(row)
     notify_change(squad_id, "progress", user.display_name, payload.year)
