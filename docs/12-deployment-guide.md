@@ -117,7 +117,8 @@ docker tag tribe-run-tracker:1.0 REGISTRY/tribe-run-tracker:1.0
 docker push REGISTRY/tribe-run-tracker:1.0
 ```
 
-Registry per platform: **GCP/S3NS** → Artifact Registry (`REGION-docker.pkg.dev/PROJECT/REPO`),
+Registry per platform: **GCP** → Artifact Registry (`REGION-docker.pkg.dev/PROJECT/REPO`),
+**S3NS** → Artifact Registry on its own host (`u-france-east1-docker.s3nsregistry.fr/PROJECT/REPO` — see §6),
 **AWS** → ECR (`ACCOUNT.dkr.ecr.REGION.amazonaws.com/REPO`), **Azure** → ACR
 (`REGISTRY.azurecr.io/REPO`), **VMware** → any registry (Harbor, Docker Hub, …).
 
@@ -179,28 +180,132 @@ Serverless, scales to zero, managed Postgres.
 
 ---
 
-## 6. S3NS — "Cloud de Confiance" (sovereign GCP)
+## 6. S3NS "Cloud de Confiance" from an air-gapped site (vendor) — full walkthrough
 
-S3NS is GCP under European sovereignty controls, with three constraints that make
-it different from a vanilla GCP deployment:
+> **Who this is for.** You must put this app on **S3NS Trusted Cloud** ("Cloud de
+> Confiance" — the vendor × Google sovereign cloud, SecNumCloud-qualified), and you
+> do it from a **vendor-style air-gapped network** (no internet). You may never have
+> deployed anything before. Every command below is copy-paste, and each one says
+> *what it does* and *what you should see*. Anything in CAPITALS (`PROJECT`, `REPO`,
+> `POOL_ID`…) is a value **you** replace — ask your S3NS administrator for the ones
+> you don't have. The single S3NS region is **`u-france-east1`** (already filled in
+> for you everywhere below).
 
-1. **No Cloud Run** — the only container runtime is **GKE Autopilot**. So you run
-   the app as a Kubernetes Deployment (section 6.2), not as a Cloud Run service.
-2. **No CMEK** — you use **Google-managed encryption keys** (the default). Nothing
-   to configure; data is encrypted at rest by Google's keys within the S3NS
-   boundary.
-3. **Often air-gapped** — the environment has **no internet access**. You cannot
-   `docker pull`/`build` public images from inside. But you **can push images to
-   your S3NS Artifact Registry**, and GKE pulls from it internally. Section 6.1
-   walks you through this step by step.
+### 6.0 The big picture (read this once — it makes the rest obvious)
 
-Keep all resources (Artifact Registry, GKE, Cloud SQL) in your **S3NS project /
-region**, and point SSO (`OIDC_*` / `SAML_*`) at your **internal IdP** (e.g.
-PingFederate via SAML — already supported). No application code change is needed.
+The app is only **two things**: a **program** (one Docker image) and a **database**
+(PostgreSQL). To run it: push the program image into S3NS, start PostgreSQL, then
+start the program pointing at the database. That's the whole job.
+
+What makes *your* case harder is **two walls** stacked on top of that simple idea:
+
+```
+  ┌──────────── WALL 1: the air gap ────────────┐   ┌──── WALL 2: S3NS ≠ normal GCP ────┐
+ (1) machine WITH internet      (2) carry files     (3) machine INSIDE the S3NS network
+   git clone + docker build  ─►  USB / secure   ─►  docker load → docker push → S3NS
+   docker save  (→ .tar)        transfer             Artifact Registry → GKE runs it → Postgres
+```
+
+- **Wall 1 — the air gap.** Inside the secure zone there is *no internet*, so you
+  cannot `docker build` (it downloads `node`/`python` base layers) or pull public
+  images there. You do all the downloading **outside**, package it into files, carry
+  them in, and load them.
+- **Wall 2 — S3NS is a separate cloud, not normal Google Cloud.** Same tools
+  (`gcloud`, `kubectl`, `docker`) but **different addresses**: a different login
+  ("universe"), a different image-registry domain (`…s3nsregistry.fr`, *not*
+  `pkg.dev`), and a **single region** `u-france-east1`. §6.3–6.5 handle this.
+
+Order of play: one-time setup (§6.2 checklist, §6.3 gcloud, §6.4 registry) → move the
+image in (§6.5) → create the cluster (§6.6) → pick a database (§6.7) → deploy (§6.8)
+→ HTTPS (§6.9) → check (§6.10). Future updates are just §6.5 + one command (§6.12).
+
+### 6.1 What's different about S3NS (the limitations, in plain words)
+
+| Limitation | What it means for you | Where |
+|---|---|---|
+| **Separate "universe"** (not google.com) | `gcloud` must point at S3NS domains (`s3nsapis.fr`, `cloud.s3nscloud.fr`) and you log in through **your company IdP** (Workforce Identity Federation), not a Google account. | §6.3 |
+| **Custom image registry** | Images live at `u-france-east1-docker.s3nsregistry.fr/…`, **not** `…-docker.pkg.dev/…`. Every tag uses that host. | §6.4–6.5 |
+| **One region only** | Everything goes in **`u-france-east1`** (zones `-a/-b/-c`). No choice to make. | all |
+| **Limited service catalogue** | ~30 services, not all of GCP. The ones this app needs **are** available: **Artifact Registry, GKE, Cloud SQL, Cloud Load Balancing, IAM, KMS, VPC**. Verify any time with `gcloud services list --available`. | §6.6–6.7 |
+| **Air-gapped operations** | No internet inside: build & download **outside**, transfer, push to the S3NS registry; GKE then pulls **internally**. | §6.5 |
+| **Sovereign encryption** | Data is encrypted at rest by **S3NS-managed keys** by default — nothing to do. If policy requires **your own keys**, use **Cloud KMS** (available) and turn on CMEK for GKE/Cloud SQL. | optional |
+
+No application code change is needed. Point SSO at your **internal IdP**
+(`SAML_*` / `OIDC_*`, already supported — e.g. PingFederate via SAML).
+
+### 6.2 Before you start — the checklist
+
+Get these from your S3NS / platform administrator and write them down:
+
+- **Project ID** (`PROJECT`) — your S3NS project.
+- **Region** — always `u-france-east1` (no need to ask).
+- **Workforce pool + provider IDs** (`POOL_ID`, `PROVIDER_ID`) — they identify your
+  company login. Needed once, in §6.3.
+- **IAM roles on your account**: *Artifact Registry Administrator* (create repo +
+  push), *Kubernetes Engine Admin* (deploy), and *Cloud SQL Admin* only if you pick
+  managed Postgres (§6.7 option B).
+- **Two machines**:
+  1. an **internet machine** (laptop / external VM) with **Docker** — to build &
+     download;
+  2. an **inside machine** on the S3NS network with **Docker**, **gcloud** and
+     **kubectl** — to push & deploy. *(If one machine reaches both the internet and
+     S3NS, skip the save/transfer/load steps.)*
+- **An approved way to move files** across the gap (sanctioned USB, data diode,
+  transfer portal — follow your site's rules).
+- **A TLS certificate** for your service hostname (your PKI/security team issues it).
+  Public Let's Encrypt can't validate an internal-only name, so you provide the cert
+  yourself in §6.9.
+
+### 6.3 One-time: point `gcloud` at the S3NS "universe" (on the inside machine)
+
+Plain `gcloud` talks to Google; these commands make it talk to **S3NS** instead.
+
+```bash
+# 1) Keep S3NS settings in their own profile (so they don't clash with normal gcloud)
+gcloud config configurations create s3ns
+gcloud config configurations activate s3ns
+
+# 2) Tell gcloud this is the S3NS universe (its API domain)
+gcloud config set universe_domain s3nsapis.fr
+
+# 3) Build a login file tied to YOUR company identity provider.
+#    POOL_ID / PROVIDER_ID come from your admin (see §6.2).
+AUDIENCE="locations/global/workforcePools/POOL_ID/providers/PROVIDER_ID"
+gcloud iam workforce-pools create-login-config "$AUDIENCE" \
+  --universe-cloud-web-domain="cloud.s3nscloud.fr" \
+  --universe-domain="s3nsapis.fr" \
+  --output-file="wif-login-config.json"
+
+# 4) Log in (opens your org's IdP), then choose project + region
+gcloud auth login --login-config=wif-login-config.json
+gcloud config set project PROJECT
+gcloud config set compute/region u-france-east1
+```
+
+*What you should see:* `gcloud config list` now shows `universe_domain = s3nsapis.fr`,
+your `project`, and `region = u-france-east1`. If `gcloud projects list` returns your
+project, the connection works.
+
+### 6.4 One-time: create the image registry (Artifact Registry)
+
+A "repository" is just a folder for your images inside S3NS.
+
+```bash
+# Create a Docker repository named "tribe" in the only region
+gcloud artifacts repositories create tribe \
+  --repository-format=docker --location=u-france-east1 \
+  --project=PROJECT --description="Tribe Run Tracker images"
+
+# Let docker authenticate to the S3NS registry host (note: s3nsregistry.fr, NOT pkg.dev)
+gcloud auth configure-docker u-france-east1-docker.s3nsregistry.fr
+```
+
+From now on, every image is named:
+`u-france-east1-docker.s3nsregistry.fr/PROJECT/tribe/NAME:TAG`.
 
 ---
 
-### 6.1 Get the image into the S3NS Artifact Registry (air-gapped, step by step)
+### 6.5 Bring the image across the air gap (step by step)
 
 **The problem.** Your vendor/S3NS environment has no internet. A `docker build`
 downloads base images (`node`, `python`) from the internet, and GKE would
@@ -217,8 +322,8 @@ zone, push them to your **S3NS Artifact Registry**, then let GKE pull from there
 - *(If one machine has BOTH internet and access to the S3NS registry, skip the
   save/transfer/load steps and push directly.)*
 
-> Replace `REGION` / `PROJECT` / `REPO` everywhere with your S3NS values
-> (e.g. region `europe-west9`, your project id, and your Artifact Registry repo name).
+> In the commands below, replace `PROJECT` with your S3NS project id. The region is
+> always `u-france-east1` and the repo is `tribe` (created in §6.4) — already filled in.
 
 **Step 1 — On the internet machine: get the source**
 ```bash
@@ -259,37 +364,59 @@ docker load -i app.tar
 docker load -i postgres.tar        # or sqlproxy.tar
 ```
 
-**Step 7 — Log in to your S3NS Artifact Registry**
+**Step 7 — Make sure docker can push to S3NS.** You already pointed `gcloud` at the
+S3NS universe and logged in (§6.3) and let docker authenticate (§6.4). If this is a
+fresh machine, do §6.3 + §6.4 first. To re-check the docker credential helper:
 ```bash
-gcloud auth login                                   # with your S3NS credentials
-gcloud auth configure-docker REGION-docker.pkg.dev  # lets docker push to that registry
+gcloud auth configure-docker u-france-east1-docker.s3nsregistry.fr
 ```
 
-**Step 8 — Re-tag the images to point at YOUR registry, then push**
+**Step 8 — Re-tag the images for YOUR S3NS registry, then push**
 ```bash
 # App image
 docker tag tribe-run-tracker:1.0 \
-  REGION-docker.pkg.dev/PROJECT/REPO/tribe-run-tracker:1.0
-docker push REGION-docker.pkg.dev/PROJECT/REPO/tribe-run-tracker:1.0
+  u-france-east1-docker.s3nsregistry.fr/PROJECT/tribe/tribe-run-tracker:1.0
+docker push u-france-east1-docker.s3nsregistry.fr/PROJECT/tribe/tribe-run-tracker:1.0
 
-# Postgres (only if running it in-cluster)
+# Postgres (only if running it in-cluster — skip if you use managed Cloud SQL)
 docker tag postgres:16-alpine \
-  REGION-docker.pkg.dev/PROJECT/REPO/postgres:16-alpine
-docker push REGION-docker.pkg.dev/PROJECT/REPO/postgres:16-alpine
+  u-france-east1-docker.s3nsregistry.fr/PROJECT/tribe/postgres:16-alpine
+docker push u-france-east1-docker.s3nsregistry.fr/PROJECT/tribe/postgres:16-alpine
 ```
 
-Your images now live in the S3NS Artifact Registry. GKE can pull them with **no
-internet**. For every new version, repeat steps 2 → 8 with a new tag (`:1.1`, …).
+**Step 9 — Confirm the images are there:**
+```bash
+gcloud artifacts docker images list \
+  u-france-east1-docker.s3nsregistry.fr/PROJECT/tribe
+```
+You should see `tribe-run-tracker` (and `postgres` if you pushed it). The images now
+live in S3NS; GKE pulls them with **no internet**. For every new version, repeat
+steps 2 → 9 with a new tag (`:1.1`, …) — see §6.12.
 
 ---
 
-### 6.2 Deploy on GKE Autopilot
+### 6.6 Create the GKE cluster
 
-**Create the cluster** (Autopilot, in your S3NS region):
+GKE is the container runtime we use on S3NS. **Autopilot** means Google/S3NS manage
+the nodes for you — you only deploy pods. Create it once, then load its credentials
+so `kubectl` talks to it:
 ```bash
-gcloud container clusters create-auto tribe-cluster --region REGION
-gcloud container clusters get-credentials tribe-cluster --region REGION
+gcloud container clusters create-auto tribe-cluster --region u-france-east1
+gcloud container clusters get-credentials tribe-cluster --region u-france-east1
 ```
+*Check:* `kubectl get nodes` eventually lists nodes (Autopilot adds them on demand).
+
+### 6.7 Choose your database, then 6.8 deploy
+
+Pick **one** database option, then continue to §6.8:
+- **Option A — Postgres inside the cluster** (simplest; fewest moving parts; uses the
+  `postgres:16-alpine` image you pushed in §6.5). Good to get running fast.
+- **Option B — Cloud SQL for PostgreSQL** (managed: automatic backups, HA). Create a
+  *Cloud SQL for PostgreSQL 16* instance in `u-france-east1`, give it a **private IP**
+  on your VPC, then in §6.8 set `POSTGRES_HOST` to that private IP and **skip** the
+  Postgres StatefulSet. (No public internet is involved — it stays inside S3NS.)
+
+### 6.8 Deploy the application on GKE
 
 **Secrets** (`tribe-secrets.yaml` — never commit real values):
 ```yaml
@@ -318,7 +445,7 @@ spec:
     spec:
       containers:
         - name: postgres
-          image: REGION-docker.pkg.dev/PROJECT/REPO/postgres:16-alpine
+          image: u-france-east1-docker.s3nsregistry.fr/PROJECT/tribe/postgres:16-alpine
           env:
             - { name: POSTGRES_DB, value: tribe }
             - { name: POSTGRES_USER, value: tribe }
@@ -353,7 +480,7 @@ spec:
     spec:
       containers:
         - name: app
-          image: REGION-docker.pkg.dev/PROJECT/REPO/tribe-run-tracker:1.0
+          image: u-france-east1-docker.s3nsregistry.fr/PROJECT/tribe/tribe-run-tracker:1.0
           ports: [{ containerPort: 8000 }]
           env:
             - { name: POSTGRES_HOST, value: postgres }   # or 127.0.0.1 with Cloud SQL proxy
@@ -389,6 +516,81 @@ migrates the DB. Put TLS termination on the internal load balancer / Ingress and
 forward `X-Forwarded-*` (the app runs with `--proxy-headers`). Once healthy, scale
 with `kubectl scale deployment/tribe-app --replicas=3` (the in-process scheduler
 is multi-replica safe via a Postgres advisory lock).
+
+### 6.9 Put HTTPS in front
+
+The app speaks plain HTTP on port 8000 — **never** expose that directly. Terminate
+TLS in front of it. In an internal/sovereign setup you use **your own certificate**
+(public Let's Encrypt can't validate an internal name). Load your cert + key as a
+secret and attach an Ingress:
+```bash
+kubectl create secret tls tribe-tls --cert=server.crt --key=server.key
+```
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: tribe-ingress
+  annotations: { kubernetes.io/ingress.class: "gce-internal" }   # internal HTTP(S) LB
+spec:
+  tls: [{ hosts: ["tribe.internal.example"], secretName: tribe-tls }]
+  rules:
+    - host: tribe.internal.example
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend: { service: { name: tribe-app, port: { number: 8000 } } }
+```
+Apply it (`kubectl apply -f ingress.yaml`), point your internal **DNS** record
+(`tribe.internal.example`) at the load balancer address
+(`kubectl get ingress tribe-ingress`), and keep `COOKIE_SECURE=true`. The LB sets
+`X-Forwarded-*`, which the app honours (`--proxy-headers`). *(If you set the app
+`Service` to `port: 8000` instead of 443, the Ingress backend port stays 8000 too.)*
+
+### 6.10 Verify it works
+
+```bash
+kubectl get pods                       # tribe-app + postgres should be Running
+kubectl logs deploy/tribe-app | grep -i "migration\|secours"   # migrations + break-glass pwd
+curl -k https://tribe.internal.example/api/health              # {"status":"ok"}
+```
+Then open the URL in a browser, log in with the break-glass admin
+(`BREAKGLASS_EMAIL` / the password you set, or the random one printed in the logs on
+first boot), and finish setup (SSO, SMTP, backups) from the admin UI (§9–§10).
+
+### 6.11 When something fails (the usual suspects)
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| Pod stuck `ImagePullBackOff` | wrong registry host, image not pushed, or no pull permission | Check the `image:` host is `u-france-east1-docker.s3nsregistry.fr/PROJECT/tribe/…`; re-run §6.5 step 9 to confirm it exists; ensure the cluster's service account has *Artifact Registry Reader*. |
+| `gcloud` errors / wrong account | gcloud not on the S3NS universe | Re-run §6.3; check `gcloud config list` shows `universe_domain = s3nsapis.fr`. |
+| `docker push` denied | docker not authenticated to S3NS | Re-run `gcloud auth configure-docker u-france-east1-docker.s3nsregistry.fr` (§6.4). |
+| App pod crashes, logs show DB connection refused | wrong `POSTGRES_HOST` / DB not up | Option A: `kubectl get pods` — is `postgres` Running? Host must be `postgres`. Option B (Cloud SQL): host = the **private IP**, and the cluster VPC must reach it. |
+| Two pods race the migration on first deploy | scaled out too early | First rollout with **1 replica** (the manifest already does); scale up only after it's healthy. |
+
+### 6.12 Ship a new version later
+
+You do **not** redo all of the above. The data stays in the database. Just:
+```bash
+# OUTSIDE (internet): build the new tag and save it
+docker build -t tribe-run-tracker:1.1 . && docker save tribe-run-tracker:1.1 -o app-1.1.tar
+# …transfer app-1.1.tar across the gap…
+# INSIDE: load, tag, push, then roll the deployment
+docker load -i app-1.1.tar
+docker tag tribe-run-tracker:1.1 u-france-east1-docker.s3nsregistry.fr/PROJECT/tribe/tribe-run-tracker:1.1
+docker push u-france-east1-docker.s3nsregistry.fr/PROJECT/tribe/tribe-run-tracker:1.1
+kubectl set image deployment/tribe-app app=u-france-east1-docker.s3nsregistry.fr/PROJECT/tribe/tribe-run-tracker:1.1
+kubectl rollout status deployment/tribe-app
+```
+The new pod runs `alembic upgrade head` automatically. **Back up the database first**
+(§10). Full upgrade/rollback playbook: `13-maintenance-and-updates.md`.
+
+> **S3NS references** (verify specifics against your tenant — the catalogue evolves):
+> [S3NS docs](https://documentation.s3ns.fr/products) ·
+> [set up gcloud for S3NS](https://documentation.s3ns.fr/docs/get-started-tpc/setup-gcloud) ·
+> [regions & zones](https://documentation.s3ns.fr/docs/get-started-tpc/regions-and-zones) ·
+> [Artifact Registry (Docker)](https://documentation.s3ns.fr/artifact-registry/docs/docker/store-docker-container-images).
 
 ---
 
