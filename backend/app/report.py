@@ -970,6 +970,27 @@ def render_pptx(data: dict) -> bytes:
         sh.shadow.inherit = False
         return sh
 
+    def place(sh, lines, *, anchor=MSO_ANCHOR.TOP, ml=0.1, mt=0.06, mr=0.1, mb=0.06):
+        """Write paragraphs INTO a shape's own text frame, so the text is part of
+        the shape (not a separate textbox floating on top). Each line is
+        (text, size_pt, color[, bold, align, space_after_pt])."""
+        tf = sh.text_frame
+        tf.word_wrap = True
+        tf.vertical_anchor = anchor
+        tf.margin_left = Inches(ml); tf.margin_right = Inches(mr)
+        tf.margin_top = Inches(mt); tf.margin_bottom = Inches(mb)
+        for i, ln in enumerate(lines):
+            txt, size, color = ln[0], ln[1], ln[2]
+            bold = ln[3] if len(ln) > 3 else False
+            align = ln[4] if len(ln) > 4 else PP_ALIGN.LEFT
+            sa = ln[5] if len(ln) > 5 else 2
+            p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
+            p.alignment = align
+            p.space_after = Pt(sa)
+            r = p.add_run(); r.text = txt
+            r.font.size = Pt(size); r.font.bold = bold; r.font.color.rgb = color
+        return sh
+
     def bullets(s, left, top, width, height, lines, size):
         """A text box with one paragraph per (text, color, bold) line."""
         box = s.shapes.add_textbox(left, top, width, height)
@@ -1015,10 +1036,12 @@ def render_pptx(data: dict) -> bytes:
         return sh
 
     def card(s, left, top, width, height, title=None):
-        rrect(s, left, top, width, height, B["white"], line=B["line"], radius=0.05)
+        sh = rrect(s, left, top, width, height, B["white"], line=B["line"], radius=0.05)
         if title:
-            textbox(s, Emu(int(left) + int(Inches(0.18))), Emu(int(top) + int(Inches(0.12))),
-                    Emu(int(width) - int(Inches(0.36))), Inches(0.3), title, 12, bold=True, color=B["navy"])
+            # Title lives in the card's own text frame (top-anchored), not as an
+            # overlay; body content is added by the caller as child shapes.
+            place(sh, [(title, 12, B["navy"], True)], anchor=MSO_ANCHOR.TOP, ml=0.18, mt=0.12, mr=0.18)
+        return sh
 
     def chip(s, left, top, text, fill, *, color=None, size=10):
         w = Inches(0.26 + 0.082 * len(text))
@@ -1054,11 +1077,13 @@ def render_pptx(data: dict) -> bytes:
     # ---------------- Summary one-pager (report kind) -----------------------------
     def summary_slide():
         s = new_slide()
-        rect(s, Inches(0), Inches(0), prs.slide_width, Inches(1.12), B["navy"])
-        textbox(s, Inches(0.55), Inches(0.18), Inches(9.5), Inches(0.5),
-                f'{data["app_name"]} - {rt(lang, "report")}', 26, bold=True, color=B["white"])
-        textbox(s, Inches(0.57), Inches(0.68), Inches(9.5), Inches(0.35),
-                f'{data["scope_name"]} · {rt(lang, "year")} {data["year"]}', 13, color=rgb("#C7D2FE"))
+        band = rect(s, Inches(0), Inches(0), prs.slide_width, Inches(1.12), B["navy"])
+        # Title + subtitle are the band's own text; the right-corner meta stays a
+        # corner label (left title and right meta can't share one text frame).
+        place(band, [
+            (f'{data["app_name"]} - {rt(lang, "report")}', 26, B["white"], True, PP_ALIGN.LEFT, 5),
+            (f'{data["scope_name"]} · {rt(lang, "year")} {data["year"]}', 13, rgb("#C7D2FE"), False, PP_ALIGN.LEFT, 0),
+        ], anchor=MSO_ANCHOR.TOP, ml=0.55, mt=0.18, mr=4.2)
         textbox(s, Inches(9.3), Inches(0.3), Inches(3.5), Inches(0.6),
                 f'{rt(lang, "generated_full", d=gen_str)}\n{rt(lang, "window_full", n=data["since_days"])}', 11,
                 color=rgb("#C7D2FE"), align=PP_ALIGN.RIGHT)
@@ -1078,9 +1103,11 @@ def render_pptx(data: dict) -> bytes:
         ky, kh = Inches(1.34), Inches(1.05)
         for i, (label, val, color) in enumerate(kpis):
             left = Emu(int(margin) + i * (int(card_w) + int(gap)))
-            rect(s, left, ky, card_w, kh, B["card"], line=B["line"])
-            textbox(s, left, Inches(1.46), card_w, Inches(0.5), val, 26, bold=True, color=color, align=PP_ALIGN.CENTER)
-            textbox(s, left, Inches(2.04), card_w, Inches(0.3), label, 10, color=B["muted"], align=PP_ALIGN.CENTER)
+            kp = rect(s, left, ky, card_w, kh, B["card"], line=B["line"])
+            # Value + label are the card's own text, vertically centered.
+            place(kp, [(val, 26, color, True, PP_ALIGN.CENTER, 4),
+                       (label, 10, B["muted"], False, PP_ALIGN.CENTER, 0)],
+                  anchor=MSO_ANCHOR.MIDDLE, ml=0.05, mr=0.05)
 
         headers = [rt(lang, "h_squad"), rt(lang, "h_leader"), rt(lang, "h_status"),
                    rt(lang, "h_progress"), rt(lang, "h_delta"), rt(lang, "h_blocked"), rt(lang, "h_atrisk")]
@@ -1125,11 +1152,12 @@ def render_pptx(data: dict) -> bytes:
     def detail_slide(r, *, with_objectives):
         det = r.get("detail") or {}
         s = new_slide()
-        rect(s, Inches(0), Inches(0), prs.slide_width, Inches(0.92), B["navy"])
-        textbox(s, Inches(0.5), Inches(0.14), Inches(10), Inches(0.5), r["name"], 22, bold=True, color=B["white"])
-        textbox(s, Inches(0.52), Inches(0.58), Inches(12), Inches(0.3),
-                f'{rt(lang, "year")} {data["year"]} · {rt(lang, "h_progress_long")} {r["annual_pct"]}%',
-                12, color=rgb("#C7D2FE"))
+        band = rect(s, Inches(0), Inches(0), prs.slide_width, Inches(0.92), B["navy"])
+        place(band, [
+            (r["name"], 22, B["white"], True, PP_ALIGN.LEFT, 4),
+            (f'{rt(lang, "year")} {data["year"]} · {rt(lang, "h_progress_long")} {r["annual_pct"]}%',
+             12, rgb("#C7D2FE"), False, PP_ALIGN.LEFT, 0),
+        ], anchor=MSO_ANCHOR.TOP, ml=0.5, mt=0.12, mr=0.5)
 
         # Budget line (status + figures), just under the header band.
         bud = det.get("budget")
@@ -1182,11 +1210,7 @@ def render_pptx(data: dict) -> bytes:
         qh = Emu(roadmap_bottom - int(qtop) - int(Inches(0.3)))
         for i, qd in enumerate(det.get("quarters", [])):
             left = Emu(int(margin) + i * (int(col_w) + int(gap)))
-            rect(s, left, qtop, col_w, qh, B["card"], line=B["line"])
-            inner_l = Emu(int(left) + int(Inches(0.1)))
-            inner_w = Emu(int(col_w) - int(Inches(0.2)))
-            textbox(s, inner_l, Emu(int(qtop) + int(Inches(0.08))), inner_w, Inches(0.3),
-                    f'Q{qd["q"]} - {qd["pct"]}%', 12, bold=True, color=B["ink"])
+            qc = rect(s, left, qtop, col_w, qh, B["card"], line=B["line"])
             items = qd.get("items", [])
             lines = []
             for it in items[:10]:
@@ -1197,8 +1221,10 @@ def render_pptx(data: dict) -> bytes:
                 lines.append((rt(lang, "no_jalon"), B["muted"], False))
             elif len(items) > 10:
                 lines.append((f'+{len(items) - 10}…', B["muted"], False))
-            bullets(s, inner_l, Emu(int(qtop) + int(Inches(0.5))), inner_w,
-                    Emu(int(qh) - int(Inches(0.6))), lines, 9.5)
+            # Header + milestones are the card's own text.
+            paras = [(f'Q{qd["q"]} - {qd["pct"]}%', 12, B["ink"], True, PP_ALIGN.LEFT, 6)]
+            paras += [(txt, 9.5, color, bold, PP_ALIGN.LEFT, 2) for (txt, color, bold) in lines]
+            place(qc, paras, anchor=MSO_ANCHOR.TOP, ml=0.1, mt=0.08, mr=0.1)
 
         # Key messages band (success / alert / risk) along the bottom.
         if kms:
@@ -1228,8 +1254,8 @@ def render_pptx(data: dict) -> bytes:
         rcolx = Emu(int(L) + int(colw) + int(Inches(0.2)))
 
         # ----- header card (navy) -----
-        rrect(s, L, Inches(0.32), FULLW, Inches(0.84), B["navy"], radius=0.08)
-        textbox(s, Inches(0.62), Inches(0.44), Inches(8.4), Inches(0.45), r["name"], 20, bold=True, color=B["white"])
+        hdr = rrect(s, L, Inches(0.32), FULLW, Inches(0.84), B["navy"], radius=0.08)
+        place(hdr, [(r["name"], 20, B["white"], True)], anchor=MSO_ANCHOR.MIDDLE, ml=0.3, mr=4.6)
         textbox(s, Emu(int(SW) - int(Inches(4.6))), Inches(0.5), Inches(4.0), Inches(0.3),
                 f'{rt(lang, "h_leader")} : {r["leader"] or "-"}', 11, color=rgb("#C7D2FE"), align=PP_ALIGN.RIGHT)
 
@@ -1244,15 +1270,14 @@ def render_pptx(data: dict) -> bytes:
         chips_row(s, L, Inches(1.3), items)
 
         def list_card(x, y, w, h, title, lines, empty):
-            card(s, x, y, w, h, title)
-            bx = Emu(int(x) + int(Inches(0.18)))
-            bw = Emu(int(w) - int(Inches(0.36)))
-            by = Emu(int(y) + int(Inches(0.48)))
-            bh = Emu(int(h) - int(Inches(0.58)))
+            # Title + lines are all the card's own text (one shape, no overlay).
+            sh = rrect(s, x, y, w, h, B["white"], line=B["line"], radius=0.05)
+            paras = [(title, 12, B["navy"], True, PP_ALIGN.LEFT, 5)]
             if lines:
-                bullets(s, bx, by, bw, bh, lines, 9.5)
+                paras += [(txt, 9.5, color, bold, PP_ALIGN.LEFT, 2) for (txt, color, bold) in lines]
             else:
-                textbox(s, bx, by, bw, Inches(0.3), empty, 9.5, color=B["muted"])
+                paras.append((empty, 9.5, B["muted"], False, PP_ALIGN.LEFT, 0))
+            place(sh, paras, anchor=MSO_ANCHOR.TOP, ml=0.18, mt=0.12, mr=0.18, mb=0.1)
 
         # ----- Row 1: Initiatives | OTD -----
         inits = det.get("initiatives") or []
@@ -1290,12 +1315,19 @@ def render_pptx(data: dict) -> bytes:
         for i in range(qn):
             qd = quarters[i] if i < len(quarters) else {"q": i + 1, "pct": 0, "items": []}
             qx = Emu(int(inner_x) + i * (int(qw) + int(qgap)))
-            rrect(s, qx, qy, qw, qh, rgb("#F8FAFC"), line=B["line"], radius=0.04)
+            qcard = rrect(s, qx, qy, qw, qh, rgb("#F8FAFC"), line=B["line"], radius=0.04)
             tx = Emu(int(qx) + int(Inches(0.1)))
             tw = Emu(int(qw) - int(Inches(0.2)))
-            textbox(s, tx, Emu(int(qy) + int(Inches(0.08))), tw, Inches(0.26), f'Q{qd["q"]}', 11, bold=True, color=B["navy"])
-            textbox(s, tx, Emu(int(qy) + int(Inches(0.08))), tw, Inches(0.26), f'{qd["pct"]}%', 10,
-                    color=B["muted"], align=PP_ALIGN.RIGHT)
+            # Q label + percent live in the mini-card's own text frame (two runs).
+            qtf = qcard.text_frame
+            qtf.word_wrap = True; qtf.vertical_anchor = MSO_ANCHOR.TOP
+            qtf.margin_left = Inches(0.1); qtf.margin_right = Inches(0.1)
+            qtf.margin_top = Inches(0.07); qtf.margin_bottom = Inches(0.02)
+            qp = qtf.paragraphs[0]
+            r1 = qp.add_run(); r1.text = f'Q{qd["q"]}'
+            r1.font.size = Pt(11); r1.font.bold = True; r1.font.color.rgb = B["navy"]
+            r2 = qp.add_run(); r2.text = f'   {qd["pct"]}%'
+            r2.font.size = Pt(10); r2.font.color.rgb = B["muted"]
             pbar(s, tx, Emu(int(qy) + int(Inches(0.42))), tw, qd["pct"], B["accent"])
             items = qd.get("items", [])
             lines = []
@@ -1320,30 +1352,33 @@ def render_pptx(data: dict) -> bytes:
             klines.append((f'+{len(kms) - 3}…', B["muted"], False))
         list_card(L, my, colw, mh, rt(lang, "h_key_messages"), klines, rt(lang, "no_key_message"))
 
-        card(s, rcolx, my, colw, mh, rt(lang, "h_budget"))
+        # Budget card: title + figures are the card's own text; status stays a chip.
+        bsh = rrect(s, rcolx, my, colw, mh, B["white"], line=B["line"], radius=0.05)
+        place(bsh, [(rt(lang, "h_budget"), 12, B["navy"], True, PP_ALIGN.LEFT, 6)],
+              anchor=MSO_ANCHOR.TOP, ml=0.18, mt=0.12, mr=0.18)
         bud = det.get("budget")
-        bx = Emu(int(rcolx) + int(Inches(0.18)))
-        bw = Emu(int(colw) - int(Inches(0.36)))
+        btf = bsh.text_frame
         if bud is None:
-            textbox(s, bx, Emu(int(my) + int(Inches(0.48))), bw, Inches(0.3), rt(lang, "no_budget"), 9.5, color=B["muted"])
+            p = btf.add_paragraph(); rr = p.add_run(); rr.text = rt(lang, "no_budget")
+            rr.font.size = Pt(9.5); rr.font.color.rgb = B["muted"]
         else:
             f = lambda v: "-" if v is None else f"{v:,.0f} €"
             st_color = {"on_track": "green", "at_risk": "amber", "over": "red"}[bud["status"]]
             st_lbl = rt(lang, {"on_track": "b_on_track", "at_risk": "b_at_risk", "over": "b_over"}[bud["status"]])
-            cw = Inches(0.26 + 0.082 * len(st_lbl))
-            chip(s, Emu(int(rcolx) + int(colw) - int(cw) - int(Inches(0.16))), Emu(int(my) + int(Inches(0.12))),
-                 st_lbl, rgb(_RAG_BRAND[st_color]))
             rows = [
                 (rt(lang, "b_total"), f(bud["total"])),
                 (rt(lang, "b_spent"), f(bud["spent"]) + (f' · {bud["spent_pct"]}%' if bud.get("spent_pct") is not None else "")),
                 (rt(lang, "b_forecast"), f(bud["forecast"]) + (f' · {bud["forecast_pct"]}%' if bud.get("forecast_pct") is not None else "")),
             ]
-            yy = int(my) + int(Inches(0.52))
             for label, val in rows:
-                textbox(s, bx, Emu(yy), Emu(int(bw) // 2), Inches(0.26), label, 10, color=B["muted"])
-                textbox(s, Emu(int(bx) + int(bw) // 2), Emu(yy), Emu(int(bw) // 2), Inches(0.26), val, 10,
-                        bold=True, color=B["ink"], align=PP_ALIGN.RIGHT)
-                yy += int(Inches(0.3))
+                p = btf.add_paragraph(); p.space_after = Pt(3)
+                r1 = p.add_run(); r1.text = f'{label} : '
+                r1.font.size = Pt(10); r1.font.color.rgb = B["muted"]
+                r2 = p.add_run(); r2.text = val
+                r2.font.size = Pt(10); r2.font.bold = True; r2.font.color.rgb = B["ink"]
+            cw = Inches(0.26 + 0.082 * len(st_lbl))
+            chip(s, Emu(int(rcolx) + int(colw) - int(cw) - int(Inches(0.16))), Emu(int(my) + int(Inches(0.12))),
+                 st_lbl, rgb(_RAG_BRAND[st_color]))
 
     # --- Assemble the deck. A single-squad export mirrors the squad page (one
     # focused slide in page order); the multi-squad report keeps summary + grid.
