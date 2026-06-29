@@ -6,10 +6,10 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..authconfig import get_auth_config, role_from_groups
+from ..authconfig import email_domain_allowed, get_auth_config, role_from_groups
 from ..config import settings
 from ..database import get_db
-from ..deps import get_current_user, record_audit, require_admin
+from ..deps import get_current_user, get_current_user_any_status, record_audit, require_admin
 from ..models import User, utcnow
 from ..schemas import AuthConfig, LoginIn, UserOut
 from ..security import create_session_token, decode_session, verify_password
@@ -64,6 +64,8 @@ def login(payload: LoginIn, request: Request, response: Response, db: Session = 
     if user is None or not user.password_hash or not verify_password(payload.password, user.password_hash):
         _login_failures[ip].append(time.time())
         raise HTTPException(status_code=401, detail="Identifiants invalides")
+    if user.status == "disabled":
+        raise HTTPException(status_code=403, detail="Votre accès à cette application a été révoqué.")
     _login_failures.pop(ip, None)  # reset throttle on success
     user.last_login_at = utcnow()
     record_audit(db, user.id, "login.breakglass" if user.is_break_glass else "login.local",
@@ -80,17 +82,23 @@ def logout(response: Response):
 
 
 @router.get("/me", response_model=UserOut)
-def me(user: User = Depends(get_current_user)):
+def me(user: User = Depends(get_current_user_any_status)):
+    # Returns even for pending/disabled accounts so the SPA can show the
+    # "access pending / revoked" screen instead of a hard 401.
     return user
 
 
 @router.get("/me/permissions")
-def my_permissions(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def my_permissions(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user_any_status)):
     from ..rbac import permissions_payload
     from ..personasconfig import persona_caps, get_personas
     payload = permissions_payload(user)
     # Persona capabilities drive section access in the SPA (and a few endpoints).
     payload["capabilities"] = persona_caps(db, user.role)
+    # Access-request queue: who may review, and how many are pending.
+    from ..access import can_review_access, pending_count
+    payload["can_review_access"] = can_review_access(user)
+    payload["pending_access_count"] = pending_count(db, user)
     # Admins may assign any persona (built-in or custom); others keep their subset.
     if user.role == "admin":
         payload["assignable_roles"] = [p["key"] for p in get_personas(db)]
@@ -146,18 +154,34 @@ def _provision(db: Session, *, subject: str | None, email: str, name: str, group
     if user is None and email:
         user = db.scalar(select(User).where(User.email == email))
     if user is None:
-        role = role_from_groups(cfg, groups) or "member"
-        user = User(email=email or subject, display_name=name or email, role=role, auth_subject=subject)
+        # First gate: only allowed email domains may even be provisioned.
+        if not email_domain_allowed(cfg, email):
+            raise HTTPException(status_code=403, detail="Votre domaine de messagerie n'est pas autorisé à accéder à cette application.")
+        proposed = role_from_groups(cfg, groups) or "member"
+        # Second gate: when approval is required, the account starts pending (no
+        # access) until a manager validates it.
+        status = "pending" if cfg.get("require_approval", True) else "active"
+        user = User(email=email or subject, display_name=name or email, role=proposed,
+                    status=status, auth_subject=subject)
         db.add(user)
         db.flush()
         record_audit(db, user.id, f"user.provisioned.{source}", entity="user", entity_id=user.id,
-                     detail={"email": email, "role": role})
+                     detail={"email": email, "role": proposed, "status": status})
+        if status == "pending":
+            from ..access import notify_access_request
+            notify_access_request(db, user)
     else:
+        # A revoked account cannot log back in (even though the IdP authenticated it).
+        if user.status == "disabled":
+            raise HTTPException(status_code=403, detail="Votre accès à cette application a été révoqué.")
         if subject and not user.auth_subject:
             user.auth_subject = subject
-        mapped = role_from_groups(cfg, groups)
-        if mapped:
-            user.role = mapped
+        # Only (re)map the role for already-validated accounts; never silently
+        # elevate or re-activate a pending/disabled one from IdP group claims.
+        if user.status == "active":
+            mapped = role_from_groups(cfg, groups)
+            if mapped:
+                user.role = mapped
     user.last_login_at = utcnow()
     record_audit(db, user.id, f"login.{source}", entity="user", entity_id=user.id, detail={"email": email})
     return user

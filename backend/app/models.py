@@ -1,7 +1,8 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from sqlalchemy import (
     Boolean,
+    Date,
     DateTime,
     ForeignKey,
     Integer,
@@ -29,6 +30,14 @@ class Tribe(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     display_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    # Leave/absence management, configurable per tribe (deps.can_manage_leave).
+    # When approval is required, a member's request starts "pending" until a
+    # squad/tribe leader approves it; otherwise it is recorded immediately.
+    leaves_require_approval: Mapped[bool] = mapped_column(
+        Boolean, default=True, nullable=False, server_default="true")
+    # Warn leaders when this many people of one squad are absent on the same day.
+    leaves_overlap_threshold: Mapped[int] = mapped_column(
+        Integer, default=3, nullable=False, server_default="3")
 
     squads: Mapped[list["Squad"]] = relationship(back_populates="tribe")
 
@@ -40,6 +49,9 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
     display_name: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[str] = mapped_column(String(20), nullable=False, default="member")
+    # Access lifecycle: pending (provisioned by SSO, awaiting validation) | active
+    # (validated) | disabled (revoked). Only "active" accounts may use the app.
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="active", server_default="active")
     tribe_id: Mapped[int | None] = mapped_column(ForeignKey("tribes.id"), nullable=True, index=True)
     auth_subject: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     is_break_glass: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
@@ -404,6 +416,60 @@ class AppSetting(Base):
 
     key: Mapped[str] = mapped_column(String(100), primary_key=True)
     value: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class LeaveType(Base):
+    """A configurable category of absence (Congés payés, RTT, Maladie, …).
+
+    Managed by admins (Admin → Congés). The `color` drives the pill colour in the
+    team calendar; deactivating a type hides it from new declarations while keeping
+    existing leaves valid."""
+    __tablename__ = "leave_types"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    label: Mapped[str] = mapped_column(String(80), nullable=False)
+    color: Mapped[str] = mapped_column(String(9), nullable=False, default="#6B7280")
+    display_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # When true, declaring this type prompts the user for a short free-text detail
+    # (e.g. the "Autre"/"Other" type → "specify what"). Stored on Leave.detail.
+    requires_detail: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False, server_default="false")
+
+
+class Leave(Base):
+    """A declared absence for one person over a date range.
+
+    Attached to a login account (User). The *type* is visible to everyone in the
+    person's tribe (admins see all); the free-text *comment* (motif) is visible
+    only to the person, their squad/tribe leader and admins. Half-days are encoded
+    on the range edges (start_half = starts in the afternoon, end_half = ends at
+    noon)."""
+    __tablename__ = "leaves"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    # Denormalised at creation so visibility queries stay tribe-scoped even if the
+    # user later moves tribe (the leave keeps the tribe it was filed under).
+    tribe_id: Mapped[int | None] = mapped_column(ForeignKey("tribes.id"), nullable=True, index=True)
+    type_id: Mapped[int] = mapped_column(ForeignKey("leave_types.id"), nullable=False, index=True)
+    start_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    end_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    start_half: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)  # PM only on first day
+    end_half: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)    # AM only on last day
+    # Short clarification of the type (used when the type requires_detail, e.g.
+    # "Autre" → "Déménagement"). Public, like the type label.
+    detail: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)  # private motif
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")  # pending|approved|rejected|cancelled
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    decided_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    decision_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    user: Mapped["User"] = relationship(foreign_keys=[user_id])
+    type: Mapped["LeaveType"] = relationship(foreign_keys=[type_id])
 
 
 class AuditLog(Base):

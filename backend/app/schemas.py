@@ -37,11 +37,29 @@ class UserOut(ORMModel):
     email: str
     display_name: str
     role: str  # built-in role or custom persona key
+    status: str = "active"  # pending | active | disabled
     tribe_id: Optional[int] = None
     is_break_glass: bool
     auth_subject: Optional[str] = None
     created_at: Optional[datetime] = None
     last_login_at: Optional[datetime] = None
+
+
+# ---------- Access approval (SSO provisioning) ----------
+class AccessRequestOut(ORMModel):
+    id: int
+    email: str
+    display_name: str
+    role: str  # role proposed at provisioning (from IdP groups), pre-validation
+    auth_subject: Optional[str] = None
+    created_at: Optional[datetime] = None
+    last_login_at: Optional[datetime] = None
+
+
+class AccessApproveIn(BaseModel):
+    role: str
+    tribe_id: Optional[int] = None
+    squad_id: Optional[int] = None
 
 
 class UserCreate(BaseModel):
@@ -694,3 +712,98 @@ class SettingsOut(BaseModel):
 
 class SettingsUpdate(BaseModel):
     staleness_threshold_days: int = Field(ge=1, le=365)
+
+
+# ---------- Leaves / absences ----------
+from datetime import date as _date  # local alias; date types for leave ranges
+
+LeaveStatus = Literal["pending", "approved", "rejected", "cancelled"]
+
+
+class LeaveTypeOut(ORMModel):
+    id: int
+    label: str
+    color: str
+    display_order: int
+    is_active: bool
+    requires_detail: bool = False
+
+
+class LeaveTypeIn(BaseModel):
+    label: str = Field(min_length=1, max_length=80)
+    color: str = Field(default="#6B7280", max_length=9)
+    display_order: int = 0
+    is_active: bool = True
+    requires_detail: bool = False
+
+
+class LeaveIn(BaseModel):
+    type_id: int
+    start_date: _date
+    end_date: _date
+    start_half: bool = False
+    end_half: bool = False
+    detail: Optional[str] = Field(default=None, max_length=200)
+    comment: Optional[str] = None
+    # Leaders may file on behalf of another person in their scope; omit for self.
+    user_id: Optional[int] = None
+
+
+class LeaveUpdate(BaseModel):
+    type_id: Optional[int] = None
+    start_date: Optional[_date] = None
+    end_date: Optional[_date] = None
+    start_half: Optional[bool] = None
+    end_half: Optional[bool] = None
+    detail: Optional[str] = Field(default=None, max_length=200)
+    comment: Optional[str] = None
+
+
+class LeaveDecisionIn(BaseModel):
+    action: Literal["approve", "reject"]
+    comment: Optional[str] = None
+
+
+class LeaveOut(BaseModel):
+    id: int
+    user_id: int
+    user_name: str
+    tribe_id: Optional[int] = None
+    type_id: int
+    type_label: str
+    type_color: str
+    type_requires_detail: bool = False
+    start_date: _date
+    end_date: _date
+    start_half: bool
+    end_half: bool
+    days: float
+    status: LeaveStatus
+    detail: Optional[str] = None  # public clarification of the type (e.g. "Déménagement")
+    comment: Optional[str] = None  # private motif; null when the viewer may not see it
+    created_at: Optional[datetime] = None
+    decided_by_name: Optional[str] = None
+    decided_at: Optional[datetime] = None
+    decision_comment: Optional[str] = None
+    can_edit: bool = False
+    can_decide: bool = False
+
+
+class LeaveConfigOut(BaseModel):
+    tribe_id: int
+    tribe_name: str
+    require_approval: bool
+    overlap_threshold: int
+
+
+class LeaveConfigIn(BaseModel):
+    require_approval: Optional[bool] = None
+    overlap_threshold: Optional[int] = Field(default=None, ge=1, le=99)
+
+
+class LeaveOverlapDay(BaseModel):
+    squad_id: int
+    squad_name: str
+    day: _date
+    count: int
+    names: list[str]

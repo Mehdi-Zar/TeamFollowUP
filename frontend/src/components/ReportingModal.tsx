@@ -80,9 +80,9 @@ function MySchedule({ smtpOn }: { smtpOn: boolean }) {
     save({ weekdays: weekdays.includes(i) ? weekdays.filter((x) => x !== i) : [...weekdays, i].sort() });
 
   return (
-    <div className="stack" style={{ gap: 14 }}>
+    <div className="stack" style={{ gap: 16 }}>
       <div className="small muted">{t("reporting.my_hint")}</div>
-      {!smtpOn && <div className="small muted">{t("prefs.email_off")}</div>}
+      {!smtpOn && <div className="banner small">{t("prefs.email_off")}</div>}
 
       <label className="switch">
         <input type="checkbox" checked={on} onChange={(e) => save(e.target.checked ? { weekdays: [0] } : { weekdays: [] })} />
@@ -91,24 +91,24 @@ function MySchedule({ smtpOn }: { smtpOn: boolean }) {
       </label>
 
       {on && (
-        <>
+        <div className="stack" style={{ gap: 16, paddingTop: 2 }}>
           <div>
-            <label>{t("reporting.days")}</label>
-            <div className="inline" style={{ gap: 8, flexWrap: "wrap" }}>
+            <label className="field-label">{t("reporting.days")}</label>
+            <div className="day-pick">
               {WEEKDAY_KEYS.map((k, i) => (
-                <label key={i} className={`rm-pick-chip${weekdays.includes(i) ? " on" : ""}`} onClick={(e) => { e.preventDefault(); toggleDay(i); }}>
-                  <input type="checkbox" checked={weekdays.includes(i)} readOnly /><span className="rm-pick-name">{t(`reporting.day.${k}`)}</span>
-                </label>
+                <button type="button" key={i} aria-pressed={weekdays.includes(i)}
+                  className={`day-chip${weekdays.includes(i) ? " on" : ""}`}
+                  onClick={() => toggleDay(i)}>{t(`reporting.day.${k}`)}</button>
               ))}
             </div>
           </div>
-          <div style={{ width: 160 }}>
-            <label>{t("reporting.hour")}</label>
+          <div style={{ maxWidth: 200 }}>
+            <label className="field-label">{t("reporting.hour")}</label>
             <input type="number" min={0} max={23} value={sub.hour ?? 8} onChange={(e) => save({ hour: Number(e.target.value) })} />
           </div>
-        </>
+        </div>
       )}
-      {msg && <div className="small" style={{ color: "var(--green)" }}>{msg}</div>}
+      {msg && <div className="small strong" style={{ color: "var(--green)" }}>{msg}</div>}
     </div>
   );
 }
