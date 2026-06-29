@@ -5,7 +5,7 @@ from tests.conftest import login
 def test_get_personas_returns_builtins_and_catalog(client, seeded):
     login(client, seeded["admin"])
     out = client.get("/api/admin/personas").json()
-    assert out["capabilities"] == ["dashboard", "roadmap", "org", "feed", "reporting", "mysquads"]
+    assert out["capabilities"] == ["dashboard", "roadmap", "org", "feed", "reporting", "mysquads", "leaves"]
     keys = [p["key"] for p in out["personas"]]
     assert keys[:4] == ["admin", "tribe_leader", "squad_leader", "member"]
     assert all(p["builtin"] for p in out["personas"])

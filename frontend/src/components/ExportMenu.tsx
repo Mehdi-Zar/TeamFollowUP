@@ -112,14 +112,14 @@ export default function ExportMenu({ year, squadId, sinceDays = 7 }: Props) {
     ) : (
       <button className="menu-item" onClick={onClick}>{children}</button>
     );
-  // One row per document; the three formats are compact buttons next to it.
+  // One row per document; the three formats sit in a tidy segmented control.
   const ExportRow = ({ label, html, pptx }: { label: string; html: string; pptx: string }) => (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "6px 10px" }}>
-      <span className="small strong">{label}</span>
-      <span className="inline" style={{ gap: 4 }}>
-        <button className="btn-secondary btn-sm" onClick={() => { setPreview({ url: html, title: label }); setOpen(false); }}>HTML</button>
-        <button className="btn-secondary btn-sm" onClick={() => htmlToJpg(html, `${label}.jpg`)}>JPG</button>
-        <a className="btn-secondary btn-sm" href={pptx} download onClick={() => setOpen(false)}>PPTX</a>
+    <div className="export-row">
+      <span className="export-row-label">{label}</span>
+      <span className="seg">
+        <button onClick={() => { setPreview({ url: html, title: label }); setOpen(false); }}>HTML</button>
+        <button onClick={() => htmlToJpg(html, `${label}.jpg`)}>JPG</button>
+        <a href={pptx} download onClick={() => setOpen(false)}>PPTX</a>
       </span>
     </div>
   );
@@ -130,7 +130,7 @@ export default function ExportMenu({ year, squadId, sinceDays = 7 }: Props) {
         {t("export.menu")} ▾
       </button>
       {open && (
-        <div className="card menu-pop" style={{ position: "absolute", right: 0, top: 38, zIndex: 60, width: 320, padding: 8 }}>
+        <div className="card menu-pop export-pop" style={{ position: "absolute", right: 0, top: 42, zIndex: 60 }}>
           {view === "menu" && (
             <>
               {hasDownloads && <div className="menu-label">{t("export.group_download")}</div>}
@@ -145,15 +145,20 @@ export default function ExportMenu({ year, squadId, sinceDays = 7 }: Props) {
           )}
 
           {view === "emailReport" && (
-            <div className="stack" style={{ gap: 8, padding: 6 }}>
-              <button className="btn-ghost btn-sm" style={{ alignSelf: "flex-start" }} onClick={() => setView("menu")}>← {t("action.cancel")}</button>
-              <label className="small">{t("export.to")}</label>
-              <input value={to} onChange={(e) => setTo(e.target.value)} />
-              <button className="btn-sm" disabled={busy || !to.trim()} onClick={sendReport}>{t("export.send")}</button>
+            <div className="export-form stack" style={{ gap: 12 }}>
+              <button className="export-back" onClick={() => setView("menu")}>← {t("export.send_report")}</button>
+              <div>
+                <label className="field-label">{t("export.to")}</label>
+                <input value={to} onChange={(e) => setTo(e.target.value)} placeholder="nom@exemple.com" />
+              </div>
+              <div className="inline" style={{ justifyContent: "flex-end", gap: 8 }}>
+                <button className="btn-ghost btn-sm" onClick={() => setView("menu")}>{t("action.cancel")}</button>
+                <button className="btn btn-sm" disabled={busy || !to.trim()} onClick={sendReport}>{busy ? "…" : t("export.send")}</button>
+              </div>
             </div>
           )}
 
-          {msg && <div className="small muted" style={{ padding: "6px 8px 2px" }}>{msg}</div>}
+          {msg && <div className="small muted" style={{ padding: "8px 8px 2px" }}>{msg}</div>}
         </div>
       )}
       {roadmapModal && (

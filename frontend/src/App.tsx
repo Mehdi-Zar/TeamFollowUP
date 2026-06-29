@@ -6,6 +6,7 @@ import { useConfig, moduleOn } from "./config";
 import { Capability, ModuleKey } from "./types";
 import Layout from "./components/Layout";
 import LoginPage from "./pages/LoginPage";
+import AccessPending from "./components/AccessPending";
 // Route-level code splitting: each screen is its own chunk, loaded on demand
 // (Layout wraps <Outlet/> in <Suspense>). Keeps the initial bundle small.
 const DashboardPage = lazy(() => import("./pages/DashboardPage"));
@@ -20,6 +21,8 @@ const MySquadsPage = lazy(() => import("./pages/MySquadsPage"));
 const GettingStartedPage = lazy(() => import("./pages/GettingStartedPage"));
 const RoadmapPage = lazy(() => import("./pages/RoadmapPage"));
 const InitiativesPage = lazy(() => import("./pages/InitiativesPage"));
+const LeavesPage = lazy(() => import("./pages/LeavesPage"));
+const AccessRequestsPage = lazy(() => import("./pages/AccessRequestsPage"));
 const PrintSquadPage = lazy(() => import("./pages/PrintSquadPage"));
 const PrintDashboardPage = lazy(() => import("./pages/PrintDashboardPage"));
 import { PageChromeProvider } from "./components/pageChrome";
@@ -28,6 +31,9 @@ function Protected({ children, adminOnly, adminPage, manageSquads }: { children:
   const { user, loading, effectiveRole } = useAuth();
   if (loading) return <div className="spinner">Chargement…</div>;
   if (!user) return <Navigate to="/login" replace />;
+  // Authenticated but not validated (SSO provisioning awaiting approval, or
+  // revoked): no app access, show the access screen instead.
+  if (user.status && user.status !== "active") return <AccessPending />;
   if (adminOnly && effectiveRole !== "admin") return <Navigate to="/" replace />;
   // Admin page is role-scoped: admins and tribe leaders may open it.
   if (adminPage && !["admin", "tribe_leader"].includes(effectiveRole ?? "")) {
@@ -81,8 +87,10 @@ export default function App() {
         <Route path="/" element={<Section module="dashboard" cap="dashboard"><DashboardPage /></Section>} />
         <Route path="/roadmap" element={<Section module="squad_content" feature="roadmap" cap="roadmap"><RoadmapPage /></Section>} />
         <Route path="/initiatives" element={<Protected><InitiativesPage /></Protected>} />
+        <Route path="/acces" element={<Protected><AccessRequestsPage /></Protected>} />
         <Route path="/squads/:id" element={<SquadDetailPage />} />
         <Route path="/fil" element={<Section module="feed" cap="feed"><FeedPage /></Section>} />
+        <Route path="/conges" element={<Section module="leaves" cap="leaves"><LeavesPage /></Section>} />
         <Route path="/preferences" element={<PreferencesPage />} />
         <Route path="/prise-en-main" element={<ModuleGuard module="getting_started"><GettingStartedPage /></ModuleGuard>} />
         <Route path="/saisie" element={<Section module="reporting" cap="reporting"><EntryPage /></Section>} />

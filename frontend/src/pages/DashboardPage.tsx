@@ -8,6 +8,7 @@ import { DashboardOut, SquadCard, Tribe } from "../types";
 import { Dot, FreshnessBadge, ProgressBar, Spinner, ErrorBanner, EmptyState } from "../components/ui";
 import ExportMenu from "../components/ExportMenu";
 import { ReportingButton } from "../components/ReportingModal";
+import AbsencesWidget from "../components/AbsencesWidget";
 import { useSetPageChrome } from "../components/pageChrome";
 
 type SortKey = "risk" | "progress" | "name" | "fresh";
@@ -109,6 +110,8 @@ export default function DashboardPage() {
         <div className="kpi"><div className={`v ${s.squads_stale ? "orange" : ""}`}>{s.squads_stale}</div><div className="l">{t("dash.kpi.stale")}</div></div>
         <div className="kpi"><div className="v">{s.squads_total}</div><div className="l">{t("dash.kpi.squads")}</div></div>
       </div>
+
+      <AbsencesWidget />
 
       <div className="card" style={{ padding: 14 }}>
         <div className="row" style={{ alignItems: "flex-end", gap: 12 }}>

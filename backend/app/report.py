@@ -111,6 +111,7 @@ _RT = {
         "h_budget": "Budget", "no_budget": "Budget non renseigné",
         "b_total": "Total", "b_spent": "Consommé", "b_forecast": "Prévision",
         "b_on_track": "Sur les rails", "b_at_risk": "À risque", "b_over": "Dépassement",
+        "leaves_upcoming": "Absences à venir (30 j)", "leaves_pending": "à valider", "days_short": "j",
     },
     "en": {
         "report": "Weekly report", "all_tribes": "All tribes",
@@ -140,12 +141,27 @@ _RT = {
         "h_budget": "Budget", "no_budget": "Budget not set",
         "b_total": "Total", "b_spent": "Spent", "b_forecast": "Forecast",
         "b_on_track": "On track", "b_at_risk": "At risk", "b_over": "Over budget",
+        "leaves_upcoming": "Upcoming absences (30 d)", "leaves_pending": "to approve", "days_short": "d",
     },
 }
 
 
 def _lang(lang: str | None) -> str:
     return "en" if lang == "en" else "fr"
+
+
+# Leave types are stored as French labels; in English show "English (French)".
+_LEAVE_TYPE_EN = {
+    "Congés payés": "Paid leave", "RTT": "RTT", "Maladie": "Sick leave",
+    "Formation": "Training", "Autre": "Other",
+}
+
+
+def leave_type_label(label: str, lang: str) -> str:
+    if _lang(lang) != "en":
+        return label
+    en = _LEAVE_TYPE_EN.get(label)
+    return f"{en} ({label})" if en and en != label else label
 
 
 def rt(lang: str, key: str, **kw) -> str:
@@ -326,6 +342,8 @@ def build_report_data(db: Session, scope_tribe: int | None, year: int | None = N
     else:
         scope_name = rt(lang, "all_tribes")
 
+    leaves_upcoming = _upcoming_leaves(db, scope_tribe, squad_id, sq_ids, now)
+
     return {
         "app_name": cfg.get("app_name") or "Tribe Cockpit",
         "subtitle": cfg.get("app_subtitle") or "",
@@ -345,7 +363,50 @@ def build_report_data(db: Session, scope_tribe: int | None, year: int | None = N
         },
         "tribes": tribe_blocks,
         "attention": attention,
+        "leaves_upcoming": leaves_upcoming,
     }
+
+
+def _upcoming_leaves(db: Session, scope_tribe: int | None, squad_id: int | None,
+                     sq_ids: list[int], now: datetime) -> list[dict]:
+    """Approved/pending absences ending in the next 30 days, scoped like the report.
+    Empty list when the leaves module is disabled."""
+    from .modulesconfig import get_modules, is_active
+    if not is_active(get_modules(db), "leaves"):
+        return []
+    from .leavesconfig import ACTIVE_STATUSES, leave_days
+    from .models import Leave, Member, User
+
+    today = now.date()
+    horizon = today + timedelta(days=30)
+    stmt = select(Leave).where(Leave.status.in_(ACTIVE_STATUSES),
+                               Leave.end_date >= today, Leave.start_date <= horizon)
+    if squad_id is not None:
+        uids = list(db.scalars(select(Member.user_id).where(
+            Member.squad_id == squad_id, Member.user_id.isnot(None))).all())
+        stmt = stmt.where(Leave.user_id.in_(uids or [-1]))
+    elif scope_tribe is not None:
+        stmt = stmt.where(Leave.tribe_id == scope_tribe)
+    elif sq_ids:
+        uids = list(db.scalars(select(Member.user_id).where(
+            Member.squad_id.in_(sq_ids), Member.user_id.isnot(None))).all())
+        stmt = stmt.where(Leave.user_id.in_(uids or [-1]))
+
+    out: list[dict] = []
+    names: dict[int, str] = {}
+    for lv in db.scalars(stmt.order_by(Leave.start_date, Leave.id)).all():
+        if lv.user_id not in names:
+            u = db.get(User, lv.user_id)
+            names[lv.user_id] = u.display_name if u else f"#{lv.user_id}"
+        out.append({
+            "name": names[lv.user_id],
+            "type_label": lv.type.label if lv.type else "",
+            "detail": lv.detail or "",
+            "type_color": lv.type.color if lv.type else "#6B7280",
+            "start": lv.start_date.strftime("%d/%m"), "end": lv.end_date.strftime("%d/%m"),
+            "days": leave_days(lv), "status": lv.status,
+        })
+    return out
 
 
 # ----- HTML rendering -------------------------------------------------------------
@@ -663,6 +724,19 @@ def render_html(data: dict, *, standalone: bool = True) -> str:
                 bits.append(rt(lang, "stale"))
             parts.append(f'<li><span class="dot" style="background:{RAG_COLOR["red"]}"></span>'
                          f'<strong>{e(r["name"])}</strong> - {e(", ".join(bits))}</li>')
+        parts.append('</ul>')
+
+    # Upcoming absences (next 30 days), when the leaves module is enabled.
+    if data.get("leaves_upcoming"):
+        parts.append(f'<h2>{e(rt(lang, "leaves_upcoming"))}</h2><ul class="attention">')
+        for lv in data["leaves_upcoming"][:30]:
+            pending = f' <span class="badge">{e(rt(lang, "leaves_pending"))}</span>' if lv["status"] == "pending" else ""
+            parts.append(
+                f'<li><span class="dot" style="background:{e(lv["type_color"])}"></span>'
+                f'<strong>{e(lv["name"])}</strong> — {e(leave_type_label(lv["type_label"], lang))}'
+                f'{e(" (" + lv["detail"] + ")") if lv.get("detail") else ""} '
+                f'<span class="muted">({e(lv["start"])} → {e(lv["end"])}, {lv["days"]:g} {e(rt(lang, "days_short"))})</span>'
+                f'{pending}</li>')
         parts.append('</ul>')
 
     # Per-tribe tables

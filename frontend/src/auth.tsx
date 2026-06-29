@@ -14,6 +14,9 @@ interface AuthState {
   impersonatorName: string | null;
   /** Persona section-access capabilities for the current (effective) user. */
   capabilities: Record<string, boolean> | null;
+  /** May the user open the SSO access-request queue, and how many are pending. */
+  canReviewAccess: boolean;
+  pendingAccessCount: number;
   can: (cap: Capability | string) => boolean;
   impersonate: (userId: number) => Promise<void>;
   stopImpersonation: () => Promise<void>;
@@ -31,6 +34,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [impersonating, setImpersonating] = useState(false);
   const [impersonatorName, setImpersonatorName] = useState<string | null>(null);
   const [capabilities, setCapabilities] = useState<Record<string, boolean> | null>(null);
+  const [canReviewAccess, setCanReviewAccess] = useState(false);
+  const [pendingAccessCount, setPendingAccessCount] = useState(0);
 
   async function loadPermissions() {
     try {
@@ -38,10 +43,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setImpersonating(!!p.impersonating);
       setImpersonatorName(p.impersonator_name ?? null);
       setCapabilities(p.capabilities ?? null);
+      setCanReviewAccess(!!p.can_review_access);
+      setPendingAccessCount(p.pending_access_count ?? 0);
     } catch {
       setImpersonating(false);
       setImpersonatorName(null);
       setCapabilities(null);
+      setCanReviewAccess(false);
+      setPendingAccessCount(0);
     }
   }
 
@@ -110,6 +119,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         impersonating,
         impersonatorName,
         capabilities,
+        canReviewAccess,
+        pendingAccessCount,
         can,
         impersonate,
         stopImpersonation,

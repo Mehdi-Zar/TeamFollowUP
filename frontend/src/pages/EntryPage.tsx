@@ -3,8 +3,9 @@ import { api, ApiError } from "../api";
 import { useAuth } from "../auth";
 import { useI18n } from "../i18n";
 import { useConfig, useModule } from "../config";
-import { Kpi, Member, Objective, RoadmapItem, RoadmapStatus, Squad, SquadDetail, Tribe, Trend, Role } from "../types";
+import { Initiative, Kpi, Member, Objective, RoadmapItem, RoadmapStatus, Squad, SquadDetail, Tribe, Trend, Role } from "../types";
 import { Dot, FreshnessBadge, Spinner, ErrorBanner, EmptyState } from "../components/ui";
+import { InitiativesCard } from "../components/InitiativesCard";
 import { canEditSquad, canManageObjectives } from "../perms";
 import { useSetPageChrome } from "../components/pageChrome";
 import { roadmapRag } from "../labels";
@@ -27,6 +28,7 @@ export default function EntryPage() {
   const [yearTouched, setYearTouched] = useState(false);
   useEffect(() => { if (!yearTouched) setYear(default_year); }, [default_year]);
   const [squad, setSquad] = useState<SquadDetail | null>(null);
+  const [initiatives, setInitiatives] = useState<Initiative[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [recap, setRecap] = useState(false);
@@ -48,7 +50,14 @@ export default function EntryPage() {
   }
   useEffect(() => {
     setSquad(null);
-    if (squadId !== null) reload();
+    if (squadId !== null) {
+      reload();
+      // Initiatives assigned to this squad (read-only here) - same data the squad
+      // page shows, so the reporting opens with the same Initiatives card on top.
+      api.get<Initiative[]>(`/api/initiatives?year=${year}&squad_id=${squadId}`).then(setInitiatives).catch(() => setInitiatives([]));
+    } else {
+      setInitiatives([]);
+    }
   }, [squadId, year]);
 
   function flash(m: string) {
@@ -118,6 +127,9 @@ export default function EntryPage() {
             <FreshnessBadge freshness={squad.freshness} />
           </div>
           {!writeAllowed && <div className="banner" style={{ background: "var(--ice-soft)" }}>{t("entry.readonly")}</div>}
+
+          {/* Initiatives en tête - même rendu que le dashboard de la squad, pour la cohérence. */}
+          <InitiativesCard initiatives={initiatives} />
 
           {(() => {
             const secs = [

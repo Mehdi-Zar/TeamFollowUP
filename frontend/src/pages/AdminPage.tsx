@@ -4,7 +4,7 @@ import { api, ApiError } from "../api";
 import { useI18n } from "../i18n";
 import { useModule, useReloadConfig } from "../config";
 import { useAuth } from "../auth";
-import { AuditEntry, ModuleKey, Permissions, Persona, Role, Squad, SquadDetail, Tribe, User } from "../types";
+import { AuditEntry, LeaveConfig, LeaveType, ModuleKey, Permissions, Persona, Role, Squad, SquadDetail, Tribe, User } from "../types";
 import { ErrorBanner, Spinner, Dot } from "../components/ui";
 import { ADMIN_TABS_BY_ROLE, ALL_ROLES } from "../perms";
 import { useSetPageChrome } from "../components/pageChrome";
@@ -22,6 +22,7 @@ const TAB_LABEL: Record<string, string> = {
   auth: "admin.tab.auth",
   smtp: "admin.tab.smtp",
   report: "admin.tab.report",
+  leaves: "admin.tab.leaves",
   logs: "admin.tab.logs",
   settings: "admin.tab.settings",
   audit: "admin.tab.audit",
@@ -30,7 +31,7 @@ const TAB_LABEL: Record<string, string> = {
 // Admin sections grouped by purpose (only the items a role may open are shown).
 const ADMIN_GROUPS: { titleKey: string; items: string[] }[] = [
   { titleKey: "admin.group.org", items: ["tribes", "tribe", "squads", "my_squads", "users", "personas"] },
-  { titleKey: "admin.group.config", items: ["modules", "report", "settings"] },
+  { titleKey: "admin.group.config", items: ["modules", "report", "leaves", "settings"] },
   { titleKey: "admin.group.access", items: ["auth", "smtp"] },
   { titleKey: "admin.group.oversight", items: ["moderation", "logs", "audit"] },
 ];
@@ -97,6 +98,7 @@ export default function AdminPage() {
         {tab === "my_squads" && <MySquadsAdmin />}
         {tab === "modules" && <ModulesAdmin />}
         {tab === "report" && <ReportingAdmin />}
+        {tab === "leaves" && <LeavesAdmin perms={perms} />}
         {tab === "moderation" && <ModerationAdmin />}
         {tab === "auth" && <AuthAdmin />}
         {tab === "smtp" && <SmtpAdmin />}
@@ -190,6 +192,7 @@ const MODULE_TREE: { key: ModuleKey; features: string[] }[] = [
   { key: "notifications", features: ["inapp", "email"] },
   { key: "exports_csv", features: [] },
   { key: "getting_started", features: [] },
+  { key: "leaves", features: ["overlap_alert"] },
 ];
 
 function ModulesAdmin() {
@@ -254,6 +257,139 @@ function ModulesAdmin() {
         })}
       </div>
       {saved && <div className="small" style={{ color: "var(--green)" }}>{t("admin.saved")}</div>}
+    </div>
+  );
+}
+
+/* ---------- Leave / absence administration ---------- */
+function LeavesAdmin({ perms }: { perms: Permissions }) {
+  const isAdmin = perms.role === "admin";
+  return (
+    <div className="stack" style={{ gap: 20, maxWidth: 760 }}>
+      <LeaveSettingsAdmin isAdmin={isAdmin} />
+      {isAdmin && <LeaveTypesAdmin />}
+    </div>
+  );
+}
+
+function LeaveSettingsAdmin({ isAdmin }: { isAdmin: boolean }) {
+  const { t } = useI18n();
+  const [tribes, setTribes] = useState<Tribe[]>([]);
+  const [tribeId, setTribeId] = useState<number | "">("");
+  const [cfg, setCfg] = useState<LeaveConfig | null>(null);
+  const [saved, setSaved] = useState(false);
+  const { error, wrap } = useErr();
+
+  useEffect(() => {
+    if (isAdmin) {
+      api.get<Tribe[]>("/api/tribes").then((ts) => { setTribes(ts); if (ts[0]) setTribeId(ts[0].id); }).catch(() => {});
+    } else {
+      wrap(async () => setCfg(await api.get<LeaveConfig>("/api/leaves/config")));
+    }
+  }, [isAdmin]);
+  useEffect(() => {
+    if (isAdmin && tribeId !== "") api.get<LeaveConfig>(`/api/leaves/config?tribe_id=${tribeId}`).then(setCfg).catch(() => setCfg(null));
+  }, [isAdmin, tribeId]);
+
+  async function save() {
+    if (!cfg) return;
+    const qs = isAdmin && tribeId !== "" ? `?tribe_id=${tribeId}` : "";
+    await wrap(async () => {
+      const out = await api.put<LeaveConfig>(`/api/leaves/config${qs}`,
+        { require_approval: cfg.require_approval, overlap_threshold: cfg.overlap_threshold });
+      setCfg(out); setSaved(true); setTimeout(() => setSaved(false), 1500);
+    });
+  }
+
+  return (
+    <div className="card stack" style={{ gap: 14 }}>
+      <h2 style={{ margin: 0 }}>{t("leaves.admin_settings")}</h2>
+      {error && <ErrorBanner message={error} />}
+      {isAdmin && (
+        <div style={{ maxWidth: 300 }}>
+          <label className="field-label">{t("leaves.tribe_pick")}</label>
+          <select value={tribeId} onChange={(e) => setTribeId(Number(e.target.value))}>
+            {tribes.map((tr) => <option key={tr.id} value={tr.id}>{tr.name}</option>)}
+          </select>
+        </div>
+      )}
+      {cfg && (
+        <>
+          <label className="switch">
+            <input type="checkbox" checked={cfg.require_approval}
+                   onChange={(e) => setCfg({ ...cfg, require_approval: e.target.checked })} />
+            <span className="track"><span className="knob" /></span>
+            <span className="strong">{t("leaves.require_approval")}</span>
+          </label>
+          <div style={{ maxWidth: 300 }}>
+            <label className="field-label">{t("leaves.overlap_threshold")}</label>
+            <input type="number" min={1} max={99} value={cfg.overlap_threshold}
+                   onChange={(e) => setCfg({ ...cfg, overlap_threshold: Number(e.target.value) })} />
+          </div>
+          <div className="inline">
+            <button onClick={save}>{t("action.save")}</button>
+            {saved && <span style={{ color: "var(--green)" }}>{t("admin.saved")}</span>}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function LeaveTypesAdmin() {
+  const { t } = useI18n();
+  const [types, setTypes] = useState<LeaveType[]>([]);
+  const { error, wrap } = useErr();
+  const load = () => api.get<LeaveType[]>("/api/leaves/types?include_inactive=true").then(setTypes).catch(() => {});
+  useEffect(() => { load(); }, []);
+
+  const upd = (id: number, patch: Partial<LeaveType>) =>
+    setTypes((ts) => ts.map((x) => (x.id === id ? { ...x, ...patch } : x)));
+
+  async function addType() {
+    await wrap(async () => {
+      await api.post("/api/leaves/types", { label: t("leaves.add_type"), color: "#6B7280", display_order: types.length + 1 });
+      load();
+    });
+  }
+  async function saveType(tp: LeaveType) {
+    await wrap(async () => {
+      await api.put(`/api/leaves/types/${tp.id}`,
+        { label: tp.label, color: tp.color, display_order: tp.display_order, is_active: tp.is_active, requires_detail: tp.requires_detail });
+      load();
+    });
+  }
+  async function delType(id: number) {
+    if (!confirm(t("leaves.delete_confirm"))) return;
+    await wrap(async () => { await api.del(`/api/leaves/types/${id}`); load(); });
+  }
+
+  return (
+    <div className="card stack" style={{ gap: 12 }}>
+      <div className="between">
+        <h2 style={{ margin: 0 }}>{t("leaves.admin_types")}</h2>
+        <button className="btn-secondary btn-sm" onClick={addType}>+ {t("leaves.add_type")}</button>
+      </div>
+      {error && <ErrorBanner message={error} />}
+      <div className="stack" style={{ gap: 8 }}>
+        {types.map((tp) => (
+          <div key={tp.id} className="inline" style={{ gap: 8, opacity: tp.is_active ? 1 : 0.6 }}>
+            <input type="color" value={tp.color} onChange={(e) => upd(tp.id, { color: e.target.value })}
+                   style={{ width: 44, height: 38, padding: 2 }} aria-label={t("leaves.type_color")} />
+            <input value={tp.label} onChange={(e) => upd(tp.id, { label: e.target.value })} style={{ flex: 1 }} />
+            <label className="inline small" style={{ gap: 6 }}>
+              <input type="checkbox" checked={tp.is_active} onChange={(e) => upd(tp.id, { is_active: e.target.checked })} />
+              {t("leaves.type_active")}
+            </label>
+            <label className="inline small" style={{ gap: 6 }} title={t("leaves.type_requires_detail_hint")}>
+              <input type="checkbox" checked={tp.requires_detail} onChange={(e) => upd(tp.id, { requires_detail: e.target.checked })} />
+              {t("leaves.type_requires_detail")}
+            </label>
+            <button className="btn-secondary btn-sm" onClick={() => saveType(tp)}>{t("action.save")}</button>
+            <button className="btn-danger btn-sm" onClick={() => delType(tp.id)} aria-label={t("action.delete")}>✕</button>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -412,9 +548,13 @@ export function ReportingAdmin() {
 
         {/* Shared option */}
         {(rep.enabled || chg.enabled) && (
-          <label className="inline small" style={{ gap: 6, ...sep }}>
-            <input type="checkbox" checked={rep.attach_pptx !== false} onChange={(e) => setAttach(e.target.checked)} />{t("reporting.attach_pptx")}
-          </label>
+          <div style={sep}>
+            <label className="switch">
+              <input type="checkbox" checked={rep.attach_pptx !== false} onChange={(e) => setAttach(e.target.checked)} />
+              <span className="track"><span className="knob" /></span>
+              <span className="strong">{t("reporting.attach_pptx")}</span>
+            </label>
+          </div>
         )}
       </div>
 
@@ -882,6 +1022,32 @@ function AuthAdmin() {
         <button className="btn-secondary btn-sm" style={{ marginTop: 8 }} onClick={() => set("group_role_mappings", [...mappings, { group: "", role: "member" }])}>
           {t("auth.add_mapping")}
         </button>
+      </div>
+
+      <div className="card stack" style={{ gap: 12 }}>
+        <h3>{t("auth.access_title")}</h3>
+        <div className="banner stack" style={{ gap: 6 }}>
+          <div className="strong">{t("auth.access_how")}</div>
+          <div className="small">{t("auth.access_hint")}</div>
+          <ul style={{ margin: "2px 0 0", paddingLeft: 18 }} className="small">
+            <li>{t("auth.access_p1")}</li>
+            <li>{t("auth.access_p2")}</li>
+            <li>{t("auth.access_p3")}</li>
+            <li>{t("auth.access_p4")}</li>
+          </ul>
+        </div>
+        <label className="switch">
+          <input type="checkbox" checked={cfg.require_approval !== false} onChange={(e) => set("require_approval", e.target.checked)} />
+          <span className="track"><span className="knob" /></span>
+          <span className="strong">{t("auth.require_approval")}</span>
+        </label>
+        <div>
+          <label>{t("auth.allowed_domains")}</label>
+          <textarea rows={2} placeholder="exemple.com&#10;groupe.fr"
+            value={(cfg.allowed_email_domains || []).join("\n")}
+            onChange={(e) => set("allowed_email_domains", e.target.value.split(/[\s,;]+/).filter(Boolean))} />
+          <div className="small muted">{t("auth.allowed_domains_hint")}</div>
+        </div>
       </div>
 
       <div className="inline">

@@ -353,6 +353,75 @@ tr:last-child td { border-bottom: none; }
 }
 .menu-item:hover { background: var(--ice-soft); }
 
+/* Export / share dropdown — refined layout */
+.export-pop { width: 336px; padding: 6px; border-radius: 12px; }
+.export-row { display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; padding: 7px 8px 7px 10px; border-radius: 8px; }
+.export-row + .export-row { margin-top: 2px; }
+.export-row-label { font-size: 13.5px; font-weight: 600; color: var(--navy); }
+/* Segmented format buttons (HTML / JPG / PPTX) */
+.seg { display: inline-flex; flex: 0 0 auto; border: 1px solid var(--line);
+  border-radius: 8px; overflow: hidden; background: #fff; }
+.seg > * { appearance: none; border: 0; border-left: 1px solid var(--line);
+  border-radius: 0; background: #fff; color: var(--navy); font-size: 12px;
+  font-weight: 600; padding: 5px 11px; line-height: 1.5; cursor: pointer;
+  text-decoration: none; transition: background .12s; }
+.seg > *:first-child { border-left: 0; }
+.seg > *:hover { background: var(--ice-soft); }
+/* Email-send panel inside the dropdown */
+.export-form { padding: 4px 6px 6px; }
+.export-back { display: inline-flex; align-items: center; gap: 6px; align-self: flex-start;
+  background: none; border: 0; padding: 4px 6px; border-radius: 6px;
+  font-size: 13px; font-weight: 600; color: var(--navy); cursor: pointer; }
+.export-back:hover { background: var(--ice-soft); }
+
+/* Weekly-report day picker (subscription popup) */
+.day-pick { display: flex; flex-wrap: wrap; gap: 8px; }
+.day-chip { min-width: 48px; padding: 9px 6px; text-align: center; border: 1px solid var(--line);
+  border-radius: 10px; background: #fff; color: var(--navy); font-size: 13px;
+  font-weight: 600; cursor: pointer; user-select: none;
+  transition: border-color .12s, background .12s, color .12s; }
+.day-chip:hover { border-color: var(--ice-blue); background: var(--ice-soft); }
+.day-chip.on, .day-chip.on:hover { border-color: var(--accent); background: var(--accent); color: #fff; }
+
+/* Checkbox styled as a selectable pill (e.g. half-day options) */
+.check-chip { display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px;
+  border: 1px solid var(--line); border-radius: 10px; background: #fff; color: var(--navy);
+  font-size: 13px; font-weight: 600; cursor: pointer; user-select: none;
+  transition: border-color .12s, background .12s, box-shadow .12s; margin: 0; }
+.check-chip:hover { border-color: var(--ice-blue); background: var(--ice-soft); }
+.check-chip.on { border-color: var(--accent); background: var(--ice-soft); box-shadow: inset 0 0 0 1px var(--accent); }
+.check-chip input { width: 16px; height: 16px; flex: 0 0 auto; margin: 0; accent-color: var(--accent); cursor: pointer; }
+
+/* Active segment in a .seg control (used as an in-page view switcher) */
+.seg .seg-on, .seg .seg-on:hover { background: var(--navy); color: #fff; }
+
+/* Amber banner variant (overlap warning) */
+.banner-amber { background: rgba(181,71,8,.10); color: var(--orange); }
+
+/* ---- Leave / absence calendar ---- */
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+.cal-head { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em;
+  color: var(--grey); text-align: center; padding: 2px 0; }
+.cal-cell { min-height: 92px; border: 1px solid var(--line); border-radius: 10px; padding: 5px 6px;
+  background: #fff; display: flex; flex-direction: column; gap: 4px; overflow: hidden; }
+.cal-cell.cal-out { background: var(--bg); opacity: .6; }
+.cal-cell.cal-today { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.cal-cell.cal-over { background: rgba(181,71,8,.06); }
+.cal-day { font-size: 12px; font-weight: 700; color: var(--navy); }
+.cal-chips { display: flex; flex-direction: column; gap: 3px; }
+.cal-chip { display: flex; align-items: center; gap: 4px; border: 0; border-radius: 6px;
+  padding: 2px 6px; color: #fff; font-size: 11px; font-weight: 600; cursor: pointer;
+  width: 100%; text-align: left; }
+.cal-chip:hover { filter: brightness(.94); }
+.cal-chip-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cal-chip-half { background: rgba(255,255,255,.35); border-radius: 4px; padding: 0 3px; font-size: 10px; }
+.cal-chip-pending { font-size: 14px; line-height: 1; opacity: .9; }
+@media (max-width: 768px) {
+  .cal-cell { min-height: 64px; }
+  .cal-chip-name { font-size: 10px; }
+}
+
 /* Org chart fullscreen (readable) overlay */
 .org-fullscreen { position: fixed; inset: 0; z-index: 1000; background: rgba(248, 250, 252, .98);
   display: flex; flex-direction: column; }

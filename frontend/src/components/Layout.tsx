@@ -12,6 +12,7 @@ import { Modal } from "./ui";
 import { usePageChrome } from "./pageChrome";
 import {
   IconAdmin,
+  IconCalendar,
   IconCollapse,
   IconDashboard,
   IconEntry,
@@ -46,14 +47,16 @@ const NAV: NavItem[] = [
   { to: "/tribus", labelKey: "nav.tribes", titleKey: "nav.tribes", Icon: IconTribes, visible: isGlobalAdmin },
   { to: "/saisie", labelKey: "nav.entry", titleKey: "nav.entry", Icon: IconEntry, visible: () => true, module: "reporting", cap: "reporting" },
   { to: "/fil", labelKey: "nav.feed", titleKey: "nav.feed", Icon: IconFeed, visible: () => true, module: "feed", cap: "feed" },
+  { to: "/conges", labelKey: "nav.leaves", titleKey: "nav.leaves", Icon: IconCalendar, visible: () => true, module: "leaves", cap: "leaves" },
   { to: "/mes-squads", labelKey: "nav.mysquads", titleKey: "mysquads.title", Icon: IconTribes, visible: () => true, cap: "mysquads" },
+  { to: "/acces", labelKey: "nav.access", titleKey: "access.title", Icon: IconAdmin, visible: (r) => ["admin", "tribe_leader", "squad_leader"].includes(r) },
   { to: "/admin", labelKey: "nav.admin", titleKey: "nav.admin", Icon: IconAdmin, visible: canSeeAdmin },
 ];
 
 const COLLAPSE_KEY = "sidebar.collapsed";
 
 export default function Layout() {
-  const { user, logout, effectiveRole, isPreview, impersonate, stopImpersonation, can } = useAuth();
+  const { user, logout, effectiveRole, isPreview, impersonate, stopImpersonation, can, pendingAccessCount } = useAuth();
   const { t, role: roleLabel, lang, setLang } = useI18n();
   const { app_name, modules } = useConfig();
   const [people, setPeople] = useState<{ id: number; display_name: string; role: string }[]>([]);
@@ -129,6 +132,12 @@ export default function Layout() {
             >
               <Icon size={19} />
               {!collapsed && <span className="sidebar-link-text">{t(labelKey)}</span>}
+              {to === "/acces" && pendingAccessCount > 0 && (
+                <span className="nav-count" style={{ marginLeft: "auto", background: "var(--red)", color: "#fff",
+                  borderRadius: 10, padding: "0 7px", fontSize: 11, fontWeight: 700, lineHeight: "17px" }}>
+                  {pendingAccessCount}
+                </span>
+              )}
             </NavLink>
           ))}
         </nav>

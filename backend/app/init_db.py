@@ -3,6 +3,7 @@ import logging
 
 from .bootstrap import ensure_breakglass
 from .database import SessionLocal
+from .leavesconfig import ensure_default_leave_types
 from .seed import run_seed
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -13,6 +14,7 @@ def main() -> None:
     db = SessionLocal()
     try:
         ensure_breakglass(db)
+        ensure_default_leave_types(db)
         run_seed(db)
         logger.info("Initialisation terminée.")
     finally:

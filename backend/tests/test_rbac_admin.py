@@ -16,7 +16,7 @@ def test_permissions_admin(client, seeded):
 def test_permissions_tribe_leader(client, seeded):
     login(client, seeded["tribe"])
     p = client.get("/api/auth/me/permissions").json()
-    assert p["admin_tabs"] == ["tribe", "users"]
+    assert p["admin_tabs"] == ["tribe", "users", "leaves"]
     assert p["assignable_roles"] == ["squad_leader", "member"]
     assert p["can_create_tribe"] is False
 
@@ -155,7 +155,7 @@ def test_impersonation_full_simulation(client, seeded):
 
     perms = client.get("/api/auth/me/permissions").json()
     assert perms["impersonating"] is True
-    assert perms["admin_tabs"] == ["tribe", "users"]  # tribe-leader tabs
+    assert perms["admin_tabs"] == ["tribe", "users", "leaves"]  # tribe-leader tabs
     # And global config is now genuinely forbidden (acting as the tribe leader).
     assert client.get("/api/admin/smtp-config").status_code == 403
 

@@ -13,6 +13,33 @@ Session = Starlette `SessionMiddleware` (itsdangerous-signed cookie), `same_site
 `max_age = session_max_age_seconds` (12h). Impersonation ("view as") is admin-only and stamps the
 session with `impersonator_id`.
 
+## SSO provisioning & access approval
+
+**SSO authenticates *who* you are; the app authorizes *whether* you may enter.** An
+IdP login is necessary but not sufficient — identity ≠ access.
+
+- **Account lifecycle** (`users.status`): `pending → active → disabled`. Only
+  `active` accounts may use the app. Locally-created and break-glass accounts are
+  `active`; SSO-provisioned ones start `pending`.
+- **Two gates at the SSO callback** (`_provision` + `authconfig`):
+  1. **Email-domain allowlist** (`allowed_email_domains`, optional) — outside the
+     allowed domains, no account is even created.
+  2. **Manual approval** (`require_approval`, default on) — new accounts are
+     `pending` and gain nothing until a manager validates them.
+- **Authorization gate** (`deps.get_current_user`) — every protected endpoint
+  requires `status == "active"`; otherwise `403 access_pending|access_disabled`.
+  Only `/api/auth/me` + `/me/permissions` resolve any-status (so the SPA can show
+  the "pending / revoked" screen). A `disabled` account also fails local login.
+- **Delegated, scoped validation** (`app/access.py`, `POST /api/access-requests/*`):
+  admins validate anyone (any role/tribe); tribe leaders validate into **their
+  tribe** (squad_leader/member); squad leaders validate into **their own squad**
+  (member). The *visibility* of the pending queue is broad (a new account has no
+  tribe yet) but the *grant* is strictly scoped — and **deny** (disable) is reserved
+  to admin / tribe leaders. Every decision is audited (`access.approve|deny`).
+- Reviewers are notified (in-app + best-effort email) of new requests; the user is
+  notified on approval. *(SCIM auto-deprovisioning is a future enhancement; the
+  disable flow covers manual revocation.)*
+
 ## Authorization (defense in depth)
 
 Three independent layers, all enforced **server-side** (the SPA only hides UI):
@@ -20,7 +47,7 @@ Three independent layers, all enforced **server-side** (the SPA only hides UI):
 1. **Role tiers** — `admin > tribe_leader > squad_leader > member` (+ custom persona keys).
    Coarse guards: `require_admin`, `require_tribe_or_admin`, `require_writer`.
 2. **Persona → capability matrix** (`personasconfig`) — section access (`dashboard, roadmap, org,
-   feed, reporting, review, mysquads`) per persona, enforced by `require_capability(cap)`.
+   feed, reporting, mysquads`) per persona, enforced by `require_capability(cap)`.
    Admin-configurable in **Admin → Personas**. See [ADR-0005](adr/0005-persona-capability-model.md).
 3. **Module on/off** (`modulesconfig`) — `require_module(module[,feature])` returns 404 when a feature
    is disabled (a disabled service is indistinguishable from a missing one).
