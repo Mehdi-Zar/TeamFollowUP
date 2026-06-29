@@ -36,7 +36,7 @@ erDiagram
 
 | Table | Key columns | Notes |
 |-------|-------------|-------|
-| **tribes** | id, name, description, display_order, created_at | tenant-ish scope unit |
+| **tribes** | id, name, description, display_order, created_at, **leaves_require_approval**, **leaves_overlap_threshold** | tenant-ish scope unit; last two configure the leave workflow per tribe |
 | **users** | id, email (uniq), display_name, **role** (str), tribe_id→tribes, auth_subject, is_break_glass, password_hash, notify_tweets/replies, email_notifications, subscribe_weekly_report, report_interval_days, report_last_sent_at, last_login_at | `role` = built-in or **custom persona key** (free string) |
 | **squads** | id, tribe_id→tribes, name, leader_user_id→users, display_order, **kpis_enabled** | |
 | **members** | id, squad_id→squads, full_name, role_title, user_id→users, manager_id→members (self), display_order | org chart of a squad |
@@ -53,6 +53,8 @@ erDiagram
 | **notifications** | id, user_id→users, kind (tweet/reply), actor_name, excerpt, link, is_read, created_at | in-app bell |
 | **review_actions** | id, squad_id→squads, text, owner, due_date, done, created_by_user_id→users, created_at | COPIL action items |
 | **report_subscriptions** | id, user_id→users, squad_id→squads (nullable=dashboard scope), interval_days, last_sent_at · **uniq(user,squad)** | per-user email cadence |
+| **leave_types** | id, label, color, display_order, is_active, **requires_detail** | configurable absence categories (admin); `requires_detail` prompts a free-text precision (default "Autre") |
+| **leaves** | id, user_id→users, tribe_id→tribes (denormalised at creation), type_id→leave_types, start_date, end_date, **start_half/end_half**, **detail** (public precision), comment (private motif), **status** (pending/approved/rejected/cancelled), created_by_user_id, decided_by_user_id, decided_at, decision_comment | one declared absence; type public, motif private |
 | **app_settings** | **key (PK)**, value (Text/JSON) | config store (see below) |
 | **audit_log** | id, user_id→users, action, entity, entity_id, timestamp, **detail (JSON)** | append-only audit trail |
 
@@ -76,6 +78,10 @@ erDiagram
 - **Cascade deletes**: a squad cascades to its objectives/roadmap/quarter_progress/kpis/members/
   snapshots/progress_updates (ORM `cascade="all, delete-orphan"`). Org nodes & feed posts referencing a
   deleted squad are detached (FK set null), not deleted.
+- **Leaves**: an absence is visible to everyone in the person's tribe (admins: all) — the *type* and
+  *detail* are public, the *comment* (motif) only to the person, their squad/tribe leader and admins.
+  Approval is required or not per tribe (`tribes.leaves_require_approval`); a manager filing for self or
+  others auto-approves. Day count = calendar days adjusted for half-days (weekends/holidays not excluded).
 - **Retention**: feed posts can be auto-pruned by `feed_retention_days` (0 = keep all). No retention on
   audit_log / progress_updates (see tech-debt register).
 
