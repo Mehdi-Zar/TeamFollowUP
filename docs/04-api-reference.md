@@ -76,6 +76,14 @@ SAML: `GET /saml/metadata`,`GET /saml/login`,`POST /saml/acs` · `POST /imperson
 ### actions (`/api`) — review action items
 `GET /squads/{id}/actions` · `POST /squads/{id}/actions` · `PUT /actions/{id}` · `DELETE /actions/{id}`
 
+### leaves (`/api/leaves`) — module `leaves` + capability `leaves`
+Types: `GET /types` (`?include_inactive`) · `POST /types` · `PUT /types/{id}` · `DELETE /types/{id}` (admin) ·
+Config (per tribe): `GET /config` · `PUT /config` (tribe_leader/admin) · People picker: `GET /people` ·
+Leaves: `GET ""` (filters `from/to/user_id/squad_id/status/mine`) · `POST ""` · `PUT /{id}` ·
+`POST /{id}/decision` (approve/reject, leaders) · `DELETE /{id}` · `GET /overlaps` (`from/to`, module
+`leaves.overlap_alert`) · `GET /export.csv`. Visibility is tribe-scoped (admins: all); the motif is
+returned only to the person, their leader and admins.
+
 ### admin (`/api/admin`) — `require_admin` (users also tribe_leader)
 Users: `GET/POST /users`, `PUT/DELETE /users/{id}` · Settings: `GET/PUT /settings` · Auth config:
 `GET/PUT /auth-config` · Modules: `GET/PUT /modules-config` · **Personas: `GET/PUT /personas`** ·

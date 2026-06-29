@@ -47,13 +47,18 @@ Three independent layers, all enforced **server-side** (the SPA only hides UI):
 1. **Role tiers** — `admin > tribe_leader > squad_leader > member` (+ custom persona keys).
    Coarse guards: `require_admin`, `require_tribe_or_admin`, `require_writer`.
 2. **Persona → capability matrix** (`personasconfig`) — section access (`dashboard, roadmap, org,
-   feed, reporting, mysquads`) per persona, enforced by `require_capability(cap)`.
+   feed, reporting, mysquads, leaves`) per persona, enforced by `require_capability(cap)`.
    Admin-configurable in **Admin → Personas**. See [ADR-0005](adr/0005-persona-capability-model.md).
 3. **Module on/off** (`modulesconfig`) — `require_module(module[,feature])` returns 404 when a feature
    is disabled (a disabled service is indistinguishable from a missing one).
 
 Plus **tribe scoping** (`assert_tribe_scope`, `visible_tribe_id`) and **ownership**
 (`assert_can_edit_squad`) for data-level isolation. Every privileged mutation writes to `audit_log`.
+
+**Leaves** add a dedicated guard `can_manage_leave(viewer, target)` (admin, the target's tribe leader, or
+a squad leader of a squad the target belongs to): it gates approve/edit/cancel-for-others and the
+visibility of the private motif. Absences are otherwise readable by anyone in the same tribe; the leave
+type and detail are public.
 
 ## OWASP Top 10 (2021) — quick assessment
 
