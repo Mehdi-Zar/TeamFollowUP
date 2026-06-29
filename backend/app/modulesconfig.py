@@ -25,6 +25,7 @@ def _defaults() -> dict:
         "notifications": {"enabled": True, "inapp": True, "email": True},
         "exports_csv": {"enabled": True},
         "getting_started": {"enabled": True},
+        "leaves": {"enabled": True, "overlap_alert": True},
     }
 
 

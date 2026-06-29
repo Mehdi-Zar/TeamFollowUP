@@ -29,6 +29,13 @@ DEFAULTS_FROM_ENV = lambda: {
     "saml_sp_key": settings.saml_sp_key,
     "saml_groups_attr": "groups",
     "group_role_mappings": [],  # [{"group": "...", "role": "tribe_leader"}]
+    # Access control for SSO provisioning:
+    #  - allowed_email_domains: if non-empty, only these email domains may be
+    #    provisioned at all (first gate). Empty = allow any authenticated identity.
+    #  - require_approval: when True, new SSO users are created "pending" and must
+    #    be validated by an admin / tribe leader / squad leader before access.
+    "allowed_email_domains": [],
+    "require_approval": True,
 }
 
 EDITABLE_KEYS = set(DEFAULTS_FROM_ENV().keys())
@@ -60,6 +67,14 @@ def set_auth_config(db: Session, patch: dict) -> dict:
         if group and role in VALID_ROLES:
             mappings.append({"group": group, "role": role})
     cfg["group_role_mappings"] = mappings
+    # Normalize the email-domain allowlist (lowercase, no leading '@', deduped).
+    domains = []
+    for d in cfg.get("allowed_email_domains") or []:
+        d = str(d).strip().lower().lstrip("@")
+        if d and d not in domains:
+            domains.append(d)
+    cfg["allowed_email_domains"] = domains
+    cfg["require_approval"] = bool(cfg.get("require_approval", True))
 
     row = db.get(AppSetting, AUTH_KEY)
     payload = json.dumps(cfg)
@@ -68,6 +83,16 @@ def set_auth_config(db: Session, patch: dict) -> dict:
     else:
         row.value = payload
     return cfg
+
+
+def email_domain_allowed(cfg: dict, email: str) -> bool:
+    """First access gate: is this email's domain permitted to be provisioned?
+    An empty allowlist permits any authenticated identity (approval still applies)."""
+    domains = cfg.get("allowed_email_domains") or []
+    if not domains:
+        return True
+    email = (email or "").lower().strip()
+    return "@" in email and email.rsplit("@", 1)[1] in domains
 
 
 def role_from_groups(cfg: dict, groups) -> str | None:

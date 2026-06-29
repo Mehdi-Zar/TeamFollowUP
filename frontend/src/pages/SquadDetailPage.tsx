@@ -5,6 +5,7 @@ import { useI18n } from "../i18n";
 import { useModule } from "../config";
 import { Budget, DependentItem, Initiative, KeyMessageKind, Member, RoadmapItem, SnapshotMeta, SquadDetail } from "../types";
 import { Dot, FreshnessBadge, ProgressBar, Spinner, ErrorBanner, Collapsible } from "../components/ui";
+import { InitiativesCard } from "../components/InitiativesCard";
 import { useAuth } from "../auth";
 import ExportMenu from "../components/ExportMenu";
 import { useSetPageChrome } from "../components/pageChrome";
@@ -113,28 +114,8 @@ export default function SquadDetailPage() {
       {squad.description && <div className="muted small">{squad.description}</div>}
 
       {/* Initiatives assignées à la squad (définies par le tribe leader) - tout en haut, au-dessus des OTD.
-          Toujours affichées, même vides, pour rendre visible qu'aucune n'est encore assignée. */}
-      <div className="card">
-        <h2>{t("nav.initiatives")}</h2>
-        {initiatives.length === 0 ? (
-          <div className="small muted">{t("init.empty")}</div>
-        ) : (
-          <table className="init-tbl">
-            <thead><tr>
-              <th>{t("init.h_initiative")}</th><th>{t("init.h_owner")}</th><th>{t("init.h_deadline")}</th>
-            </tr></thead>
-            <tbody>
-              {initiatives.map((i) => (
-                <tr key={i.id}>
-                  <td><strong>{i.title}</strong></td>
-                  <td>{i.owner || "-"}</td>
-                  <td>{i.deadline ? i.deadline.slice(0, 10) : "-"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
+          Même composant que le reporting, toujours affiché même vide, pour un rendu cohérent. */}
+      <InitiativesCard initiatives={initiatives} />
 
       {/* OTD - objectifs annuels engagés, en tête de page (définis par le tribe leader) */}
       {objectivesOn && privileged && (

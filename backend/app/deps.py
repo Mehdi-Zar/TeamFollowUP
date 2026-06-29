@@ -30,7 +30,10 @@ def record_audit(db: Session, user_id, action, entity=None, entity_id=None, deta
                     entity_id=str(entity_id) if entity_id is not None else None, detail=detail))
 
 
-def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
+def get_current_user_any_status(request: Request, db: Session = Depends(get_db)) -> User:
+    """Resolve the session user WITHOUT enforcing the access lifecycle. Only the
+    few endpoints a pending/disabled user legitimately needs (me, permissions,
+    logout) depend on this; everything else uses get_current_user."""
     token = request.cookies.get(settings.session_cookie)
     if not token:
         raise HTTPException(status_code=401, detail="Non authentifié")
@@ -42,6 +45,16 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
         raise HTTPException(status_code=401, detail="Utilisateur introuvable")
     # Surface impersonation context (admin viewing the app as another user).
     request.state.impersonator_id = impersonator_id
+    return user
+
+
+def get_current_user(user: User = Depends(get_current_user_any_status)) -> User:
+    """The standard dependency for every protected endpoint: a valid session AND
+    a validated ("active") account. Pending/disabled accounts are denied with a
+    machine-readable detail so the SPA can show the right screen."""
+    if user.status != "active":
+        detail = "access_pending" if user.status == "pending" else "access_disabled"
+        raise HTTPException(status_code=403, detail=detail)
     return user
 
 
@@ -127,6 +140,35 @@ def assert_can_manage_tribe_reporting(user: User, tribe_id: int | None) -> None:
         return
     raise HTTPException(status_code=403,
                         detail="Initiatives et OTD sont gérés par le tribe leader de la tribe")
+
+
+def can_manage_leave(db: Session, viewer: User, target_user_id: int) -> bool:
+    """Who may approve/edit/cancel someone else's absence: admin, the person's
+    tribe leader, or a squad leader of a squad the person belongs to."""
+    if viewer.role == ADMIN:
+        return True
+    target = db.get(User, target_user_id)
+    if target is None:
+        return False
+    if viewer.role == TRIBE:
+        return target.tribe_id is not None and target.tribe_id == viewer.tribe_id
+    if viewer.role == SQUAD:
+        from sqlalchemy import select
+        from .models import Member
+        led = db.scalars(select(Squad.id).where(Squad.leader_user_id == viewer.id)).all()
+        if not led:
+            return False
+        member = db.scalar(select(Member.id).where(
+            Member.user_id == target_user_id, Member.squad_id.in_(led)))
+        return member is not None
+    return False
+
+
+def can_see_leaves_of(viewer: User, tribe_id: int | None) -> bool:
+    """Leaves are visible to everyone within their tribe scope (admins see all)."""
+    if viewer.role == ADMIN:
+        return True
+    return tribe_id is not None and tribe_id == viewer.tribe_id
 
 
 def require_org_editor(user: User = Depends(get_current_user)) -> User:

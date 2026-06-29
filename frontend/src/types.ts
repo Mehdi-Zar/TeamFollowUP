@@ -1,7 +1,7 @@
 // Built-in roles plus any admin-created custom persona key.
 export type Role = "admin" | "tribe_leader" | "squad_leader" | "member" | (string & {});
 
-export type Capability = "dashboard" | "roadmap" | "org" | "feed" | "reporting" | "mysquads";
+export type Capability = "dashboard" | "roadmap" | "org" | "feed" | "reporting" | "mysquads" | "leaves";
 
 export interface RoadmapCellItem {
   title: string;
@@ -31,6 +31,8 @@ export interface Permissions {
   assignable_roles: Role[];
   can_create_tribe: boolean;
   can_manage_users: boolean;
+  can_review_access?: boolean;
+  pending_access_count?: number;
   capabilities?: Record<string, boolean>;
 }
 export type Rag = "green" | "amber" | "red";
@@ -97,15 +99,37 @@ export interface OtdReport extends Otd {
 export interface CandidateObjective { id: number; title: string; squad_id: number; squad_name: string; initiative_id?: number | null; }
 export interface CandidateJalon { id: number; title: string; quarter: number; theme?: string | null; squad_id: number; squad_name: string; otd_id?: number | null; }
 
+export type AccessStatus = "pending" | "active" | "disabled";
+
 export interface User {
   id: number;
   email: string;
   display_name: string;
   role: Role;
+  status?: AccessStatus;
   tribe_id?: number | null;
   is_break_glass: boolean;
   last_login_at?: string | null;
   created_at?: string | null;
+}
+
+export interface AccessRequest {
+  id: number;
+  email: string;
+  display_name: string;
+  role: Role;
+  auth_subject?: string | null;
+  created_at?: string | null;
+  last_login_at?: string | null;
+}
+
+export interface AccessOptions {
+  requests: AccessRequest[];
+  roles: Role[];
+  can_deny: boolean;
+  tribe_locked: boolean;
+  squads: { id: number; name: string; tribe_id: number }[];
+  tribes: { id: number; name: string }[];
 }
 
 export interface Tribe {
@@ -308,9 +332,62 @@ export interface ModulesConfig {
   notifications: { enabled: boolean; inapp: boolean; email: boolean };
   exports_csv: { enabled: boolean };
   getting_started: { enabled: boolean };
+  leaves: { enabled: boolean; overlap_alert: boolean };
 }
 
 export type ModuleKey = keyof ModulesConfig;
+
+// ---- Leaves / absences ----
+export type LeaveStatus = "pending" | "approved" | "rejected" | "cancelled";
+
+export interface LeaveType {
+  id: number;
+  label: string;
+  color: string;
+  display_order: number;
+  is_active: boolean;
+  requires_detail: boolean;
+}
+
+export interface Leave {
+  id: number;
+  user_id: number;
+  user_name: string;
+  tribe_id?: number | null;
+  type_id: number;
+  type_label: string;
+  type_color: string;
+  type_requires_detail?: boolean;
+  detail?: string | null;
+  start_date: string;  // ISO date
+  end_date: string;    // ISO date
+  start_half: boolean;
+  end_half: boolean;
+  days: number;
+  status: LeaveStatus;
+  comment?: string | null;
+  created_at?: string | null;
+  decided_by_name?: string | null;
+  decided_at?: string | null;
+  decision_comment?: string | null;
+  can_edit: boolean;
+  can_decide: boolean;
+}
+
+export interface LeaveConfig {
+  tribe_id: number;
+  tribe_name: string;
+  require_approval: boolean;
+  overlap_threshold: number;
+}
+
+export interface LeaveOverlapDay {
+  squad_id: number;
+  squad_name: string;
+  day: string;
+  count: number;
+  names: string[];
+}
 
 export interface ReviewAction {
   id: number;

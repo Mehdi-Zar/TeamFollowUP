@@ -33,6 +33,16 @@ export function IconDashboard(p: IconProps) {
   );
 }
 
+export function IconCalendar(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <rect x="3" y="4" width="18" height="17" rx="2" />
+      <path d="M3 9h18" />
+      <path d="M8 2v4M16 2v4" />
+    </Svg>
+  );
+}
+
 export function IconOrg(p: IconProps) {
   return (
     <Svg {...p}>
