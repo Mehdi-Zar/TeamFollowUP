@@ -50,6 +50,7 @@ isolation beyond tribe scoping, mobile native apps.
 | Exports (CSV) | `exports_csv` | — | dashboard & squad CSV |
 | Weekly report (HTML/PPTX/email) | `review.weekly_report` | — | scheduled + on-demand |
 | Notifications | `notifications` (inapp/email) | — | bell + preferences |
+| Leave / absences | `leaves` (+overlap_alert) | `leaves` | team calendar, per-tribe approval, CSV; visible to all (tribe-scoped) |
 | Getting started | `getting_started` | — | onboarding |
 
 Modules are toggled in **Admin → Modules**; capabilities per persona in **Admin → Personas**.

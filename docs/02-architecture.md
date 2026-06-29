@@ -53,7 +53,7 @@ flowchart LR
 ```mermaid
 flowchart TB
   main[main.py\nFastAPI app + routers + startup scheduler]
-  main --> routers[19 routers\nauth, tribes, squads, dashboard, org,\nobjectives, roadmap, roadmapview, kpis,\nmembers, snapshots, exports, feed,\nnotifications, admin, audit, progress, reports, actions]
+  main --> routers[routers\nauth, tribes, squads, dashboard, org,\nobjectives, roadmap, roadmapview, kpis,\nmembers, snapshots, feed, notifications,\nadmin, audit, reports, actions, initiatives,\notds, access, leaves]
   routers --> deps[deps.py\nauth + RBAC + capability + module guards]
   routers --> serializers[serializers.py]
   routers --> schemas[schemas.py\nPydantic DTOs]
