@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import PlainTextResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -375,4 +376,154 @@ def flush_log_export(payload: dict = Body(default=None), db: Session = Depends(g
                  detail={"destination": cfg["destination"], "count": len(entries), "ok": ok})
     db.commit()
     return {"ok": ok, "message": message, "count": len(entries), "destination": cfg["destination"]}
+
+
+# =============================================================================
+# HTTPS / TLS certificates
+# =============================================================================
+
+async def _text_from(upload: UploadFile | None, pasted: str | None) -> str:
+    if upload is not None:
+        return (await upload.read()).decode("utf-8", errors="replace")
+    return pasted or ""
+
+
+@router.get("/tls-config")
+def read_tls_config(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    from ..tlsconfig import status
+    return status(db)
+
+
+@router.put("/tls-config")
+def update_tls_config(payload: dict = Body(...), db: Session = Depends(get_db),
+                      admin: User = Depends(require_admin)):
+    from ..tlsconfig import set_options
+    cfg = set_options(db, payload)
+    record_audit(db, admin.id, "tls_config.update", entity="tls",
+                 detail={"redirect_http": cfg["redirect_http"]})
+    db.commit()
+    return cfg
+
+
+@router.post("/tls-config/self-signed")
+def tls_regenerate_self_signed(payload: dict = Body(default=None), db: Session = Depends(get_db),
+                               admin: User = Depends(require_admin)):
+    from ..tlsconfig import regenerate_self_signed
+    payload = payload or {}
+    cn = (payload.get("cn") or "localhost").strip()
+    sans = payload.get("sans")
+    if isinstance(sans, str):
+        sans = [s.strip() for s in sans.replace("\n", ",").split(",")]
+    try:
+        cfg = regenerate_self_signed(db, cn=cn, sans=sans)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    record_audit(db, admin.id, "tls_config.self_signed", entity="tls", detail={"cn": cn})
+    db.commit()
+    return cfg
+
+
+@router.post("/tls-config/import-pem")
+async def tls_import_pem(
+    cert: UploadFile | None = File(default=None),
+    key: UploadFile | None = File(default=None),
+    cert_pem: str | None = Form(default=None),
+    key_pem: str | None = Form(default=None),
+    passphrase: str | None = Form(default=None),
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    from ..tlsconfig import import_pem
+    cert_text = await _text_from(cert, cert_pem)
+    key_text = await _text_from(key, key_pem)
+    if not cert_text.strip() or not key_text.strip():
+        raise HTTPException(status_code=400, detail="Certificat et clé privée requis (fichier ou texte).")
+    try:
+        cfg = import_pem(db, cert_text, key_text, passphrase or None)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Import PEM impossible : {exc}")
+    record_audit(db, admin.id, "tls_config.import_pem", entity="tls",
+                 detail={"subject": (cfg.get("active") or {}).get("subject")})
+    db.commit()
+    return cfg
+
+
+@router.post("/tls-config/import-pfx")
+async def tls_import_pfx(
+    file: UploadFile = File(...),
+    password: str | None = Form(default=None),
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    from ..tlsconfig import import_pfx
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="Fichier PFX vide.")
+    try:
+        cfg = import_pfx(db, data, password or None)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Import PFX impossible (mot de passe ?) : {exc}")
+    record_audit(db, admin.id, "tls_config.import_pfx", entity="tls",
+                 detail={"subject": (cfg.get("active") or {}).get("subject")})
+    db.commit()
+    return cfg
+
+
+@router.post("/tls-config/ca")
+async def tls_add_ca(
+    ca: UploadFile | None = File(default=None),
+    ca_pem: str | None = Form(default=None),
+    name: str | None = Form(default=None),
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    from ..tlsconfig import add_ca
+    pem = await _text_from(ca, ca_pem)
+    if not pem.strip():
+        raise HTTPException(status_code=400, detail="Certificat d'autorité requis (fichier ou texte).")
+    try:
+        cfg = add_ca(db, pem, (name or "").strip() or None)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Ajout d'autorité impossible : {exc}")
+    record_audit(db, admin.id, "tls_config.add_ca", entity="tls", detail={"name": name})
+    db.commit()
+    return cfg
+
+
+@router.delete("/tls-config/ca/{ca_id}")
+def tls_remove_ca(ca_id: str, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    from ..tlsconfig import remove_ca
+    try:
+        cfg = remove_ca(db, ca_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    record_audit(db, admin.id, "tls_config.remove_ca", entity="tls", detail={"ca_id": ca_id})
+    db.commit()
+    return cfg
+
+
+@router.get("/tls-config/ca/{ca_id}/download")
+def tls_download_ca(ca_id: str, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    from ..tlsconfig import export_ca_pem
+    try:
+        pem = export_ca_pem(db, ca_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return PlainTextResponse(pem, headers={"Content-Disposition": f'attachment; filename="ca-{ca_id}.pem"'})
+
+
+@router.get("/tls-config/active/download")
+def tls_download_active(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    from ..tlsconfig import export_active_cert_pem
+    try:
+        pem = export_active_cert_pem(db)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return PlainTextResponse(pem, headers={"Content-Disposition": 'attachment; filename="server-cert.pem"'})
 

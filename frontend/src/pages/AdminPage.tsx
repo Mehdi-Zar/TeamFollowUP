@@ -21,6 +21,7 @@ const TAB_LABEL: Record<string, string> = {
   moderation: "admin.tab.moderation",
   auth: "admin.tab.auth",
   smtp: "admin.tab.smtp",
+  tls: "admin.tab.tls",
   report: "admin.tab.report",
   leaves: "admin.tab.leaves",
   logs: "admin.tab.logs",
@@ -32,7 +33,7 @@ const TAB_LABEL: Record<string, string> = {
 const ADMIN_GROUPS: { titleKey: string; items: string[] }[] = [
   { titleKey: "admin.group.org", items: ["tribes", "tribe", "squads", "my_squads", "users", "personas"] },
   { titleKey: "admin.group.config", items: ["modules", "report", "leaves", "settings"] },
-  { titleKey: "admin.group.access", items: ["auth", "smtp"] },
+  { titleKey: "admin.group.access", items: ["auth", "smtp", "tls"] },
   { titleKey: "admin.group.oversight", items: ["moderation", "logs", "audit"] },
 ];
 
@@ -102,6 +103,7 @@ export default function AdminPage() {
         {tab === "moderation" && <ModerationAdmin />}
         {tab === "auth" && <AuthAdmin />}
         {tab === "smtp" && <SmtpAdmin />}
+        {tab === "tls" && <TlsAdmin />}
         {tab === "logs" && <LogExportAdmin />}
         {tab === "settings" && <SettingsAdmin />}
         {tab === "audit" && <AuditAdmin />}
@@ -182,6 +184,217 @@ function SmtpAdmin() {
   );
 }
 
+function TlsAdmin() {
+  const { t } = useI18n();
+  const [st, setSt] = useState<any | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+  const { error, wrap } = useErr();
+
+  // Self-signed form
+  const [cn, setCn] = useState("localhost");
+  const [sans, setSans] = useState("localhost, 127.0.0.1");
+  // PEM import
+  const [certFile, setCertFile] = useState<File | null>(null);
+  const [keyFile, setKeyFile] = useState<File | null>(null);
+  const [certText, setCertText] = useState("");
+  const [keyText, setKeyText] = useState("");
+  const [pemPass, setPemPass] = useState("");
+  // PFX import
+  const [pfxFile, setPfxFile] = useState<File | null>(null);
+  const [pfxPass, setPfxPass] = useState("");
+  // CA add
+  const [caFile, setCaFile] = useState<File | null>(null);
+  const [caName, setCaName] = useState("");
+
+  const load = () => api.get<any>("/api/admin/tls-config").then(setSt);
+  useEffect(() => { load(); }, []);
+  if (!st) return <div className="spinner">{t("common.loading")}</div>;
+
+  const flash = (m: string) => { setMsg(m); setTimeout(() => setMsg(null), 2500); };
+
+  async function toggleRedirect(v: boolean) {
+    await wrap(async () => { setSt(await api.put<any>("/api/admin/tls-config", { redirect_http: v })); });
+  }
+  async function regen() {
+    await wrap(async () => {
+      setSt(await api.post<any>("/api/admin/tls-config/self-signed", { cn, sans }));
+      flash(t("tls.applied"));
+    });
+  }
+  async function importPem() {
+    await wrap(async () => {
+      const f = new FormData();
+      if (certFile) f.append("cert", certFile); else f.append("cert_pem", certText);
+      if (keyFile) f.append("key", keyFile); else f.append("key_pem", keyText);
+      if (pemPass) f.append("passphrase", pemPass);
+      setSt(await api.postForm<any>("/api/admin/tls-config/import-pem", f));
+      setCertFile(null); setKeyFile(null); setCertText(""); setKeyText(""); setPemPass("");
+      flash(t("tls.applied"));
+    });
+  }
+  async function importPfx() {
+    await wrap(async () => {
+      if (!pfxFile) throw new Error(t("tls.pfx_required"));
+      const f = new FormData();
+      f.append("file", pfxFile);
+      if (pfxPass) f.append("password", pfxPass);
+      setSt(await api.postForm<any>("/api/admin/tls-config/import-pfx", f));
+      setPfxFile(null); setPfxPass("");
+      flash(t("tls.applied"));
+    });
+  }
+  async function addCa() {
+    await wrap(async () => {
+      const f = new FormData();
+      if (caFile) f.append("ca", caFile); else throw new Error(t("tls.ca_required"));
+      if (caName) f.append("name", caName);
+      setSt(await api.postForm<any>("/api/admin/tls-config/ca", f));
+      setCaFile(null); setCaName("");
+      flash(t("tls.applied"));
+    });
+  }
+  async function removeCa(id: string) {
+    await wrap(async () => { setSt(await api.del<any>(`/api/admin/tls-config/ca/${id}`)); });
+  }
+
+  const a = st.active || {};
+  const expClass = a.expired ? "badge-red" : (a.days_remaining != null && a.days_remaining < 30 ? "badge-orange" : "badge-green");
+
+  const caRow = (c: any) => (
+    <div key={c.id} className="card stack" style={{ gap: 4, padding: 10 }}>
+      <div className="between">
+        <span className="strong">{c.name}</span>
+        <span className={`badge ${c.kind === "root" ? "badge-navy" : "badge-grey"}`}>{t(`tls.kind.${c.kind}`)}</span>
+      </div>
+      <div className="small muted">{t("tls.issuer")}: {c.issuer}</div>
+      <div className="small muted">{t("tls.expires")}: {c.not_after?.slice(0, 10)}</div>
+      <div className="inline" style={{ gap: 8 }}>
+        <a className="btn-secondary btn-sm" href={`/api/admin/tls-config/ca/${c.id}/download`}>{t("tls.download")}</a>
+        <button className="btn-danger btn-sm" onClick={() => removeCa(c.id)}>{t("action.delete")}</button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="stack" style={{ maxWidth: 760 }}>
+      {error && <ErrorBanner message={error} />}
+      <div className="banner">{t("tls.intro")}</div>
+
+      {/* Active certificate */}
+      <div className="card stack" style={{ gap: 8 }}>
+        <div className="between">
+          <span className="strong">{t("tls.active")}</span>
+          <span className="inline" style={{ gap: 8 }}>
+            <span className={`badge ${st.mode === "self_signed" ? "badge-orange" : "badge-green"}`}>
+              {t(st.mode === "self_signed" ? "tls.mode.self_signed" : "tls.mode.custom")}
+            </span>
+            {a.days_remaining != null && <span className={`badge ${expClass}`}>{t("tls.days_left", { n: a.days_remaining })}</span>}
+          </span>
+        </div>
+        {a.error ? <div className="small" style={{ color: "var(--red)" }}>{a.error}</div> : (
+          <div className="stack" style={{ gap: 2 }}>
+            <div className="small"><b>{t("tls.subject")}:</b> {a.subject}</div>
+            <div className="small"><b>{t("tls.issuer")}:</b> {a.issuer}</div>
+            <div className="small"><b>SAN:</b> {(a.sans || []).join(", ") || "—"}</div>
+            <div className="small"><b>{t("tls.valid_until")}:</b> {a.not_after?.slice(0, 10)}</div>
+            <div className="small muted" style={{ wordBreak: "break-all" }}><b>SHA-256:</b> {a.fingerprint_sha256}</div>
+            {st.chain_len > 0 && <div className="small muted">{t("tls.chain_len", { n: st.chain_len })}</div>}
+          </div>
+        )}
+        <div className="inline">
+          <a className="btn-secondary btn-sm" href="/api/admin/tls-config/active/download">{t("tls.download_active")}</a>
+        </div>
+      </div>
+
+      {/* Options */}
+      <div className="card stack" style={{ gap: 10 }}>
+        <label className="switch">
+          <input type="checkbox" checked={!!st.redirect_http} onChange={(e) => toggleRedirect(e.target.checked)} />
+          <span className="track"><span className="knob" /></span>
+          <span className="strong">{t("tls.redirect_http")}</span>
+        </label>
+        <div className="small muted">{t("tls.redirect_hint")}</div>
+      </div>
+
+      {/* Self-signed */}
+      <div className="card stack" style={{ gap: 10 }}>
+        <span className="strong">{t("tls.self_signed_title")}</span>
+        <div className="small muted">{t("tls.self_signed_hint")}</div>
+        <div className="row">
+          <div style={{ flex: 1, minWidth: 180 }}><label>{t("tls.cn")}</label>
+            <input value={cn} onChange={(e) => setCn(e.target.value)} /></div>
+          <div style={{ flex: 2, minWidth: 220 }}><label>{t("tls.sans")}</label>
+            <input value={sans} onChange={(e) => setSans(e.target.value)} placeholder="host.example.com, 10.0.0.5" /></div>
+        </div>
+        <div><button className="btn-secondary" onClick={regen}>{t("tls.generate")}</button></div>
+      </div>
+
+      {/* Import PEM */}
+      <div className="card stack" style={{ gap: 10 }}>
+        <span className="strong">{t("tls.import_pem_title")}</span>
+        <div className="small muted">{t("tls.import_pem_hint")}</div>
+        <div className="row">
+          <div style={{ flex: 1, minWidth: 220 }}>
+            <label>{t("tls.cert_file")}</label>
+            <input type="file" accept=".pem,.crt,.cer" onChange={(e) => setCertFile(e.target.files?.[0] ?? null)} />
+          </div>
+          <div style={{ flex: 1, minWidth: 220 }}>
+            <label>{t("tls.key_file")}</label>
+            <input type="file" accept=".pem,.key" onChange={(e) => setKeyFile(e.target.files?.[0] ?? null)} />
+          </div>
+        </div>
+        {!certFile && <textarea rows={4} placeholder={t("tls.cert_paste")} value={certText} onChange={(e) => setCertText(e.target.value)} style={{ fontFamily: "monospace", fontSize: 12 }} />}
+        {!keyFile && <textarea rows={4} placeholder={t("tls.key_paste")} value={keyText} onChange={(e) => setKeyText(e.target.value)} style={{ fontFamily: "monospace", fontSize: 12 }} />}
+        <div className="row">
+          <div style={{ width: 260 }}><label>{t("tls.key_passphrase")}</label>
+            <input type="password" value={pemPass} onChange={(e) => setPemPass(e.target.value)} /></div>
+        </div>
+        <div><button onClick={importPem}>{t("tls.install")}</button></div>
+      </div>
+
+      {/* Import PFX */}
+      <div className="card stack" style={{ gap: 10 }}>
+        <span className="strong">{t("tls.import_pfx_title")}</span>
+        <div className="small muted">{t("tls.import_pfx_hint")}</div>
+        <div className="row">
+          <div style={{ flex: 1, minWidth: 220 }}>
+            <label>{t("tls.pfx_file")}</label>
+            <input type="file" accept=".pfx,.p12" onChange={(e) => setPfxFile(e.target.files?.[0] ?? null)} />
+          </div>
+          <div style={{ width: 260 }}><label>{t("tls.pfx_password")}</label>
+            <input type="password" value={pfxPass} onChange={(e) => setPfxPass(e.target.value)} /></div>
+        </div>
+        <div><button onClick={importPfx}>{t("tls.install")}</button></div>
+      </div>
+
+      {/* CA store */}
+      <div className="card stack" style={{ gap: 10 }}>
+        <span className="strong">{t("tls.ca_title")}</span>
+        <div className="small muted">{t("tls.ca_hint")}</div>
+        <div className="stack" style={{ gap: 6 }}>
+          <div className="small strong">{t("tls.roots")}</div>
+          {st.roots?.length ? st.roots.map(caRow) : <div className="small muted">{t("tls.none")}</div>}
+          <div className="small strong" style={{ marginTop: 8 }}>{t("tls.intermediates")}</div>
+          {st.intermediates?.length ? st.intermediates.map(caRow) : <div className="small muted">{t("tls.none")}</div>}
+        </div>
+        <div className="row" style={{ alignItems: "flex-end" }}>
+          <div style={{ flex: 1, minWidth: 220 }}>
+            <label>{t("tls.ca_file")}</label>
+            <input type="file" accept=".pem,.crt,.cer" onChange={(e) => setCaFile(e.target.files?.[0] ?? null)} />
+          </div>
+          <div style={{ flex: 1, minWidth: 180 }}>
+            <label>{t("tls.ca_name")}</label>
+            <input value={caName} onChange={(e) => setCaName(e.target.value)} />
+          </div>
+          <button className="btn-secondary" onClick={addCa}>{t("tls.add_ca")}</button>
+        </div>
+      </div>
+
+      {msg && <div className="small" style={{ color: "var(--green)" }}>{msg}</div>}
+    </div>
+  );
+}
+
 const MODULE_TREE: { key: ModuleKey; features: string[] }[] = [
   { key: "dashboard", features: [] },
   { key: "org", features: [] },
@@ -189,6 +402,7 @@ const MODULE_TREE: { key: ModuleKey; features: string[] }[] = [
   { key: "feed", features: ["reactions", "replies", "pin", "kinds"] },
   { key: "review", features: ["weekly_report"] },
   { key: "squad_content", features: ["objectives", "roadmap", "kpis"] },
+  { key: "committees", features: [] },
   { key: "notifications", features: ["inapp", "email"] },
   { key: "exports_csv", features: [] },
   { key: "getting_started", features: [] },

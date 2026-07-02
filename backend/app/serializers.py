@@ -1,6 +1,7 @@
 from . import status as st
 from .models import OrgNode, Squad
 from .schemas import (
+    CommitteeOut,
     KeyMessageOut,
     KpiOut,
     LeaderInfo,
@@ -122,6 +123,9 @@ def squad_detail(squad: Squad, year: int, threshold: int, privileged: bool = Fal
         members=[MemberOut.model_validate(m) for m in sorted(squad.members, key=lambda x: (x.display_order, x.id))],
         key_messages=[KeyMessageOut.model_validate(m) for m in
                       sorted(squad.key_messages, key=lambda x: (x.display_order, x.id)) if m.year == year],
+        # Committees are standing (not year-scoped): show them all, active first.
+        committees=[CommitteeOut.model_validate(c) for c in
+                    sorted(squad.committees, key=lambda x: (not x.is_active, x.display_order, x.id))],
         # Budget figures are restricted to the squad leader, its tribe leader and admins.
         budget=budget_out(squad, year) if (privileged and squad.budget_enabled) else None,
     )
