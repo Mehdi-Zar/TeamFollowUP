@@ -46,16 +46,28 @@ services:
       SAML_ACS_URL: ${SAML_ACS_URL:-http://localhost:8080/api/auth/saml/acs}
       SAML_SP_CERT: ${SAML_SP_CERT:-}
       SAML_SP_KEY: ${SAML_SP_KEY:-}
-      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      # Site is HTTPS by default, so secure cookies are appropriate.
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
       COOKIE_SAMESITE: ${COOKIE_SAMESITE:-lax}
       LOGIN_MAX_ATTEMPTS: ${LOGIN_MAX_ATTEMPTS:-10}
       LOGIN_WINDOW_SECONDS: ${LOGIN_WINDOW_SECONDS:-300}
       AUDIT_RETENTION_DAYS: ${AUDIT_RETENTION_DAYS:-0}
       PROGRESS_RETENTION_DAYS: ${PROGRESS_RETENTION_DAYS:-0}
+      # --- HTTPS / TLS ---
+      CERT_DIR: /app/certs
+      HTTPS_PORT: 8443
+      HTTP_PORT: 8080
+      # Host-side HTTPS port, used to build HTTP->HTTPS redirect URLs.
+      PUBLIC_HTTPS_PORT: ${APP_HTTPS_PORT:-8443}
     ports:
-      - "${APP_PORT:-8080}:8000"
+      # HTTPS (primary) and HTTP (301 -> HTTPS).
+      - "${APP_HTTPS_PORT:-8443}:8443"
+      - "${APP_HTTP_PORT:-8080}:8080"
+    volumes:
+      # Active cert/key materialised here at boot (DB stays the source of truth).
+      - certs_data:/app/certs
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/health"]
+      test: ["CMD", "curl", "-fsSk", "https://localhost:8443/api/health"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -91,3 +103,4 @@ services:
 
 volumes:
   db_data:
+  certs_data:

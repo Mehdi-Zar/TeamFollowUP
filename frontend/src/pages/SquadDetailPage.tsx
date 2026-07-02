@@ -3,7 +3,7 @@ import { Link, useParams, useSearchParams } from "react-router-dom";
 import { api } from "../api";
 import { useI18n } from "../i18n";
 import { useModule } from "../config";
-import { Budget, DependentItem, Initiative, KeyMessageKind, Member, RoadmapItem, SnapshotMeta, SquadDetail } from "../types";
+import { Budget, Committee, CommitteeFrequency, DependentItem, Initiative, KeyMessageKind, Member, RoadmapItem, SnapshotMeta, SquadDetail, Weekday } from "../types";
 import { Dot, FreshnessBadge, ProgressBar, Spinner, ErrorBanner, Collapsible } from "../components/ui";
 import { InitiativesCard } from "../components/InitiativesCard";
 import { useAuth } from "../auth";
@@ -27,6 +27,7 @@ export default function SquadDetailPage() {
   const roadmapOn = moduleOn("squad_content", "roadmap");
   const objectivesOn = moduleOn("squad_content", "objectives");
   const kpisOn = moduleOn("squad_content", "kpis");
+  const committeesOn = moduleOn("committees");
   const { user, effectiveRole } = useAuth();
 
   // Re-fetch the squad in place (no spinner flash) after a budget / key-message edit.
@@ -228,6 +229,11 @@ export default function SquadDetailPage() {
         </div>
       )}
 
+      {/* Comitologie (optionnelle) - déclarée par le squad leader, visible par le tribe leader */}
+      {committeesOn && (
+        <CommitteesPanel squad={squad} canEdit={privileged} onChange={reload} />
+      )}
+
       {/* Équipe / organigramme de la squad - carte dépliable */}
       <Collapsible title={t("squad.team")} subtitle={t("squad.team_collapsed_hint", { n: squad.members.length })}>
         <SquadOrg squad={squad} emptyLabel={t("squad.no_members")} />
@@ -322,6 +328,229 @@ function KeyMessagesPanel({ squad, canEdit, onChange }:
           + {t("km.add")}
         </button>
       ))}
+    </div>
+  );
+}
+
+const FREQUENCIES: CommitteeFrequency[] = ["daily", "weekly", "biweekly", "per_sprint", "monthly", "quarterly", "yearly", "on_demand", "other"];
+const WEEKDAYS: Weekday[] = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+const FREQ_BADGE: Record<CommitteeFrequency, string> = {
+  daily: "badge-navy", weekly: "badge-navy", biweekly: "badge-navy", per_sprint: "badge-navy",
+  monthly: "badge-green", quarterly: "badge-orange", yearly: "badge-grey", on_demand: "badge-grey",
+  other: "badge-grey",
+};
+
+// Label for the frequency badge — the custom text when "other".
+function freqLabel(c: Committee, t: (k: string, v?: any) => string): string {
+  if (c.frequency === "other") return c.frequency_other?.trim() || t("committee.freq.other");
+  return t(`committee.freq.${c.frequency}`);
+}
+
+const emptyCommittee = (order: number): Partial<Committee> => ({
+  name: "", objective: "", frequency: "monthly", frequency_other: "", day_of_week: null,
+  time_of_day: "", duration_minutes: null, participants: "",
+  is_active: true, display_order: order,
+});
+
+// "Mardi · 09:30 · 60 min" — day / time / duration combined into one column.
+function whenDurationLabel(c: Committee, t: (k: string, v?: any) => string): string {
+  const parts: string[] = [];
+  if (c.day_of_week) parts.push(t(`committee.day.${c.day_of_week}`));
+  if (c.time_of_day) parts.push(c.time_of_day);
+  if (c.duration_minutes != null) parts.push(t("committee.duration_val", { n: c.duration_minutes }));
+  return parts.join(" · ") || "—";
+}
+
+// Time picker constrained to 30-minute steps, with ± buttons for hour and minute.
+function HalfHourTime({ value, onChange }: { value?: string | null; onChange: (v: string | null) => void }) {
+  const parse = (v?: string | null): [number, number] | null => {
+    if (!v) return null;
+    const [h, m] = v.split(":").map(Number);
+    if (Number.isNaN(h)) return null;
+    return [((h % 24) + 24) % 24, m >= 30 ? 30 : 0];
+  };
+  const cur = parse(value);
+  const base = cur ?? [9, 0];
+  const commit = (h: number, m: number) => onChange(`${String(((h % 24) + 24) % 24).padStart(2, "0")}:${m === 30 ? "30" : "00"}`);
+  const stepH = (d: number) => commit(base[0] + d, base[1]);
+  const stepM = (d: number) => {
+    let [h, m] = base;
+    if (d > 0) { if (m === 0) m = 30; else { m = 0; h += 1; } }
+    else { if (m === 30) m = 0; else { m = 30; h -= 1; } }
+    commit(h, m);
+  };
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return (
+    <div className="time-stepper">
+      <div className="ts-group">
+        <button type="button" onClick={() => stepH(-1)} aria-label="-1h">−</button>
+        <span className="ts-val">{cur ? pad(cur[0]) : "--"}</span>
+        <button type="button" onClick={() => stepH(1)} aria-label="+1h">+</button>
+      </div>
+      <span className="ts-colon">:</span>
+      <div className="ts-group">
+        <button type="button" onClick={() => stepM(-1)} aria-label="-30min">−</button>
+        <span className="ts-val">{cur ? (cur[1] === 30 ? "30" : "00") : "--"}</span>
+        <button type="button" onClick={() => stepM(1)} aria-label="+30min">+</button>
+      </div>
+      {cur && <button type="button" className="ts-clear" onClick={() => onChange(null)} aria-label="clear">✕</button>}
+    </div>
+  );
+}
+
+function CommitteeModal({ initial, isNew, onSave, onClose }:
+  { initial: Partial<Committee>; isNew: boolean; onSave: (c: Partial<Committee>) => void; onClose: () => void }) {
+  const { t } = useI18n();
+  const [c, setC] = useState<Partial<Committee>>(initial);
+  const set = (k: keyof Committee, v: any) => setC((prev) => ({ ...prev, [k]: v }));
+  const recurring = c.frequency === "daily" || c.frequency === "weekly" || c.frequency === "biweekly";
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{ maxWidth: 560, maxHeight: "88vh", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
+        <h3 style={{ marginTop: 0 }}>{isNew ? t("committee.new") : t("committee.edit")}</h3>
+        <div className="stack" style={{ gap: 12, marginTop: 12 }}>
+          <div>
+            <label className="field-label">{t("committee.name")} *</label>
+            <input autoFocus placeholder={t("committee.name_ph")} value={c.name ?? ""} onChange={(e) => set("name", e.target.value)} />
+          </div>
+          <div>
+            <label className="field-label">{t("committee.objective")}</label>
+            <textarea rows={2} placeholder={t("committee.objective_ph")} value={c.objective ?? ""} onChange={(e) => set("objective", e.target.value)} />
+          </div>
+          <div className="row" style={{ gap: 12, flexWrap: "wrap" }}>
+            <div style={{ flex: "1 1 180px" }}>
+              <label className="field-label">{t("committee.frequency")}</label>
+              <select className="select-nice" value={c.frequency} onChange={(e) => set("frequency", e.target.value as CommitteeFrequency)}>
+                {FREQUENCIES.map((f) => <option key={f} value={f}>{t(`committee.freq.${f}`)}</option>)}
+              </select>
+            </div>
+            {recurring && (
+              <div style={{ flex: "1 1 150px" }}>
+                <label className="field-label">{t("committee.day")}</label>
+                <select className="select-nice" value={c.day_of_week ?? ""} onChange={(e) => set("day_of_week", (e.target.value || null) as Weekday | null)}>
+                  <option value="">—</option>
+                  {WEEKDAYS.map((d) => <option key={d} value={d}>{t(`committee.day.${d}`)}</option>)}
+                </select>
+              </div>
+            )}
+            {c.frequency === "other" && (
+              <div style={{ flex: "1 1 220px" }}>
+                <label className="field-label">{t("committee.freq_other")}</label>
+                <input placeholder={t("committee.freq_other_ph")} value={c.frequency_other ?? ""}
+                       onChange={(e) => set("frequency_other", e.target.value)} />
+              </div>
+            )}
+          </div>
+          <div className="row" style={{ gap: 12, flexWrap: "wrap" }}>
+            <div style={{ flex: "1 1 130px" }}>
+              <label className="field-label">{t("committee.time")}</label>
+              <HalfHourTime value={c.time_of_day} onChange={(v) => set("time_of_day", v)} />
+            </div>
+            <div style={{ flex: "1 1 130px" }}>
+              <label className="field-label">{t("committee.duration")}</label>
+              <input type="number" min={0} step={15} placeholder="60" value={c.duration_minutes ?? ""}
+                     onChange={(e) => set("duration_minutes", e.target.value === "" ? null : Number(e.target.value))} />
+            </div>
+          </div>
+          <div>
+            <label className="field-label">{t("committee.participants")}</label>
+            <textarea rows={2} placeholder={t("committee.participants_ph")} value={c.participants ?? ""} onChange={(e) => set("participants", e.target.value)} />
+          </div>
+          <label className="switch">
+            <input type="checkbox" checked={c.is_active !== false} onChange={(e) => set("is_active", e.target.checked)} />
+            <span className="track"><span className="knob" /></span>
+            <span className="small">{t("committee.active")}</span>
+          </label>
+        </div>
+        <div className="inline" style={{ justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
+          <button className="btn-secondary" onClick={onClose}>{t("action.cancel")}</button>
+          <button onClick={() => onSave({ ...c, name: (c.name ?? "").trim() })} disabled={!c.name?.trim()}>
+            {t("action.save")}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CommitteesPanel({ squad, canEdit, onChange }:
+  { squad: SquadDetail; canEdit: boolean; onChange: () => void }) {
+  const { t } = useI18n();
+  // null = closed; {} via "new"; an object = editing that committee
+  const [editing, setEditing] = useState<Partial<Committee> | null>(null);
+  const [isNew, setIsNew] = useState(false);
+  const committees = squad.committees ?? [];
+
+  const openNew = () => { setEditing(emptyCommittee(committees.length)); setIsNew(true); };
+  const openEdit = (c: Committee) => { setEditing(c); setIsNew(false); };
+
+  const save = (c: Partial<Committee>) => {
+    if (!c.name?.trim()) return;
+    const done = () => { setEditing(null); onChange(); };
+    if (isNew) {
+      api.post(`/api/committees`, { ...c, squad_id: squad.id }).then(done).catch(() => {});
+    } else {
+      api.put(`/api/committees/${(c as Committee).id}`, c).then(done).catch(() => {});
+    }
+  };
+  const remove = (id: number) => api.del(`/api/committees/${id}`).then(onChange).catch(() => {});
+
+  return (
+    <div className="card">
+      <div className="between" style={{ alignItems: "flex-start" }}>
+        <div>
+          <h2 style={{ marginBottom: 2 }}>{t("committee.title")}</h2>
+          <div className="small muted">{t("committee.hint")}</div>
+        </div>
+        {canEdit && <button className="btn-secondary btn-sm" onClick={openNew}>+ {t("committee.add")}</button>}
+      </div>
+
+      {committees.length === 0 ? (
+        <div className="small muted" style={{ marginTop: 12 }}>{t("committee.none")}</div>
+      ) : (
+        <div style={{ overflowX: "auto", marginTop: 12 }}>
+          <table className="committee-tbl">
+            <thead>
+              <tr>
+                <th>{t("committee.col_name")}</th>
+                <th>{t("committee.objective")}</th>
+                <th>{t("committee.frequency")}</th>
+                <th>{t("committee.when")}</th>
+                <th>{t("committee.participants")}</th>
+                {canEdit && <th style={{ width: 1 }} />}
+              </tr>
+            </thead>
+            <tbody>
+              {committees.map((c) => (
+                <tr key={c.id} className={c.is_active ? "" : "inactive"}>
+                  <td>
+                    <div className="inline" style={{ gap: 8, alignItems: "center" }}>
+                      <span className="strong">{c.name}</span>
+                      {!c.is_active && <span className="badge badge-grey">{t("committee.inactive")}</span>}
+                    </div>
+                  </td>
+                  <td className="small muted" style={{ maxWidth: 280 }}>{c.objective || "—"}</td>
+                  <td><span className={`badge ${FREQ_BADGE[c.frequency]}`}>{freqLabel(c, t)}</span></td>
+                  <td className="small" style={{ whiteSpace: "nowrap" }}>{whenDurationLabel(c, t)}</td>
+                  <td className="small muted" style={{ maxWidth: 220 }}>{c.participants || "—"}</td>
+                  {canEdit && (
+                    <td>
+                      <span className="inline" style={{ gap: 6, justifyContent: "flex-end" }}>
+                        <button className="btn-secondary btn-sm" onClick={() => openEdit(c)} aria-label={t("action.edit")}>✎</button>
+                        <button className="btn-danger btn-sm" onClick={() => remove(c.id)} aria-label={t("action.delete")}>✕</button>
+                      </span>
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {editing && (
+        <CommitteeModal initial={editing} isNew={isNew} onSave={save} onClose={() => setEditing(null)} />
+      )}
     </div>
   );
 }

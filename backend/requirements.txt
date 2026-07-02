@@ -12,5 +12,6 @@ authlib==1.4.0
 httpx==0.28.1
 itsdangerous==2.2.0
 python3-saml==1.16.0
+cryptography==49.0.0
 python-pptx==1.0.2
 pytest==8.3.4

@@ -104,6 +104,7 @@ class Squad(Base):
     snapshots: Mapped[list["ReportSnapshot"]] = relationship(back_populates="squad", cascade="all, delete-orphan")
     budgets: Mapped[list["SquadBudget"]] = relationship(back_populates="squad", cascade="all, delete-orphan")
     key_messages: Mapped[list["KeyMessage"]] = relationship(back_populates="squad", cascade="all, delete-orphan")
+    committees: Mapped[list["Committee"]] = relationship(back_populates="squad", cascade="all, delete-orphan")
 
 
 class Member(Base):
@@ -292,6 +293,33 @@ class KeyMessage(Base):
     created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
 
     squad: Mapped["Squad"] = relationship(back_populates="key_messages")
+
+
+class Committee(Base):
+    """A recurring governance meeting ("comitologie") a squad runs: its name,
+    purpose, cadence and logistics. Declared by the squad leader, read by the
+    tribe leader for oversight. Standing (not year-scoped)."""
+    __tablename__ = "committees"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    squad_id: Mapped[int] = mapped_column(ForeignKey("squads.id"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    objective: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # daily | weekly | biweekly | per_sprint | monthly | quarterly | yearly | on_demand | other
+    frequency: Mapped[str] = mapped_column(String(16), nullable=False, default="monthly")
+    # Free-text cadence when frequency == "other".
+    frequency_other: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    # For recurring cadences: mon..sun (nullable). Free scheduling detail otherwise.
+    day_of_week: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    time_of_day: Mapped[str | None] = mapped_column(String(5), nullable=True)   # "HH:MM"
+    duration_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    participants: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    display_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+
+    squad: Mapped["Squad"] = relationship(back_populates="committees")
 
 
 class Kpi(Base):

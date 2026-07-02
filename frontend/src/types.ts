@@ -261,6 +261,25 @@ export interface KeyMessage {
   created_at: string;
 }
 
+export type CommitteeFrequency =
+  | "daily" | "weekly" | "biweekly" | "per_sprint" | "monthly" | "quarterly" | "yearly" | "on_demand" | "other";
+export type Weekday = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
+
+export interface Committee {
+  id: number;
+  squad_id: number;
+  name: string;
+  objective?: string | null;
+  frequency: CommitteeFrequency;
+  frequency_other?: string | null;
+  day_of_week?: Weekday | null;
+  time_of_day?: string | null;
+  duration_minutes?: number | null;
+  participants?: string | null;
+  is_active: boolean;
+  display_order: number;
+}
+
 export type BudgetStatus = "on_track" | "at_risk" | "over";
 
 export interface Budget {
@@ -293,6 +312,7 @@ export interface SquadDetail extends Squad {
   kpis: Kpi[];
   members: Member[];
   key_messages: KeyMessage[];
+  committees: Committee[];
   budget?: Budget | null;
 }
 
@@ -329,6 +349,7 @@ export interface ModulesConfig {
   feed: { enabled: boolean; reactions: boolean; replies: boolean; pin: boolean; kinds: boolean };
   review: { enabled: boolean; weekly_report: boolean };
   squad_content: { enabled: boolean; objectives: boolean; roadmap: boolean; kpis: boolean };
+  committees: { enabled: boolean };
   notifications: { enabled: boolean; inapp: boolean; email: boolean };
   exports_csv: { enabled: boolean };
   getting_started: { enabled: boolean };

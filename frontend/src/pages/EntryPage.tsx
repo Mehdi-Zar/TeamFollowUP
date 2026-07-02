@@ -131,26 +131,6 @@ export default function EntryPage() {
           {/* Initiatives en tête - même rendu que le dashboard de la squad, pour la cohérence. */}
           <InitiativesCard initiatives={initiatives} />
 
-          {(() => {
-            const secs = [
-              objectivesOn && { id: "sec-obj", label: t("squad.objectives", { year }), done: squad.objectives.length > 0 },
-              roadmapOn && { id: "sec-roadmap", label: t("squad.roadmap", { year }), done: squad.roadmap_items.length > 0 },
-              (kpisOn && squad.kpis_enabled) && { id: "sec-kpis", label: t("squad.kpis"), done: squad.kpis.length > 0 },
-            ].filter(Boolean) as Array<{ id: string; label: string; done?: boolean; optional?: boolean }>;
-            if (secs.length < 2) return null;
-            return (
-              <nav className="section-nav" aria-label={t("entry.sections")}>
-                {secs.map((s) => (
-                  <button key={s.id} type="button" className="section-pill"
-                          onClick={() => document.getElementById(s.id)?.scrollIntoView({ behavior: "smooth", block: "start" })}>
-                    <span className={`section-tick${s.done ? " done" : ""}${s.optional ? " opt" : ""}`}>{s.optional ? "•" : s.done ? "✓" : "○"}</span>
-                    {s.label}
-                  </button>
-                ))}
-              </nav>
-            );
-          })()}
-
           {objectivesOn && <div id="sec-obj"><ObjectivesEditor squad={squad} year={year} onChange={reload} editable={objAllowed} t={t} rag={rag} /></div>}
           {roadmapOn && <div id="sec-roadmap"><RoadmapEditor squad={squad} year={year} onChange={reload} readonly={!writeAllowed} t={t} roadmap={roadmap} squads={squads} tribes={tribes} /></div>}
           {kpisOn && squad.kpis_enabled && <div id="sec-kpis"><KpisEditor squad={squad} onChange={reload} readonly={!writeAllowed} t={t} trend={trend} /></div>}

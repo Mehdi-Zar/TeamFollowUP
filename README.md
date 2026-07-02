@@ -39,7 +39,11 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-Puis ouvrez **http://localhost:8080**.
+Puis ouvrez **https://localhost:8443** (le site est servi en **HTTPS** avec un
+certificat **auto-signé** par défaut — votre navigateur affichera un avertissement,
+c'est normal ; acceptez-le). L'adresse **http://localhost:8080** redirige
+automatiquement vers HTTPS. Vous pouvez importer votre propre certificat (PEM/PFX)
+et gérer les CA racines/intermédiaires depuis **Administration → HTTPS / Certificats**.
 
 Au premier démarrage, le conteneur `app` attend PostgreSQL, applique les migrations
 Alembic, crée le **compte de secours** (breaking-glass) et applique le **seed de
@@ -75,6 +79,10 @@ Tous les comptes de démonstration utilisent le mot de passe `demo`.
 - **Objectifs** : annuels, statut RAG, **posés par le tribe leader** (lecture seule côté squad leader).
 - En détail : **KPIs** chiffrés, **équipe / organigramme de la squad**, **historique** des
   soumissions + comparaison, **exports**.
+- **Comitologie** (optionnelle, module *Comitologie* désactivé par défaut) : le squad leader
+  déclare les **comités récurrents** de sa squad (nom, objectif, fréquence, jour, heure, durée,
+  participants), présentés en **tableau** avec édition en modale ; le tribe leader en a la
+  **visibilité**. Activable depuis Administration → Services.
 
 ## Fonctionnalités
 
@@ -101,7 +109,11 @@ Tous les comptes de démonstration utilisent le mot de passe `demo`.
   activation des KPIs).
 - **Exports** : rapport imprimable / PDF (dashboard et par squad, format unifié, via
   l'impression du navigateur) et export CSV.
-- **API REST documentée** : Swagger sur **http://localhost:8080/docs**.
+- **HTTPS natif** : le site est servi en **HTTPS** (certificat **auto-signé** par
+  défaut). Depuis **Administration → HTTPS / Certificats** : import d'un certificat
+  **PEM + clé** ou **PFX/PKCS#12**, gestion des **CA racines et intermédiaires**,
+  régénération auto-signée (CN/SAN). Application **à chaud**, sans redémarrage.
+- **API REST documentée** : Swagger sur **https://localhost:8443/docs**.
 
 ## Statut d'une squad (calculé côté serveur)
 
@@ -129,7 +141,9 @@ Toutes les variables ont un défaut fonctionnel (voir `.env.example`).
 
 | Variable | Défaut | Rôle |
 |----------|--------|------|
-| `APP_PORT` | `8080` | Port hôte d'exposition de l'app. |
+| `APP_HTTPS_PORT` | `8443` | Port hôte HTTPS (principal). |
+| `APP_HTTP_PORT` | `8080` | Port hôte HTTP (redirige en 301 vers HTTPS). |
+| `COOKIE_SECURE` | `true` | Cookies de session en `Secure` (HTTPS actif par défaut). |
 | `POSTGRES_DB` / `POSTGRES_USER` / `POSTGRES_PASSWORD` | `tribe` | Base PostgreSQL (interne). |
 | `SECRET_KEY` | *(à changer)* | Clé de signature des sessions. |
 | `STALENESS_THRESHOLD_DAYS` | `7` | Seuil de péremption (jours). |

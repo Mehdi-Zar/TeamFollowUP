@@ -32,5 +32,8 @@ alembic upgrade head
 echo "[entrypoint] Bootstrap (compte de secours) + seed de démonstration..."
 python -m app.init_db
 
-echo "[entrypoint] Démarrage de l'API..."
-exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers
+echo "[entrypoint] Démarrage de l'API (HTTPS + redirection HTTP)..."
+# server.py sert l'app en HTTPS (certificat auto-signé par défaut, ou celui
+# importé via l'admin) et redirige le HTTP vers HTTPS. Il génère/écrit le
+# certificat avant d'ouvrir le port TLS.
+exec python -m app.server

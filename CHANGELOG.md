@@ -14,6 +14,12 @@ following additions and a finalization pass.
   squad page (label "OTD"), above the detailed roadmap.
 - **Key messages** — curated success / alert / risk notes per squad, timestamped
   (date & time), shown below the roadmap.
+- **Governance / comitologie** — optional section (module `committees`, off by
+  default) where the squad leader declares the squad's recurring committees
+  (name, objective, frequency, day, time, duration, participants, active flag),
+  shown as a clean table with a modal editor. Standing (not year-scoped); on the
+  squad page and readable by the tribe leader for oversight. Admin toggles it
+  from *Services*.
 - **Budget tracking** — the tribe leader sets the **total** envelope; the squad
   leader reports **spent** (to date) and **forecast** (projected landing) + a
   comment. Status is derived from forecast (else spent) vs total:
@@ -34,6 +40,19 @@ following additions and a finalization pass.
 - **Redesigned admin navigation**: a grouped left sidebar (Organisation ·
   Configuration · Authentification & Email · Modération & Journaux) replacing the
   flat tab bar. Sober, text-only, role-aware (empty groups hidden).
+
+### Security / Transport (HTTPS)
+- **Native HTTPS** — the app now terminates TLS itself: HTTPS on **:8443** and an
+  HTTP **:8080** listener that 301-redirects to HTTPS (`app/server.py`). No reverse
+  proxy required to be secure.
+- **Self-signed by default** — a certificate is generated on first boot so the site
+  is HTTPS out of the box.
+- **Certificate management UI** (Administration → *HTTPS / Certificats*, admin-only):
+  import **PEM + key** or **PFX/PKCS#12**, manage **root & intermediate CAs**,
+  regenerate self-signed (CN/SAN), toggle HTTP→HTTPS redirect. Changes apply
+  **hot** (live `SSLContext` reload) without restarting the container. The DB is the
+  source of truth (`AppSetting` key `tls`); the private key is never exposed and all
+  changes are audited. Compose now defaults `COOKIE_SECURE=true`.
 
 ### Data & operations
 - Real organization loaded (Cloud Foundations Tribe + product/transverse squads
