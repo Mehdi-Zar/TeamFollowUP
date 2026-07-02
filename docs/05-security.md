@@ -13,6 +13,35 @@ Session = Starlette `SessionMiddleware` (itsdangerous-signed cookie), `same_site
 `max_age = session_max_age_seconds` (12h). Impersonation ("view as") is admin-only and stamps the
 session with `impersonator_id`.
 
+## Transport security (native HTTPS / TLS)
+
+The application **terminates TLS itself** — no external reverse proxy is required
+to get HTTPS (though you may still put one in front). The launcher `app/server.py`
+serves HTTPS on port **8443** and runs a plain-HTTP listener on **8080** that
+`301`-redirects everything to HTTPS.
+
+- **Out of the box:** if no certificate is configured, a **self-signed** cert is
+  generated on first boot (`tls.generate_self_signed`, CN `localhost` + SANs), so
+  the site is HTTPS immediately. Browsers warn until it is trusted — expected for
+  internal use.
+- **Bring your own cert** from **Administration → HTTPS / Certificats** (admin-only):
+  - import a **PEM** certificate (+ intermediates) and its private key (optionally
+    passphrase-protected), or a **PFX / PKCS#12** bundle;
+  - manage the **root** and **intermediate CA** store (intermediates are appended
+    to the served chain);
+  - regenerate a self-signed cert with a custom CN/SAN;
+  - toggle the HTTP→HTTPS redirect.
+- **Source of truth = the database** (`AppSetting` key `tls`); on boot and on every
+  change the material is written to `CERT_DIR` (`/app/certs`) and the **live
+  `SSLContext` is hot-reloaded** (`ssl.SSLContext.load_cert_chain`), so a new
+  certificate takes effect **without restarting the container**. The private key
+  is never returned by the API; uploads are audited (`tls_config.*`).
+
+Because the site is HTTPS by default, set **`COOKIE_SECURE=true`** (the compose
+default) so session cookies are `Secure`. Endpoints: `GET/PUT /api/admin/tls-config`,
+`POST /api/admin/tls-config/{self-signed,import-pem,import-pfx,ca}`,
+`DELETE /api/admin/tls-config/ca/{id}`.
+
 ## SSO provisioning & access approval
 
 **SSO authenticates *who* you are; the app authorizes *whether* you may enter.** An

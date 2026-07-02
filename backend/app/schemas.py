@@ -336,6 +336,53 @@ class KpiOut(ORMModel):
     comment: Optional[str] = None
 
 
+# ---------- Committee (governance / comitologie) ----------
+CommitteeFrequency = Literal["daily", "weekly", "biweekly", "per_sprint", "monthly", "quarterly", "yearly", "on_demand", "other"]
+Weekday = Literal["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+
+
+class CommitteeCreate(BaseModel):
+    squad_id: int
+    name: str
+    objective: Optional[str] = None
+    frequency: CommitteeFrequency = "monthly"
+    frequency_other: Optional[str] = None
+    day_of_week: Optional[Weekday] = None
+    time_of_day: Optional[str] = None
+    duration_minutes: Optional[int] = None
+    participants: Optional[str] = None
+    is_active: bool = True
+    display_order: int = 0
+
+
+class CommitteeUpdate(BaseModel):
+    name: Optional[str] = None
+    objective: Optional[str] = None
+    frequency: Optional[CommitteeFrequency] = None
+    frequency_other: Optional[str] = None
+    day_of_week: Optional[Weekday] = None
+    time_of_day: Optional[str] = None
+    duration_minutes: Optional[int] = None
+    participants: Optional[str] = None
+    is_active: Optional[bool] = None
+    display_order: Optional[int] = None
+
+
+class CommitteeOut(ORMModel):
+    id: int
+    squad_id: int
+    name: str
+    objective: Optional[str] = None
+    frequency: CommitteeFrequency
+    frequency_other: Optional[str] = None
+    day_of_week: Optional[Weekday] = None
+    time_of_day: Optional[str] = None
+    duration_minutes: Optional[int] = None
+    participants: Optional[str] = None
+    is_active: bool
+    display_order: int
+
+
 # ---------- Member (person in a squad) ----------
 class MemberCreate(BaseModel):
     squad_id: int
@@ -472,6 +519,7 @@ class SquadDetail(SquadOut):
     kpis: list[KpiOut]
     members: list[MemberOut]
     key_messages: list[KeyMessageOut] = []
+    committees: list[CommitteeOut] = []
     budget: Optional[SquadBudgetOut] = None   # only populated for privileged viewers
 
 

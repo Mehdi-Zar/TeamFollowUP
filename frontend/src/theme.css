@@ -87,6 +87,36 @@ input:focus, select:focus, textarea:focus {
 .w-auto { width: auto; }
 label { font-size: 13px; color: var(--grey); display: block; margin-bottom: 4px; font-weight: 600; }
 
+/* Nicer select: hide the native arrow, draw a clean chevron. */
+select.select-nice {
+  appearance: none; -webkit-appearance: none; -moz-appearance: none;
+  padding-right: 34px;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%235B6472' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 11px center;
+  cursor: pointer;
+}
+
+/* Half-hour time stepper (comitologie) */
+.time-stepper { display: inline-flex; align-items: center; gap: 8px; }
+.ts-group { display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: #fff; }
+.ts-group button {
+  border: none; background: #fff; width: 32px; height: 38px; padding: 0;
+  font-size: 17px; line-height: 1; color: var(--navy); cursor: pointer; border-radius: 0;
+}
+.ts-group button:hover { background: var(--ice-soft); }
+.ts-group button:focus { outline: none; box-shadow: none; }
+.ts-val { min-width: 30px; text-align: center; font-variant-numeric: tabular-nums; font-weight: 700; font-size: 15px; color: var(--text); }
+.ts-colon { font-weight: 700; color: var(--grey); }
+.ts-clear { border: none; background: transparent; color: var(--grey); cursor: pointer; width: auto; height: 32px; padding: 0 4px; font-size: 13px; }
+.ts-clear:hover { color: var(--red); }
+
+/* Comitologie table */
+.committee-tbl td { vertical-align: top; }
+.committee-tbl tbody tr:hover { background: var(--ice-soft); }
+.committee-tbl tr.inactive { opacity: .5; }
+.committee-tbl tr.inactive:hover { opacity: .7; }
+
 table { width: 100%; border-collapse: collapse; font-size: 14px; }
 th { text-align: left; color: var(--grey); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .03em; padding: 8px 10px; border-bottom: 2px solid var(--line); }
 td { padding: 10px; border-bottom: 1px solid var(--line); vertical-align: middle; }
@@ -703,14 +733,6 @@ tr:last-child td { border-bottom: none; }
 .init-tbl th { text-align: left; color: var(--muted); font-weight: 600; font-size: 11px;
   text-transform: uppercase; letter-spacing: .02em; padding: 4px 8px; border-bottom: 1px solid var(--line); }
 .init-tbl td { padding: 5px 8px; border-bottom: 1px solid var(--line-soft, #eef0f3); vertical-align: top; }
-
-/* Reporting page: quick section navigation with completion ticks */
-.section-nav { display: flex; gap: 8px; flex-wrap: wrap; position: sticky; top: 0; z-index: 20; background: var(--bg); padding: 8px 0; }
-.section-pill { background: #fff; border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px; font-size: 13px; color: var(--navy); font-weight: 600; display: inline-flex; align-items: center; gap: 7px; cursor: pointer; }
-.section-pill:hover { background: var(--ice-soft); }
-.section-tick { width: 18px; height: 18px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; background: #F1F5F9; color: var(--grey); }
-.section-tick.done { background: rgba(2,122,72,.15); color: var(--green); }
-.section-tick.opt { background: transparent; color: var(--accent); }
 
 /* Command palette (⌘K quick switcher) */
 .cmd-trigger { display: inline-flex; align-items: center; gap: 6px; }

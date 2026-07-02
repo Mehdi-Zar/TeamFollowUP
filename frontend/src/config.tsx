@@ -10,6 +10,7 @@ export const DEFAULT_MODULES: ModulesConfig = {
   feed: { enabled: true, reactions: true, replies: true, pin: true, kinds: true },
   review: { enabled: true, weekly_report: true },
   squad_content: { enabled: true, objectives: true, roadmap: true, kpis: false },
+  committees: { enabled: false },
   notifications: { enabled: true, inapp: true, email: true },
   exports_csv: { enabled: true },
   getting_started: { enabled: true },

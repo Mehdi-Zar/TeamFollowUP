@@ -36,9 +36,12 @@ is. That's it. Everything below is detail around those two moves.
 5. **Start it.** Run the image and pass it the settings from step 3. On the very
    first start the app **creates all its tables automatically** (it runs the
    database migrations for you) and creates the emergency admin account. → §3, §4.
-6. **Put HTTPS in front.** The app listens on plain port 8000; never expose that
-   directly. Place a load balancer / reverse proxy (or the cloud's ingress) in
-   front to handle the `https://` certificate. → each platform section.
+6. **HTTPS is built in.** The app serves **HTTPS itself on port 8443** (with a
+   self-signed cert by default) and redirects plain HTTP on **8080** to it — so it
+   is secure out of the box. Import your own certificate (PEM/PFX) and manage CAs
+   from **Administration → HTTPS / Certificats**, no restart needed. You may still
+   put a load balancer / reverse proxy in front (TLS passthrough, or re-terminate
+   with your own cert and forward to `:8443`/`:8080`). → each platform section.
 7. **Check it works.** Open the site, log in with the break-glass admin, and click
    around. Then configure SSO, SMTP (for emails), backups, etc. from the admin UI. → §10.
 
@@ -58,14 +61,16 @@ untouched. That update procedure has its own document: **`13-maintenance-and-upd
 ```
             ┌──────────────────────────────┐
   HTTPS ───▶│  Tribe Run Tracker (1 image) │───▶  PostgreSQL 16
-  (LB/proxy)│  FastAPI + built React SPA   │      (managed or self-hosted)
-            │  listens on :8000            │
+  (native   │  FastAPI + built React SPA   │      (managed or self-hosted)
+   TLS)     │  HTTPS :8443 · HTTP :8080 →↑ │
             └──────────────────────────────┘
 ```
 
 - **Single image** (`Dockerfile`, multi-stage): builds the React SPA, then serves
-  it together with the API from FastAPI/uvicorn on **port 8000** (`--proxy-headers`,
-  so it sits behind a TLS terminator / load balancer).
+  it together with the API from FastAPI/uvicorn over **native HTTPS on :8443**
+  (`app/server.py`, `--proxy-headers` equivalent enabled), with an **HTTP :8080**
+  listener that redirects to HTTPS. A self-signed cert is generated on first boot;
+  replace it from the admin UI (see `05-security.md` → Transport security).
 - **Stateless app**: all state lives in PostgreSQL. You can run **N replicas**.
   The in-process weekly scheduler uses a **Postgres advisory lock**, so only one
   replica ticks at a time — horizontal scaling is safe.
@@ -89,7 +94,9 @@ All config is via environment variables (see `.env.example`). The essentials:
 | `POSTGRES_HOST` | **yes** | Hostname/IP of PostgreSQL (managed instance, proxy, or `db` in compose). |
 | `POSTGRES_PORT` | | Default `5432`. |
 | `POSTGRES_DB` / `POSTGRES_USER` / `POSTGRES_PASSWORD` | **yes** | DB name / user / password. |
-| `COOKIE_SECURE` | **prod** | `true` behind HTTPS (cookies sent only over TLS). |
+| `COOKIE_SECURE` | **prod** | `true` (default) — cookies sent only over HTTPS, which the app serves natively. |
+| `APP_HTTPS_PORT` / `APP_HTTP_PORT` | | Host ports mapped to the container's `:8443` (HTTPS) / `:8080` (HTTP redirect). Defaults `8443` / `8080`. |
+| `CERT_DIR` / `PUBLIC_HTTPS_PORT` | | Where TLS material is written (`/app/certs`), and the public HTTPS port used to build redirect URLs. |
 | `COOKIE_SAMESITE` | | `lax` (default) or `strict`. |
 | `SEED_DEMO` | | `false` in production (no demo data). |
 | `BREAKGLASS_EMAIL` / `BREAKGLASS_PASSWORD` | **yes** | Emergency admin. If password is empty, a random one is printed in the logs on first boot. |

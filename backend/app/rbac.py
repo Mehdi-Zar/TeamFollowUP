@@ -25,7 +25,7 @@ MANAGER_ROLES = (ADMIN, TRIBE, SQUAD)
 # Admin tabs each role may open. Global-config tabs are admin-only.
 ADMIN_TABS = {
     ADMIN: ["tribes", "squads", "users", "personas", "modules", "report", "leaves", "moderation",
-            "auth", "smtp", "logs", "settings", "audit"],
+            "auth", "smtp", "tls", "logs", "settings", "audit"],
     # Tribe & squad leaders manage their squads on the dedicated "my squads"
     # page, not in Administration. Tribe leaders may set their own tribe's leave rules.
     TRIBE: ["tribe", "users", "leaves"],

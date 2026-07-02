@@ -33,5 +33,11 @@ COPY --from=frontend /frontend/dist ./app/static
 
 RUN chmod +x ./docker-entrypoint.sh
 
-EXPOSE 8000
+# TLS material is written here at boot (self-signed by default). The DB remains
+# the source of truth; this dir is just what uvicorn's SSLContext reads.
+ENV CERT_DIR=/app/certs
+RUN mkdir -p /app/certs
+
+# 8443 = HTTPS (primary), 8080 = HTTP -> HTTPS redirect.
+EXPOSE 8443 8080
 ENTRYPOINT ["./docker-entrypoint.sh"]
