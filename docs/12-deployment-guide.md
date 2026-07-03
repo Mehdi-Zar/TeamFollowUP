@@ -187,11 +187,11 @@ Serverless, scales to zero, managed Postgres.
 
 ---
 
-## 6. S3NS "Cloud de Confiance" from an air-gapped site (vendor) — full walkthrough
+## 6. S3NS "Cloud de Confiance" from an air-gapped site — full walkthrough
 
 > **Who this is for.** You must put this app on **S3NS Trusted Cloud** ("Cloud de
-> Confiance" — the vendor × Google sovereign cloud, SecNumCloud-qualified), and you
-> do it from a **vendor-style air-gapped network** (no internet). You may never have
+> Confiance" — a SecNumCloud-qualified sovereign cloud built on Google), and you
+> do it from an **air-gapped corporate network** (no internet). You may never have
 > deployed anything before. Every command below is copy-paste, and each one says
 > *what it does* and *what you should see*. Anything in CAPITALS (`PROJECT`, `REPO`,
 > `POOL_ID`…) is a value **you** replace — ask your S3NS administrator for the ones
@@ -314,7 +314,7 @@ From now on, every image is named:
 
 ### 6.5 Bring the image across the air gap (step by step)
 
-**The problem.** Your vendor/S3NS environment has no internet. A `docker build`
+**The problem.** Your air-gapped S3NS environment has no internet. A `docker build`
 downloads base images (`node`, `python`) from the internet, and GKE would
 normally pull images from the internet too — both impossible here. **The trick:**
 prepare every image on a machine **that has internet**, carry them into the S3NS
