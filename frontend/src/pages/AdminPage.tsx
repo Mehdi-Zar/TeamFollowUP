@@ -719,6 +719,12 @@ export function ReportingAdmin() {
                 <div style={{ width: 150 }}><label>{t("report.since_days")}</label>
                   <input type="number" min={1} max={120} value={rep.since_days ?? 7} onChange={(e) => setR("since_days", Number(e.target.value))} /></div>
               </div>
+              <label className="switch">
+                <input type="checkbox" checked={!!rep.tribe_leader_digest} onChange={(e) => setR("tribe_leader_digest", e.target.checked)} />
+                <span className="track"><span className="knob" /></span>
+                <span className="strong">{t("reporting.tribe_digest")}</span>
+              </label>
+              <div className="small muted" style={{ marginTop: -4 }}>{t("reporting.tribe_digest_hint")}</div>
               <div className="inline">
                 <button className="btn-secondary btn-sm" onClick={testWeekly}>{t("reporting.test_sched")}</button>
                 {rep.last_sent_day && <span className="small muted">{t("reporting.last_sent_day", { date: rep.last_sent_day })}</span>}

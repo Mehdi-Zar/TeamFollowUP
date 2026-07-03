@@ -1772,6 +1772,37 @@ def send_due_weekly_reports(db: Session, now: datetime | None = None) -> int:
         seen.add(key)
         send_to(addr, None)
 
+    # Optional: each tribe leader also receives their OWN tribe-scoped report,
+    # with that tribe's squad leaders in CC.
+    if cfg.get("tribe_leader_digest"):
+        for tribe in db.scalars(select(Tribe).order_by(Tribe.display_order, Tribe.id)).all():
+            leaders = [u for u in db.scalars(
+                select(User).where(User.role == "tribe_leader", User.tribe_id == tribe.id)).all()
+                if (u.email or "").strip() and u.status == "active"]
+            if not leaders:
+                continue
+            to = ", ".join(dict.fromkeys(l.email.strip() for l in leaders))
+            leader_emails = {l.email.strip().lower() for l in leaders}
+            # Squad leaders of squads in this tribe → CC (deduped, minus the To set).
+            sq_leader_ids = [s.leader_user_id for s in db.scalars(
+                select(Squad).where(Squad.tribe_id == tribe.id)).all() if s.leader_user_id]
+            cc, seen_cc = [], set()
+            if sq_leader_ids:
+                for u in db.scalars(select(User).where(User.id.in_(sq_leader_ids))).all():
+                    e = (u.email or "").strip()
+                    el = e.lower()
+                    if e and u.status == "active" and el not in leader_emails and el not in seen_cc:
+                        seen_cc.add(el)
+                        cc.append(e)
+            html_body, pptx_bytes = render_scope(tribe.id)
+            attachment = None
+            if pptx_bytes and cfg.get("attach_pptx", True):
+                attachment = (f"rapport_hebdo_{today}.pptx", pptx_bytes,
+                              "application", "vnd.openxmlformats-officedocument.presentationml.presentation")
+            subject_tribe = rt(lang, "subject", scope=tribe.name, w=now.isocalendar()[1])
+            if send_email(smtp, to, subject_tribe, html_body, attachment=attachment, html=True, cc=cc):
+                sent += 1
+
     cfg["last_sent_day"] = today
     set_report(db, cfg)
     db.commit()

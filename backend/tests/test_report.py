@@ -297,6 +297,38 @@ def test_send_per_squad_subscription(db, seeded, monkeypatch):
     assert "Squad A" in captured["body"]  # report narrowed to that squad
 
 
+def test_tribe_leader_digest_ccs_squad_leaders(db, seeded, monkeypatch):
+    """Each tribe leader gets their tribe-scoped report with that tribe's squad
+    leaders in CC."""
+    import datetime as dt
+    from app import report as report_mod
+    from app.smtpconfig import set_smtp
+
+    set_smtp(db, {"enabled": True, "host": "smtp.local"})
+    now = dt.datetime(2026, 1, 5, 9, 0, tzinfo=dt.timezone.utc)  # a Monday
+    set_report(db, {"enabled": True, "tribe_leader_digest": True,
+                    "weekdays": [now.weekday()], "hour": 0, "recipients": []})
+    db.commit()
+
+    calls = []
+    monkeypatch.setattr(report_mod, "render_pptx", lambda data: b"")  # skip pptx
+    monkeypatch.setattr(
+        "app.mail.send_email",
+        lambda cfg, to, subject, body, attachment=None, html=False, cc=None:
+            (calls.append({"to": to, "cc": [c.lower() for c in (cc or [])]}) or True))
+
+    sent = report_mod.send_due_weekly_reports(db, now=now)
+    assert sent >= 2
+    by_to = {c["to"]: c for c in calls}
+
+    # Tribe 1 leader → their tribe, squad leaders (sl_a, sl_b) in CC.
+    assert "tribe@test" in by_to
+    assert {"sl_a@test", "sl_b@test"} <= set(by_to["tribe@test"]["cc"])
+    # Tribe 2 leader → their tribe; Squad C has no leader → empty CC.
+    assert "tribe2@test" in by_to
+    assert by_to["tribe2@test"]["cc"] == []
+
+
 def test_send_personal_subscriptions_needs_smtp(db, seeded):
     from app.report import send_personal_subscriptions
     from app.models import User

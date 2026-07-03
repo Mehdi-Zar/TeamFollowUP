@@ -8,11 +8,11 @@ logger = logging.getLogger("trt.mail")
 
 
 def send_email(cfg: dict, to: str, subject: str, body: str, attachment: tuple | None = None,
-               html: bool = False) -> bool:
+               html: bool = False, cc: list[str] | None = None) -> bool:
     """Send synchronously. attachment = (filename, bytes, maintype, subtype).
 
     When html=True, `body` is sent as an HTML body (with a plain-text fallback).
-    Returns True on success.
+    `cc` (optional) is a list of addresses to put in copy. Returns True on success.
     """
     if not cfg.get("enabled") or not cfg.get("host") or not to:
         return False
@@ -20,6 +20,9 @@ def send_email(cfg: dict, to: str, subject: str, body: str, attachment: tuple | 
     from_name = cfg.get("from_name") or "Tribe Cockpit"
     msg["From"] = f"{from_name} <{cfg.get('from_addr')}>"
     msg["To"] = to
+    cc = [c for c in (cc or []) if c]
+    if cc:
+        msg["Cc"] = ", ".join(cc)
     msg["Subject"] = subject
     if html:
         msg.set_content("Ce rapport nécessite un client mail compatible HTML.")
