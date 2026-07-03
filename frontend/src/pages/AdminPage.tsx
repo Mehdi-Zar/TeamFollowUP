@@ -725,6 +725,12 @@ export function ReportingAdmin() {
                 <span className="strong">{t("reporting.tribe_digest")}</span>
               </label>
               <div className="small muted" style={{ marginTop: -4 }}>{t("reporting.tribe_digest_hint")}</div>
+              <label className="switch">
+                <input type="checkbox" checked={!!rep.only_when_changes} onChange={(e) => setR("only_when_changes", e.target.checked)} />
+                <span className="track"><span className="knob" /></span>
+                <span className="strong">{t("reporting.only_when_changes")}</span>
+              </label>
+              <div className="small muted" style={{ marginTop: -4 }}>{t("reporting.only_when_changes_hint")}</div>
               <div className="inline">
                 <button className="btn-secondary btn-sm" onClick={testWeekly}>{t("reporting.test_sched")}</button>
                 {rep.last_sent_day && <span className="small muted">{t("reporting.last_sent_day", { date: rep.last_sent_day })}</span>}

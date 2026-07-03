@@ -329,6 +329,53 @@ def test_tribe_leader_digest_ccs_squad_leaders(db, seeded, monkeypatch):
     assert by_to["tribe2@test"]["cc"] == []
 
 
+def test_whats_new_since_last_report(db, seeded, monkeypatch):
+    """First report establishes a baseline; the next one flags what changed, with
+    a subject prefix; and 'only_when_changes' skips an unchanged send."""
+    import datetime as dt
+    from app import report as report_mod, status as st
+    from app.smtpconfig import set_smtp
+    from app.models import RoadmapItem
+    from sqlalchemy import select
+
+    set_smtp(db, {"enabled": True, "host": "smtp.local"})
+    now = dt.datetime(2026, 1, 5, 9, 0, tzinfo=dt.timezone.utc)  # Monday
+    year = st.current_year_quarter(now)[0]
+    set_report(db, {"enabled": True, "recipients": ["copil@test"],
+                    "weekdays": [now.weekday()], "hour": 0})
+    db.add(RoadmapItem(squad_id=seeded["squad_a"], year=year, quarter=1,
+                       title="API v2", status="at_risk", release_stage="EA"))
+    db.commit()
+
+    caps: list[dict] = []
+    monkeypatch.setattr(report_mod, "render_pptx", lambda d: b"")
+    monkeypatch.setattr(
+        "app.mail.send_email",
+        lambda cfg, to, subject, body, attachment=None, html=False, cc=None:
+            (caps.append({"subject": subject, "body": body}) or True))
+
+    # 1) First send → baseline, no "changes" prefix (first report).
+    assert report_mod.send_due_weekly_reports(db, now=now) == 1
+    assert "nouveauté" not in caps[-1]["subject"] and "[à jour]" not in caps[-1]["subject"]
+
+    # 2) A milestone is delivered; a week later the report flags it.
+    item = db.scalar(select(RoadmapItem).where(RoadmapItem.title == "API v2"))
+    item.status = "done"
+    db.commit()
+    caps.clear()
+    now2 = now + dt.timedelta(days=7)
+    assert report_mod.send_due_weekly_reports(db, now=now2) == 1
+    assert caps[-1]["subject"].startswith("[")           # e.g. "[2 nouveauté(s)] …"
+    assert "API v2" in caps[-1]["body"] and "Livré" in caps[-1]["body"]
+
+    # 3) Nothing changes; with only_when_changes the next send is skipped.
+    set_report(db, {"only_when_changes": True})
+    caps.clear()
+    now3 = now2 + dt.timedelta(days=7)
+    assert report_mod.send_due_weekly_reports(db, now=now3) == 0
+    assert caps == []
+
+
 def test_send_personal_subscriptions_needs_smtp(db, seeded):
     from app.report import send_personal_subscriptions
     from app.models import User
