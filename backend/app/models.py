@@ -446,6 +446,17 @@ class AppSetting(Base):
     value: Mapped[str] = mapped_column(Text, nullable=False)
 
 
+class ReportBaseline(Base):
+    """Snapshot of a report's state at the last time it was emailed, keyed by
+    scope ("global", "tribe:<id>", "sub:<id>"). Diffed against the next send to
+    tell each recipient what changed since their previous report."""
+    __tablename__ = "report_baselines"
+
+    scope_key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    signature: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+
 class LeaveType(Base):
     """A configurable category of absence (Congés payés, RTT, Maladie, …).
 
