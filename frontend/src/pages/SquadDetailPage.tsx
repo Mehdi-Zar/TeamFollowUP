@@ -659,20 +659,27 @@ function BudgetPanel({ squad, canEdit, canToggle, onChange }:
             <div className="small muted">{t("budget.not_set")}</div>
           ) : (
             <div className="stack" style={{ gap: 6 }}>
-              <div className="between"><span className="small muted">{t("budget.total")}</span><span className="strong">{fmt(b?.total)}</span></div>
-              <div className="between"><span className="small muted">{t("budget.spent")}</span>
-                <span className="strong">{fmt(b?.spent)}{b?.spent_pct != null && <span className="small muted"> · {b.spent_pct}%</span>}</span>
-              </div>
-              <div className="between"><span className="small muted">{t("budget.forecast")}</span>
-                <span className="strong">{fmt(b?.forecast)}{b?.forecast_pct != null && <span className="small muted"> · {b.forecast_pct}%</span>}</span>
-              </div>
-              {/* consumed/forecast gauge against the envelope */}
-              <div style={{ height: 8, background: "var(--line)", borderRadius: 4, overflow: "hidden", margin: "2px 0" }}>
-                <div style={{ width: `${barPct}%`, height: "100%", background: barColor }} />
-              </div>
-              <div className="between">
+              <div className="budget-figures">
+                <span className="small muted">{t("budget.total")}</span>
+                <span className="small muted bf-pct" />
+                <span className="strong bf-amt">{fmt(b?.total)}</span>
+
+                <span className="small muted">{t("budget.spent")}</span>
+                <span className="small muted bf-pct">{b?.spent_pct != null ? `${b.spent_pct}%` : ""}</span>
+                <span className="strong bf-amt">{fmt(b?.spent)}</span>
+
+                <span className="small muted">{t("budget.forecast")}</span>
+                <span className="small muted bf-pct">{b?.forecast_pct != null ? `${b.forecast_pct}%` : ""}</span>
+                <span className="strong bf-amt">{fmt(b?.forecast)}</span>
+
+                {/* consumed/forecast gauge against the envelope */}
+                <div className="bf-gauge">
+                  <div style={{ width: `${barPct}%`, height: "100%", background: barColor }} />
+                </div>
+
                 <span className="small muted">{t("budget.remaining")}</span>
-                <span className="strong" style={remaining != null && remaining < 0 ? { color: "var(--red)" } : undefined}>{fmt(remaining)}</span>
+                <span className="small muted bf-pct" />
+                <span className="strong bf-amt" style={remaining != null && remaining < 0 ? { color: "var(--red)" } : undefined}>{fmt(remaining)}</span>
               </div>
               {b?.comment && <div className="small muted" style={{ marginTop: 4 }}>{b.comment}</div>}
               {b?.updated_at && <div className="small muted">{t("budget.updated", { date: formatDate(b.updated_at) })}</div>}

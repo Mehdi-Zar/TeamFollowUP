@@ -111,6 +111,12 @@ select.select-nice {
 .ts-clear { border: none; background: transparent; color: var(--grey); cursor: pointer; width: auto; height: 32px; padding: 0 4px; font-size: 13px; }
 .ts-clear:hover { color: var(--red); }
 
+/* Budget figures: label · % · amount, both numeric columns right-aligned */
+.budget-figures { display: grid; grid-template-columns: 1fr auto auto; column-gap: 14px; row-gap: 6px; align-items: baseline; }
+.budget-figures .bf-pct { text-align: right; min-width: 44px; font-variant-numeric: tabular-nums; }
+.budget-figures .bf-amt { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.budget-figures .bf-gauge { grid-column: 1 / -1; height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; margin: 2px 0; }
+
 /* Comitologie table */
 .committee-tbl td { vertical-align: top; }
 .committee-tbl tbody tr:hover { background: var(--ice-soft); }
