@@ -112,6 +112,22 @@ _RT = {
         "b_total": "Total", "b_spent": "Consommé", "b_forecast": "Prévision",
         "b_on_track": "Sur les rails", "b_at_risk": "À risque", "b_over": "Dépassement",
         "leaves_upcoming": "Absences à venir (30 j)", "leaves_pending": "à valider", "days_short": "j",
+        # --- "What's new since your last report" changelog ---
+        "whatsnew": "Nouveautés depuis votre dernier rapport",
+        "first_report": "Premier rapport — pas encore de comparaison.",
+        "no_changes": "Aucun changement depuis le dernier rapport.",
+        "subj_changes": "[{n} nouveauté(s)]", "subj_uptodate": "[à jour]",
+        "chg_progress": "avancement {d} pts", "chg_status": "statut {frm} → {to}",
+        "chg_ms_new": "nouveau jalon « {title} »", "chg_ms_status": "jalon « {title} » : {frm} → {to}",
+        "chg_ms_removed": "jalon « {title} » retiré",
+        "chg_obj_new": "nouvel OTD « {title} »", "chg_obj_status": "OTD « {title} » : {frm} → {to}",
+        "chg_budget": "budget mis à jour", "chg_km": "{n} nouveau(x) message(s) clé(s)",
+        "chg_stale": "reporting devenu périmé", "chg_unstale": "reporting de nouveau à jour",
+        "chg_new_squad": "nouvelle squad « {name} »", "chg_squad_removed": "squad « {name} » retirée",
+        "sum_moved": "{n} squad(s) ont bougé", "sum_delivered": "{n} jalon(s) livré(s)",
+        "sum_blocked": "{n} nouveau(x) bloqueur(s)", "sum_stale": "{n} squad(s) périmée(s)",
+        "ms_on_track": "En cours", "ms_at_risk": "À risque", "ms_blocked": "Bloqué", "ms_done": "Livré",
+        "rag_green": "vert", "rag_amber": "orange", "rag_red": "rouge",
     },
     "en": {
         "report": "Weekly report", "all_tribes": "All tribes",
@@ -142,6 +158,22 @@ _RT = {
         "b_total": "Total", "b_spent": "Spent", "b_forecast": "Forecast",
         "b_on_track": "On track", "b_at_risk": "At risk", "b_over": "Over budget",
         "leaves_upcoming": "Upcoming absences (30 d)", "leaves_pending": "to approve", "days_short": "d",
+        # --- "What's new since your last report" changelog ---
+        "whatsnew": "What's new since your last report",
+        "first_report": "First report — nothing to compare yet.",
+        "no_changes": "No changes since the last report.",
+        "subj_changes": "[{n} update(s)]", "subj_uptodate": "[up to date]",
+        "chg_progress": "progress {d} pts", "chg_status": "status {frm} → {to}",
+        "chg_ms_new": "new milestone “{title}”", "chg_ms_status": "milestone “{title}”: {frm} → {to}",
+        "chg_ms_removed": "milestone “{title}” removed",
+        "chg_obj_new": "new OTD “{title}”", "chg_obj_status": "OTD “{title}”: {frm} → {to}",
+        "chg_budget": "budget updated", "chg_km": "{n} new key message(s)",
+        "chg_stale": "reporting went stale", "chg_unstale": "reporting back up to date",
+        "chg_new_squad": "new squad “{name}”", "chg_squad_removed": "squad “{name}” removed",
+        "sum_moved": "{n} squad(s) moved", "sum_delivered": "{n} milestone(s) delivered",
+        "sum_blocked": "{n} new blocker(s)", "sum_stale": "{n} squad(s) went stale",
+        "ms_on_track": "On track", "ms_at_risk": "At risk", "ms_blocked": "Blocked", "ms_done": "Done",
+        "rag_green": "green", "rag_amber": "amber", "rag_red": "red",
     },
 }
 
@@ -681,7 +713,158 @@ def _render_squad_page(data: dict, standalone: bool, e, lang: str) -> str:
             f'<title>{title}</title>{style}{page_css}</head><body>{body}</body></html>')
 
 
-def render_html(data: dict, *, standalone: bool = True) -> str:
+# =============================================================================
+# "What's new since your last report" — change detection against a stored
+# per-scope baseline (see models.ReportBaseline).
+# =============================================================================
+
+def _ms_lbl(status: str, lang: str) -> str:
+    return rt(lang, {"on_track": "ms_on_track", "at_risk": "ms_at_risk",
+                     "blocked": "ms_blocked", "done": "ms_done"}.get(status, "h_status")) \
+        if status in ("on_track", "at_risk", "blocked", "done") else status
+
+
+def _rag_lbl(rag: str, lang: str) -> str:
+    return rt(lang, {"green": "rag_green", "amber": "rag_amber", "red": "rag_red"}.get(rag, "rag_green")) \
+        if rag in ("green", "amber", "red") else rag
+
+
+def report_signature(data: dict) -> dict:
+    """Compact, diff-friendly snapshot of a report's per-squad state."""
+    sig: dict = {}
+    for blk in data.get("tribes", []):
+        for r in blk.get("squads", []):
+            d = r.get("detail", {}) or {}
+            b = d.get("budget") or None
+            sig[str(r["squad_id"])] = {
+                "name": r["name"],
+                "status": r.get("status"),
+                "annual_pct": r.get("annual_pct", 0),
+                "is_stale": bool(r.get("is_stale")),
+                "milestones": {it["title"]: it["status"]
+                               for q in d.get("quarters", []) for it in q.get("items", [])},
+                "objectives": {o["title"]: o["rag"] for o in d.get("objectives", [])},
+                "budget": {k: b.get(k) for k in ("total", "spent", "forecast", "status")} if b else None,
+                "km": len(d.get("key_messages", [])),
+            }
+    return sig
+
+
+def diff_report(prev: dict | None, cur: dict, lang: str) -> dict:
+    """Compare two report signatures. Returns
+    {first, count, summary, by_squad:[{name, items:[str]}]}."""
+    if not prev:
+        return {"first": True, "count": 0, "summary": "", "by_squad": []}
+    by_squad: list[dict] = []
+    tally = {"moved": 0, "delivered": 0, "blocked": 0, "stale": 0}
+    for sid, c in cur.items():
+        p = prev.get(sid)
+        items: list[str] = []
+        if p is None:
+            items.append(rt(lang, "chg_new_squad", name=c["name"]))
+        else:
+            if c["annual_pct"] != p["annual_pct"]:
+                d = c["annual_pct"] - p["annual_pct"]
+                items.append(rt(lang, "chg_progress", d=(f"+{d}" if d > 0 else str(d))))
+                tally["moved"] += 1
+            if c.get("status") != p.get("status") and p.get("status"):
+                items.append(rt(lang, "chg_status", frm=p["status"], to=c["status"]))
+            for title, stt in c["milestones"].items():
+                if title not in p["milestones"]:
+                    items.append(rt(lang, "chg_ms_new", title=title))
+                elif p["milestones"][title] != stt:
+                    items.append(rt(lang, "chg_ms_status", title=title,
+                                    frm=_ms_lbl(p["milestones"][title], lang), to=_ms_lbl(stt, lang)))
+                    if stt == "done":
+                        tally["delivered"] += 1
+                    if stt == "blocked" and p["milestones"][title] != "blocked":
+                        tally["blocked"] += 1
+            for title in p["milestones"]:
+                if title not in c["milestones"]:
+                    items.append(rt(lang, "chg_ms_removed", title=title))
+            for title, rag in c["objectives"].items():
+                if title not in p["objectives"]:
+                    items.append(rt(lang, "chg_obj_new", title=title))
+                elif p["objectives"][title] != rag:
+                    items.append(rt(lang, "chg_obj_status", title=title,
+                                    frm=_rag_lbl(p["objectives"][title], lang), to=_rag_lbl(rag, lang)))
+            if (c.get("budget") or {}) != (p.get("budget") or {}):
+                items.append(rt(lang, "chg_budget"))
+            if c.get("km", 0) > p.get("km", 0):
+                items.append(rt(lang, "chg_km", n=c["km"] - p["km"]))
+            if c["is_stale"] and not p["is_stale"]:
+                items.append(rt(lang, "chg_stale"))
+                tally["stale"] += 1
+            elif not c["is_stale"] and p["is_stale"]:
+                items.append(rt(lang, "chg_unstale"))
+        if items:
+            by_squad.append({"name": c["name"], "items": items})
+    for sid, p in prev.items():
+        if sid not in cur:
+            by_squad.append({"name": p["name"], "items": [rt(lang, "chg_squad_removed", name=p["name"])]})
+
+    count = sum(len(s["items"]) for s in by_squad)
+    parts = []
+    if tally["moved"]:
+        parts.append(rt(lang, "sum_moved", n=tally["moved"]))
+    if tally["delivered"]:
+        parts.append(rt(lang, "sum_delivered", n=tally["delivered"]))
+    if tally["blocked"]:
+        parts.append(rt(lang, "sum_blocked", n=tally["blocked"]))
+    if tally["stale"]:
+        parts.append(rt(lang, "sum_stale", n=tally["stale"]))
+    return {"first": False, "count": count, "summary": " · ".join(parts), "by_squad": by_squad}
+
+
+def subject_prefix(changes: dict | None, lang: str) -> str:
+    """Subject tag: '[3 nouveautés] ' / '[à jour] ' / '' (first report)."""
+    if not changes or changes.get("first"):
+        return ""
+    if changes["count"] == 0:
+        return rt(lang, "subj_uptodate") + " "
+    return rt(lang, "subj_changes", n=changes["count"]) + " "
+
+
+def render_changes_html(changes: dict | None, lang: str) -> str:
+    if not changes:
+        return ""
+    e = html.escape
+    head = f'<div class="chg-h">{e(rt(lang, "whatsnew"))}</div>'
+    if changes.get("first"):
+        return f'<div class="changes-box"><div class="chg-h">{e(rt(lang, "whatsnew"))}</div>' \
+               f'<div class="chg-empty">{e(rt(lang, "first_report"))}</div></div>'
+    if changes["count"] == 0:
+        return f'<div class="changes-box uptodate">{head}' \
+               f'<div class="chg-empty">✓ {e(rt(lang, "no_changes"))}</div></div>'
+    out = [f'<div class="changes-box">{head}']
+    if changes["summary"]:
+        out.append(f'<div class="chg-sum">{e(changes["summary"])}</div>')
+    for sq in changes["by_squad"][:12]:
+        out.append(f'<div class="chg-sq"><span class="chg-sqn">{e(sq["name"])}</span><ul>')
+        for it in sq["items"][:8]:
+            out.append(f'<li>{e(it)}</li>')
+        out.append('</ul></div>')
+    out.append('</div>')
+    return "".join(out)
+
+
+def get_baseline(db, scope_key: str) -> dict | None:
+    from .models import ReportBaseline
+    row = db.get(ReportBaseline, scope_key)
+    return row.signature if row else None
+
+
+def set_baseline(db, scope_key: str, signature: dict) -> None:
+    from .models import ReportBaseline
+    row = db.get(ReportBaseline, scope_key)
+    if row is None:
+        db.add(ReportBaseline(scope_key=scope_key, signature=signature, updated_at=utcnow()))
+    else:
+        row.signature = signature
+        row.updated_at = utcnow()
+
+
+def render_html(data: dict, *, standalone: bool = True, changes: dict | None = None) -> str:
     e = html.escape
     lang = data.get("lang", "fr")
     # A single-squad export mirrors the squad page, not the whole dashboard report.
@@ -695,6 +878,10 @@ def render_html(data: dict, *, standalone: bool = True) -> str:
     parts.append(f'<div class="hdr"><h1>{e(data["app_name"])} - {e(rt(lang, "report"))}</h1>')
     parts.append(f'<div class="sub">{e(data["scope_name"])} · {e(rt(lang, "year"))} {data["year"]} · '
                  f'{e(rt(lang, "generated"))} {e(gen_str)} · {e(rt(lang, "window", n=data["since_days"]))}</div></div>')
+
+    # "What's new since your last report" — right under the header.
+    if changes is not None:
+        parts.append(render_changes_html(changes, lang))
 
     # Summary cards
     cards = [
@@ -867,6 +1054,15 @@ _CSS = """<style>
 .tc-report .bar-fill{position:absolute;left:0;top:0;bottom:0;border-radius:6px}
 .tc-report .bar-label{position:relative;font-size:11px;padding-left:6px;line-height:16px;color:#111827}
 .tc-report .changes{color:#374151;font-size:12px}
+.tc-report .changes-box{border:1px solid #dbe4ff;background:#f5f8ff;border-left:4px solid #175CD3;border-radius:10px;padding:12px 16px;margin:16px 0}
+.tc-report .changes-box.uptodate{border-color:#d1fae5;background:#f0fdf6;border-left-color:#059669}
+.tc-report .chg-h{font-size:13px;font-weight:700;color:#1E2761;text-transform:uppercase;letter-spacing:.03em;margin-bottom:6px}
+.tc-report .chg-sum{font-size:14px;font-weight:600;color:#111827;margin-bottom:8px}
+.tc-report .chg-empty{font-size:13px;color:#4b5563}
+.tc-report .chg-sq{margin:6px 0}
+.tc-report .chg-sqn{font-weight:700;font-size:13px;color:#175CD3}
+.tc-report .chg-sq ul{margin:2px 0 0;padding-left:18px}
+.tc-report .chg-sq li{font-size:12.5px;padding:1px 0}
 .tc-report .note{color:#4b5563}
 .tc-report .muted{color:#9ca3af}
 .tc-report .badge{background:#fef3c7;color:#92400e;border-radius:4px;padding:1px 5px;font-size:10px}
@@ -1735,42 +1931,50 @@ def send_due_weekly_reports(db: Session, now: datetime | None = None) -> int:
     year = st.current_year_quarter(now)[0]
     lang = _lang(get_general(db).get("default_lang"))
 
-    # Cache rendered output per scope (None = global) to avoid recomputation.
-    rendered: dict[int | None, tuple[str, bytes]] = {}
+    only_changes = bool(cfg.get("only_when_changes"))
+    week = now.isocalendar()[1]
+    sent = 0
+    prepared: dict[str, dict] = {}
 
-    def render_scope(scope: int | None) -> tuple[str, bytes]:
-        if scope not in rendered:
+    def prepare(scope: int | None, scope_key: str, scope_label: str) -> dict:
+        """Build the report for a scope once: data, changelog (vs baseline),
+        HTML (with the "what's new" encart), PPTX and a prefixed subject."""
+        if scope_key not in prepared:
             data = build_report_data(db, scope, year, since, now, lang=lang)
-            html_body = render_html(data, standalone=True)
+            sig = report_signature(data)
+            changes = diff_report(get_baseline(db, scope_key), sig, lang)
+            html_body = render_html(data, standalone=True, changes=changes)
             try:
                 pptx_bytes = render_pptx(data)
             except Exception:
                 pptx_bytes = b""
-            rendered[scope] = (html_body, pptx_bytes)
-        return rendered[scope]
+            subject = subject_prefix(changes, lang) + rt(lang, "subject", scope=scope_label, w=week)
+            prepared[scope_key] = {"sig": sig, "changes": changes, "html": html_body,
+                                   "pptx": pptx_bytes, "subject": subject}
+        return prepared[scope_key]
 
-    subject = rt(lang, "subject", scope=rt(lang, "all_tribes"), w=now.isocalendar()[1])
-    sent = 0
+    def attachment_of(p: dict):
+        if p["pptx"] and cfg.get("attach_pptx", True):
+            return (f"rapport_hebdo_{today}.pptx", p["pptx"],
+                    "application", "vnd.openxmlformats-officedocument.presentationml.presentation")
+        return None
 
-    def send_to(addr: str, scope: int | None) -> None:
-        nonlocal sent
-        html_body, pptx_bytes = render_scope(scope)
-        attachment = None
-        if pptx_bytes and cfg.get("attach_pptx", True):
-            attachment = (f"rapport_hebdo_{today}.pptx", pptx_bytes,
-                          "application", "vnd.openxmlformats-officedocument.presentationml.presentation")
-        if send_email(smtp, addr, subject, html_body, attachment=attachment, html=True):
-            sent += 1
+    def worth_sending(p: dict) -> bool:
+        c = p["changes"]
+        # Always send the very first report (establishes the baseline); otherwise
+        # honour the "only when changes" policy.
+        return c.get("first") or not (only_changes and c["count"] == 0)
 
-    # Fixed recipient list → global report. (Per-user subscriptions are handled
-    # separately by send_personal_subscriptions, on each user's own cadence.)
-    seen = set()
-    for addr in cfg.get("recipients", []):
-        key = addr.lower()
-        if key in seen:
-            continue
-        seen.add(key)
-        send_to(addr, None)
+    # Fixed recipient list → global report.
+    recipients = list(dict.fromkeys(a for a in (cfg.get("recipients") or []) if a))
+    if recipients:
+        p = prepare(None, "global", rt(lang, "all_tribes"))
+        if worth_sending(p):
+            att = attachment_of(p)
+            for addr in recipients:
+                if send_email(smtp, addr, p["subject"], p["html"], attachment=att, html=True):
+                    sent += 1
+        set_baseline(db, "global", p["sig"])
 
     # Optional: each tribe leader also receives their OWN tribe-scoped report,
     # with that tribe's squad leaders in CC.
@@ -1783,7 +1987,6 @@ def send_due_weekly_reports(db: Session, now: datetime | None = None) -> int:
                 continue
             to = ", ".join(dict.fromkeys(l.email.strip() for l in leaders))
             leader_emails = {l.email.strip().lower() for l in leaders}
-            # Squad leaders of squads in this tribe → CC (deduped, minus the To set).
             sq_leader_ids = [s.leader_user_id for s in db.scalars(
                 select(Squad).where(Squad.tribe_id == tribe.id)).all() if s.leader_user_id]
             cc, seen_cc = [], set()
@@ -1794,14 +1997,13 @@ def send_due_weekly_reports(db: Session, now: datetime | None = None) -> int:
                     if e and u.status == "active" and el not in leader_emails and el not in seen_cc:
                         seen_cc.add(el)
                         cc.append(e)
-            html_body, pptx_bytes = render_scope(tribe.id)
-            attachment = None
-            if pptx_bytes and cfg.get("attach_pptx", True):
-                attachment = (f"rapport_hebdo_{today}.pptx", pptx_bytes,
-                              "application", "vnd.openxmlformats-officedocument.presentationml.presentation")
-            subject_tribe = rt(lang, "subject", scope=tribe.name, w=now.isocalendar()[1])
-            if send_email(smtp, to, subject_tribe, html_body, attachment=attachment, html=True, cc=cc):
-                sent += 1
+            scope_key = f"tribe:{tribe.id}"
+            p = prepare(tribe.id, scope_key, tribe.name)
+            if worth_sending(p):
+                if send_email(smtp, to, p["subject"], p["html"],
+                              attachment=attachment_of(p), html=True, cc=cc):
+                    sent += 1
+            set_baseline(db, scope_key, p["sig"])
 
     cfg["last_sent_day"] = today
     set_report(db, cfg)
@@ -1828,21 +2030,23 @@ def send_personal_subscriptions(db: Session, now: datetime | None = None) -> int
     if not smtp.get("enabled"):
         return 0
 
+    from .reportconfig import get_report
     year = st.current_year_quarter(now)[0]
     lang = _lang(get_general(db).get("default_lang"))
-    # Cache rendered output per (scope_tribe, squad_id) key.
-    rendered: dict[tuple, tuple[str, bytes]] = {}
+    only_changes = bool(get_report(db).get("only_when_changes"))
+    # Cache report data + PPTX per (scope_tribe, squad_id, since); HTML is rendered
+    # per subscription because the "what's new" encart is per-recipient baseline.
+    rendered: dict[tuple, tuple[dict, bytes]] = {}
 
-    def render(scope_tribe: int | None, squad_id: int | None, since: int) -> tuple[str, bytes]:
-        key = (scope_tribe, squad_id)
+    def render(scope_tribe: int | None, squad_id: int | None, since: int) -> tuple[dict, bytes]:
+        key = (scope_tribe, squad_id, since)
         if key not in rendered:
             data = build_report_data(db, scope_tribe, year, since, now, squad_id=squad_id, lang=lang)
-            html_body = render_html(data, standalone=True)
             try:
                 pptx_bytes = render_pptx(data)
             except Exception:
                 pptx_bytes = b""
-            rendered[key] = (html_body, pptx_bytes)
+            rendered[key] = (data, pptx_bytes)
         return rendered[key]
 
     sent = 0
@@ -1867,10 +2071,27 @@ def send_personal_subscriptions(db: Session, now: datetime | None = None) -> int
                 continue
             since = max(sub.interval_days, 7)
         if sub.squad_id is not None:
-            html_body, pptx_bytes = render(None, sub.squad_id, since)
+            data, pptx_bytes = render(None, sub.squad_id, since)
         else:
             scope_tribe = None if user.role == "admin" else user.tribe_id
-            html_body, pptx_bytes = render(scope_tribe, None, since)
+            data, pptx_bytes = render(scope_tribe, None, since)
+
+        scope_key = f"sub:{sub.id}"
+        sig = report_signature(data)
+        changes = diff_report(get_baseline(db, scope_key), sig, lang)
+
+        def _mark_done():
+            set_baseline(db, scope_key, sig)
+            sub.last_sent_at = now
+            if sub.squad_id is None:
+                user.report_last_sent_at = now
+
+        # "Only when changes": skip the email but still advance the cadence/baseline.
+        if only_changes and not changes.get("first") and changes["count"] == 0:
+            _mark_done()
+            continue
+
+        html_body = render_html(data, standalone=True, changes=changes)
         attachment = None
         if pptx_bytes:
             attachment = (f"rapport_{now.date().isoformat()}.pptx", pptx_bytes,
@@ -1883,12 +2104,9 @@ def send_personal_subscriptions(db: Session, now: datetime | None = None) -> int
         else:
             tr = db.get(Tribe, user.tribe_id) if user.tribe_id else None
             scope_lbl = tr.name if tr else rt(lang, "all_tribes")
-        subject = rt(lang, "subject_personal", scope=scope_lbl, n=sub.interval_days)
+        subject = subject_prefix(changes, lang) + rt(lang, "subject_personal", scope=scope_lbl, n=sub.interval_days)
         if send_email(smtp, user.email, subject, html_body, attachment=attachment, html=True):
-            sub.last_sent_at = now
-            if sub.squad_id is None:
-                user.report_last_sent_at = now
+            _mark_done()
             sent += 1
-    if sent:
-        db.commit()
+    db.commit()  # persist baselines / last_sent even when only skips occurred
     return sent

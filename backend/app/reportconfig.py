@@ -28,6 +28,9 @@ def _defaults() -> dict:
         # When true, also email each tribe leader their OWN tribe-scoped report,
         # with that tribe's squad leaders in CC. Independent of `recipients`.
         "tribe_leader_digest": False,
+        # When true, skip a scheduled send if nothing changed since the last one
+        # (default false = always send, clearly badged "up to date").
+        "only_when_changes": False,
         # Bookkeeping: ISO date already sent today (per-day idempotency).
         "last_sent_day": "",
         # --- legacy (kept for back-compat reads / migration) ---
@@ -92,6 +95,7 @@ def set_report(db: Session, patch: dict) -> dict:
     cfg["enabled"] = bool(cfg["enabled"])
     cfg["attach_pptx"] = bool(cfg.get("attach_pptx", True))
     cfg["tribe_leader_digest"] = bool(cfg.get("tribe_leader_digest", False))
+    cfg["only_when_changes"] = bool(cfg.get("only_when_changes", False))
     cfg["recipients"] = _clean_recipients(cfg.get("recipients"))
     # Back-compat: a caller may still send a single `weekday` → fold into weekdays.
     if "weekday" in patch and "weekdays" not in patch:
