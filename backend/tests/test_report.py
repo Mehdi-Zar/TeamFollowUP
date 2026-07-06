@@ -104,6 +104,54 @@ def test_render_pptx_produces_valid_deck(db, seeded):
     assert len(prs.slides) == 1 + n_squads
 
 
+def _slide_texts(prs):
+    return [sh.text_frame.text for sl in prs.slides for sh in sl.shapes if sh.has_text_frame]
+
+
+def test_dashboard_pptx_never_silently_drops_squads(db, seeded):
+    """Regression for the 40-slide cap: a large selection must yield one detail
+    slide per squad — no squad the user picked may vanish from the deck."""
+    pptx = pytest.importorskip("pptx")
+    import io
+    from app.models import Squad
+    # Well past the historical cap of 40.
+    for i in range(60):
+        db.add(Squad(name=f"Extra {i:02d}", tribe_id=seeded["t1"], display_order=100 + i))
+    db.commit()
+    year = st.current_year_quarter()[0]
+    data = build_report_data(db, None, year, 7)
+    n = sum(len(blk["squads"]) for blk in data["tribes"])
+    assert n >= 63
+    prs = pptx.Presentation(io.BytesIO(render_pptx(data)))
+    assert len(prs.slides) == 1 + n  # summary + exactly one detail slide per squad
+    # Every squad appears somewhere in the deck (its own detail slide header).
+    all_text = "\n".join(_slide_texts(prs))
+    names = {r["name"] for blk in data["tribes"] for r in blk["squads"]}
+    missing = {nm for nm in names if nm not in all_text}
+    assert not missing, f"squads missing from deck: {missing}"
+
+
+def test_dashboard_pptx_marks_omitted_squads_when_cap_hit(db, seeded, monkeypatch):
+    """If the runaway guard is ever exceeded, the omitted squads are announced on
+    a visible notice slide — never dropped without a trace."""
+    pptx = pytest.importorskip("pptx")
+    import io
+    import app.report as report_mod
+    from app.models import Squad
+    monkeypatch.setattr(report_mod, "_MAX_DETAIL_SLIDES", 4)
+    for i in range(10):
+        db.add(Squad(name=f"Over {i:02d}", tribe_id=seeded["t1"], display_order=200 + i))
+    db.commit()
+    year = st.current_year_quarter()[0]
+    data = build_report_data(db, None, year, 7)
+    n = sum(len(blk["squads"]) for blk in data["tribes"])
+    prs = pptx.Presentation(io.BytesIO(render_pptx(data)))
+    # 1 summary + 4 detail + 1 notice slide.
+    assert len(prs.slides) == 1 + 4 + 1
+    notice = " ".join(sh.text_frame.text for sh in prs.slides[-1].shapes if sh.has_text_frame)
+    assert str(n - 4) in notice and "autres squads" in notice
+
+
 def test_render_roadmap_swimlane_pptx(db, seeded):
     pptx = pytest.importorskip("pptx")
     from app.report import render_roadmap_pptx

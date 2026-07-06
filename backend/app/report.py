@@ -1108,7 +1108,11 @@ _BRAND = {
 _RAG_BRAND = {"red": "#B42318", "amber": "#B54708", "green": "#027A48", "grey": "#6B7280"}
 
 
-_MAX_DETAIL_SLIDES = 40  # safety cap on per-squad slides in a deck
+# Runaway guard on per-squad detail slides. Set well above any realistic squad
+# count so an explicit export never silently drops the squads the user picked;
+# if it is ever exceeded, render_pptx adds a visible "N more squads" notice slide
+# rather than dropping them without a trace.
+_MAX_DETAIL_SLIDES = 300
 
 
 def _pptx_toolkit():
@@ -1587,6 +1591,15 @@ def render_pptx(data: dict) -> bytes:
         for r in squads[:_MAX_DETAIL_SLIDES]:
             if r.get("detail"):
                 detail_slide(r, with_objectives=True)
+        # Never silently drop squads the user explicitly selected: if the runaway
+        # guard is ever hit, say how many were omitted instead of losing them.
+        omitted = len(squads) - _MAX_DETAIL_SLIDES
+        if omitted > 0:
+            s = new_slide()
+            rect(s, Inches(0), Inches(0), prs.slide_width, Inches(0.92), B["navy"])
+            textbox(s, margin, Inches(3.2), prs.slide_width - margin * 2, Inches(1),
+                    rt(lang, "more_squads", n=omitted), 24, bold=True,
+                    color=B["navy"], align=PP_ALIGN.CENTER)
 
     buf = io.BytesIO()
     prs.save(buf)

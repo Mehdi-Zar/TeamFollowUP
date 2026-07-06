@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Fixes
+- **Dashboard PPTX export no longer silently drops squads.** Multi-squad decks
+  were capped at 40 detail slides, so a large selection (e.g. a full org of 130+
+  squads) lost every squad past the 40th — the deck came back missing squads like
+  "Catalog 12" with no error. The cap is raised well above any realistic squad
+  count, and if it is ever exceeded the deck ends with a visible "+N autres
+  squads" notice instead of dropping them without a trace. Covered by new
+  regression tests plus a randomized loop-mode fuzz harness
+  (`backend/tests/fuzz_export_loop.py`).
+
 ## 1.0 — V1 (production-ready)
 
 First delivered version. Built on the initial tribe-steering tool, with the
