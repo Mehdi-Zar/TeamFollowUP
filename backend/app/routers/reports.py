@@ -11,7 +11,8 @@ from .. import status as st
 from ..database import get_db
 from ..deps import get_current_user, require_module
 from ..models import User
-from ..report import (build_report_data, render_html, render_pptx, render_roadmap_html,
+from ..report import (build_dependencies_data, build_report_data, render_dependencies_html,
+                      render_dependencies_pptx, render_html, render_pptx, render_roadmap_html,
                       render_roadmap_pptx, rt)
 from ..schemas import ReportSubscriptionIn, ReportSubscriptionOut
 
@@ -127,6 +128,44 @@ def roadmap_pptx(tribe_id: int | None = Query(default=None), year: int | None = 
     except ImportError:
         raise HTTPException(status_code=501, detail="Génération PPTX indisponible (python-pptx non installé)")
     filename = f"roadmap_{data['year']}.pptx"
+    return StreamingResponse(
+        iter([payload]),
+        media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+def _dep_data(db: Session, user: User, tribe_id: int | None, year: int | None,
+              squad_ids: list[int] | None, lang: str | None, mode: str) -> dict:
+    """Milestone-dependency data, scoped like the other exports (admin may target a
+    tribe; everyone else is scoped to their own tribe)."""
+    year = year or st.current_year_quarter()[0]
+    scope = tribe_id if user.role == "admin" else user.tribe_id
+    return build_dependencies_data(db, scope, year, squad_ids=squad_ids, viewer=user, lang=lang, mode=mode)
+
+
+@router.get("/dependencies.html", response_class=HTMLResponse, dependencies=[_roadmap_gate])
+def dependencies_html(tribe_id: int | None = Query(default=None), year: int | None = Query(default=None),
+                      squad_ids: list[int] | None = Query(default=None), lang: str | None = Query(default=None),
+                      mode: str = Query(default="cross_tribe"),
+                      db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Milestone dependencies as a page (grouped by the entity waited on)."""
+    data = _dep_data(db, user, tribe_id, year, squad_ids, lang, mode)
+    return HTMLResponse(render_dependencies_html(data, standalone=True))
+
+
+@router.get("/dependencies.pptx", dependencies=[_roadmap_gate])
+def dependencies_pptx(tribe_id: int | None = Query(default=None), year: int | None = Query(default=None),
+                      squad_ids: list[int] | None = Query(default=None), lang: str | None = Query(default=None),
+                      mode: str = Query(default="cross_tribe"),
+                      db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Milestone-dependency deck (paginated table grouped by the entity waited on)."""
+    data = _dep_data(db, user, tribe_id, year, squad_ids, lang, mode)
+    try:
+        payload = render_dependencies_pptx(data)
+    except ImportError:
+        raise HTTPException(status_code=501, detail="Génération PPTX indisponible (python-pptx non installé)")
+    filename = f"dependances_{data['year']}.pptx"
     return StreamingResponse(
         iter([payload]),
         media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",

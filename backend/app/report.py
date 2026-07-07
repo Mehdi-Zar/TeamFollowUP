@@ -2123,3 +2123,265 @@ def send_personal_subscriptions(db: Session, now: datetime | None = None) -> int
             sent += 1
     db.commit()  # persist baselines / last_sent even when only skips occurred
     return sent
+
+
+# =============================================================================
+# Milestone-dependency deck: every jalon that depends on another tribe / squad /
+# external actor, grouped by the entity it waits on. Table format, paginated so
+# no dependency is ever silently dropped. mode="cross_tribe" (default) keeps only
+# dependencies that cross a tribe boundary; mode="all" keeps every dependency.
+# =============================================================================
+
+_DEP_T = {
+    "fr": {"title": "Dépendances des jalons", "suite": " (suite)",
+           "total": "{n} dépendance(s)", "none": "Aucune dépendance",
+           "c_jalon": "Jalon", "c_squad": "Squad · Tribu", "c_trim": "Trim.",
+           "c_owner": "Owner", "c_status": "Statut",
+           "t_tribe": "Tribu", "t_squad": "Squad", "t_text": "Externe",
+           "gcount": "{n} jalon(s)"},
+    "en": {"title": "Milestone dependencies", "suite": " (cont.)",
+           "total": "{n} dependency(ies)", "none": "No dependency",
+           "c_jalon": "Milestone", "c_squad": "Squad · Tribe", "c_trim": "Qtr",
+           "c_owner": "Owner", "c_status": "Status",
+           "t_tribe": "Tribe", "t_squad": "Squad", "t_text": "External",
+           "gcount": "{n} milestone(s)"},
+}
+
+
+def build_dependencies_data(db: Session, scope_tribe: int | None, year: int | None = None,
+                            squad_ids: list[int] | None = None, viewer=None,
+                            lang: str | None = None, mode: str = "cross_tribe") -> dict:
+    """Collect the jalons that carry a dependency, grouped by the entity they wait
+    on. mode='cross_tribe' keeps only dependencies that point outside the source
+    squad's tribe; mode='all' keeps every dependency (incl. same-tribe + free text)."""
+    from .models import RoadmapItem  # noqa: F401  (ensures mapper import)
+    now = utcnow()
+    cfg = get_general(db)
+    year = year or st.current_year_quarter(now)[0]
+    lang = _lang(lang or cfg.get("default_lang"))
+    cross_only = mode != "all"
+
+    tribes = {t.id: t for t in db.scalars(select(Tribe)).all()}
+    all_squads = {s.id: s for s in db.scalars(select(Squad)).all()}
+
+    q = select(Squad).order_by(Squad.display_order, Squad.id).options(selectinload(Squad.roadmap_items))
+    id_filter = set(squad_ids) if squad_ids else None
+    groups: dict = {}
+    total = 0
+    for s in db.scalars(q).all():
+        if scope_tribe is not None and s.tribe_id != scope_tribe:
+            continue
+        if id_filter is not None and s.id not in id_filter:
+            continue
+        src_tribe = tribes[s.tribe_id].name if s.tribe_id in tribes else "-"
+        for r in s.roadmap_items:
+            if r.year != year:
+                continue
+            kind = r.dependency_kind
+            ttype = target_label = target_key = None
+            target_tribe = None
+            if kind == "tribe" and r.dependency_tribe_id:
+                if cross_only and r.dependency_tribe_id == s.tribe_id:
+                    continue
+                tt = tribes.get(r.dependency_tribe_id)
+                ttype, target_label, target_key = "tribe", (tt.name if tt else None), ("tribe", r.dependency_tribe_id)
+            elif kind == "squad" and r.dependency_squad_id:
+                tgt = all_squads.get(r.dependency_squad_id)
+                if not tgt:
+                    continue
+                if cross_only and tgt.tribe_id == s.tribe_id:
+                    continue
+                target_tribe = tribes[tgt.tribe_id].name if tgt.tribe_id in tribes else None
+                ttype, target_label, target_key = "squad", tgt.name, ("squad", tgt.id)
+            elif (kind == "text" or kind is None) and (r.dependencies or "").strip():
+                if cross_only:
+                    continue  # free-text actors are not a tribe boundary
+                target_label = r.dependencies.strip()
+                ttype, target_key = "text", ("text", target_label.lower())
+            if not target_label:
+                continue
+            g = groups.get(target_key)
+            if g is None:
+                g = {"target_type": ttype, "target_label": target_label,
+                     "target_tribe": target_tribe, "items": []}
+                groups[target_key] = g
+            g["items"].append({
+                "jalon": r.title, "description": (r.description or "").strip(),
+                "squad_name": s.name, "tribe_name": src_tribe,
+                "quarter": r.quarter, "year": r.year,
+                "owner": r.owner or "", "status": r.status, "stage": r.release_stage or "",
+            })
+            total += 1
+
+    type_order = {"tribe": 0, "squad": 1, "text": 2}
+    group_list = sorted(groups.values(),
+                        key=lambda g: (type_order.get(g["target_type"], 9), (g["target_label"] or "").lower()))
+    for g in group_list:
+        g["items"].sort(key=lambda it: (it["quarter"], it["squad_name"].lower(), it["jalon"].lower()))
+
+    scope_name = tribes[scope_tribe].name if scope_tribe in tribes else rt(lang, "all_tribes")
+    return {
+        "app_name": cfg.get("app_name") or "Tribe Cockpit",
+        "scope_name": scope_name, "lang": lang, "year": year,
+        "generated_at": now, "mode": mode, "groups": group_list, "total": total,
+    }
+
+
+def render_dependencies_html(data: dict, *, standalone: bool = True) -> str:
+    e = html.escape
+    lang = _lang(data.get("lang", "fr"))
+    T = _DEP_T[lang]
+    parts = [f'<div class="hdr"><h1>{e(T["title"])} - {e(data["scope_name"])}</h1>',
+             f'<div class="sub">{e(rt(lang, "year"))} {data["year"]} · '
+             f'{e(T["total"].format(n=data["total"]))}</div></div>']
+    if data["total"] == 0:
+        parts.append(f'<div class="muted small">{e(T["none"])}</div>')
+    for g in data["groups"]:
+        tlbl = {"tribe": T["t_tribe"], "squad": T["t_squad"], "text": T["t_text"]}.get(g["target_type"], "")
+        if g["target_type"] == "squad" and g.get("target_tribe"):
+            tlbl = f'{tlbl} · {e(g["target_tribe"])}'
+        parts.append(f'<h2>▶ {e(g["target_label"])} '
+                     f'<span class="muted">({tlbl} · {e(T["gcount"].format(n=len(g["items"])))})</span></h2>')
+        parts.append('<table><thead><tr>'
+                     f'<th>{e(T["c_jalon"])}</th><th>{e(T["c_squad"])}</th><th>{e(T["c_trim"])}</th>'
+                     f'<th>{e(T["c_owner"])}</th><th>{e(T["c_status"])}</th></tr></thead><tbody>')
+        for it in g["items"]:
+            parts.append(
+                f'<tr><td><strong>{e(it["jalon"])}</strong></td>'
+                f'<td>{e(it["squad_name"])} · {e(it["tribe_name"])}</td>'
+                f'<td>Q{it["quarter"]} {str(it["year"])[2:]}</td>'
+                f'<td>{e(it["owner"] or "-")}</td>'
+                f'<td>{e(_status_label(it["status"], lang))}</td></tr>')
+        parts.append('</tbody></table>')
+    body = "".join(parts)
+    if not standalone:
+        return f'<div class="tc-report">{_CSS}{body}</div>'
+    return (f'<!doctype html><html lang="{e(lang)}"><head><meta charset="utf-8">'
+            f'<meta name="viewport" content="width=device-width, initial-scale=1">'
+            f'<title>{e(T["title"])}</title>{_CSS}</head><body><div class="tc-report">{body}</div></body></html>')
+
+
+def render_dependencies_pptx(data: dict) -> bytes:
+    """Paginated table deck of milestone dependencies, grouped by the entity waited
+    on. Rows flow across slides so no dependency is ever dropped."""
+    Presentation, Inches, Pt, Emu, RGBColor, PP_ALIGN, MSO_ANCHOR, MSO_SHAPE = _pptx_toolkit()
+
+    def rgb(hexstr: str) -> RGBColor:
+        return RGBColor.from_string(hexstr.lstrip("#").upper())
+
+    B = {k: rgb(v) for k, v in _BRAND.items()}
+    lang = _lang(data.get("lang", "fr"))
+    T = _DEP_T[lang]
+
+    prs = Presentation()
+    prs.slide_width = Inches(13.333)
+    prs.slide_height = Inches(7.5)
+    SW = prs.slide_width
+    margin = int(Inches(0.5))
+    content_w = int(SW) - 2 * margin
+    fracs = [0.405, 0.225, 0.075, 0.18, 0.115]
+    aligns = [PP_ALIGN.LEFT, PP_ALIGN.LEFT, PP_ALIGN.CENTER, PP_ALIGN.LEFT, PP_ALIGN.CENTER]
+    colw = [int(content_w * f) for f in fracs]
+    colx, acc = [], margin
+    for w in colw:
+        colx.append(acc); acc += w
+    ROW_H, HDR_H, GRP_H = int(Inches(0.30)), int(Inches(0.32)), int(Inches(0.46))
+    TOP0, BOTTOM = int(Inches(1.25)), int(Inches(7.22))
+
+    gen = data["generated_at"]
+    gen_str = gen.strftime("%d/%m/%Y %H:%M") if isinstance(gen, datetime) else str(gen)
+
+    def new_slide():
+        return prs.slides.add_slide(prs.slide_layouts[6])
+
+    def textbox(s, left, top, width, height, text, size, *, bold=False, color=None,
+                align=PP_ALIGN.LEFT, anchor=MSO_ANCHOR.MIDDLE):
+        box = s.shapes.add_textbox(Emu(int(left)), Emu(int(top)), Emu(int(width)), Emu(int(height)))
+        tf = box.text_frame
+        tf.word_wrap = True
+        tf.vertical_anchor = anchor
+        tf.margin_left = Inches(0.05); tf.margin_right = Inches(0.05)
+        tf.margin_top = Emu(0); tf.margin_bottom = Emu(0)
+        p = tf.paragraphs[0]; p.alignment = align
+        r = p.add_run(); r.text = text
+        r.font.size = Pt(size); r.font.bold = bold
+        r.font.color.rgb = color if color is not None else B["ink"]
+        return box
+
+    def rect(s, left, top, width, height, fill):
+        sh = s.shapes.add_shape(MSO_SHAPE.RECTANGLE, Emu(int(left)), Emu(int(top)), Emu(int(width)), Emu(int(height)))
+        sh.fill.solid(); sh.fill.fore_color.rgb = fill
+        sh.line.fill.background(); sh.shadow.inherit = False
+        return sh
+
+    def band(s, cont):
+        rect(s, 0, 0, SW, Inches(1.05), B["navy"])
+        textbox(s, margin, Inches(0.14), Inches(9.2), Inches(0.5),
+                T["title"] + (T["suite"] if cont else ""), 22, bold=True, color=B["white"], anchor=MSO_ANCHOR.TOP)
+        textbox(s, margin, Inches(0.64), Inches(9.2), Inches(0.3),
+                f'{data["scope_name"]} · {rt(lang, "year")} {data["year"]} · {T["total"].format(n=data["total"])}',
+                12, color=rgb("#C7D2FE"), anchor=MSO_ANCHOR.TOP)
+        textbox(s, int(SW) - int(Inches(4.3)), Inches(0.32), Inches(3.8), Inches(0.4),
+                rt(lang, "generated_full", d=gen_str), 10, color=rgb("#C7D2FE"), align=PP_ALIGN.RIGHT)
+
+    def col_headers(s, y):
+        rect(s, margin, y, content_w, HDR_H, B["navy"])
+        for i, key in enumerate(("c_jalon", "c_squad", "c_trim", "c_owner", "c_status")):
+            textbox(s, colx[i], y, colw[i], HDR_H, T[key], 9.5, bold=True, color=B["white"], align=aligns[i])
+        return y + HDR_H
+
+    def group_header(s, y, g, cont):
+        rect(s, margin, y, content_w, GRP_H, rgb("#EEF2FF"))
+        tlbl = {"tribe": T["t_tribe"], "squad": T["t_squad"], "text": T["t_text"]}.get(g["target_type"], "")
+        if g["target_type"] == "squad" and g.get("target_tribe"):
+            tlbl = f'{tlbl} · {g["target_tribe"]}'
+        txt = f'▶  {g["target_label"]}   ({tlbl})' + (T["suite"] if cont else "")
+        textbox(s, colx[0], y, content_w - int(Inches(2.4)), GRP_H, txt, 13, bold=True, color=B["navy"])
+        textbox(s, margin + content_w - int(Inches(2.4)), y, Inches(2.3), GRP_H,
+                T["gcount"].format(n=len(g["items"])), 10, color=B["muted"], align=PP_ALIGN.RIGHT)
+        return y + GRP_H
+
+    def trunc(x, n):
+        x = x or ""
+        return x if len(x) <= n else x[:n - 1] + "…"
+
+    def data_row(s, y, it, zebra):
+        if zebra:
+            rect(s, margin, y, content_w, ROW_H, rgb("#F8FAFC"))
+        vals = [trunc(it["jalon"], 62),
+                trunc(f'{it["squad_name"]} · {it["tribe_name"]}', 34),
+                f'Q{it["quarter"]} {str(it["year"])[2:]}',
+                trunc(it["owner"] or "-", 24),
+                _status_label(it["status"], lang)]
+        colors = [B["ink"], B["muted"], B["ink"], B["ink"], rgb(_RAG_BRAND[_status_rag(it["status"])])]
+        bolds = [True, False, False, False, True]
+        for i, v in enumerate(vals):
+            textbox(s, colx[i], y, colw[i], ROW_H, v, 9, bold=bolds[i], color=colors[i], align=aligns[i])
+        return y + ROW_H
+
+    if data["total"] == 0:
+        s = new_slide(); band(s, False)
+        textbox(s, margin, Inches(3.2), content_w, Inches(0.6), T["none"], 18, bold=True,
+                color=B["muted"], align=PP_ALIGN.CENTER)
+        buf = io.BytesIO(); prs.save(buf); return buf.getvalue()
+
+    state = {"s": None, "y": 0}
+
+    def open_slide(cont):
+        s = new_slide(); band(s, cont)
+        state["s"] = s; state["y"] = TOP0
+
+    open_slide(False)
+    for g in data["groups"]:
+        if state["y"] + GRP_H + HDR_H + ROW_H > BOTTOM:
+            open_slide(True)
+        state["y"] = group_header(state["s"], state["y"], g, False)
+        state["y"] = col_headers(state["s"], state["y"])
+        for idx, it in enumerate(g["items"]):
+            if state["y"] + ROW_H > BOTTOM:
+                open_slide(True)
+                state["y"] = group_header(state["s"], state["y"], g, True)
+                state["y"] = col_headers(state["s"], state["y"])
+            state["y"] = data_row(state["s"], state["y"], it, idx % 2 == 1)
+
+    buf = io.BytesIO(); prs.save(buf); return buf.getvalue()
