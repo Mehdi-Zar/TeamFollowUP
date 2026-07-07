@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Features
+- **Milestone-dependency deck (PPTX/HTML).** New export listing every jalon that
+  depends on another team, grouped by the entity it waits on. Each line shows the
+  jalon, its source squad·tribe, the quarter, the owner and the status. By default
+  it keeps only **cross-tribe** dependencies (`mode=cross_tribe`, the real
+  coordination points); `mode=all` includes same-tribe and free-text actors. The
+  table paginates across slides so no dependency is ever dropped. Available from
+  the Export menu ("Dépendances") and via `GET /api/reports/dependencies.pptx`
+  (and `.html`), scoped like the other exports (`tribe_id` / `squad_ids` / `year`).
+
 ### Fixes
 - **Dashboard PPTX export no longer silently drops squads.** Multi-squad decks
   were capped at 40 detail slides, so a large selection (e.g. a full org of 130+
