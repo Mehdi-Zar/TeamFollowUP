@@ -183,6 +183,51 @@ def test_roadmap_pptx_single_page_even_with_many_squads(db, seeded):
     assert len(prs.slides) == 1
 
 
+def test_dependencies_cross_tribe_only_and_no_drop(db, seeded):
+    """The dependency deck keeps only cross-tribe dependencies and paginates so no
+    milestone is dropped."""
+    pptx = pytest.importorskip("pptx")
+    import io
+    from app.models import RoadmapItem
+    from app.report import build_dependencies_data, render_dependencies_pptx
+    year = st.current_year_quarter()[0]
+    # cross-tribe dep (squad A / t1 → tribe t2): kept
+    db.add(RoadmapItem(squad_id=seeded["squad_a"], year=year, quarter=2, title="Dep vers T2",
+                       owner="Alice", status="at_risk", release_stage="EA",
+                       dependency_kind="tribe", dependency_tribe_id=seeded["t2"]))
+    # same-tribe dep (A → B, both t1): excluded in cross_tribe mode
+    db.add(RoadmapItem(squad_id=seeded["squad_a"], year=year, quarter=1, title="Interne",
+                       status="on_track", release_stage="EA",
+                       dependency_kind="squad", dependency_squad_id=seeded["squad_b"]))
+    for i in range(45):  # force pagination across slides
+        db.add(RoadmapItem(squad_id=seeded["squad_b"], year=year, quarter=(i % 4) + 1,
+                           title=f"Besoin T2 #{i:02d}", owner=f"O{i}", status="on_track",
+                           release_stage="EA", dependency_kind="tribe", dependency_tribe_id=seeded["t2"]))
+    db.commit()
+
+    data = build_dependencies_data(db, None, year, mode="cross_tribe")
+    titles = {it["jalon"] for g in data["groups"] for it in g["items"]}
+    assert "Dep vers T2" in titles and "Interne" not in titles  # same-tribe excluded
+    assert data["total"] == 1 + 45
+    # 'all' mode brings the internal dependency back.
+    assert build_dependencies_data(db, None, year, mode="all")["total"] == data["total"] + 1
+
+    prs = pptx.Presentation(io.BytesIO(render_dependencies_pptx(data)))
+    all_text = "\n".join(_slide_texts(prs))
+    missing = [t for t in titles if t[:40] not in all_text]
+    assert not missing, f"dependencies dropped from deck: {missing}"
+
+
+def test_dependencies_export_endpoints(client, seeded):
+    pytest.importorskip("pptx")
+    login(client, seeded["admin"])
+    p = client.get("/api/reports/dependencies.pptx")
+    assert p.status_code == 200 and "presentationml" in p.headers["content-type"] and p.content[:2] == b"PK"
+    h = client.get("/api/reports/dependencies.html")
+    assert h.status_code == 200
+    assert ("Dépendances des jalons" in h.text) or ("Milestone dependencies" in h.text)
+
+
 # ---- config sanitization -------------------------------------------------------
 
 def test_report_config_sanitizes(db, seeded):

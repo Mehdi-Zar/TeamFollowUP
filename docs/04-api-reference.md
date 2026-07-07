@@ -68,6 +68,7 @@ SAML: `GET /saml/metadata`,`GET /saml/login`,`POST /saml/acs` · `POST /imperson
 
 ### reports (`/api/reports`) — module `review.weekly_report`
 `GET /weekly.html` · `GET /weekly.pptx` · `GET /roadmap.html` · `GET /roadmap.pptx` (supports `squad_ids`)
+· `GET /dependencies.html` · `GET /dependencies.pptx` (milestone dependencies grouped by the entity waited on; `mode=cross_tribe`\|`all`, supports `tribe_id`/`squad_ids`/`year`; module `squad_content.roadmap`)
 · `POST /weekly/email` · `GET /subscriptions` · `GET /subscription` · `PUT /subscription`
 
 ### exports (`/api/exports`) — module `exports_csv`
