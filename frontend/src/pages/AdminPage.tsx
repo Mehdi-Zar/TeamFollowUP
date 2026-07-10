@@ -404,7 +404,6 @@ const MODULE_TREE: { key: ModuleKey; features: string[] }[] = [
   { key: "squad_content", features: ["objectives", "roadmap", "kpis"] },
   { key: "committees", features: [] },
   { key: "notifications", features: ["inapp", "email"] },
-  { key: "exports_csv", features: [] },
   { key: "getting_started", features: [] },
   { key: "leaves", features: ["overlap_alert"] },
 ];

@@ -12,7 +12,6 @@ export const DEFAULT_MODULES: ModulesConfig = {
   squad_content: { enabled: true, objectives: true, roadmap: true, kpis: false },
   committees: { enabled: false },
   notifications: { enabled: true, inapp: true, email: true },
-  exports_csv: { enabled: true },
   getting_started: { enabled: true },
   leaves: { enabled: true, overlap_alert: true },
 };

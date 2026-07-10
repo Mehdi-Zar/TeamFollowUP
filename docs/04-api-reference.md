@@ -71,8 +71,8 @@ SAML: `GET /saml/metadata`,`GET /saml/login`,`POST /saml/acs` · `POST /imperson
 · `GET /dependencies.html` · `GET /dependencies.pptx` (milestone dependencies grouped by the entity waited on; `mode=cross_tribe`\|`all`, supports `tribe_id`/`squad_ids`/`year`; module `squad_content.roadmap`)
 · `POST /weekly/email` · `GET /subscriptions` · `GET /subscription` · `PUT /subscription`
 
-### exports (`/api/exports`) — module `exports_csv`
-`GET /dashboard.csv` · `POST /dashboard/email` · `GET /squad/{id}.csv` · `POST /squad/{id}/email`
+### leaves CSV export
+`GET /api/leaves/export.csv` — absences export (scoped to the caller's tribe); part of the `leaves` module.
 
 ### actions (`/api`) — review action items
 `GET /squads/{id}/actions` · `POST /squads/{id}/actions` · `PUT /actions/{id}` · `DELETE /actions/{id}`
