@@ -26,7 +26,6 @@ def _defaults() -> dict:
         # recurring committees, tribe leaders get oversight. Off by default.
         "committees": {"enabled": False},
         "notifications": {"enabled": True, "inapp": True, "email": True},
-        "exports_csv": {"enabled": True},
         "getting_started": {"enabled": True},
         "leaves": {"enabled": True, "overlap_alert": True},
     }

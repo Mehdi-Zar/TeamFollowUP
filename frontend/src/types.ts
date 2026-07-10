@@ -351,7 +351,6 @@ export interface ModulesConfig {
   squad_content: { enabled: boolean; objectives: boolean; roadmap: boolean; kpis: boolean };
   committees: { enabled: boolean };
   notifications: { enabled: boolean; inapp: boolean; email: boolean };
-  exports_csv: { enabled: boolean };
   getting_started: { enabled: boolean };
   leaves: { enabled: boolean; overlap_alert: boolean };
 }
