@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from .. import status as st
 from ..database import get_db
 from ..deps import (assert_can_edit_squad, get_current_user, record_audit,
-                    require_module, require_writer)
+                    require_capability, require_module, require_writer)
 from ..models import ReportSnapshot, Squad, User, utcnow
 from ..schemas import SnapshotMeta, SnapshotOut, SubmitCycleIn
 
@@ -40,7 +40,11 @@ def build_payload(squad: Squad, year: int) -> dict:
     }
 
 
-@router.post("", response_model=SnapshotOut, status_code=201)
+# Submitting a cycle is the "Saisie" section (SPA route /saisie, capability
+# "reporting"). The reads below are the squad's history, shown on the squad page
+# to anyone who may see the squad - they stay on the existing scope rules.
+@router.post("", response_model=SnapshotOut, status_code=201,
+             dependencies=[Depends(require_capability("reporting"))])
 def submit_cycle(squad_id: int, payload: SubmitCycleIn, db: Session = Depends(get_db),
                  user: User = Depends(require_writer)):
     squad = db.get(Squad, squad_id)
