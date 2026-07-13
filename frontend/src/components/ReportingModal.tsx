@@ -35,12 +35,15 @@ export function ReportingModal({ onClose }: { onClose: () => void }) {
 }
 
 /** A ready-to-drop button that opens the reporting popup. Hidden when the weekly
- *  report module is off, so it stays coherent with the module switches. */
+ *  report module is off, or when the persona lacks the capability the
+ *  subscription endpoints demand (the report carries dashboard/review content),
+ *  so the button never opens a modal that the API would refuse. */
 export function ReportingButton({ className = "btn-secondary btn-sm" }: { className?: string }) {
   const { t } = useI18n();
   const reportOn = useModule()("review", "weekly_report");
+  const { can } = useAuth();
   const [open, setOpen] = useState(false);
-  if (!reportOn) return null;
+  if (!reportOn || !can("dashboard")) return null;
   return (
     <>
       <button className={className} onClick={() => setOpen(true)}>{t("reporting.subscribe_btn")}</button>

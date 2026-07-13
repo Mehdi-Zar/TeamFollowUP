@@ -49,10 +49,14 @@ export default function ExportMenu({ year, squadId, sinceDays = 7 }: Props) {
   const { t, lang } = useI18n();
   const { smtp_enabled } = useConfig();
   const m = useModule();
-  const { user } = useAuth();
-  const reportOn = m("review", "weekly_report");
-  const roadmapOn = m("squad_content", "roadmap");
-  const dashboardOn = m("dashboard");
+  const { user, can } = useAuth();
+  // A document is only offered when its module is on AND the persona holds the
+  // capability of the section it exports - the same pair the API now enforces
+  // (backend/app/routers/reports.py). This menu also shows on the squad page,
+  // which has no capability guard of its own, so the check has to live here.
+  const reportOn = m("review", "weekly_report") && can("dashboard");
+  const roadmapOn = m("squad_content", "roadmap") && can("roadmap");
+  const dashboardOn = m("dashboard") && can("dashboard");
 
   const ref = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
