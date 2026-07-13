@@ -521,3 +521,35 @@ class AuditLog(Base):
     entity_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
     detail: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+
+class ApiKey(Base):
+    """A machine credential for the read-only API (Admin → API).
+
+    Not a user: a key is a service credential owned by the organisation, so it
+    survives the departure of whoever created it. The secret is shown once at
+    creation and only its argon2 hash is stored - `prefix` is the non-secret
+    handle used to display and look the key up.
+
+    Scope of what it may read is the intersection of:
+      * `scopes`   - which resources (see app/apikeys.py SCOPES);
+      * `tribe_id` - which tribe (NULL = every tribe).
+    """
+    __tablename__ = "api_keys"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    # Public, non-secret handle: the "trt_ab12cd34" head of the key.
+    prefix: Mapped[str] = mapped_column(String(32), unique=True, index=True, nullable=False)
+    key_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    scopes: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    # NULL = all tribes; otherwise the key only ever sees that tribe.
+    tribe_id: Mapped[int | None] = mapped_column(ForeignKey("tribes.id"), nullable=True)
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    tribe: Mapped["Tribe | None"] = relationship(foreign_keys=[tribe_id])
+    created_by: Mapped["User | None"] = relationship(foreign_keys=[created_by_user_id])

@@ -527,3 +527,92 @@ def tls_download_active(db: Session = Depends(get_db), admin: User = Depends(req
         raise HTTPException(status_code=404, detail=str(exc))
     return PlainTextResponse(pem, headers={"Content-Disposition": 'attachment; filename="server-cert.pem"'})
 
+
+
+# ----- API keys (Admin -> API) ------------------------------------------------
+# A key is a service credential: created here, shown ONCE, then only ever
+# identified by its prefix. See app/apikeys.py for the model and the scopes.
+
+@router.get("/api-keys")
+def list_api_keys(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    from ..apikeys import SCOPES, public
+    from ..models import ApiKey
+    keys = db.scalars(select(ApiKey).order_by(ApiKey.created_at.desc())).all()
+    return {"scopes": SCOPES, "keys": [public(k) for k in keys]}
+
+
+@router.post("/api-keys", status_code=201)
+def create_api_key(payload: dict = Body(...), db: Session = Depends(get_db),
+                   admin: User = Depends(require_admin)):
+    """Mint a key. The plaintext secret is returned HERE AND NOWHERE ELSE."""
+    from datetime import timedelta
+
+    from ..apikeys import generate_key, hash_key, normalize_scopes, public, split_key
+    from ..models import ApiKey, utcnow
+
+    name = (payload.get("name") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Nom requis")
+    scopes = normalize_scopes(payload.get("scopes"))
+    if not scopes:
+        raise HTTPException(status_code=400, detail="Au moins un scope est requis")
+
+    expires_at = None
+    days = payload.get("expires_in_days")
+    if days not in (None, "", 0):
+        try:
+            days = int(days)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="Durée de validité invalide")
+        if days < 1:
+            raise HTTPException(status_code=400, detail="Durée de validité invalide")
+        expires_at = utcnow() + timedelta(days=days)
+
+    secret, prefix = generate_key()
+    key = ApiKey(
+        name=name,
+        prefix=prefix,
+        key_hash=hash_key(split_key(secret)[1]),
+        scopes=scopes,
+        tribe_id=payload.get("tribe_id"),
+        created_by_user_id=admin.id,
+        expires_at=expires_at,
+    )
+    db.add(key)
+    db.flush()
+    record_audit(db, admin.id, "api_key.create", entity="api_key", entity_id=key.id,
+                 detail={"name": name, "prefix": prefix, "scopes": scopes,
+                         "tribe_id": key.tribe_id})
+    db.commit()
+    # `secret` is the only time the caller will ever see it.
+    return {**public(key), "secret": secret}
+
+
+@router.post("/api-keys/{key_id}/revoke")
+def revoke_api_key(key_id: int, db: Session = Depends(get_db),
+                   admin: User = Depends(require_admin)):
+    """Revoking is immediate and irreversible - the row is kept for the audit trail."""
+    from ..apikeys import public
+    from ..models import ApiKey, utcnow
+    key = db.get(ApiKey, key_id)
+    if key is None:
+        raise HTTPException(status_code=404, detail="Clé introuvable")
+    if key.revoked_at is None:
+        key.revoked_at = utcnow()
+        record_audit(db, admin.id, "api_key.revoke", entity="api_key", entity_id=key.id,
+                     detail={"name": key.name, "prefix": key.prefix})
+        db.commit()
+    return public(key)
+
+
+@router.delete("/api-keys/{key_id}", status_code=204)
+def delete_api_key(key_id: int, db: Session = Depends(get_db),
+                   admin: User = Depends(require_admin)):
+    from ..models import ApiKey
+    key = db.get(ApiKey, key_id)
+    if key is None:
+        raise HTTPException(status_code=404, detail="Clé introuvable")
+    record_audit(db, admin.id, "api_key.delete", entity="api_key", entity_id=key.id,
+                 detail={"name": key.name, "prefix": key.prefix})
+    db.delete(key)
+    db.commit()

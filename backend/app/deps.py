@@ -190,6 +190,71 @@ def require_capability(capability: str):
     return _dep
 
 
+def api_key_from_request(request: Request, db: Session):
+    """The ApiKey presented in `Authorization: Bearer …`, or None if absent.
+
+    A malformed/expired/revoked/unknown key is a 401 - we do not silently fall
+    back to the cookie, because a client that sent a key meant to use it and must
+    be told the key is bad rather than get an opaque 401 about a missing session.
+    """
+    header = request.headers.get("authorization") or ""
+    if not header.lower().startswith("bearer "):
+        return None
+    from .apikeys import resolve
+    key = resolve(db, header[7:].strip())
+    if key is None:
+        raise HTTPException(status_code=401, detail="Clé d'API invalide, expirée ou révoquée")
+    return key
+
+
+def caller(scope: str, capability: str | None = None):
+    """The dependency for a route open to BOTH humans and API keys.
+
+    Humans authenticate with the session cookie and are gated by their persona
+    capability, exactly as before. Machines authenticate with an API key and are
+    gated by the key's *scope* - personas do not apply to them (a persona is a
+    human navigating sections; a scope is a credential reading a resource).
+
+    Routes that do not name a scope stay cookie-only: an API key is never an
+    implicit passport to the whole API.
+    """
+    def _dep(request: Request, db: Session = Depends(get_db)) -> User:
+        key = api_key_from_request(request, db)
+        if key is not None:
+            if scope not in (key.scopes or []):
+                raise HTTPException(status_code=403,
+                                    detail=f"Cette clé d'API n'a pas le scope « {scope} »")
+            from .apikeys import principal, touch
+            touch(db, key)
+            db.commit()
+            request.state.api_key = key           # read by reports.py (budget:read)
+            return principal(key)
+
+        user = get_current_user(get_current_user_any_status(request, db))
+        if capability is not None:
+            from .personasconfig import can
+            if not can(db, user, capability):
+                raise HTTPException(status_code=403, detail="Accès non autorisé pour votre rôle")
+        return user
+
+    return _dep
+
+
+def caller_has_scope(request: Request, scope: str) -> bool:
+    """True when the current caller is an API key carrying `scope`.
+
+    Used for scopes that shape a payload rather than open a route (budget:read).
+    A human caller is not an API key, so this is False for them - their own rules
+    (is_squad_privileged) decide instead.
+    """
+    key = getattr(request.state, "api_key", None)
+    return key is not None and scope in (key.scopes or [])
+
+
+def is_api_caller(request: Request) -> bool:
+    return getattr(request.state, "api_key", None) is not None
+
+
 def require_module(module: str, feature: str | None = None):
     """Dependency that 404s when a module/feature is disabled in the admin.
 

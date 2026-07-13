@@ -18,6 +18,7 @@ Risks · Future Evolution**.
 | [0008](0008-server-side-report-rendering.md) | Server-side report/roadmap rendering (HTML + PPTX) | Accepted |
 | [0009](0009-in-process-scheduler.md) | In-process background scheduler | Accepted (revisit at scale) |
 | [0010](0010-alembic-migrations.md) | Alembic migrations as schema source of truth | Accepted |
+| [0011](0011-api-keys-and-scopes.md) | API keys & scopes (read-only machine access) | Accepted |
 
 ## Dependency map
 
