@@ -36,12 +36,12 @@ is. That's it. Everything below is detail around those two moves.
 5. **Start it.** Run the image and pass it the settings from step 3. On the very
    first start the app **creates all its tables automatically** (it runs the
    database migrations for you) and creates the emergency admin account. → §3, §4.
-6. **HTTPS is built in.** The app serves **HTTPS itself on port 8443** (with a
-   self-signed cert by default) and redirects plain HTTP on **8080** to it — so it
-   is secure out of the box. Import your own certificate (PEM/PFX) and manage CAs
-   from **Administration → HTTPS / Certificats**, no restart needed. You may still
-   put a load balancer / reverse proxy in front (TLS passthrough, or re-terminate
-   with your own cert and forward to `:8443`/`:8080`). → each platform section.
+6. **Expose it through the API Gateway.** The app is **never** published directly:
+   you declare an **API Gateway** (Kubernetes **Gateway API**) with **HTTP routes**
+   (`HTTPRoute`), and GKE provisions an **internal Application Load Balancer (ALB)**
+   in front of it. The ALB terminates TLS with **your PKI certificate** and forwards
+   to the pod, which itself serves **HTTPS on :8443**. This is the **only** supported
+   exposure path — no `Service: LoadBalancer`, no `Ingress`. → §6.9.
 7. **Check it works.** Open the site, log in with the break-glass admin, and click
    around. Then configure SSO, SMTP (for emails), backups, etc. from the admin UI. → §10.
 
@@ -59,12 +59,21 @@ untouched. That update procedure has its own document: **`13-maintenance-and-upd
 ## 1. Architecture recap (what you deploy)
 
 ```
-            ┌──────────────────────────────┐
-  HTTPS ───▶│  Tribe Run Tracker (1 image) │───▶  PostgreSQL 16
-  (native   │  FastAPI + built React SPA   │      (managed or self-hosted)
-   TLS)     │  HTTPS :8443 · HTTP :8080 →↑ │
-            └──────────────────────────────┘
+            ┌───────────────────┐     ┌──────────────────────────────┐
+  users ───▶│  API Gateway      │────▶│  Tribe Run Tracker (1 image) │───▶  PostgreSQL 16
+  HTTPS 443 │  Gateway+HTTPRoute│HTTPS│  FastAPI + built React SPA   │      (managed or self-hosted)
+            │  = internal ALB   │:8443│  HTTPS :8443 · HTTP :8080 →↑ │
+            │  your PKI cert    │     └──────────────────────────────┘
+            └───────────────────┘
 ```
+
+> **Exposure — one path, no alternatives.** The application is published **only**
+> through the **API Gateway** (Kubernetes **Gateway API**: a `Gateway` plus **HTTP
+> routes**), which provisions an **internal Application Load Balancer**. A `Service` of
+> type `LoadBalancer` and an `Ingress` are **not** supported topologies here and appear
+> nowhere in this guide — the app's `Service` is a `ClusterIP`, unreachable from outside
+> the cluster by design. See **§6.9**, and keep it in mind when reading the other
+> platform sections (§4, §7, §8), which predate this decision.
 
 - **Single image** (`Dockerfile`, multi-stage): builds the React SPA, then serves
   it together with the API from FastAPI/uvicorn over **native HTTPS on :8443**
@@ -147,9 +156,10 @@ Simplest, fully self-hosted. Ideal for on-prem / sovereign-by-default.
    #            SEED_DEMO=false, COOKIE_SECURE=true (if TLS terminates upstream)
    docker compose up -d --build       # or: pull the prebuilt image and `up -d`
    ```
-4. Put a TLS reverse proxy in front (nginx / HAProxy / vSphere LB) forwarding
-   `443 → VM:8080`, and set the `X-Forwarded-*` headers (uvicorn runs with
-   `--proxy-headers`).
+4. **Exposure.** This compose setup has no API Gateway, so it is a **development /
+   evaluation** target only — the supported production exposure is the Gateway API +
+   HTTP routes → internal ALB path (§1, §6.9), which requires GKE. For a local trial,
+   reach the app directly on `https://VM:8443` (it serves TLS itself).
 5. **Backups**: the compose file ships an optional `pg_dump` sidecar — enable it
    with `docker compose --profile backup up -d`, or snapshot the VM/volume.
 
@@ -649,11 +659,12 @@ apiVersion: v1
 kind: Service
 metadata:
   name: tribe-app
-  annotations: { networking.gke.io/load-balancer-type: "Internal" }   # internal LB (sovereign)
+  annotations:
+    cloud.google.com/app-protocols: '{"https":"HTTPS"}'   # the pod speaks HTTPS on 8443
 spec:
-  type: LoadBalancer
+  type: ClusterIP                                         # exposure is the Gateway's job (§6.9)
   selector: { app: tribe-app }
-  ports: [{ name: https, port: 443, targetPort: 8443 }]   # L4 passthrough: TLS ends in the app
+  ports: [{ name: https, port: 443, targetPort: 8443 }]
 ```
 
 **Variant 2 — option B2 (Cloud SQL Auth Proxy sidecar).** Same app container, plus the
@@ -728,9 +739,10 @@ apiVersion: v1
 kind: Service
 metadata:
   name: tribe-app
-  annotations: { networking.gke.io/load-balancer-type: "Internal" }
+  annotations:
+    cloud.google.com/app-protocols: '{"https":"HTTPS"}'   # the pod speaks HTTPS on 8443
 spec:
-  type: LoadBalancer
+  type: ClusterIP                                         # exposure is the Gateway's job (§6.9)
   selector: { app: tribe-app }
   ports: [{ name: https, port: 443, targetPort: 8443 }]
 ```
@@ -758,68 +770,145 @@ then starts the server — so the first pod migrates the DB. Once healthy, scale
 multi-replica safe via a Postgres advisory lock); with option B2 each replica gets its
 own proxy sidecar automatically.
 
-### 6.9 Put HTTPS in front
+> **At this point the app runs but nobody can reach it** — the `Service` is a
+> `ClusterIP` on purpose. Publishing it is §6.9's job (API Gateway + HTTP routes → ALB).
+> To sanity-check the pod before then, port-forward to it:
+> `kubectl port-forward deploy/tribe-app 8443:8443` then
+> `curl -k https://localhost:8443/api/health`.
 
-**The app already serves HTTPS itself on :8443** (self-signed cert on first boot; :8080
-only 301-redirects to HTTPS). So you never expose a plain-HTTP app — you only decide
-**where the certificate your users trust lives**. Two ways; in an internal/sovereign
-setup the certificate is **your own** either way (public Let's Encrypt cannot validate an
-internal-only name).
+### 6.9 Expose the app — API Gateway (Gateway API) + HTTPRoute → internal ALB
 
-**Way 1 — TLS passthrough (what the §6.8 manifests already do).** The internal L4 load
-balancer forwards TCP 443 → pod 8443 and the **app terminates TLS**. Nothing more to
-deploy. Import your PKI certificate (PEM or PFX) once from **Administration → HTTPS /
-Certificats** — no restart, no Kubernetes secret. Point your internal DNS record at the
-LB address:
-```bash
-kubectl get service tribe-app -o wide     # EXTERNAL-IP = the internal LB address
+> **This is the only supported way to expose the application.** Do not use a
+> `Service` of type `LoadBalancer`, and do not use `Ingress` — both are deliberately
+> absent from this guide. The `Service` in §6.8 is a `ClusterIP`: it is *not* reachable
+> from outside the cluster on its own, and that is intentional. Exposure is declared with
+> the **Kubernetes Gateway API** (`Gateway` + `HTTPRoute`), which provisions a **regional
+> internal Application Load Balancer (ALB)**.
+
+**How the pieces fit.** You declare *what* you want (a listener, and routes to a
+backend); GKE provisions the ALB for you and keeps it in sync:
+
+```
+   user ──HTTPS 443──▶  Gateway (gke-l7-rilb)  ──▶  HTTPRoute  ──▶  Service tribe-app (ClusterIP)
+                        = internal ALB              path rules        │  app-protocols: HTTPS
+                        your PKI cert                                 ▼
+                                                                 pod :8443 (HTTPS)
 ```
 
-**Way 2 — terminate TLS on an internal Ingress** (do this if policy requires the cert to
-live on the LB, or you want path routing). The GCE Ingress must be told the backend
-speaks **HTTPS**, otherwise it sends plain HTTP to :8443 and every request fails:
+Two certificates are in play, and that is normal: the **ALB** presents *your PKI
+certificate* to users (the `tribe-tls` secret below), and the **pod** presents its
+self-signed one on the internal ALB→pod hop, which never leaves the VPC.
+
+#### 6.9.1 One-time prerequisites
+
 ```bash
+# 1) A proxy-only subnet — the regional internal ALB runs its Envoy proxies here.
+#    Without it the Gateway stays PROGRAMMING/False forever. One per VPC + region.
+gcloud compute networks subnets create tribe-proxy-only \
+  --purpose=REGIONAL_MANAGED_PROXY --role=ACTIVE \
+  --region=u-france-east1 --network=VPC_NAME --range=10.129.0.0/23 \
+  --project=PROJECT
+
+# 2) Your PKI certificate for the service hostname (§6.2), as a k8s secret
 kubectl create secret tls tribe-tls --cert=server.crt --key=server.key
 ```
+
+*The Gateway API CRDs are **already installed** on Autopilot clusters (§6.6) — check with
+`kubectl get gatewayclass`, you should see `gke-l7-rilb`. On a Standard cluster, enable
+them once with `gcloud container clusters update tribe-cluster --gateway-api=standard
+--region u-france-east1`.*
+
+#### 6.9.2 The Gateway and its routes (`gateway.yaml`)
+
 ```yaml
-apiVersion: v1
-kind: Service
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
 metadata:
-  name: tribe-app
-  annotations:
-    cloud.google.com/app-protocols: '{"https":"HTTPS"}'   # ← backend is HTTPS, not HTTP
-    cloud.google.com/backend-config: '{"default":"tribe-backendconfig"}'
+  name: tribe-gateway
 spec:
-  type: NodePort                                          # Ingress needs NodePort, not LoadBalancer
-  selector: { app: tribe-app }
-  ports: [{ name: https, port: 443, targetPort: 8443 }]
+  gatewayClassName: gke-l7-rilb          # regional INTERNAL Application Load Balancer
+  listeners:
+    - name: https
+      protocol: HTTPS
+      port: 443
+      hostname: tribe.internal.example
+      tls:
+        mode: Terminate                  # the ALB terminates TLS with YOUR cert
+        certificateRefs: [{ name: tribe-tls }]
+    - name: http
+      protocol: HTTP
+      port: 80                           # only exists to bounce users to HTTPS (see below)
+      hostname: tribe.internal.example
 ---
-apiVersion: cloud.google.com/v1
-kind: BackendConfig
-metadata: { name: tribe-backendconfig }
-spec:
-  healthCheck: { type: HTTPS, requestPath: /api/health, port: 8443 }
----
-apiVersion: networking.k8s.io/v1
-kind: Ingress
+# The application route: everything under / goes to the app.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
 metadata:
-  name: tribe-ingress
-  annotations: { kubernetes.io/ingress.class: "gce-internal" }   # internal HTTP(S) LB
+  name: tribe-app-route
 spec:
-  tls: [{ hosts: ["tribe.internal.example"], secretName: tribe-tls }]
+  parentRefs: [{ name: tribe-gateway, sectionName: https }]
+  hostnames: ["tribe.internal.example"]
   rules:
-    - host: tribe.internal.example
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend: { service: { name: tribe-app, port: { number: 443 } } }
+    - matches: [{ path: { type: PathPrefix, value: / } }]
+      backendRefs: [{ name: tribe-app, port: 443 }]   # → Service tribe-app → pod :8443 (HTTPS)
+---
+# Plain HTTP never reaches the app: the Gateway itself 301s it to HTTPS.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: tribe-https-redirect
+spec:
+  parentRefs: [{ name: tribe-gateway, sectionName: http }]
+  hostnames: ["tribe.internal.example"]
+  rules:
+    - filters:
+        - type: RequestRedirect
+          requestRedirect: { scheme: https, statusCode: 301 }
+---
+# The ALB health-checks the backend over HTTPS on the app's own port.
+# Without this it defaults to HTTP and every backend is marked UNHEALTHY.
+apiVersion: networking.gke.io/v1
+kind: HealthCheckPolicy
+metadata:
+  name: tribe-app-hc
+spec:
+  targetRef:
+    group: ""
+    kind: Service
+    name: tribe-app
+  default:
+    config:
+      type: HTTPS
+      httpsHealthCheck:
+        requestPath: /api/health
+        port: 8443
 ```
-Apply it (`kubectl apply -f ingress.yaml`), point your internal **DNS** record
-(`tribe.internal.example`) at the load balancer address
-(`kubectl get ingress tribe-ingress`), and keep `COOKIE_SECURE=true`. The LB sets
-`X-Forwarded-*`, which the app honours (uvicorn runs with `proxy_headers=True`). The
-pod's self-signed cert is only used on the LB→pod hop, which stays inside the VPC.
+
+Want to expose only part of the API, or split traffic? That is what **HTTP routes** are
+for — add `rules` to `tribe-app-route`. For example, keeping the admin surface off the
+gateway:
+
+```yaml
+  rules:
+    - matches: [{ path: { type: PathPrefix, value: /api/admin } }]
+      filters: [{ type: RequestRedirect, requestRedirect: { statusCode: 404 } }]
+    - matches: [{ path: { type: PathPrefix, value: / } }]
+      backendRefs: [{ name: tribe-app, port: 443 }]
+```
+
+#### 6.9.3 Apply and wire DNS
+
+```bash
+kubectl apply -f gateway.yaml
+
+# Wait until the Gateway is programmed, then read the ALB address
+kubectl wait --for=condition=Programmed gateway/tribe-gateway --timeout=10m
+kubectl get gateway tribe-gateway -o jsonpath='{.status.addresses[0].value}'   # e.g. 10.128.0.30
+```
+
+Point your internal **DNS** record (`tribe.internal.example`) at that address, and keep
+`COOKIE_SECURE=true`. The ALB sets `X-Forwarded-*`, which the app honours (uvicorn runs
+with `proxy_headers=True`).
 
 ### 6.10 Verify it works
 
@@ -827,9 +916,15 @@ pod's self-signed cert is only used on the LB→pod hop, which stays inside the 
 kubectl get pods                       # option A: tribe-app + postgres Running
                                        # option B2: tribe-app shows 2/2 (app + proxy)
 kubectl logs deploy/tribe-app -c app | grep -i "migration\|secours"   # migrations + break-glass pwd
-curl -k https://tribe.internal.example/api/health                     # {"status":"ok"}
+
+kubectl get gateway tribe-gateway      # PROGRAMMED=True + an ADDRESS
+kubectl get httproute                  # both routes Accepted, attached to the gateway
+
+curl https://tribe.internal.example/api/health          # {"status":"ok"} — via the ALB
+curl -I http://tribe.internal.example/                  # 301 to https:// (the redirect route)
 ```
-*(`-k` because the pod's certificate is self-signed until you import yours — §6.9.)*
+*(No `-k` here: the ALB presents **your** PKI certificate. The pod's self-signed cert is
+only used on the internal ALB→pod hop.)*
 Then open the URL in a browser, log in with the break-glass admin
 (`BREAKGLASS_EMAIL` / the password you set, or the random one printed in the logs on
 first boot), and finish setup (SSO, SMTP, backups) from the admin UI (§9–§10).
@@ -847,6 +942,11 @@ first boot), and finish setup (SSO, SMTP, backups) from the admin UI (§9–§10
 | Proxy logs: `unable to connect… dial tcp … i/o timeout` | the pod can't route to the instance's private IP | The instance needs **private services access** on the VPC (§6.7.1), and the cluster must be on that same VPC (§6.6). |
 | App logs: `password authentication failed for user "tribe"` (proxy itself is fine) | the proxy authenticates the *connection*, not the DB *user* | `POSTGRES_PASSWORD` in `tribe-secrets` must match the password set by `gcloud sql users create` (§6.7.1). |
 | Readiness probe never passes, `curl` to :8000 refused | probe/Service pointing at port 8000 | The app listens on **8443 (HTTPS)** and 8080 (redirect) — never 8000. Probe must use `port: 8443, scheme: HTTPS`, and the Service `targetPort: 8443`. |
+| `Gateway` stuck, `Programmed=False`, never gets an address | the **proxy-only subnet** is missing | Create it once per VPC + region — §6.9.1 (`--purpose=REGIONAL_MANAGED_PROXY`). This is by far the most common Gateway failure. |
+| Gateway is up but every request returns **502** | the ALB is health-checking the backend over **HTTP**, while the pod speaks HTTPS | Both are required: `cloud.google.com/app-protocols: '{"https":"HTTPS"}'` on the Service (§6.8) **and** the `HealthCheckPolicy` with `type: HTTPS`, `port: 8443` (§6.9.2). Check backend health: `gcloud compute backend-services get-health …`. |
+| `HTTPRoute` shows `Accepted=False` / `NotAllowedByListeners` | hostname or `sectionName` mismatch | The route's `hostnames` must match the listener's `hostname`, and `parentRefs.sectionName` must name an existing listener (`https` / `http`). |
+| TLS error / wrong certificate in the browser | the `tribe-tls` secret is missing or holds the wrong cert | `kubectl get secret tribe-tls`; recreate it from your PKI cert (§6.9.1). The **ALB** serves this one — the pod's self-signed cert is never shown to users. |
+| `kubectl get gatewayclass` returns nothing | Gateway API not enabled (Standard cluster) | `gcloud container clusters update tribe-cluster --gateway-api=standard --region u-france-east1`. Autopilot has it on by default. |
 | Two pods race the migration on first deploy | scaled out too early | First rollout with **1 replica** (the manifest already does); scale up only after it's healthy. |
 
 ### 6.12 Ship a new version later
@@ -876,6 +976,13 @@ The new pod runs `alembic upgrade head` automatically. **Back up the database fi
 
 ## 7. AWS — ECS Fargate + RDS
 
+> ⚠️ **Not the supported exposure path.** Exposure is standardized on the **API Gateway
+> (Gateway API) + HTTP routes → internal ALB** topology of §6.9, which is GKE-specific.
+> This section is kept for reference only. If AWS ever becomes a real target, the
+> equivalent is **API Gateway (HTTP API) → VPC Link → internal ALB → ECS**, and this
+> section must be rewritten around it — do not publish the ECS service straight from a
+> public ALB.
+
 1. **Database**: create **RDS for PostgreSQL 16** (Multi-AZ for HA), a DB and user.
 2. **Image**: push to **ECR**.
 3. **Service**: an **ECS Fargate** service behind an **Application Load Balancer**:
@@ -900,12 +1007,13 @@ The new pod runs `alembic upgrade head` automatically. **Back up the database fi
 
 ## 8. Azure — Container Apps + PostgreSQL Flexible Server
 
-> ⚠️ **Same constraint as Cloud Run (§5).** Container Apps ingress forwards **plain
-> HTTP** to the container, while this image serves the app only over **HTTPS :8443**
-> (:8080 just redirects). **As shipped, the image is not deployable on Container Apps.**
-> Prefer **AKS** (mirror the GKE manifests in §6.8, including the Cloud-SQL-style proxy
-> pattern if you use one), **App Service for Containers with a TLS-passthrough setup**,
-> or a VM (§4). Commands kept below for reference.
+> ⚠️ **Not the supported exposure path, and not deployable as shipped.** Two separate
+> problems. (1) Exposure is standardized on the **API Gateway + HTTP routes → internal
+> ALB** topology of §6.9 — Container Apps' built-in ingress is not that. (2) Container
+> Apps forwards **plain HTTP** to the container, while this image serves the app only
+> over **HTTPS :8443** (:8080 just redirects), so it cannot run there at all. If Azure
+> becomes a real target, use **AKS** and port the §6.8/§6.9 manifests (the Gateway API is
+> portable; only the `gatewayClassName` changes). Commands kept below for reference.
 
 1. **Database**: **Azure Database for PostgreSQL — Flexible Server** (v16), a DB
    and user. Enable VNet/private access if possible.
@@ -930,7 +1038,11 @@ The new pod runs `alembic upgrade head` automatically. **Back up the database fi
 
 ## 9. Post-deployment checklist
 
-- [ ] `GET /api/health` returns `{"status":"ok"}` through the load balancer.
+- [ ] `GET /api/health` returns `{"status":"ok"}` **through the API Gateway** (the ALB
+      address), not just via `kubectl port-forward`.
+- [ ] `kubectl get gateway` shows `PROGRAMMED=True`; the `HTTPRoute`s are `Accepted`.
+- [ ] The app's `Service` is a **`ClusterIP`** — no `LoadBalancer`, no `Ingress` anywhere.
+- [ ] Plain HTTP on the gateway 301-redirects to HTTPS.
 - [ ] First admin login works (break-glass `BREAKGLASS_EMAIL` / `BREAKGLASS_PASSWORD`,
       or the random password printed in the logs).
 - [ ] `SECRET_KEY` and `POSTGRES_PASSWORD` are **not** defaults and come from a
@@ -966,10 +1078,10 @@ docker compose exec -T app python - < backend/scripts/seed_real_org.py
 - **Database**: a small managed instance (1–2 vCPU) covers typical tribe usage;
   size storage for snapshots/audit retention (configurable via
   `AUDIT_RETENTION_DAYS` / `PROGRESS_RETENTION_DAYS`).
-- **TLS**: the app terminates TLS **itself** on :8443 (import your certificate from
-  Administration → HTTPS / Certificats). Either pass TLS through to it (L4 LB) or
-  re-terminate upstream and forward to :8443 over HTTPS — the app trusts
-  `X-Forwarded-*` (uvicorn `proxy_headers=True`). Never route traffic to :8080 except
-  to catch plain-HTTP clients: that listener only 301-redirects.
+- **TLS**: the **API Gateway (internal ALB)** terminates TLS with your PKI certificate
+  (§6.9) and forwards to the pod over HTTPS on :8443, where the app terminates it again
+  with its own (self-signed) certificate. The app trusts `X-Forwarded-*` (uvicorn
+  `proxy_headers=True`). Never route gateway traffic to :8080 — that listener only
+  301-redirects; the gateway does the redirect itself.
 
 See also `docs/05-security.md` and `docs/06-operations-runbook.md`.
