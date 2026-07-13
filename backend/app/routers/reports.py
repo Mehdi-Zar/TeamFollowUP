@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from .. import status as st
 from ..database import get_db
-from ..deps import get_current_user, require_module
+from ..deps import get_current_user, require_capability, require_module
 from ..models import User
 from ..report import (build_dependencies_data, build_report_data, render_dependencies_html,
                       render_dependencies_pptx, render_html, render_pptx, render_roadmap_html,
@@ -18,11 +18,22 @@ from ..schemas import ReportSubscriptionIn, ReportSubscriptionOut
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 
-# The weekly report belongs to the review module; the roadmap + dashboard exports
-# belong to their own modules, so each stays available on its own toggle.
+# Two orthogonal gates on every export, and both are needed:
+#   * require_module  - is the feature switched on at all (admin toggles)?
+#   * require_capability - may THIS persona reach the section being exported?
+# An export is a copy of a section's data, so it must demand the very capability
+# that section demands. Without this, a persona denied "dashboard" could still
+# pull the whole dashboard as PPTX (the SPA hides the button; the API did not).
 _report_gate = Depends(require_module("review", "weekly_report"))
 _roadmap_gate = Depends(require_module("squad_content", "roadmap"))
 _dashboard_gate = Depends(require_module("dashboard"))
+
+# The weekly report aggregates the dashboard/review data, so it rides on the
+# dashboard capability (every built-in persona has it; a persona denied the
+# dashboard has no business receiving the same content by mail).
+_report_cap = Depends(require_capability("dashboard"))
+_roadmap_cap = Depends(require_capability("roadmap"))
+_dashboard_cap = Depends(require_capability("dashboard"))
 
 
 def _data(db: Session, user: User, tribe_id: int | None, year: int | None,
@@ -45,7 +56,7 @@ def _data(db: Session, user: User, tribe_id: int | None, year: int | None,
     return build_report_data(db, scope, year, since_days, lang=lang, squad_ids=squad_ids, viewer=user)
 
 
-@router.get("/weekly.html", response_class=HTMLResponse, dependencies=[_report_gate])
+@router.get("/weekly.html", response_class=HTMLResponse, dependencies=[_report_gate, _report_cap])
 def weekly_html(tribe_id: int | None = Query(default=None), year: int | None = Query(default=None),
                 since_days: int = Query(default=7, ge=1, le=365), squad_id: int | None = Query(default=None),
                 lang: str | None = Query(default=None),
@@ -54,7 +65,7 @@ def weekly_html(tribe_id: int | None = Query(default=None), year: int | None = Q
     return HTMLResponse(render_html(data, standalone=True))
 
 
-@router.get("/weekly.pptx", dependencies=[_report_gate])
+@router.get("/weekly.pptx", dependencies=[_report_gate, _report_cap])
 def weekly_pptx(tribe_id: int | None = Query(default=None), year: int | None = Query(default=None),
                 since_days: int = Query(default=7, ge=1, le=365), squad_id: int | None = Query(default=None),
                 lang: str | None = Query(default=None),
@@ -72,7 +83,7 @@ def weekly_pptx(tribe_id: int | None = Query(default=None), year: int | None = Q
     )
 
 
-@router.get("/dashboard.html", response_class=HTMLResponse, dependencies=[_dashboard_gate])
+@router.get("/dashboard.html", response_class=HTMLResponse, dependencies=[_dashboard_gate, _dashboard_cap])
 def dashboard_html(tribe_id: int | None = Query(default=None), year: int | None = Query(default=None),
                    since_days: int = Query(default=7, ge=1, le=365), squad_id: int | None = Query(default=None),
                    squad_ids: list[int] | None = Query(default=None),
@@ -84,7 +95,7 @@ def dashboard_html(tribe_id: int | None = Query(default=None), year: int | None 
     return HTMLResponse(render_html(data, standalone=True))
 
 
-@router.get("/dashboard.pptx", dependencies=[_dashboard_gate])
+@router.get("/dashboard.pptx", dependencies=[_dashboard_gate, _dashboard_cap])
 def dashboard_pptx(tribe_id: int | None = Query(default=None), year: int | None = Query(default=None),
                    since_days: int = Query(default=7, ge=1, le=365), squad_id: int | None = Query(default=None),
                    squad_ids: list[int] | None = Query(default=None),
@@ -104,7 +115,7 @@ def dashboard_pptx(tribe_id: int | None = Query(default=None), year: int | None 
     )
 
 
-@router.get("/roadmap.html", response_class=HTMLResponse, dependencies=[_roadmap_gate])
+@router.get("/roadmap.html", response_class=HTMLResponse, dependencies=[_roadmap_gate, _roadmap_cap])
 def roadmap_html(tribe_id: int | None = Query(default=None), year: int | None = Query(default=None),
                  since_days: int = Query(default=7, ge=1, le=365), squad_id: int | None = Query(default=None),
                  squad_ids: list[int] | None = Query(default=None),
@@ -115,7 +126,7 @@ def roadmap_html(tribe_id: int | None = Query(default=None), year: int | None = 
     return HTMLResponse(render_roadmap_html(data, standalone=True))
 
 
-@router.get("/roadmap.pptx", dependencies=[_roadmap_gate])
+@router.get("/roadmap.pptx", dependencies=[_roadmap_gate, _roadmap_cap])
 def roadmap_pptx(tribe_id: int | None = Query(default=None), year: int | None = Query(default=None),
                  since_days: int = Query(default=7, ge=1, le=365), squad_id: int | None = Query(default=None),
                  squad_ids: list[int] | None = Query(default=None),
@@ -144,7 +155,7 @@ def _dep_data(db: Session, user: User, tribe_id: int | None, year: int | None,
     return build_dependencies_data(db, scope, year, squad_ids=squad_ids, viewer=user, lang=lang, mode=mode)
 
 
-@router.get("/dependencies.html", response_class=HTMLResponse, dependencies=[_roadmap_gate])
+@router.get("/dependencies.html", response_class=HTMLResponse, dependencies=[_roadmap_gate, _roadmap_cap])
 def dependencies_html(tribe_id: int | None = Query(default=None), year: int | None = Query(default=None),
                       squad_ids: list[int] | None = Query(default=None), lang: str | None = Query(default=None),
                       mode: str = Query(default="cross_tribe"),
@@ -154,7 +165,7 @@ def dependencies_html(tribe_id: int | None = Query(default=None), year: int | No
     return HTMLResponse(render_dependencies_html(data, standalone=True))
 
 
-@router.get("/dependencies.pptx", dependencies=[_roadmap_gate])
+@router.get("/dependencies.pptx", dependencies=[_roadmap_gate, _roadmap_cap])
 def dependencies_pptx(tribe_id: int | None = Query(default=None), year: int | None = Query(default=None),
                       squad_ids: list[int] | None = Query(default=None), lang: str | None = Query(default=None),
                       mode: str = Query(default="cross_tribe"),
@@ -188,20 +199,20 @@ def _sub_out(db: Session, sub, squad_id: int | None) -> ReportSubscriptionOut:
     )
 
 
-@router.get("/subscriptions", response_model=list[ReportSubscriptionOut], dependencies=[_report_gate])
+@router.get("/subscriptions", response_model=list[ReportSubscriptionOut], dependencies=[_report_gate, _report_cap])
 def list_my_subscriptions(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     from ..subscriptions import list_subscriptions
     return [_sub_out(db, s, s.squad_id) for s in list_subscriptions(db, user)]
 
 
-@router.get("/subscription", response_model=ReportSubscriptionOut, dependencies=[_report_gate])
+@router.get("/subscription", response_model=ReportSubscriptionOut, dependencies=[_report_gate, _report_cap])
 def get_my_subscription(squad_id: int | None = Query(default=None),
                         db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     from ..subscriptions import get_subscription
     return _sub_out(db, get_subscription(db, user.id, squad_id), squad_id)
 
 
-@router.put("/subscription", response_model=ReportSubscriptionOut, dependencies=[_report_gate])
+@router.put("/subscription", response_model=ReportSubscriptionOut, dependencies=[_report_gate, _report_cap])
 def set_my_subscription(payload: ReportSubscriptionIn, db: Session = Depends(get_db),
                         user: User = Depends(get_current_user)):
     from ..subscriptions import set_subscription, user_can_see_squad
@@ -219,7 +230,7 @@ def set_my_subscription(payload: ReportSubscriptionIn, db: Session = Depends(get
     return _sub_out(db, sub, payload.squad_id)
 
 
-@router.post("/weekly/email", dependencies=[_report_gate])
+@router.post("/weekly/email", dependencies=[_report_gate, _report_cap])
 def weekly_email(payload: dict = Body(default=None), db: Session = Depends(get_db),
                  user: User = Depends(get_current_user)):
     """Send the report now to a chosen address (HTML body + PPTX attachment)."""

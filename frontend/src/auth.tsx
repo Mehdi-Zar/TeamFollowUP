@@ -105,8 +105,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const effectiveRole: Role | null = user ? user.role : null;
-  // Optimistic before load (avoid hiding the whole nav on first paint).
-  const can = (cap: Capability | string) => (capabilities ? !!capabilities[cap] : true);
+  // Fail CLOSED. `loading` stays true until loadPermissions() has run, and every
+  // guarded surface renders behind <Protected>, which shows a spinner while
+  // loading - so a null `capabilities` here never means "not fetched yet", it
+  // means the permissions call FAILED. Granting access in that case would show
+  // sections the persona is denied (the API still refuses them, but the UI must
+  // not invite the click).
+  const can = (cap: Capability | string) => (capabilities ? !!capabilities[cap] : false);
 
   return (
     <AuthContext.Provider

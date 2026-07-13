@@ -17,14 +17,20 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..deps import (ADMIN, SQUAD, TRIBE, can_manage_leave, can_see_leaves_of,
-                    get_current_user, record_audit, require_admin, require_module)
+                    get_current_user, record_audit, require_admin, require_capability,
+                    require_module)
 from ..leavesconfig import ACTIVE_STATUSES, leave_days
 from ..models import Leave, LeaveType, Member, Squad, Tribe, User, utcnow
 from ..schemas import (LeaveConfigIn, LeaveConfigOut, LeaveDecisionIn, LeaveIn,
                        LeaveOut, LeaveOverlapDay, LeaveTypeIn, LeaveTypeOut, LeaveUpdate)
 
+# Both gates, on every route: the module must be on (admin toggle) AND the
+# caller's persona must hold the "leaves" capability - the same one that reveals
+# the section in the SPA. Until now only the module was enforced, so a persona
+# with leaves=off was merely hidden from the menu, not denied by the API.
 router = APIRouter(prefix="/api/leaves", tags=["leaves"],
-                   dependencies=[Depends(require_module("leaves"))])
+                   dependencies=[Depends(require_module("leaves")),
+                                 Depends(require_capability("leaves"))])
 
 
 # ----- helpers -------------------------------------------------------------------
