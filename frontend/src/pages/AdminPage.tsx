@@ -5,7 +5,7 @@ import { useI18n } from "../i18n";
 import { useModule, useReloadConfig } from "../config";
 import { useAuth } from "../auth";
 import { AuditEntry, LeaveConfig, LeaveType, ModuleKey, Permissions, Persona, Role, Squad, SquadDetail, Tribe, User } from "../types";
-import { ErrorBanner, Spinner, Dot } from "../components/ui";
+import { ErrorBanner, Spinner, Dot, Modal, EmptyState } from "../components/ui";
 import { ADMIN_TABS_BY_ROLE, ALL_ROLES } from "../perms";
 import { useSetPageChrome } from "../components/pageChrome";
 
@@ -20,6 +20,7 @@ const TAB_LABEL: Record<string, string> = {
   modules: "admin.tab.modules",
   moderation: "admin.tab.moderation",
   auth: "admin.tab.auth",
+  api: "admin.tab.api",
   smtp: "admin.tab.smtp",
   tls: "admin.tab.tls",
   report: "admin.tab.report",
@@ -33,7 +34,7 @@ const TAB_LABEL: Record<string, string> = {
 const ADMIN_GROUPS: { titleKey: string; items: string[] }[] = [
   { titleKey: "admin.group.org", items: ["tribes", "tribe", "squads", "my_squads", "users", "personas"] },
   { titleKey: "admin.group.config", items: ["modules", "report", "leaves", "settings"] },
-  { titleKey: "admin.group.access", items: ["auth", "smtp", "tls"] },
+  { titleKey: "admin.group.access", items: ["auth", "api", "smtp", "tls"] },
   { titleKey: "admin.group.oversight", items: ["moderation", "logs", "audit"] },
 ];
 
@@ -102,6 +103,7 @@ export default function AdminPage() {
         {tab === "leaves" && <LeavesAdmin perms={perms} />}
         {tab === "moderation" && <ModerationAdmin />}
         {tab === "auth" && <AuthAdmin />}
+        {tab === "api" && <ApiAdmin />}
         {tab === "smtp" && <SmtpAdmin />}
         {tab === "tls" && <TlsAdmin />}
         {tab === "logs" && <LogExportAdmin />}
@@ -1888,6 +1890,204 @@ function AuditAdmin() {
           )}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// API keys: machine credentials for the read-only API.
+// The secret lives in this component's state for exactly as long as the modal is
+// open - it is never stored, never re-fetchable, and the server only ever keeps
+// its argon2 hash. Everything else about a key (prefix, scopes, usage) is public.
+// ---------------------------------------------------------------------------
+type ApiScope = { key: string; label: string; desc: string };
+type ApiKeyRow = {
+  id: number; name: string; prefix: string; scopes: string[]; tribe_id: number | null;
+  created_at: string; expires_at: string | null; last_used_at: string | null;
+  revoked_at: string | null; live: boolean;
+};
+
+function ApiAdmin() {
+  const { t, lang } = useI18n();
+  const [scopes, setScopes] = useState<ApiScope[]>([]);
+  const [keys, setKeys] = useState<ApiKeyRow[] | null>(null);
+  const [tribes, setTribes] = useState<Tribe[]>([]);
+  const [creating, setCreating] = useState(false);
+  const [secret, setSecret] = useState<{ name: string; secret: string } | null>(null);
+  const [copied, setCopied] = useState(false);
+  const { error, wrap } = useErr();
+
+  // Draft of the key being minted.
+  const [name, setName] = useState("");
+  const [picked, setPicked] = useState<string[]>([]);
+  const [tribeId, setTribeId] = useState<string>("");
+  const [expires, setExpires] = useState<string>("365");
+
+  async function load() {
+    const out = await api.get<{ scopes: ApiScope[]; keys: ApiKeyRow[] }>("/api/admin/api-keys");
+    setScopes(out.scopes);
+    setKeys(out.keys);
+  }
+  useEffect(() => {
+    load();
+    api.get<Tribe[]>("/api/tribes").then(setTribes).catch(() => setTribes([]));
+  }, []);
+
+  const fmt = (iso: string | null) =>
+    iso ? new Date(iso).toLocaleDateString(lang === "en" ? "en-GB" : "fr-FR") : "—";
+
+  async function create() {
+    await wrap(async () => {
+      const out = await api.post<ApiKeyRow & { secret: string }>("/api/admin/api-keys", {
+        name: name.trim(),
+        scopes: picked,
+        tribe_id: tribeId ? Number(tribeId) : null,
+        expires_in_days: expires ? Number(expires) : null,
+      });
+      setSecret({ name: out.name, secret: out.secret });   // the one and only time it exists client-side
+      setCreating(false);
+      setName(""); setPicked([]); setTribeId(""); setExpires("365");
+      await load();
+    });
+  }
+
+  async function revoke(k: ApiKeyRow) {
+    if (!window.confirm(t("api.revoke_confirm", { name: k.name }))) return;
+    await wrap(async () => { await api.post(`/api/admin/api-keys/${k.id}/revoke`, {}); await load(); });
+  }
+  async function remove(k: ApiKeyRow) {
+    if (!window.confirm(t("api.delete_confirm", { name: k.name }))) return;
+    await wrap(async () => { await api.del(`/api/admin/api-keys/${k.id}`); await load(); });
+  }
+
+  if (!keys) return <div className="spinner">{t("common.loading")}</div>;
+
+  return (
+    <div className="stack" style={{ gap: 16 }}>
+      <div>
+        <h3>{t("api.title")}</h3>
+        <p className="small muted">{t("api.intro")}</p>
+      </div>
+      {error && <ErrorBanner message={error} />}
+
+      {secret && (
+        <Modal
+          title={t("api.created_title")}
+          onClose={() => { setSecret(null); setCopied(false); }}
+          footer={<button className="btn" onClick={() => { setSecret(null); setCopied(false); }}>{t("api.close")}</button>}
+        >
+          <div className="stack" style={{ gap: 12 }}>
+            <ErrorBanner message={t("api.shown_once")} />
+            <code style={{ display: "block", padding: 12, background: "rgba(127,127,127,.12)",
+                           borderRadius: 6, wordBreak: "break-all", fontSize: 13 }}>
+              {secret.secret}
+            </code>
+            <button className="btn btn-secondary btn-sm" style={{ alignSelf: "flex-start" }}
+                    onClick={() => { navigator.clipboard?.writeText(secret.secret); setCopied(true); }}>
+              {copied ? t("api.copied") : t("api.copy")}
+            </button>
+            <div className="small muted">{t("api.usage_hint")}</div>
+          </div>
+        </Modal>
+      )}
+
+      {!creating && (
+        <button className="btn" style={{ alignSelf: "flex-start" }} onClick={() => setCreating(true)}>
+          {t("api.new")}
+        </button>
+      )}
+
+      {creating && (
+        <div className="card stack" style={{ gap: 12, padding: 16 }}>
+          <div className="row" style={{ gap: 12, flexWrap: "wrap" }}>
+            <div style={{ flex: 1, minWidth: 220 }}>
+              <label>{t("api.name")}</label>
+              <input value={name} onChange={(e) => setName(e.target.value)} placeholder={t("api.name_ph")} />
+            </div>
+            <div style={{ minWidth: 200 }}>
+              <label>{t("api.tribe")}</label>
+              <select value={tribeId} onChange={(e) => setTribeId(e.target.value)}>
+                <option value="">{t("api.tribe_all")}</option>
+                {tribes.map((tr) => <option key={tr.id} value={tr.id}>{tr.name}</option>)}
+              </select>
+            </div>
+            <div style={{ minWidth: 160 }}>
+              <label>{t("api.expires")}</label>
+              <input type="number" min={1} value={expires} onChange={(e) => setExpires(e.target.value)} />
+            </div>
+          </div>
+
+          <div>
+            <label>{t("api.scopes")}</label>
+            <div className="stack" style={{ gap: 6, marginTop: 6 }}>
+              {scopes.map((s) => (
+                <label key={s.key} className="row" style={{ gap: 8, alignItems: "flex-start" }}>
+                  <input
+                    type="checkbox"
+                    checked={picked.includes(s.key)}
+                    onChange={(e) => setPicked(e.target.checked ? [...picked, s.key] : picked.filter((x) => x !== s.key))}
+                  />
+                  <span>
+                    <code className="small">{s.key}</code> {"—"} {s.label}
+                    <div className="small muted">{s.desc}</div>
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div className="row" style={{ gap: 8 }}>
+            <button className="btn" disabled={!name.trim() || picked.length === 0} onClick={create}>
+              {t("api.create")}
+            </button>
+            <button className="btn btn-secondary" onClick={() => setCreating(false)}>{t("api.cancel")}</button>
+          </div>
+        </div>
+      )}
+
+      {keys.length === 0 && !creating && <EmptyState message={t("api.empty")} />}
+
+      {keys.length > 0 && (
+        <table className="table">
+          <thead>
+            <tr>
+              <th>{t("api.name")}</th>
+              <th>{t("api.key")}</th>
+              <th>{t("api.scopes")}</th>
+              <th>{t("api.tribe")}</th>
+              <th>{t("api.created")}</th>
+              <th>{t("api.last_used")}</th>
+              <th>{t("api.expires_at")}</th>
+              <th>{t("api.status")}</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {keys.map((k) => (
+              <tr key={k.id} style={{ opacity: k.live ? 1 : 0.55 }}>
+                <td>{k.name}</td>
+                <td><code className="small">{k.prefix}{"…"}</code></td>
+                <td className="small">{k.scopes.join(", ")}</td>
+                <td className="small">
+                  {k.tribe_id ? (tribes.find((tr) => tr.id === k.tribe_id)?.name ?? k.tribe_id) : t("api.tribe_all")}
+                </td>
+                <td className="small">{fmt(k.created_at)}</td>
+                <td className="small">{k.last_used_at ? fmt(k.last_used_at) : t("api.never_used")}</td>
+                <td className="small">{fmt(k.expires_at)}</td>
+                <td className="small">
+                  {k.revoked_at ? t("api.revoked") : k.live ? t("api.active") : t("api.expired")}
+                </td>
+                <td className="row" style={{ gap: 6, justifyContent: "flex-end" }}>
+                  {k.live && (
+                    <button className="btn btn-secondary btn-sm" onClick={() => revoke(k)}>{t("api.revoke")}</button>
+                  )}
+                  <button className="btn btn-danger btn-sm" onClick={() => remove(k)}>{t("api.delete")}</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </div>
   );
 }

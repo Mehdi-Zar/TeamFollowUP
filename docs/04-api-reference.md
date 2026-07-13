@@ -1,21 +1,49 @@
 # 04 — API Reference
 
-All endpoints are under `/api`. Auth is a **signed session cookie** (sent automatically by the SPA
-with `credentials: include`). The live, always-accurate contract is the FastAPI-generated
-**OpenAPI** at `/openapi.json` and Swagger UI at `/docs`. This page is a curated map.
+All endpoints are under `/api`. Humans authenticate with a **signed session cookie** (sent
+automatically by the SPA with `credentials: include`). Machines authenticate with an **API key**
+(`Authorization: Bearer trt_…`) on the read-only routes that opted in — see *Machine access* below.
+The live, always-accurate contract is the FastAPI-generated **OpenAPI** at `/openapi.json` and
+Swagger UI at `/docs`. This page is a curated map.
 
 ## Conventions / guards
 
 | Guard | Meaning |
 |-------|---------|
-| `get_current_user` | 401 if no valid session |
+| `get_current_user` | 401 if no valid session (**cookie only** — an API key is refused) |
 | `require_admin` | role == admin |
 | `require_tribe_or_admin` | admin or tribe_leader |
 | `require_writer` | admin / tribe_leader / squad_leader |
 | `require_module(m[,feature])` | 404 if the module/feature is disabled |
 | `require_capability(cap)` | 403 if the caller's persona lacks the section capability |
+| `caller(scope, capability)` | cookie **or** API key: a human is gated by `capability`, a key by `scope` |
 | `assert_can_edit_squad` | admin/tribe, or the squad's leader |
 | `assert_tribe_scope` | resource must be within the caller's tribe (non-admin) |
+
+## Machine access (API keys)
+
+Keys are minted in **Administration → API** (ADR-0011). They are **read-only**: a key can never
+write, and can never reach `/api/admin/*`. A route is reachable by a key only if it declares
+`caller(...)` — every other route stays cookie-only, so key auth is opt-in per route, never global.
+
+```bash
+curl -H "Authorization: Bearer trt_ab12cd34_<secret>" \
+     "https://tribe.example/api/reports/dashboard.pptx?since_days=7" -o dashboard.pptx
+```
+
+| Scope | Opens |
+|---|---|
+| `dashboard:read` | `GET /api/reports/dashboard.{html,pptx}` |
+| `roadmap:read` | `GET /api/reports/roadmap.{html,pptx}`, `GET /api/reports/dependencies.{html,pptx}` |
+| `reports:read` | `GET /api/reports/weekly.{html,pptx}` |
+| `org:read` | reserved for the org exports |
+| `budget:read` | **modifier, not a route**: without it, budget figures are stripped from every document served to the key |
+
+A key also carries a **tribe scope** (or "all tribes"). Out-of-scope data is `404`, not `403` — it
+is invisible, not merely forbidden.
+
+Responses: `401` unknown/expired/revoked key (or no credential at all), `403` valid key without the
+required scope.
 
 ## Endpoint map (by router)
 
