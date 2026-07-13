@@ -39,9 +39,10 @@ is. That's it. Everything below is detail around those two moves.
 6. **Expose it through the API Gateway.** The app is **never** published directly:
    you declare an **API Gateway** (Kubernetes **Gateway API**) with **HTTP routes**
    (`HTTPRoute`), and GKE provisions an **internal Application Load Balancer (ALB)**
-   in front of it. The ALB terminates TLS with **your PKI certificate** and forwards
-   to the pod, which itself serves **HTTPS on :8443**. This is the **only** supported
-   exposure path — no `Service: LoadBalancer`, no `Ingress`. → §6.9.
+   in front of it. The ALB terminates TLS — with a **self-signed certificate** to get
+   you running on day one, swapped for **your PKI certificate** later without touching
+   a manifest — and forwards to the pod, which itself serves **HTTPS on :8443**. This is
+   the **only** supported exposure path — no `Service: LoadBalancer`, no `Ingress`. → §6.9.
 7. **Check it works.** Open the site, log in with the break-glass admin, and click
    around. Then configure SSO, SMTP (for emails), backups, etc. from the admin UI. → §10.
 
@@ -63,7 +64,8 @@ untouched. That update procedure has its own document: **`13-maintenance-and-upd
   users ───▶│  API Gateway      │────▶│  Tribe Run Tracker (1 image) │───▶  PostgreSQL 16
   HTTPS 443 │  Gateway+HTTPRoute│HTTPS│  FastAPI + built React SPA   │      (managed or self-hosted)
             │  = internal ALB   │:8443│  HTTPS :8443 · HTTP :8080 →↑ │
-            │  your PKI cert    │     └──────────────────────────────┘
+            │  self-signed cert │     └──────────────────────────────┘
+            │  → PKI cert later │
             └───────────────────┘
 ```
 
@@ -268,12 +270,10 @@ Get these from your S3NS / platform administrator and write them down:
 - **Workforce pool + provider IDs** (`POOL_ID`, `PROVIDER_ID`) — they identify your
   company login. Needed once, in §6.3.
 - **IAM roles on your account**: *Artifact Registry Administrator* (create repo +
-  push), *Kubernetes Engine Admin* (deploy). Only if you pick managed Postgres
-  (§6.7 option B): *Cloud SQL Admin*, plus — for the proxy sidecar (option B2) —
-  *Service Account Admin* and *Project IAM Admin* to create and bind the workload
-  service account.
+  push), *Kubernetes Engine Admin* (deploy), and *Cloud SQL Admin* only if you pick
+  managed Postgres (§6.7 option B).
 - **The VPC to use** (`VPC_NAME` / `SUBNET_NAME`) — the cluster and the Cloud SQL
-  instance must share it (options B1/B2). Ask whether **private services access** is
+  instance must share it (option B). Ask whether **private services access** is
   already configured on it; if not, your network admin must set it up before §6.7.1.
 - **Two machines**:
   1. an **internet machine** (laptop / external VM) with **Docker** — to build &
@@ -283,9 +283,11 @@ Get these from your S3NS / platform administrator and write them down:
      S3NS, skip the save/transfer/load steps.)*
 - **An approved way to move files** across the gap (sanctioned USB, data diode,
   transfer portal — follow your site's rules).
-- **A TLS certificate** for your service hostname (your PKI/security team issues it).
-  Public Let's Encrypt can't validate an internal-only name, so you provide the cert
-  yourself in §6.9.
+- **A TLS certificate** for your service hostname — eventually. Public Let's Encrypt
+  can't validate an internal-only name, so your PKI/security team must issue it. **This
+  is not a blocker**: §6.9.1.a starts the gateway on a **self-signed** certificate you
+  generate yourself in one command, and swaps in the real one later with no manifest
+  change. Request the certificate now, deploy without waiting for it.
 
 ### 6.3 One-time: point `gcloud` at the S3NS "universe" (on the inside machine)
 
@@ -368,28 +370,18 @@ cd TeamFollowUP
 docker build -t tribe-run-tracker:1.0 .
 ```
 
-**Step 3 — Also fetch the database image you'll use.** Two choices (see §6.7):
-- **Option A — Postgres inside the cluster** (simpler to reason about, no managed DB):
+**Step 3 — Also fetch the database image, if you need one** (see §6.7):
+- **Option A — Postgres inside the cluster**: pull the image.
   ```bash
   docker pull postgres:16-alpine
   ```
-- **Option B — Cloud SQL** (managed Postgres on S3NS): you don't need a Postgres
-  image. You need the **Cloud SQL Auth Proxy** image *only if you connect through the
-  proxy sidecar* (**option B2**). If you connect straight to the instance's private IP
-  (**option B1**), you need **no extra image at all** — skip this pull.
-  ```bash
-  docker pull gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.11.0
-  ```
+- **Option B — Cloud SQL** (managed Postgres on S3NS, private IP): **no extra image at
+  all** — the app connects straight to the instance. Skip this step.
 
 **Step 4 — Save the images to files** (so you can carry them):
 ```bash
 docker save tribe-run-tracker:1.0 -o app.tar
-
-# Option A only:
-docker save postgres:16-alpine -o postgres.tar
-# Option B2 only (proxy sidecar):
-docker save gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.11.0 -o sqlproxy.tar
-# Option B1 (private IP): nothing else to save.
+docker save postgres:16-alpine    -o postgres.tar     # option A only
 ```
 
 **Step 5 — Move the `.tar` files into the S3NS zone** (approved USB / transfer).
@@ -398,7 +390,6 @@ docker save gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.11.0 -o sqlproxy.tar
 ```bash
 docker load -i app.tar
 docker load -i postgres.tar        # option A only
-docker load -i sqlproxy.tar        # option B2 only
 ```
 
 **Step 7 — Make sure docker can push to S3NS.** You already pointed `gcloud` at the
@@ -419,38 +410,33 @@ docker push u-france-east1-docker.s3nsregistry.fr/PROJECT/tribe/tribe-run-tracke
 docker tag postgres:16-alpine \
   u-france-east1-docker.s3nsregistry.fr/PROJECT/tribe/postgres:16-alpine
 docker push u-france-east1-docker.s3nsregistry.fr/PROJECT/tribe/postgres:16-alpine
-
-# Cloud SQL Auth Proxy — option B2 only (proxy sidecar)
-docker tag gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.11.0 \
-  u-france-east1-docker.s3nsregistry.fr/PROJECT/tribe/cloud-sql-proxy:2.11.0
-docker push u-france-east1-docker.s3nsregistry.fr/PROJECT/tribe/cloud-sql-proxy:2.11.0
 ```
 
-> **Don't skip the proxy push.** The sidecar in §6.8 (option B2) pulls
-> `…/tribe/cloud-sql-proxy:2.11.0` from **your** registry. The original
-> `gcr.io/…` address is on the internet and is **unreachable** from the S3NS
-> cluster — a pod referencing it stays in `ImagePullBackOff` forever.
+> **Every image the cluster runs must come from your S3NS registry.** A manifest that
+> still points at a public address (`gcr.io/…`, `docker.io/…`) leaves the pod in
+> `ImagePullBackOff` forever — that host is on the internet and the cluster cannot reach
+> it.
 
 **Step 9 — Confirm the images are there:**
 ```bash
 gcloud artifacts docker images list \
   u-france-east1-docker.s3nsregistry.fr/PROJECT/tribe
 ```
-You should see `tribe-run-tracker`, plus `postgres` (option A) or `cloud-sql-proxy`
-(option B2) if you pushed them. The images now live in S3NS; GKE pulls them with **no
-internet**. For every new version, repeat steps 2 → 9 with a new tag (`:1.1`, …) — see §6.12.
+You should see `tribe-run-tracker` (and `postgres`, if you chose option A). The images
+now live in S3NS; GKE pulls them with **no internet**. For every new version, repeat
+steps 2 → 9 with a new tag (`:1.1`, …) — see §6.12.
 
 ---
 
 ### 6.6 Create the GKE cluster
 
 GKE is the container runtime we use on S3NS. **Autopilot** means Google/S3NS manage
-the nodes for you — you only deploy pods (and Workload Identity is on by default, which
-option B2 needs). Create it once, then load its credentials so `kubectl` talks to it:
+the nodes for you — you only deploy pods. Create it once, then load its credentials so
+`kubectl` talks to it:
 ```bash
 gcloud container clusters create-auto tribe-cluster \
   --region u-france-east1 \
-  --network VPC_NAME --subnetwork SUBNET_NAME     # same VPC as Cloud SQL (options B1/B2)
+  --network VPC_NAME --subnetwork SUBNET_NAME     # same VPC as Cloud SQL (option B)
 gcloud container clusters get-credentials tribe-cluster --region u-france-east1
 ```
 *Check:* `kubectl get nodes` eventually lists nodes (Autopilot adds them on demand).
@@ -468,10 +454,10 @@ Pick **one** database option, then continue to §6.8:
   `postgres:16-alpine` image you pushed in §6.5. Good to get running fast. You own the
   backups (§10). → deploy the StatefulSet in §6.8, `POSTGRES_HOST=postgres`.
 - **Option B — Cloud SQL for PostgreSQL** (managed: automatic backups, HA, patching).
-  Two ways to connect, **B1** and **B2** — you must pick one, they need different
-  manifests. → §6.7.1 (create the instance), then §6.7.2 (B1) or §6.7.3 (B2).
+  The app connects **straight to the instance's private IP** over your VPC — no proxy,
+  no sidecar, no extra image. → §6.7.1 (create the instance), §6.7.2 (connect to it).
 
-#### 6.7.1 Option B — create the Cloud SQL instance (common to B1 and B2)
+#### 6.7.1 Option B — create the Cloud SQL instance
 
 Everything stays inside S3NS: the instance gets a **private IP** on your VPC and **no
 public IP** at all.
@@ -502,62 +488,27 @@ gcloud sql users create tribe --instance=tribe-db --password='<db password>' --p
 > (`gcloud compute addresses create … --purpose=VPC_PEERING` +
 > `gcloud services vpc-peerings connect`). Ask for it in §6.2 if it isn't there.
 
-Write down the two values you'll need next:
+Write down the **private IP** — it is the one value §6.8 needs:
 
 ```bash
-# The private IP  ->  needed for option B1
 gcloud sql instances describe tribe-db --project PROJECT \
   --format='value(ipAddresses[0].ipAddress)'          # e.g. 10.42.0.3
-
-# The connection name  ->  needed for option B2 (format PROJECT:REGION:INSTANCE)
-gcloud sql instances describe tribe-db --project PROJECT \
-  --format='value(connectionName)'                    # e.g. my-proj:u-france-east1:tribe-db
 ```
 
-#### 6.7.2 Option B1 — connect straight to the private IP (simplest)
+#### 6.7.2 Option B — connect to the private IP
 
-The app pod talks to `10.42.0.3:5432` directly over the VPC. **No sidecar, no extra
-image, no IAM plumbing.** It only requires that the GKE cluster and the instance sit on
-the **same VPC** (they do, if you passed the same `--network` in §6.6/§6.7.1).
+The app pod talks to `10.42.0.3:5432` directly over the VPC. **No proxy, no sidecar, no
+extra image, no IAM plumbing.** The one requirement is that the GKE cluster and the
+instance sit on the **same VPC** — they do, if you passed the same `--network` in §6.6
+and §6.7.1.
 
-What you do in §6.8: **skip** the Postgres StatefulSet, set `POSTGRES_HOST` to the
-private IP, and use the `app.yaml` labelled **option A/B1** (no sidecar).
+What you do in §6.8: **skip** the Postgres StatefulSet (Cloud SQL *is* the database) and
+set `POSTGRES_HOST` to that private IP.
 
-> The connection is unencrypted inside your VPC unless you enforce TLS on the instance
-> (`--require-ssl`). If your security policy demands encryption in transit to the DB,
-> use **B2** instead — the proxy always encrypts.
-
-#### 6.7.3 Option B2 — connect through the Cloud SQL Auth Proxy sidecar
-
-A small extra container (`cloud-sql-proxy`) runs **inside the app pod**, listens on
-`127.0.0.1:5432`, and forwards to Cloud SQL over an **IAM-authenticated, encrypted**
-tunnel. The app just connects to `127.0.0.1` and knows nothing about Cloud SQL.
-
-Use B2 when you want encryption in transit + IAM-based access control, or when the pod
-cannot route to the private IP directly. It costs one image (§6.5) and the IAM setup
-below.
-
-```bash
-# 1) A Google service account for the workload, allowed to open Cloud SQL connections
-gcloud iam service-accounts create tribe-sql --project PROJECT
-
-gcloud projects add-iam-policy-binding PROJECT \
-  --member="serviceAccount:tribe-sql@PROJECT.iam.gserviceaccount.com" \
-  --role="roles/cloudsql.client"
-
-# 2) Bind it to the Kubernetes service account used by the pod (Workload Identity).
-#    "default/tribe-app" = namespace default, KSA named tribe-app (created in §6.8).
-gcloud iam service-accounts add-iam-policy-binding \
-  tribe-sql@PROJECT.iam.gserviceaccount.com \
-  --role="roles/iam.workloadIdentityUser" \
-  --member="serviceAccount:PROJECT.svc.id.goog[default/tribe-app]" \
-  --project PROJECT
-```
-
-*Workload Identity is enabled by default on Autopilot clusters (§6.6) — nothing else to
-turn on.* What you do in §6.8: **skip** the Postgres StatefulSet, create the
-`ServiceAccount` + use the `app.yaml` labelled **option B2** (with the sidecar), and set
-`POSTGRES_HOST=127.0.0.1`.
+> **Encryption in transit to the DB.** The connection crosses only your VPC, and is
+> unencrypted unless you enforce TLS on the instance. If your security policy requires
+> it, turn it on at the instance level — no application change:
+> `gcloud sql instances patch tribe-db --require-ssl --project PROJECT`.
 
 ### 6.8 Deploy the application on GKE
 
@@ -606,18 +557,17 @@ spec:
   selector: { app: postgres }
   ports: [{ port: 5432, targetPort: 5432 }]
 ```
-*(Options B1 / B2 — Cloud SQL: **skip this StatefulSet entirely**, the database already
-exists. You created it in §6.7.1.)*
+*(Option B — Cloud SQL: **skip this StatefulSet entirely**, the database already exists.
+You created it in §6.7.1.)*
 
 **The application** (`app.yaml`). The container listens on **:8443 (HTTPS)** and
 **:8080 (HTTP → HTTPS redirect)** — *not* 8000. It generates a self-signed certificate
 on first boot (replace it later from **Administration → HTTPS / Certificats**), so the
 probes and the Service target **8443 over HTTPS**.
 
-Pick the variant matching your §6.7 choice.
-
-**Variant 1 — option A (in-cluster Postgres) or option B1 (Cloud SQL private IP).**
-Single container; the *only* difference between A and B1 is `POSTGRES_HOST`.
+**The same manifest serves both database options** — the *only* difference is
+`POSTGRES_HOST`: the `postgres` Service name (option A), or the Cloud SQL private IP
+(option B). One container, no sidecar.
 
 ```yaml
 apiVersion: apps/v1
@@ -637,7 +587,7 @@ spec:
             - { containerPort: 8080, name: http }
           env:
             - { name: POSTGRES_HOST, value: postgres }   # option A: the Service name
-            #  option B1 (Cloud SQL private IP):  value: "10.42.0.3"   ← from §6.7.1
+            #  option B (Cloud SQL):  value: "10.42.0.3"  ← the private IP from §6.7.1
             - { name: POSTGRES_PORT, value: "5432" }
             - { name: POSTGRES_DB, value: tribe }
             - { name: POSTGRES_USER, value: tribe }
@@ -667,108 +617,20 @@ spec:
   ports: [{ name: https, port: 443, targetPort: 8443 }]
 ```
 
-**Variant 2 — option B2 (Cloud SQL Auth Proxy sidecar).** Same app container, plus the
-proxy. The proxy is declared as a **native sidecar** (an `initContainer` with
-`restartPolicy: Always`), so Kubernetes starts it **before** the app and keeps it alive
-for the pod's whole life — this ordering is what makes the app's DB wait succeed on the
-first try. Note the `serviceAccountName` and the `ServiceAccount` bound to the Google
-service account from §6.7.3.
-
-```yaml
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: tribe-app                                     # the KSA named in the §6.7.3 binding
-  annotations:
-    iam.gke.io/gcp-service-account: tribe-sql@PROJECT.iam.gserviceaccount.com
----
-apiVersion: apps/v1
-kind: Deployment
-metadata: { name: tribe-app }
-spec:
-  replicas: 1                      # keep 1 for the first rollout (migrations); scale up after
-  selector: { matchLabels: { app: tribe-app } }
-  template:
-    metadata: { labels: { app: tribe-app } }
-    spec:
-      serviceAccountName: tribe-app                   # ← Workload Identity: no key file needed
-      initContainers:
-        - name: cloud-sql-proxy
-          restartPolicy: Always                       # ← makes it a *native sidecar* (GKE 1.29+)
-          image: u-france-east1-docker.s3nsregistry.fr/PROJECT/tribe/cloud-sql-proxy:2.11.0
-          args:
-            - "--private-ip"                          # stay inside the VPC (no public path)
-            - "--port=5432"                           # listen on 127.0.0.1:5432
-            - "--health-check"
-            - "--http-address=0.0.0.0"
-            - "--http-port=9801"
-            - "PROJECT:u-france-east1:tribe-db"       # ← the connectionName from §6.7.1
-          securityContext: { runAsNonRoot: true }
-          startupProbe:
-            httpGet: { path: /startup, port: 9801 }
-            periodSeconds: 2
-            failureThreshold: 30
-          resources:
-            requests: { cpu: "100m", memory: "128Mi" }
-      containers:
-        - name: app
-          image: u-france-east1-docker.s3nsregistry.fr/PROJECT/tribe/tribe-run-tracker:1.0
-          ports:
-            - { containerPort: 8443, name: https }
-            - { containerPort: 8080, name: http }
-          env:
-            - { name: POSTGRES_HOST, value: "127.0.0.1" }   # ← the proxy, in the same pod
-            - { name: POSTGRES_PORT, value: "5432" }
-            - { name: POSTGRES_DB, value: tribe }
-            - { name: POSTGRES_USER, value: tribe }
-            - { name: SEED_DEMO, value: "false" }
-            - { name: COOKIE_SECURE, value: "true" }
-            - { name: PUBLIC_HTTPS_PORT, value: "443" }
-            - { name: BREAKGLASS_EMAIL, value: admin@local }
-            - { name: SECRET_KEY, valueFrom: { secretKeyRef: { name: tribe-secrets, key: SECRET_KEY } } }
-            - { name: POSTGRES_PASSWORD, valueFrom: { secretKeyRef: { name: tribe-secrets, key: POSTGRES_PASSWORD } } }
-            - { name: BREAKGLASS_PASSWORD, valueFrom: { secretKeyRef: { name: tribe-secrets, key: BREAKGLASS_PASSWORD } } }
-          readinessProbe:
-            httpGet: { path: /api/health, port: 8443, scheme: HTTPS }
-            initialDelaySeconds: 20
-            periodSeconds: 10
-          resources:
-            requests: { cpu: "500m", memory: "1Gi" }
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: tribe-app
-  annotations:
-    cloud.google.com/app-protocols: '{"https":"HTTPS"}'   # the pod speaks HTTPS on 8443
-spec:
-  type: ClusterIP                                         # exposure is the Gateway's job (§6.9)
-  selector: { app: tribe-app }
-  ports: [{ name: https, port: 443, targetPort: 8443 }]
-```
-
-> **The password is still yours to manage.** The proxy authenticates the *connection*
-> (IAM), not the *database user* — `POSTGRES_PASSWORD` from the Secret is still required,
-> and it must be the password you set in §6.7.1. (Password-less IAM database
-> authentication would need `--auto-iam-authn` **and** a `cloudsql.iam` DB user; the app
-> builds its DSN with a password, so stay on the classic user/password shown here.)
-
 **Apply, then check:**
 ```bash
-# Option A:
+# Option A (in-cluster Postgres):
 kubectl apply -f tribe-secrets.yaml -f postgres.yaml -f app.yaml
-# Options B1 / B2 (no postgres.yaml — Cloud SQL is the database):
+# Option B (Cloud SQL — no postgres.yaml, the database already exists):
 kubectl apply -f tribe-secrets.yaml -f app.yaml
 
 kubectl rollout status deployment/tribe-app
-kubectl logs deploy/tribe-app -c app | grep -i "migration\|secours"   # migrations + break-glass
-kubectl logs deploy/tribe-app -c cloud-sql-proxy                      # option B2: "ready for new connections"
+kubectl logs deploy/tribe-app | grep -i "migration\|secours"   # migrations + break-glass
 ```
 The container entrypoint waits for the database (60 × 2 s), runs `alembic upgrade head`,
 then starts the server — so the first pod migrates the DB. Once healthy, scale with
 `kubectl scale deployment/tribe-app --replicas=3` (the in-process scheduler is
-multi-replica safe via a Postgres advisory lock); with option B2 each replica gets its
-own proxy sidecar automatically.
+multi-replica safe via a Postgres advisory lock).
 
 > **At this point the app runs but nobody can reach it** — the `Service` is a
 > `ClusterIP` on purpose. Publishing it is §6.9's job (API Gateway + HTTP routes → ALB).
@@ -791,32 +653,72 @@ backend); GKE provisions the ALB for you and keeps it in sync:
 ```
    user ──HTTPS 443──▶  Gateway (gke-l7-rilb)  ──▶  HTTPRoute  ──▶  Service tribe-app (ClusterIP)
                         = internal ALB              path rules        │  app-protocols: HTTPS
-                        your PKI cert                                 ▼
-                                                                 pod :8443 (HTTPS)
+                        cert: self-signed                             ▼
+                        first, PKI later                         pod :8443 (HTTPS)
 ```
 
-Two certificates are in play, and that is normal: the **ALB** presents *your PKI
-certificate* to users (the `tribe-tls` secret below), and the **pod** presents its
-self-signed one on the internal ALB→pod hop, which never leaves the VPC.
+Two certificates are in play, and that is normal: the **ALB** presents the certificate in
+the `tribe-tls` secret to users, and the **pod** presents its own self-signed one on the
+internal ALB→pod hop, which never leaves the VPC.
 
 #### 6.9.1 One-time prerequisites
 
 ```bash
-# 1) A proxy-only subnet — the regional internal ALB runs its Envoy proxies here.
-#    Without it the Gateway stays PROGRAMMING/False forever. One per VPC + region.
+# A proxy-only subnet — the regional internal ALB runs its Envoy proxies here.
+# Without it the Gateway stays PROGRAMMING/False forever. One per VPC + region.
 gcloud compute networks subnets create tribe-proxy-only \
   --purpose=REGIONAL_MANAGED_PROXY --role=ACTIVE \
   --region=u-france-east1 --network=VPC_NAME --range=10.129.0.0/23 \
   --project=PROJECT
-
-# 2) Your PKI certificate for the service hostname (§6.2), as a k8s secret
-kubectl create secret tls tribe-tls --cert=server.crt --key=server.key
 ```
 
 *The Gateway API CRDs are **already installed** on Autopilot clusters (§6.6) — check with
 `kubectl get gatewayclass`, you should see `gke-l7-rilb`. On a Standard cluster, enable
 them once with `gcloud container clusters update tribe-cluster --gateway-api=standard
 --region u-france-east1`.*
+
+#### 6.9.1.a The gateway certificate — start self-signed, switch to PKI later
+
+The Gateway's HTTPS listener needs a certificate in a secret named **`tribe-tls`**.
+Getting one issued by your PKI takes days; you do **not** have to wait for it to bring
+the platform up. Both paths below produce the **same secret name**, so **the manifests in
+§6.9.2 never change** — you swap the content when the real certificate arrives.
+
+**Step 1 — self-signed, to get running now.** Good for the first deploy, internal
+validation and demos. Users will see a browser warning, which is expected.
+
+```bash
+# Generate a self-signed cert for the service hostname (valid 1 year).
+# The SAN is what browsers check — the CN alone is ignored by modern browsers.
+openssl req -x509 -newkey rsa:2048 -nodes -days 365 \
+  -keyout tls.key -out tls.crt \
+  -subj "/CN=tribe.internal.example/O=Tribe Run Tracker" \
+  -addext "subjectAltName=DNS:tribe.internal.example"
+
+kubectl create secret tls tribe-tls --cert=tls.crt --key=tls.key
+```
+
+> **What this does and does not give you.** Traffic is **encrypted** exactly as with a
+> real certificate — but it is **not authenticated**: nothing proves the server is really
+> yours, so browsers show "your connection is not private" and users must click through.
+> That is acceptable for a pilot on an internal network; it is **not** acceptable for
+> production. To silence the warning without a PKI, have your IT team distribute
+> `tls.crt` as a trusted root to the client machines.
+
+**Step 2 — swap in your PKI certificate when you get it.** No manifest edit, no Gateway
+recreation. Replace the secret's content and the ALB picks it up within a minute:
+
+```bash
+kubectl create secret tls tribe-tls \
+  --cert=server.crt --key=server.key \
+  --dry-run=client -o yaml | kubectl apply -f -   # overwrite in place
+
+kubectl get gateway tribe-gateway -o jsonpath='{.status.conditions}'   # still Programmed=True
+```
+
+*(`server.crt` must be the **full chain** — your server certificate followed by any
+intermediate CA certificates — otherwise some clients reject it even though a browser
+accepts it.)*
 
 #### 6.9.2 The Gateway and its routes (`gateway.yaml`)
 
@@ -913,18 +815,19 @@ with `proxy_headers=True`).
 ### 6.10 Verify it works
 
 ```bash
-kubectl get pods                       # option A: tribe-app + postgres Running
-                                       # option B2: tribe-app shows 2/2 (app + proxy)
-kubectl logs deploy/tribe-app -c app | grep -i "migration\|secours"   # migrations + break-glass pwd
+kubectl get pods                       # tribe-app Running (+ postgres, with option A)
+kubectl logs deploy/tribe-app | grep -i "migration\|secours"   # migrations + break-glass pwd
 
 kubectl get gateway tribe-gateway      # PROGRAMMED=True + an ADDRESS
 kubectl get httproute                  # both routes Accepted, attached to the gateway
 
-curl https://tribe.internal.example/api/health          # {"status":"ok"} — via the ALB
+curl -k https://tribe.internal.example/api/health       # {"status":"ok"} — via the ALB
 curl -I http://tribe.internal.example/                  # 301 to https:// (the redirect route)
 ```
-*(No `-k` here: the ALB presents **your** PKI certificate. The pod's self-signed cert is
-only used on the internal ALB→pod hop.)*
+*Drop the `-k` once the gateway serves your **PKI** certificate (§6.9.1.a step 2) — that
+is precisely the check that the swap worked. While the gateway is still on the
+**self-signed** certificate, `-k` is required and browsers will warn; that is expected,
+not a misconfiguration.*
 Then open the URL in a browser, log in with the break-glass admin
 (`BREAKGLASS_EMAIL` / the password you set, or the random one printed in the logs on
 first boot), and finish setup (SSO, SMTP, backups) from the admin UI (§9–§10).
@@ -936,16 +839,17 @@ first boot), and finish setup (SSO, SMTP, backups) from the admin UI (§9–§10
 | Pod stuck `ImagePullBackOff` | wrong registry host, image not pushed, or no pull permission | Check the `image:` host is `u-france-east1-docker.s3nsregistry.fr/PROJECT/tribe/…`; re-run §6.5 step 9 to confirm it exists; ensure the cluster's service account has *Artifact Registry Reader*. |
 | `gcloud` errors / wrong account | gcloud not on the S3NS universe | Re-run §6.3; check `gcloud config list` shows `universe_domain = s3nsapis.fr`. |
 | `docker push` denied | docker not authenticated to S3NS | Re-run `gcloud auth configure-docker u-france-east1-docker.s3nsregistry.fr` (§6.4). |
-| App pod crashes, logs show DB connection refused | wrong `POSTGRES_HOST` / DB not up | **A**: `kubectl get pods` — is `postgres` Running? Host must be `postgres`. **B1**: host = the instance's **private IP** (§6.7.1) and the cluster must be on the same VPC (§6.6). **B2**: host must be `127.0.0.1` — check the proxy logs. |
-| Proxy sidecar `ImagePullBackOff` | you pulled `cloud-sql-proxy` but never pushed it to the S3NS registry | §6.5 step 8: re-tag + push it. The `gcr.io/…` address is unreachable from the air-gapped cluster — the `image:` must be `u-france-east1-docker.s3nsregistry.fr/PROJECT/tribe/cloud-sql-proxy:2.11.0`. |
-| Proxy logs: `failed to refresh…: permission denied` / 403 | Workload Identity binding missing or wrong | Re-run §6.7.3: the GSA needs `roles/cloudsql.client`, and the binding member must be exactly `serviceAccount:PROJECT.svc.id.goog[default/tribe-app]` (namespace/KSA). The Deployment must set `serviceAccountName: tribe-app` and the KSA carry the `iam.gke.io/gcp-service-account` annotation. |
-| Proxy logs: `unable to connect… dial tcp … i/o timeout` | the pod can't route to the instance's private IP | The instance needs **private services access** on the VPC (§6.7.1), and the cluster must be on that same VPC (§6.6). |
-| App logs: `password authentication failed for user "tribe"` (proxy itself is fine) | the proxy authenticates the *connection*, not the DB *user* | `POSTGRES_PASSWORD` in `tribe-secrets` must match the password set by `gcloud sql users create` (§6.7.1). |
+| App pod crashes, logs show DB connection refused | wrong `POSTGRES_HOST` / DB not up | **A**: `kubectl get pods` — is `postgres` Running? Host must be the Service name `postgres`. **B**: host must be the instance's **private IP** (§6.7.1), *not* a hostname and *not* `127.0.0.1`. |
+| App pod hangs on `[entrypoint] DB indisponible` then dies after 60 tries | the pod cannot route to the Cloud SQL private IP | The instance needs **private services access** on the VPC, and the cluster must sit on that **same VPC** (§6.6 `--network`). Check from inside the cluster: `kubectl run -it --rm pg --image=… -- psql -h 10.42.0.3 -U tribe`. |
+| App logs: `password authentication failed for user "tribe"` | `POSTGRES_PASSWORD` mismatch | The value in `tribe-secrets` must equal the password set by `gcloud sql users create` (§6.7.1). |
+| App logs: `no pg_hba.conf entry … SSL off` | the instance enforces TLS (`--require-ssl`) | Either drop the requirement, or keep it and configure the client TLS material — the app connects with plain psycopg2 settings. |
 | Readiness probe never passes, `curl` to :8000 refused | probe/Service pointing at port 8000 | The app listens on **8443 (HTTPS)** and 8080 (redirect) — never 8000. Probe must use `port: 8443, scheme: HTTPS`, and the Service `targetPort: 8443`. |
 | `Gateway` stuck, `Programmed=False`, never gets an address | the **proxy-only subnet** is missing | Create it once per VPC + region — §6.9.1 (`--purpose=REGIONAL_MANAGED_PROXY`). This is by far the most common Gateway failure. |
 | Gateway is up but every request returns **502** | the ALB is health-checking the backend over **HTTP**, while the pod speaks HTTPS | Both are required: `cloud.google.com/app-protocols: '{"https":"HTTPS"}'` on the Service (§6.8) **and** the `HealthCheckPolicy` with `type: HTTPS`, `port: 8443` (§6.9.2). Check backend health: `gcloud compute backend-services get-health …`. |
 | `HTTPRoute` shows `Accepted=False` / `NotAllowedByListeners` | hostname or `sectionName` mismatch | The route's `hostnames` must match the listener's `hostname`, and `parentRefs.sectionName` must name an existing listener (`https` / `http`). |
-| TLS error / wrong certificate in the browser | the `tribe-tls` secret is missing or holds the wrong cert | `kubectl get secret tribe-tls`; recreate it from your PKI cert (§6.9.1). The **ALB** serves this one — the pod's self-signed cert is never shown to users. |
+| Browser: "your connection is not private" / `NET::ERR_CERT_AUTHORITY_INVALID` | the gateway is still on the **self-signed** certificate | Expected — click through, or swap in your PKI cert (§6.9.1.a step 2). Not a misconfiguration. |
+| `Gateway` listener `Programmed=False`, `Invalid certificate` | the `tribe-tls` secret is missing, or key and cert don't match | `kubectl get secret tribe-tls`; recreate it (§6.9.1.a). The **ALB** serves this certificate — the pod's own self-signed one is never shown to users. |
+| Browser accepts the cert but a CLI client rejects it | the secret holds the leaf certificate without its **intermediate CA chain** | Rebuild `server.crt` as the full chain (leaf + intermediates) and re-apply the secret (§6.9.1.a). |
 | `kubectl get gatewayclass` returns nothing | Gateway API not enabled (Standard cluster) | `gcloud container clusters update tribe-cluster --gateway-api=standard --region u-france-east1`. Autopilot has it on by default. |
 | Two pods race the migration on first deploy | scaled out too early | First rollout with **1 replica** (the manifest already does); scale up only after it's healthy. |
 
@@ -1078,10 +982,10 @@ docker compose exec -T app python - < backend/scripts/seed_real_org.py
 - **Database**: a small managed instance (1–2 vCPU) covers typical tribe usage;
   size storage for snapshots/audit retention (configurable via
   `AUDIT_RETENTION_DAYS` / `PROGRESS_RETENTION_DAYS`).
-- **TLS**: the **API Gateway (internal ALB)** terminates TLS with your PKI certificate
-  (§6.9) and forwards to the pod over HTTPS on :8443, where the app terminates it again
-  with its own (self-signed) certificate. The app trusts `X-Forwarded-*` (uvicorn
-  `proxy_headers=True`). Never route gateway traffic to :8080 — that listener only
-  301-redirects; the gateway does the redirect itself.
+- **TLS**: the **API Gateway (internal ALB)** terminates TLS (§6.9) — self-signed at
+  first, your PKI certificate once issued — and forwards to the pod over HTTPS on :8443,
+  where the app terminates it again with its own self-signed certificate. The app trusts
+  `X-Forwarded-*` (uvicorn `proxy_headers=True`). Never route gateway traffic to :8080 —
+  that listener only 301-redirects; the gateway does the redirect itself.
 
 See also `docs/05-security.md` and `docs/06-operations-runbook.md`.
