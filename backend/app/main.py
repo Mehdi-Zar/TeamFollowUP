@@ -42,7 +42,10 @@ from .routers import (
     tribes,
 )
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+from .logconfig import configure_logging
+
+# Text lines locally, GCP Cloud Logging JSON when LOG_FORMAT=json (see logconfig).
+configure_logging(settings.log_format, settings.log_level)
 
 app = FastAPI(
     title=settings.app_name,

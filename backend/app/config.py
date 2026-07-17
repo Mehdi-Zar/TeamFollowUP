@@ -33,6 +33,21 @@ class Settings(BaseSettings):
     cookie_secure: bool = False
     cookie_samesite: str = "lax"  # lax | strict | none
 
+    # --- Serving / TLS termination ---
+    # tls_enabled=True (default, local/standalone): uvicorn terminates TLS itself
+    # on HTTPS_PORT (see server.py + tls.py). tls_enabled=False: the app serves
+    # plain HTTP on http_port and lets the infrastructure terminate TLS - the
+    # supported GKE model (Gateway API + ALB do TLS, the pod speaks HTTP).
+    tls_enabled: bool = True
+    http_port: int = 8000
+
+    # --- Logging ---
+    # "text" = human-readable lines (local dev). "json" = GCP Cloud Logging
+    # structured entries (severity/message/time) that the GKE logging agent parses
+    # straight off stdout - set LOG_FORMAT=json in the cluster.
+    log_format: str = "text"  # text | json
+    log_level: str = "INFO"
+
     # --- Hardening / retention ---
     login_max_attempts: int = 10        # per IP per window (0 = disabled)
     login_window_seconds: int = 300     # 5 min
