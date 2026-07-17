@@ -49,10 +49,10 @@ PW = hash_password("x")
 NASTY = [
     "", "   ", "\t\n ", "A" * 2500,
     "R&D <team> \"quotes\" 'apos' & <b>bold</b>",   # XML metacharacters
-    "Impact 90% ↑ — coûts ↓  €1 234,56",             # unicode, em-dash, euro
+    "Impact 90% ↑ - coûts ↓  €1 234,56",             # unicode, em-dash, euro
     "🚀 Livraison 🎯 clôturée ✅", "café naïve façade Œuvre",
     "line1\nline2\rline3", "vt\x0bff\x0cbel\x07nul\x00us\x1f",  # control chars
-    "Squad — Data.", "＜full-width＞", "‮RTL override‬",
+    "Squad - Data.", "＜full-width＞", "‮RTL override‬",
 ]
 RAGS = ["green", "amber", "red", "grey", "weird", None]
 STATUSES = ["on_track", "at_risk", "blocked", "done", "???", None]

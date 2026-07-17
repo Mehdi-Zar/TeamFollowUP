@@ -101,10 +101,10 @@ def _run(squad_id: int, event: str, actor_name: str | None, year: int | None) ->
         who = f" · {actor_name}" if actor_name else ""
         if lang == "en":
             subject = f"[Reporting] {squad.name}" + (f" ({tribe})" if tribe else "") + \
-                      f" — {label} updated{who}"
+                      f" - {label} updated{who}"
         else:
             subject = f"[Reporting] {squad.name}" + (f" ({tribe})" if tribe else "") + \
-                      f" — {label} mis à jour{who}"
+                      f" - {label} mis à jour{who}"
 
         sent = 0
         seen = set()

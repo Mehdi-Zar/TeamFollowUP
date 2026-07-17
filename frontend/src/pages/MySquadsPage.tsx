@@ -6,6 +6,7 @@ import { Budget, Member, Squad, SquadDetail, Tribe, User } from "../types";
 import { ErrorBanner, Spinner, Dot, Modal, EmptyState } from "../components/ui";
 import { useSetPageChrome } from "../components/pageChrome";
 import { useModule } from "../config";
+import { OtdPanel } from "../components/OtdPanel";
 
 const RAGS: Array<"green" | "amber" | "red"> = ["green", "amber", "red"];
 
@@ -77,12 +78,6 @@ function TribeLeaderSquads() {
   );
 }
 
-function ragCounts(objs: { rag_status: string }[]) {
-  return { green: objs.filter((o) => o.rag_status === "green").length,
-           amber: objs.filter((o) => o.rag_status === "amber").length,
-           red: objs.filter((o) => o.rag_status === "red").length };
-}
-
 function SquadCard({ squadId, leaders, onChanged, onError }: {
   squadId: number; leaders: User[]; onChanged: () => void; onError: (m: string) => void;
 }) {
@@ -97,8 +92,6 @@ function SquadCard({ squadId, leaders, onChanged, onError }: {
   useEffect(() => { load(); }, [squadId]);
   const kpisOn = useModule()("squad_content", "kpis");
   if (!d) return <div className="card spinner">{t("common.loading")}</div>;
-
-  const counts = ragCounts(d.objectives);
 
   return (
     <div className="card stack" style={{ gap: 10 }}>
@@ -115,22 +108,8 @@ function SquadCard({ squadId, leaders, onChanged, onError }: {
             {d.kpis_enabled ? t("mysquads.kpis_on") : t("mysquads.kpis_off")}
           </span>
         )}
-        <span className="badge badge-navy">{t("mysquads.n_objectives", { n: d.objectives.length })}</span>
-        {counts.red > 0 && <span className="inline small" style={{ gap: 3 }}><Dot status="red" />{counts.red}</span>}
-        {counts.amber > 0 && <span className="inline small" style={{ gap: 3 }}><Dot status="amber" />{counts.amber}</span>}
-        {counts.green > 0 && <span className="inline small" style={{ gap: 3 }}><Dot status="green" />{counts.green}</span>}
+        {d.budget_enabled && <span className="badge badge-navy">{t("budget.title")}</span>}
       </div>
-
-      {d.objectives.length > 0 && (
-        <div className="stack" style={{ gap: 4 }}>
-          {d.objectives.slice(0, 3).map((o) => (
-            <div key={o.id} className="inline small" style={{ gap: 6 }}>
-              <Dot status={o.rag_status} /><span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{o.title}</span>
-            </div>
-          ))}
-          {d.objectives.length > 3 && <div className="small muted">+{d.objectives.length - 3}…</div>}
-        </div>
-      )}
 
       {edit && (
         <EditSquadModal
@@ -147,10 +126,10 @@ function SquadCard({ squadId, leaders, onChanged, onError }: {
 function EditSquadModal({ detail, leaders, onClose, onError }: {
   detail: SquadDetail; leaders: User[]; onClose: () => void; onError: (m: string) => void;
 }) {
-  const { t, rag } = useI18n();
+  const { t } = useI18n();
   const kpisOn = useModule()("squad_content", "kpis");
   const [d, setD] = useState<SquadDetail>(detail);
-  const [newObj, setNewObj] = useState("");
+  const [step, setStep] = useState(0);
 
   async function reload() {
     try { setD(await api.get<SquadDetail>(`/api/squads/${detail.id}`)); }
@@ -160,95 +139,107 @@ function EditSquadModal({ detail, leaders, onClose, onError }: {
     try { await fn(); await reload(); } catch (e) { onError(e instanceof ApiError ? e.message : "Erreur"); }
   }
   const patch = (p: any) => run(() => api.put(`/api/squads/${d.id}`, p));
-  const addObj = () => { if (newObj.trim()) run(async () => { await api.post("/api/objectives", { squad_id: d.id, year: d.year, title: newObj.trim() }); setNewObj(""); }); };
+
+  // One clean step at a time instead of one crowded form. The OTD is the squad's
+  // single dated annual commitment (there is no separate "objective" concept).
+  const steps = [
+    t("mysquads.step.infos"),
+    t("mysquads.step.otd"),
+    t("mysquads.step.budget"),
+  ];
+  const last = steps.length - 1;
 
   return (
     <Modal
+      width={680}
       title={`${t("action.edit")} - ${d.name}`}
       onClose={onClose}
       footer={
-        <>
+        <div className="between" style={{ width: "100%", alignItems: "center" }}>
           <button className="btn-danger btn-sm" onClick={() => { if (confirm(t("mysquads.del_confirm"))) run(async () => { await api.del(`/api/squads/${d.id}`); onClose(); }); }}>
             {t("action.delete")}
           </button>
-          <button className="btn-sm" onClick={onClose}>{t("action.close")}</button>
-        </>
+          <div className="inline" style={{ gap: 8 }}>
+            <button className="btn-secondary btn-sm" disabled={step === 0} onClick={() => setStep((s) => Math.max(0, s - 1))}>‹ {t("common.prev")}</button>
+            {step < last
+              ? <button className="btn-sm" onClick={() => setStep((s) => Math.min(last, s + 1))}>{t("common.next")} ›</button>
+              : <button className="btn-sm" onClick={onClose}>{t("action.close")}</button>}
+          </div>
+        </div>
       }
     >
-      <div className="stack" style={{ gap: 14 }}>
-        <div className="row" style={{ gap: 12 }}>
-          <div style={{ flex: 1, minWidth: 180 }}>
-            <label>{t("admin.name")}</label>
-            <input defaultValue={d.name} onBlur={(e) => e.target.value !== d.name && patch({ name: e.target.value })} />
-          </div>
-          <div style={{ flex: 1, minWidth: 160 }}>
-            <label>{t("admin.responsible")}</label>
-            <select value={d.leader_user_id ?? ""} onChange={(e) => patch({ leader_user_id: e.target.value ? Number(e.target.value) : null })}>
-              <option value="">-</option>
-              {leaders.map((u) => <option key={u.id} value={u.id}>{u.display_name}</option>)}
-            </select>
-          </div>
-          <div style={{ flex: 1, minWidth: 160 }}>
-            <label>{t("squad.type")}</label>
-            <SquadTypeField value={d.squad_type ?? "product"} onChange={(v) => patch({ squad_type: v })} t={t} />
-          </div>
-        </div>
-
-        <div className="row" style={{ gap: 12 }}>
-          <div style={{ flex: 1, minWidth: 200 }}>
-            <label>{t("squad.products")}</label>
-            <TagListEditor value={d.products ?? []} placeholder={t("squad.products_ph")}
-                           onChange={(v) => patch({ products: v })} />
-          </div>
-          <div style={{ flex: 1, minWidth: 200 }}>
-            <label>{t("squad.hardware")}</label>
-            <TagListEditor value={d.hardware ?? []} placeholder={t("squad.hardware_ph")}
-                           onChange={(v) => patch({ hardware: v })} />
-          </div>
-        </div>
-
-        {kpisOn && (
-          <label className="switch">
-            <input type="checkbox" checked={!!d.kpis_enabled} onChange={(e) => patch({ kpis_enabled: e.target.checked })} />
-            <span className="track"><span className="knob" /></span>
-            <span className="small">{t("admin.kpis_enabled")}</span>
-          </label>
-        )}
-
-        <div className="stack" style={{ gap: 6, borderTop: "1px solid var(--line)", paddingTop: 12 }}>
-          <div className="small strong">{t("budget.title")}</div>
-          <BudgetEditor
-            squadId={d.id} year={d.year}
-            enabled={!!d.budget_enabled} budget={d.budget}
-            canToggle onToggle={(v) => patch({ budget_enabled: v })}
-            onError={onError}
-          />
-        </div>
-
-        <div>
-          <div className="small muted" style={{ marginBottom: 6 }}>
-            {t("squad.objectives", { year: d.year })} - {t("admin.objectives_hint")}
-          </div>
-          {d.objectives.length === 0 && <div className="small muted">{t("squad.no_obj")}</div>}
-          {d.objectives.map((o) => (
-            <div key={o.id} className="item-row" style={{ gap: 8 }}>
-              <Dot status={o.rag_status} />
-              <input style={{ flex: 1 }} defaultValue={o.title} onBlur={(e) => e.target.value !== o.title && run(() => api.put(`/api/objectives/${o.id}`, { title: e.target.value }))} />
-              <span className="small muted" style={{ minWidth: 56 }}>{rag(o.rag_status)}</span>
-              <input type="date" className="w-auto" style={{ maxWidth: 150 }} title={t("obj.deadline")}
-                     value={o.target_date ? o.target_date.slice(0, 10) : ""}
-                     onChange={(e) => run(() => api.put(`/api/objectives/${o.id}`, { target_date: e.target.value || null }))} />
-              <button className="btn-ghost btn-sm" aria-label={t("action.delete")} onClick={() => run(() => api.del(`/api/objectives/${o.id}`))}>✕</button>
-            </div>
-          ))}
-          <div className="small muted" style={{ marginTop: 2 }}>{t("obj.status_auto")}</div>
-          <div className="inline" style={{ gap: 8, marginTop: 8 }}>
-            <input style={{ flex: 1 }} placeholder={t("admin.new_objective")} value={newObj}
-                   onChange={(e) => setNewObj(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addObj()} />
-            <button className="btn-sm" onClick={addObj} disabled={!newObj.trim()}>{t("admin.add")}</button>
-          </div>
-        </div>
+      {/* Step chips: shows where you are and lets you jump. */}
+      <div className="inline" style={{ gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
+        {steps.map((label, i) => (
+          <button key={i} onClick={() => setStep(i)}
+            className={`badge ${i === step ? "badge-navy" : "badge-grey"}`}
+            style={{ cursor: "pointer", border: 0 }}>
+            {i + 1}. {label}
+          </button>
+        ))}
       </div>
+
+      {/* Step 1 - Infos */}
+      {step === 0 && (
+        <div className="stack" style={{ gap: 14 }}>
+          <div className="row" style={{ gap: 12 }}>
+            <div style={{ flex: 1, minWidth: 180 }}>
+              <label>{t("admin.name")}</label>
+              <input defaultValue={d.name} onBlur={(e) => e.target.value !== d.name && patch({ name: e.target.value })} />
+            </div>
+            <div style={{ flex: 1, minWidth: 160 }}>
+              <label>{t("admin.responsible")}</label>
+              <select value={d.leader_user_id ?? ""} onChange={(e) => patch({ leader_user_id: e.target.value ? Number(e.target.value) : null })}>
+                <option value="">-</option>
+                {leaders.map((u) => <option key={u.id} value={u.id}>{u.display_name}</option>)}
+              </select>
+            </div>
+            <div style={{ flex: 1, minWidth: 160 }}>
+              <label>{t("squad.type")}</label>
+              <SquadTypeField value={d.squad_type ?? "product"} onChange={(v) => patch({ squad_type: v })} t={t} />
+            </div>
+          </div>
+          <div className="row" style={{ gap: 12 }}>
+            <div style={{ flex: 1, minWidth: 200 }}>
+              <label>{t("squad.products")}</label>
+              <TagListEditor value={d.products ?? []} placeholder={t("squad.products_ph")}
+                             onChange={(v) => patch({ products: v })} />
+            </div>
+            <div style={{ flex: 1, minWidth: 200 }}>
+              <label>{t("squad.hardware")}</label>
+              <TagListEditor value={d.hardware ?? []} placeholder={t("squad.hardware_ph")}
+                             onChange={(v) => patch({ hardware: v })} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Step 2 - OTD (On-Time Delivery): the squad's single dated annual commitment */}
+      {step === 1 && (
+        <OtdPanel squad={d} canManage onChange={reload} />
+      )}
+
+      {/* Step 3 - Budget & KPIs */}
+      {step === 2 && (
+        <div className="stack" style={{ gap: 14 }}>
+          {kpisOn && (
+            <label className="switch">
+              <input type="checkbox" checked={!!d.kpis_enabled} onChange={(e) => patch({ kpis_enabled: e.target.checked })} />
+              <span className="track"><span className="knob" /></span>
+              <span className="small">{t("admin.kpis_enabled")}</span>
+            </label>
+          )}
+          <div className="stack" style={{ gap: 6 }}>
+            <div className="small strong">{t("budget.title")}</div>
+            <BudgetEditor
+              squadId={d.id} year={d.year}
+              enabled={!!d.budget_enabled} budget={d.budget}
+              canToggle onToggle={(v) => patch({ budget_enabled: v })}
+              onError={onError}
+            />
+          </div>
+        </div>
+      )}
     </Modal>
   );
 }

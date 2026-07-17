@@ -27,7 +27,6 @@ TLS_KEY = "tls"
 def _defaults() -> dict:
     return {
         "mode": "self_signed",       # self_signed | custom
-        "redirect_http": True,        # 301 plain HTTP -> HTTPS
         "self_signed": {},            # {cn, sans, generated_at}
         "leaf_cert_pem": "",          # active server certificate (PEM)
         "leaf_key_pem": "",           # active private key (PEM, unencrypted) - never exposed
@@ -221,22 +220,9 @@ def remove_ca(db: Session, ca_id: str) -> dict:
     return status(db)
 
 
-def set_options(db: Session, patch: dict) -> dict:
-    cfg = _read(db)
-    if "redirect_http" in patch:
-        cfg["redirect_http"] = bool(patch["redirect_http"])
-    _write(db, cfg)
-    db.commit()
-    return status(db)
-
-
 # ---------------------------------------------------------------------------
 # Read models
 # ---------------------------------------------------------------------------
-
-def redirect_http_enabled(db: Session) -> bool:
-    return bool(_read(db).get("redirect_http", True))
-
 
 def status(db: Session) -> dict:
     """Non-secret status for the admin UI. Never returns the private key."""
@@ -253,7 +239,6 @@ def status(db: Session) -> dict:
     ]
     return {
         "mode": cfg.get("mode", "self_signed"),
-        "redirect_http": bool(cfg.get("redirect_http", True)),
         "self_signed": cfg.get("self_signed", {}),
         "active": active,
         "chain_len": len(tls.split_pem_bundle(cfg["bundled_chain_pem"])) if cfg.get("bundled_chain_pem") else 0,

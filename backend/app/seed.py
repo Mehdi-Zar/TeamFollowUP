@@ -15,18 +15,23 @@ from sqlalchemy.orm import Session
 from . import status as st
 from .config import settings
 from .models import (
+    Committee,
     FeedPost,
     FeedReaction,
     FeedReply,
+    Initiative,
+    KeyMessage,
     Kpi,
     Member,
     Notification,
     Objective,
     OrgNode,
+    Otd,
     QuarterProgress,
     ReportSnapshot,
     RoadmapItem,
     Squad,
+    SquadBudget,
     Tribe,
     User,
 )
@@ -440,6 +445,67 @@ def run_seed(db: Session) -> None:
     db.add(Notification(user_id=hugo.id, kind="tweet", actor_name="Léo Martin",
                         excerpt="Migration FinOps terminée : -12% sur la facture AWS ce trimestre.", link="/fil",
                         is_read=False, created_at=now - timedelta(days=1)))
+
+    # ---- Initiatives (tribe-leader strategic bets, visible to all, in exports) ----
+    def initiative(tribe, title, sq, owner, q, desc=None):
+        db.add(Initiative(tribe_id=tribe.id, year=year, title=title,
+                          squad_id=sq.id if sq else None, owner=owner,
+                          deadline=qdate(q), description=desc))
+    initiative(tribe_a, "Souveraineté cloud & FinOps", aws, "Nadia Khaldi", 4,
+               "Réduire la dépendance et le coût du socle cloud.")
+    initiative(tribe_a, "Résilience des paiements", paiements, "Nadia Khaldi", 3,
+               "Passer sous 1% d'échec et fiabiliser la chaîne d'autorisation.")
+    initiative(tribe_b, "Valorisation de la donnée", dataplat, "Karim Belkacem", 3,
+               "Un socle data fiable et un décisionnel adopté.")
+    initiative(tribe_b, "Excellence de l'onboarding", onboarding, "Karim Belkacem", 2,
+               "Augmenter la complétion KYC et l'activation.")
+
+    # ---- Budgets (enabled on a few squads; visible to squad leader + tribe leader) ----
+    def budget(s, total, spent, forecast, comment=None):
+        s.budget_enabled = True
+        db.add(SquadBudget(squad_id=s.id, year=year, total=total, spent=spent,
+                           forecast=forecast, comment=comment))
+    budget(aws, 480000, 360000, 470000, "Trajectoire maîtrisée, RI souscrites.")
+    budget(gcp, 520000, 300000, 560000, "Dérive probable liée au retard du pipeline.")
+    budget(paiements, 610000, 410000, 640000, "Surcoûts PSP pendant la bascule.")
+    budget(dataplat, 350000, 180000, 340000)
+
+    # ---- Key messages (success / alert / risk), managed by squad leader, visible to all ----
+    def km(s, kind, text, o=0):
+        db.add(KeyMessage(squad_id=s.id, year=year, kind=kind, text=text,
+                          display_order=o, created_by_user_id=s.leader_user_id))
+    km(aws, "success", "Migration FinOps livrée : -12% sur la facture ce trimestre.")
+    km(gcp, "risk", "Pipeline d'ingestion bloqué par une dépendance réseau : Q2 à l'arrêt.")
+    km(gcp, "alert", "Latence d'ingestion à 12h vs 4h cible.", 1)
+    km(paiements, "risk", "Taux d'échec au-dessus de la cible pendant la bascule PSP.")
+    km(analytics, "alert", "Adoption des dashboards en retard (45% vs 70%).")
+
+    # ---- Committees (comitologie) on a couple of squads ----
+    def committee(s, name, freq, purpose=None):
+        db.add(Committee(squad_id=s.id, name=name, frequency=freq, objective=purpose,
+                         created_by_user_id=s.leader_user_id))
+    committee(aws, "Weekly FinOps", "weekly", "Suivi des économies et des engagements RI.")
+    committee(paiements, "COPIL Paiements", "monthly", "Pilotage de la bascule PSP et du taux d'échec.")
+
+    db.flush()
+
+    # ---- OTD (On-Time Delivery): the tribe leader commits a squad leader to a firm
+    #      date; on-time status is derived from that squad's attached milestones. ----
+    def otd(tribe, title, owner_leader_key, committed_q, jalon_squad, jalon_max=2):
+        o = Otd(tribe_id=tribe.id, year=year, title=title,
+                owner_user_id=leaders[owner_leader_key].id,
+                committed_date=qdate(committed_q, 28))
+        db.add(o)
+        db.flush()
+        js = db.scalars(
+            select(RoadmapItem).where(RoadmapItem.squad_id == jalon_squad.id)
+            .order_by(RoadmapItem.quarter, RoadmapItem.id).limit(jalon_max)
+        ).all()
+        for j in js:
+            j.otd_id = o.id
+    otd(tribe_a, "Data lake GCP en production", "gcp", 3, gcp)
+    otd(tribe_a, "Bascule PSP v2 a 100%", "paiements", 3, paiements)
+    otd(tribe_b, "Datamart finance v1 livre", "analytics", 2, analytics)
 
     db.commit()
     logger.info("Seed appliqué : %d squads (année %d), objectifs datés, jalons détaillés, "

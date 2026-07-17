@@ -15,8 +15,8 @@ export function leaveTypeLabel(label: string, lang: string): string {
   return en && en !== label ? `${en} (${label})` : label;
 }
 
-/** Type label plus its optional free-text detail, e.g. "Autre — Déménagement". */
+/** Type label plus its optional free-text detail, e.g. "Autre - Déménagement". */
 export function leaveLabel(leave: { type_label: string; detail?: string | null }, lang: string): string {
   const base = leaveTypeLabel(leave.type_label, lang);
-  return leave.detail ? `${base} — ${leave.detail}` : base;
+  return leave.detail ? `${base} - ${leave.detail}` : base;
 }

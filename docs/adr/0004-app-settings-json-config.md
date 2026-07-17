@@ -1,4 +1,4 @@
-# ADR-0004 — Runtime config as JSON in `app_settings`
+# ADR-0004 - Runtime config as JSON in `app_settings`
 
 **Status:** Accepted
 
@@ -22,7 +22,7 @@ added persona capability defaults sensibly for existing stored personas).
 
 ## Consequences
 - Bootstrap/infra config stays in env vars; product config is in DB and admin-editable.
-- No referential integrity between config and entities (e.g. `users.role` → personas) — handled in code.
+- No referential integrity between config and entities (e.g. `users.role` → personas) - handled in code.
 
 ## Risks
 - Schema-less blobs can drift; mitigated by typed accessors + defaults + sanitization on read.

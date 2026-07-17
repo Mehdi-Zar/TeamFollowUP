@@ -1,18 +1,25 @@
 """Send audit-log entries to an external destination (syslog / GCS / BigQuery).
 
-Kept dependency-light on purpose: syslog uses the stdlib, while GCS and BigQuery
-talk to the Google REST APIs directly using a service-account JWT (PyJWT + httpx),
-so no google-cloud SDK is required.
+Syslog uses the stdlib. For the two Google destinations, the **data-plane** calls
+(GCS upload, BigQuery ``insertAll``) are plain httpx REST calls, but the **token**
+is obtained through ``google-auth`` so we support Google's recommended, keyless
+authentication order (see ``logexportconfig`` docstring): attached service account
+(ADC), Workload Identity Federation, impersonation, and - last - a JSON key. The
+token endpoints (metadata server, STS, IAM Credentials) are driven over the same
+httpx client via a small transport adapter, so we keep a single HTTP client.
 """
 from __future__ import annotations
 
 import json
 import socket
-import time
 from datetime import datetime
 
+import google.auth
 import httpx
-import jwt
+from google.auth import impersonated_credentials
+from google.auth.exceptions import DefaultCredentialsError
+from google.auth.transport import Request as _AuthRequest
+from google.oauth2 import service_account
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -22,22 +29,24 @@ DEFAULT_UNIVERSE = "googleapis.com"
 # OAuth scopes are universe-independent identifiers (NOT endpoints), kept as-is.
 SCOPE_GCS = "https://www.googleapis.com/auth/devstorage.read_write"
 SCOPE_BQ = "https://www.googleapis.com/auth/bigquery.insertdata"
+# Base scope a source identity needs to mint impersonated tokens.
+SCOPE_CLOUD_PLATFORM = "https://www.googleapis.com/auth/cloud-platform"
 
 # RFC 5424 severity/facility for an informational app log: local0.info -> 16*8+6
 SYSLOG_PRI = 134
 
 
-def _universe_domain(cfg: dict, creds: dict) -> str:
+def _universe_from(cfg: dict, creds) -> str:
     """Resolve the Google Cloud universe domain.
 
-    Precedence: explicit admin config > the service-account key's
-    `universe_domain` > the public Google Cloud default (`googleapis.com`).
-    For S3NS / Cloud de Confiance this is `s3nsapis.fr`, so endpoints become
-    e.g. `storage.s3nsapis.fr` instead of `storage.googleapis.com`.
+    Precedence: explicit admin config > the credentials' `universe_domain`
+    (google-auth reads it from the metadata server / key / WIF config) > the
+    public Google Cloud default (`googleapis.com`). For S3NS / Cloud de Confiance
+    this is `s3nsapis.fr`, so endpoints become e.g. `storage.s3nsapis.fr`.
     """
     return (
         (cfg.get("universe_domain") or "").strip()
-        or (creds.get("universe_domain") or "").strip()
+        or (getattr(creds, "universe_domain", "") or "").strip()
         or DEFAULT_UNIVERSE
     )
 
@@ -45,12 +54,6 @@ def _universe_domain(cfg: dict, creds: dict) -> str:
 def _service_endpoint(service: str, universe: str) -> str:
     """e.g. ("storage", "s3nsapis.fr") -> "https://storage.s3nsapis.fr"."""
     return f"https://{service}.{universe}"
-
-
-def _token_endpoint(creds: dict, universe: str) -> str:
-    # A key issued for a given universe already carries the right token_uri;
-    # honour it, otherwise build it from the universe domain.
-    return creds.get("token_uri") or f"https://oauth2.{universe}/token"
 
 
 class LogExportError(Exception):
@@ -153,46 +156,110 @@ def _send_syslog(cfg: dict, entries: list[dict]) -> tuple[bool, str]:
 
 
 # --------------------------------------------------------------------------- #
-# Google Cloud auth
+# Google Cloud auth (keyless-first, via google-auth over our httpx client)
 # --------------------------------------------------------------------------- #
-def _load_credentials(cfg: dict) -> dict:
+class _HttpxAuthResponse:
+    """Adapts an httpx.Response to google.auth.transport.Response."""
+
+    def __init__(self, resp: httpx.Response):
+        self.status = resp.status_code
+        self.headers = resp.headers
+        self.data = resp.content
+
+
+class _HttpxAuthRequest(_AuthRequest):
+    """A google.auth transport backed by httpx, so token acquisition (metadata
+    server, STS, IAM Credentials) uses the same HTTP client as the data plane."""
+
+    def __call__(self, url, method="GET", body=None, headers=None, timeout=None, **kwargs):
+        resp = httpx.request(method, url, content=body, headers=headers, timeout=timeout or 30)
+        return _HttpxAuthResponse(resp)
+
+
+def _load_key_info(cfg: dict) -> dict:
     raw = cfg.get("gcp_credentials_json") or ""
     if not raw.strip():
         raise LogExportError("Clé de compte de service Google manquante.")
     try:
-        creds = json.loads(raw)
+        return json.loads(raw)
     except json.JSONDecodeError:
         raise LogExportError("La clé de compte de service n'est pas un JSON valide.")
-    for field in ("client_email", "private_key", "token_uri"):
-        if not creds.get(field):
-            raise LogExportError(f"Clé de compte de service incomplète (champ « {field} » manquant).")
-    return creds
 
 
-def _access_token(creds: dict, scope: str, token_uri: str) -> str:
-    now = int(time.time())
-    claim = {
-        "iss": creds["client_email"],
-        "scope": scope,
-        "aud": token_uri,
-        "iat": now,
-        "exp": now + 3600,
-    }
+def _base_credentials(cfg: dict, scopes: list[str]):
+    """Build the base Google credentials per the configured auth_method."""
+    method = cfg.get("auth_method", "adc")
+    impersonate = (cfg.get("impersonate_service_account") or "").strip()
+    if method == "key":
+        try:
+            return service_account.Credentials.from_service_account_info(
+                _load_key_info(cfg), scopes=scopes)
+        except LogExportError:
+            raise
+        except Exception as e:
+            raise LogExportError(f"Clé de compte de service invalide: {e}")
+    if method == "wif":
+        raw = cfg.get("wif_config_json") or ""
+        if not raw.strip():
+            raise LogExportError("Configuration Workload Identity Federation manquante.")
+        try:
+            info = json.loads(raw)
+        except json.JSONDecodeError:
+            raise LogExportError("La configuration WIF n'est pas un JSON valide.")
+        try:
+            creds, _ = google.auth.load_credentials_from_dict(info, scopes=scopes)
+            return creds
+        except Exception as e:
+            raise LogExportError(f"Configuration WIF invalide: {e}")
+    # "adc" or "impersonation": the base identity is Application Default
+    # Credentials (attached service account on GKE/Cloud Run/GCE, GOOGLE_
+    # APPLICATION_CREDENTIALS elsewhere). To later impersonate, the base must
+    # carry the broad cloud-platform scope.
+    base_scopes = [SCOPE_CLOUD_PLATFORM] if (method == "impersonation" or impersonate) else scopes
     try:
-        assertion = jwt.encode(claim, creds["private_key"], algorithm="RS256")
-    except Exception as e:
-        raise LogExportError(f"Impossible de signer le jeton (clé privée invalide ?): {e}")
-    resp = httpx.post(
-        token_uri,
-        data={
-            "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
-            "assertion": assertion,
-        },
-        timeout=20,
+        creds, _ = google.auth.default(scopes=base_scopes)
+        return creds
+    except DefaultCredentialsError as e:
+        raise LogExportError(
+            "Aucune identité Google détectée (Application Default Credentials). "
+            "Sur GKE/Cloud Run, attachez un compte de service au pod (Workload "
+            f"Identity for GKE). Détail: {e}")
+
+
+def _credentials(cfg: dict, scopes: list[str]):
+    """Base credentials, optionally wrapped in service-account impersonation."""
+    base = _base_credentials(cfg, scopes)
+    method = cfg.get("auth_method", "adc")
+    impersonate = (cfg.get("impersonate_service_account") or "").strip()
+    if method != "impersonation" and not impersonate:
+        return base
+    if not impersonate:
+        raise LogExportError("Compte de service à emprunter (impersonation) manquant.")
+    # Honour the universe for the IAM Credentials endpoint (S3NS uses its own).
+    universe = _universe_from(cfg, base)
+    override = None
+    if universe and universe != DEFAULT_UNIVERSE:
+        override = (f"https://iamcredentials.{universe}"
+                    "/v1/projects/-/serviceAccounts/{}:generateAccessToken")
+    return impersonated_credentials.Credentials(
+        source_credentials=base,
+        target_principal=impersonate,
+        target_scopes=scopes,
+        lifetime=3600,
+        iam_endpoint_override=override,
     )
-    if resp.status_code != 200:
-        raise LogExportError(f"Échec de l'authentification ({resp.status_code}): {resp.text[:200]}")
-    return resp.json()["access_token"]
+
+
+def _token_and_universe(cfg: dict, scope: str) -> tuple[str, str]:
+    """Return a fresh OAuth bearer token and the resolved universe domain."""
+    creds = _credentials(cfg, [scope])
+    try:
+        creds.refresh(_HttpxAuthRequest())
+    except LogExportError:
+        raise
+    except Exception as e:
+        raise LogExportError(f"Échec de l'authentification Google: {type(e).__name__}: {e}")
+    return creds.token, _universe_from(cfg, creds)
 
 
 # --------------------------------------------------------------------------- #
@@ -203,9 +270,7 @@ def _upload_gcs(cfg: dict, entries: list[dict]) -> tuple[bool, str]:
     prefix = (cfg.get("gcs_prefix") or "").strip().strip("/")
     if not bucket:
         raise LogExportError("Nom du bucket GCS manquant.")
-    creds = _load_credentials(cfg)
-    universe = _universe_domain(cfg, creds)
-    token = _access_token(creds, SCOPE_GCS, _token_endpoint(creds, universe))
+    token, universe = _token_and_universe(cfg, SCOPE_GCS)
 
     ndjson = "\n".join(json.dumps(e, ensure_ascii=False, default=str) for e in entries) + "\n"
     stamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
@@ -232,9 +297,7 @@ def _insert_bigquery(cfg: dict, entries: list[dict]) -> tuple[bool, str]:
     table = (cfg.get("bq_table") or "").strip()
     if not (project and dataset and table):
         raise LogExportError("Projet, dataset et table BigQuery sont requis.")
-    creds = _load_credentials(cfg)
-    universe = _universe_domain(cfg, creds)
-    token = _access_token(creds, SCOPE_BQ, _token_endpoint(creds, universe))
+    token, universe = _token_and_universe(cfg, SCOPE_BQ)
 
     rows = []
     for e in entries:

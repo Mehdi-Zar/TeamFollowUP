@@ -11,7 +11,7 @@ import io
 from datetime import date, datetime
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -422,6 +422,6 @@ def export_csv(
         out = _serialize(db, lv, user, cache)
         w.writerow([out.user_name, out.type_label, out.detail or "", out.start_date.isoformat(),
                     out.end_date.isoformat(), out.days, out.status, out.comment or ""])
-    buf.seek(0)
-    return StreamingResponse(iter([buf.getvalue()]), media_type="text/csv",
-                             headers={"Content-Disposition": 'attachment; filename="absences.csv"'})
+    # Buffered CSV → plain Response so Content-Length is set (not chunked).
+    return Response(content=buf.getvalue(), media_type="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": 'attachment; filename="absences.csv"'})

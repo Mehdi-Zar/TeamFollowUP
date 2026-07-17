@@ -1,7 +1,7 @@
 # backend/scripts
 
 One-shot operational scripts. They act on the **live database** and are
-**destructive** — review before running on a populated instance.
+**destructive** - review before running on a populated instance.
 
 | Script | What it does |
 |---|---|

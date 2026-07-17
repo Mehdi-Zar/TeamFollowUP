@@ -4,17 +4,24 @@ import { useI18n } from "../i18n";
 import { useConfig, useModule } from "../config";
 import { useAuth } from "../auth";
 import { Squad, Tribe } from "../types";
-import { Modal } from "./ui";
+import { Modal, PickItem } from "./ui";
 import { HtmlPreviewModal } from "./HtmlPreview";
 
 /** One tidy "Export / Share" dropdown that groups every export & email action
  *  (HTML/PPTX report, roadmap with squad selection, send by mail). HTML opens in
  *  an in-app window (not a new tab). Items appear only when their module/SMTP
  *  allows it. Report subscriptions live in the "Subscribe to a report" popup. */
+/** Which documents/actions this menu may offer. Lets each page keep its export
+ *  menu coherent with the tab you're on (e.g. the Roadmap tab exports only the
+ *  roadmap, not the dashboard or the weekly report). Omit = offer everything the
+ *  modules/capabilities allow (used on the full squad page). */
+type DocKind = "dashboard" | "roadmap" | "dependencies" | "report";
+
 type Props = {
   year?: number;
   squadId?: number;
   sinceDays?: number;
+  docs?: DocKind[];
 };
 
 type View = "menu" | "emailReport";
@@ -45,18 +52,21 @@ async function renderHtmlToJpg(url: string, filename: string): Promise<void> {
   }
 }
 
-export default function ExportMenu({ year, squadId, sinceDays = 7 }: Props) {
+export default function ExportMenu({ year, squadId, sinceDays = 7, docs }: Props) {
   const { t, lang } = useI18n();
   const { smtp_enabled } = useConfig();
   const m = useModule();
   const { user, can } = useAuth();
-  // A document is only offered when its module is on AND the persona holds the
-  // capability of the section it exports - the same pair the API now enforces
-  // (backend/app/routers/reports.py). This menu also shows on the squad page,
-  // which has no capability guard of its own, so the check has to live here.
-  const reportOn = m("review", "weekly_report") && can("dashboard");
-  const roadmapOn = m("squad_content", "roadmap") && can("roadmap");
-  const dashboardOn = m("dashboard") && can("dashboard");
+  // A document is offered when: (1) this menu is allowed to show it on the current
+  // tab (`docs` whitelist, or all if omitted), (2) its module is on, AND (3) the
+  // persona holds the capability of the section it exports - the same pair the API
+  // enforces (backend/app/routers/reports.py). The capability check must live here
+  // too because the squad page has no capability guard of its own.
+  const allow = (d: DocKind) => !docs || docs.includes(d);
+  const reportOn = allow("report") && m("review", "weekly_report") && can("dashboard");
+  const roadmapOn = allow("roadmap") && m("squad_content", "roadmap") && can("roadmap");
+  const dependenciesOn = allow("dependencies") && m("squad_content", "roadmap") && can("roadmap");
+  const dashboardOn = allow("dashboard") && m("dashboard") && can("dashboard");
 
   const ref = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
@@ -85,7 +95,7 @@ export default function ExportMenu({ year, squadId, sinceDays = 7 }: Props) {
     return () => document.removeEventListener("mousedown", onDoc);
   }, []);
 
-  const hasDownloads = roadmapAvail || dashboardOn;
+  const hasDownloads = roadmapAvail || dashboardOn || dependenciesOn;
   const hasEmail = smtp_enabled && reportOn;
   if (!hasDownloads && !hasEmail) return null;
 
@@ -142,7 +152,7 @@ export default function ExportMenu({ year, squadId, sinceDays = 7 }: Props) {
               {dashboardOn && !squadId && <Item onClick={() => { setDashModal(true); setOpen(false); }}>{t("export.doc_dashboard")} …</Item>}
               {roadmapAvail && squadId && <ExportRow label={t("export.doc_roadmap")} html={`${roadmapBase}.html?${roadmapQs}`} pptx={`${roadmapBase}.pptx?${roadmapQs}`} />}
               {roadmapAvail && !squadId && <Item onClick={() => { setRoadmapModal(true); setOpen(false); }}>{t("export.doc_roadmap")} …</Item>}
-              {roadmapAvail && <ExportRow label={t("export.doc_dependencies")} html={`/api/reports/dependencies.html?${rqs}`} pptx={`/api/reports/dependencies.pptx?${rqs}`} />}
+              {dependenciesOn && <ExportRow label={t("export.doc_dependencies")} html={`/api/reports/dependencies.html?${rqs}`} pptx={`/api/reports/dependencies.pptx?${rqs}`} />}
 
               {hasEmail && <div className="menu-label" style={{ marginTop: 6 }}>{t("export.group_email")}</div>}
               {hasEmail && <Item onClick={() => { setView("emailReport"); setMsg(null); }}>{t("export.send_report")} …</Item>}
@@ -266,21 +276,15 @@ function SquadExportPicker({ base, title, htmlLabel, pptxLabel, sinceDays, year,
           const groupOn = ids.every((id) => sel.has(id));
           return (
             <div key={g.tid}>
-              <label className="inline" style={{ gap: 8, marginBottom: 8, cursor: "pointer" }}>
-                <input type="checkbox" checked={groupOn} onChange={(e) => setMany(ids, e.target.checked)} />
+              <label className="pick-group-head" onClick={(e) => { e.preventDefault(); setMany(ids, !groupOn); }}>
+                <span className={`pick-box${groupOn ? " on" : ""}`}>{groupOn ? "✓" : ""}</span>
                 <span className="strong">{g.name}</span>
                 <span className="small muted">({g.squads.length})</span>
               </label>
-              <div className="rm-pick-grid">
-                {g.squads.map((s) => {
-                  const on = sel.has(s.id);
-                  return (
-                    <label key={s.id} className={`rm-pick-chip${on ? " on" : ""}`} onClick={(e) => { e.preventDefault(); toggle(s.id); }}>
-                      <input type="checkbox" checked={on} readOnly />
-                      <span className="rm-pick-name">{s.name}</span>
-                    </label>
-                  );
-                })}
+              <div className="pick-grid">
+                {g.squads.map((s) => (
+                  <PickItem key={s.id} selected={sel.has(s.id)} onToggle={() => toggle(s.id)} title={s.name} />
+                ))}
               </div>
             </div>
           );

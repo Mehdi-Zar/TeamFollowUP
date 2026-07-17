@@ -85,9 +85,15 @@ def test_budget_visibility_is_per_squad(seeded, client):
 
 def test_budget_and_key_messages_in_squad_export(seeded, client):
     sa = seeded["squad_a"]
+    # Budget: the tribe leader sets the envelope (allowed).
     login(client, seeded["tribe"])
     _enable(client, sa)
     client.put(f"/api/squads/{sa}/budget?year={YEAR}", json={"total": 12345, "spent": 4000, "forecast": 9000})
+    # Key messages: stewarded by the squad's OWN leader only - the tribe leader is
+    # now denied (assert_leads_squad).
+    r_tribe = client.post(f"/api/squads/{sa}/key-messages?year={YEAR}", json={"kind": "alert", "text": "nope"})
+    assert r_tribe.status_code == 403, r_tribe.text
+    login(client, seeded["sl_a"])
     r = client.post(f"/api/squads/{sa}/key-messages?year={YEAR}", json={"kind": "risk", "text": "Vendor slipping"})
     assert r.status_code == 201, r.text
 

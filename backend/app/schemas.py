@@ -243,16 +243,14 @@ class OtdCreate(BaseModel):
     year: int
     title: str = Field(min_length=1, max_length=300)
     description: Optional[str] = None
-    budget_ref: Optional[str] = None
     committed_date: Optional[datetime] = None
-    owner_user_id: Optional[int] = None
+    owner_user_id: Optional[int] = None  # the squad leader this OTD is assigned to
     display_order: int = 0
 
 
 class OtdUpdate(BaseModel):
     title: Optional[str] = Field(default=None, min_length=1, max_length=300)
     description: Optional[str] = None
-    budget_ref: Optional[str] = None
     committed_date: Optional[datetime] = None
     owner_user_id: Optional[int] = None
     year: Optional[int] = None
@@ -265,7 +263,6 @@ class OtdOut(ORMModel):
     year: int
     title: str
     description: Optional[str] = None
-    budget_ref: Optional[str] = None
     committed_date: Optional[datetime] = None
     owner_user_id: Optional[int] = None
     display_order: int

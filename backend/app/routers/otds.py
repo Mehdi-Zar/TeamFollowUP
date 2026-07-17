@@ -4,12 +4,13 @@ An OTD groups milestones (set from here, never from the milestone editor) and
 carries a single committed date. Its on-time status is derived from its milestones.
 """
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from .. import status as st
 from ..database import get_db
-from ..deps import (assert_can_manage_tribe_reporting, record_audit, require_tribe_or_admin)
+from ..deps import (ADMIN, SQUAD, TRIBE, assert_can_manage_tribe_reporting,
+                    get_current_user, record_audit, require_tribe_or_admin)
 from ..models import Otd, RoadmapItem, Squad, Tribe, User
 from ..schemas import OtdCreate, OtdMembers, OtdOut, OtdUpdate
 
@@ -57,15 +58,44 @@ def candidate_jalons(tribe_id: int | None = Query(default=None), year: int | Non
 
 @router.get("")
 def list_otds(tribe_id: int | None = Query(default=None), year: int | None = Query(default=None),
-              db: Session = Depends(get_db), user: User = Depends(require_tribe_or_admin)):
-    """OTDs in scope with their derived on-time status and member milestones."""
+              db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """OTDs with their derived on-time status and member milestones.
+
+    Visibility (rule #4): managed by the tribe leader (or admin); a squad leader
+    sees ONLY the OTDs that include a milestone of a squad they lead; anyone else
+    sees none.
+    """
     year = year or st.current_year_quarter()[0]
-    scope = _scope_tribe(user, tribe_id)
     q = (select(Otd).where(Otd.year == year).order_by(Otd.display_order, Otd.id)
          .options(selectinload(Otd.roadmap_items)))
-    if scope is not None:
-        q = q.where(Otd.tribe_id == scope)
+    if user.role == ADMIN:
+        if tribe_id is not None:
+            q = q.where(Otd.tribe_id == tribe_id)
+    elif user.role == TRIBE:
+        q = q.where(Otd.tribe_id == user.tribe_id)
+    elif user.role == SQUAD:
+        # A squad leader sees the OTDs assigned to them (owner_user_id), plus any
+        # that group a milestone of a squad they lead.
+        led_squads = select(Squad.id).where(Squad.leader_user_id == user.id)
+        concerned = (select(RoadmapItem.otd_id)
+                     .where(RoadmapItem.squad_id.in_(led_squads), RoadmapItem.otd_id.is_not(None)))
+        q = q.where(or_(Otd.owner_user_id == user.id, Otd.id.in_(concerned)))
+    else:
+        return []  # members and custom personas do not see OTDs
     return [_otd_payload(o) for o in db.scalars(q).all()]
+
+
+def _validate_owner(db: Session, tribe_id: int, owner_user_id: int | None) -> None:
+    """The assigned owner must be a squad leader of THIS OTD's tribe. Without this
+    a tribe leader could assign a squad leader of another tribe, who would then
+    see this tribe's OTD (title, committed date, budget ref, milestones) via the
+    owner-based visibility rule - a cross-tribe disclosure."""
+    if owner_user_id is None:
+        return
+    owner = db.get(User, owner_user_id)
+    if owner is None or owner.role != SQUAD or owner.tribe_id != tribe_id:
+        raise HTTPException(status_code=400,
+                            detail="L'owner doit être un squad leader de cette tribe")
 
 
 @router.post("", status_code=201)
@@ -74,6 +104,7 @@ def create_otd(payload: OtdCreate, db: Session = Depends(get_db),
     if db.get(Tribe, payload.tribe_id) is None:
         raise HTTPException(status_code=404, detail="Tribe introuvable")
     assert_can_manage_tribe_reporting(user, payload.tribe_id)
+    _validate_owner(db, payload.tribe_id, payload.owner_user_id)
     otd = Otd(**payload.model_dump())
     db.add(otd)
     db.flush()
@@ -92,6 +123,8 @@ def update_otd(otd_id: int, payload: OtdUpdate, db: Session = Depends(get_db),
         raise HTTPException(status_code=404, detail="OTD introuvable")
     assert_can_manage_tribe_reporting(user, otd.tribe_id)
     data = payload.model_dump(exclude_unset=True)
+    if "owner_user_id" in data:
+        _validate_owner(db, otd.tribe_id, data["owner_user_id"])
     for k, v in data.items():
         setattr(otd, k, v)
     record_audit(db, user.id, "otd.update", entity="otd", entity_id=otd.id, detail=list(data.keys()))

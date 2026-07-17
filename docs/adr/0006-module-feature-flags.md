@@ -1,4 +1,4 @@
-# ADR-0006 — Module on/off flags (404 on disabled)
+# ADR-0006 - Module on/off flags (404 on disabled)
 
 **Status:** Accepted
 
@@ -18,7 +18,7 @@ weekly_report), squad_content(+objectives/roadmap/kpis), notifications(+inapp/em
 getting_started`. Backend returns 404 for disabled features; the SPA reads the same config via `/api/config`.
 
 ## Rationale
-A disabled service should be **indistinguishable from a missing one** (404, not 403) — avoids leaking
+A disabled service should be **indistinguishable from a missing one** (404, not 403) - avoids leaking
 the existence of features and keeps the contract clean. Runtime toggling needs no redeploy.
 
 ## Consequences

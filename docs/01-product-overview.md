@@ -1,4 +1,4 @@
-# 01 — Product Overview
+# 01 - Product Overview
 
 ## Vision
 
@@ -29,7 +29,7 @@ review (COPIL). It replaces scattered spreadsheets and slide decks with a live, 
 
 In scope: tribe/squad org modelling, annual objectives, quarterly roadmap (milestones/jalons with
 EA/GA stage and dependencies), KPIs, progress-review timeline, COPIL review + action items, feed,
-org chart, notifications, weekly report scheduling and exports (CSV/HTML/PPTX), i18n (FR/EN).
+org chart, notifications, weekly report scheduling and exports (HTML/PPTX; CSV for absences), i18n (FR/EN).
 
 Out of scope (today): real-time collaboration, external ticketing sync (Jira/ADO), per-tenant data
 isolation beyond tribe scoping, mobile native apps.
@@ -46,12 +46,12 @@ isolation beyond tribe scoping, mobile native apps.
 | Objectives | `squad_content.objectives` | via reporting | status auto-derived from advancement |
 | KPIs | `squad_content.kpis` | via reporting | per-squad on/off |
 | Review (COPIL) | `review` (+notes/weekly_report) | `review` | timeline + actions + presentation mode |
-| My squads | — | `mysquads` | management for tribe/squad leaders |
-| Exports (CSV) | `exports_csv` | — | dashboard & squad CSV |
-| Weekly report (HTML/PPTX/email) | `review.weekly_report` | — | scheduled + on-demand |
-| Notifications | `notifications` (inapp/email) | — | bell + preferences |
+| My squads | - | `mysquads` | management for tribe/squad leaders |
+| Exports (HTML/PPTX) | via section modules | via section gates | dashboard, weekly, roadmap & dependencies decks (`/api/reports/*`) |
+| Weekly report (HTML/PPTX/email) | `review.weekly_report` | - | scheduled + on-demand |
+| Notifications | `notifications` (inapp/email) | - | bell + preferences |
 | Leave / absences | `leaves` (+overlap_alert) | `leaves` | team calendar, per-tribe approval, CSV; visible to all (tribe-scoped) |
-| Getting started | `getting_started` | — | onboarding |
+| Getting started | `getting_started` | - | onboarding |
 
 Modules are toggled in **Admin → Modules**; capabilities per persona in **Admin → Personas**.
 
@@ -61,7 +61,7 @@ Modules are toggled in **Admin → Modules**; capabilities per persona in **Admi
   annual advancement vs. the time elapsed toward the objective's optional deadline (`target_date`).
   See [ADR-0007](adr/0007-derived-objective-status.md).
 - **Squad health is quarter-scoped**: a squad's status (`blocked`/`at_risk`/`on_track`) is computed
-  from its roadmap items in a quarter — there is no ambiguous all-time status.
+  from its roadmap items in a quarter - there is no ambiguous all-time status.
 - **Milestone (jalon) carries a mandatory EA/GA release stage** and an optional dependency that can
   target a squad, a tribe, or be free text; cross-squad dependencies surface on the target squad.
 - **Progress timeline is auto-captured** on meaningful edits (coalesced), weekly, and on review notes.

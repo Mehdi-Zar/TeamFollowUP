@@ -1,4 +1,4 @@
-# 02 — Architecture
+# 02 - Architecture
 
 ## Tech stack
 
@@ -12,7 +12,7 @@
 | Reporting | python-pptx (PPTX), hand-rendered HTML |
 | Packaging | Multi-stage Docker (node build → python runtime serving the SPA) |
 
-## C4 — System context
+## C4 - System context
 
 ```mermaid
 flowchart TB
@@ -28,23 +28,24 @@ flowchart TB
   APP -->|OIDC / SAML| IDP[(Identity Provider)]
 ```
 
-## C4 — Containers / deployment
+## C4 - Containers / deployment
 
 ```mermaid
 flowchart LR
   subgraph docker-compose
     direction LR
-    APP["app container\n(python:3.12-slim)\nUvicorn :8000\nserves /api + built SPA"]
+    APP["app container\n(python:3.12-slim)\nUvicorn HTTPS :8443 (single port)\nserves /api + built SPA"]
     DB[("db container\npostgres:16-alpine\nvolume db_data")]
   end
   APP -->|psycopg2| DB
-  Browser -->|:8080 -> :8000| APP
+  Browser -->|HTTPS :8443| APP
 ```
 
 - A single **app** image is built in two stages (Dockerfile): stage 1 `npm run build` produces the
   SPA into `frontend/dist`, copied into `app/static`; stage 2 is the Python runtime.
 - `docker-entrypoint.sh`: waits for DB → `alembic upgrade head` → `python -m app.init_db` (break-glass
-  admin + demo seed) → `uvicorn app.main:app`.
+  admin + demo seed) → `python -m app.server` (HTTPS :8443 - the app's only port;
+  HTTP→HTTPS redirection is the infrastructure's job, e.g. the GKE Gateway API).
 - The API serves the SPA: `/assets` via `StaticFiles`, every other non-`/api` path falls back to
   `index.html` (client-side routing). See [ADR-0001](adr/0001-monolith-serves-spa.md).
 
@@ -53,13 +54,13 @@ flowchart LR
 ```mermaid
 flowchart TB
   main[main.py\nFastAPI app + routers + startup scheduler]
-  main --> routers[routers\nauth, tribes, squads, dashboard, org,\nobjectives, roadmap, roadmapview, kpis,\nmembers, snapshots, feed, notifications,\nadmin, audit, reports, actions, initiatives,\notds, access, leaves]
+  main --> routers[routers\nauth, tribes, squads, dashboard, org, orgexport,\nobjectives, roadmap, roadmapview, kpis,\nmembers, snapshots, feed, notifications,\nadmin, audit, reports, actions, initiatives,\notds, access, leaves, committees]
   routers --> deps[deps.py\nauth + RBAC + capability + module guards]
   routers --> serializers[serializers.py]
   routers --> schemas[schemas.py\nPydantic DTOs]
   serializers --> status[status.py\nhealth/progress/derived status]
   serializers --> models[models.py\nSQLAlchemy ORM]
-  routers --> domain[Domain services\nprogress.py, report.py, status.py,\nsubscriptions.py, notify.py]
+  routers --> domain[Domain services\nreport.py, status.py,\nsubscriptions.py, notify.py]
   config[Config stores in app_settings\ngeneralconfig, modulesconfig, personasconfig,\nsmtpconfig, reportconfig, authconfig] --> deps
   models --> db[(database.py\nSQLAlchemy engine/session)]
 ```
@@ -69,7 +70,7 @@ flowchart TB
 - **deps.py** = cross-cutting access control: `get_current_user`, `require_admin/_writer/_tribe_or_admin`,
   `require_module(module[,feature])`, `require_capability(cap)`, `assert_can_edit_squad`, etc.
 - **serializers.py** = ORM → DTO assembly (and derived values like objective status).
-- **status.py / progress.py / report.py** = domain logic (health, progress timeline, rendering).
+- **status.py / report.py** = domain logic (health/derived status, report & roadmap rendering).
 - **\*config.py** = typed accessors over the `app_settings` JSON key/value store ([ADR-0004](adr/0004-app-settings-json-config.md)).
 
 ## Background scheduler
@@ -89,7 +90,7 @@ sequenceDiagram
 ```
 
 In-process, single-instance scheduler started in `main.py` `@app.on_event("startup")`. It is
-**not** distributed — see risks in [10](10-tech-debt-and-risk-register.md) and [ADR-0009](adr/0009-in-process-scheduler.md).
+**not** distributed - see risks in [10](10-tech-debt-and-risk-register.md) and [ADR-0009](adr/0009-in-process-scheduler.md).
 
 ## Request → response sequence (typical authenticated read)
 

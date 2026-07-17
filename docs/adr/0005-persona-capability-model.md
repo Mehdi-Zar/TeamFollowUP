@@ -1,4 +1,4 @@
-# ADR-0005 — Persona → capability authorization model
+# ADR-0005 - Persona → capability authorization model
 
 **Status:** Accepted
 

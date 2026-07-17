@@ -1,4 +1,4 @@
-# 13 — Maintenance & Updates (shipping a new version without losing data)
+# 13 - Maintenance & Updates (shipping a new version without losing data)
 
 This document answers a very specific, real-world question:
 
@@ -10,7 +10,7 @@ This document answers a very specific, real-world question:
 It is written for the exact setup of this project: **one Docker image** + **one
 PostgreSQL database**, with schema changes handled by **Alembic migrations**. Read
 [§0 of the Deployment Guide](12-deployment-guide.md) first if you have never
-deployed it at all — this document is about *updating* an app that is already live.
+deployed it at all - this document is about *updating* an app that is already live.
 
 ---
 
@@ -23,19 +23,19 @@ that never connect directly**:
 |---|---|---|
 | Has internet | yes | no (or restricted) |
 | Has Claude CLI | yes | no |
-| Has the source code | yes | **no — and it shouldn't** |
+| Has the source code | yes | **no - and it shouldn't** |
 | Runs the app for users | no | yes |
 | Holds the real data | no | **yes (PostgreSQL)** |
 
 You **build** in the dev world and you **run** in the run world. The only thing
 that crosses the gap is a **finished, self-contained artifact: the Docker image.**
 Source code, `node_modules`, Claude, and the internet all stay on the dev side.
-This is what makes the air-gap manageable — you never need a toolchain in prod.
+This is what makes the air-gap manageable - you never need a toolchain in prod.
 
 ```
   DEV WORLD (laptop, internet, Claude)            RUN WORLD (air-gapped prod)
   ───────────────────────────────────            ────────────────────────────
-  1. dev + test with Claude                       (nothing changes yet — app
+  1. dev + test with Claude                       (nothing changes yet - app
   2. build image  →  app:1.1.0                     keeps serving users on 1.0.0)
   3. export the image to a file  ──────┐
                                        │  transfer the file (USB, bastion,
@@ -80,11 +80,11 @@ new one" and "the old one" become indistinguishable and rollback is guesswork.
   Use [SemVer](https://semver.org): patch for fixes, minor for features, major for
   breaking changes.
 - **Tag the git commit**: `git tag v1.1.0 && git push --tags` (in the dev world).
-- **Tag the Docker image with the same number** — never rely on `:latest` for
+- **Tag the Docker image with the same number** - never rely on `:latest` for
   prod. `:latest` is a moving target; `:1.1.0` is forever that exact build.
 
 > Keeping git tag, app version, and image tag identical means that from a running
-> container you can always answer "what source produced this?" — essential when
+> container you can always answer "what source produced this?" - essential when
 > Claude isn't there to ask.
 
 ---
@@ -92,7 +92,7 @@ new one" and "the old one" become indistinguishable and rollback is guesswork.
 ## 4. Build the artifact in the dev world
 
 On your laptop, after you and Claude finish a version and **all tests pass**
-(`pytest` + frontend `tsc`/`vitest` — see [§8 Testing](08-testing-strategy.md)):
+(`pytest` + frontend `tsc`/`vitest` - see [§8 Testing](08-testing-strategy.md)):
 
 ```bash
 # 1. Build the production image, tagged with the version
@@ -100,30 +100,30 @@ docker build -t teamfollowup:1.1.0 .
 
 # 2. Smoke-test it locally against a throwaway DB before you ever ship it
 docker compose up -d --build      # uses the local compose Postgres
-#   → open http://localhost:8080, log in, click around
+#   → open https://localhost:8443 (self-signed cert warning is expected), log in, click around
 docker compose down               # (WITHOUT -v: keeps the volume)
 ```
 
 Now turn the image into something that can cross the air-gap. **Pick one** of the
 two transfer methods:
 
-### 4.a — File transfer (true air-gap: USB stick / one-way bastion)
+### 4.a - File transfer (true air-gap: USB stick / one-way bastion)
 
 ```bash
 # Save the image (and its base layers) into a single tar file
 docker save teamfollowup:1.1.0 -o teamfollowup-1.1.0.tar
 
-# (optional) compress — these images are ~300–500 MB
+# (optional) compress - these images are ~300-500 MB
 gzip teamfollowup-1.1.0.tar     # → teamfollowup-1.1.0.tar.gz
 ```
 
 Carry that one file across however your environment allows (removable media,
 data-diode, approved file-transfer portal). Nothing else needs to travel.
 
-### 4.b — Internal registry (S3NS Artifact Registry reachable from prod)
+### 4.b - Internal registry (S3NS Artifact Registry reachable from prod)
 
 If the run world can pull from an **internal** registry (no public internet, but
-an Artifact Registry inside the perimeter — the S3NS case), push there instead of
+an Artifact Registry inside the perimeter - the S3NS case), push there instead of
 shipping a tar. This is the cleaner, more automatable option:
 
 ```bash
@@ -140,9 +140,17 @@ Artifact Registry + GKE wiring.
 ## 5. Apply the update in the run world
 
 Now you're on the prod side. The app is still serving users on **1.0.0**. The data
-is in PostgreSQL. Here is the safe sequence — **the order matters.**
+is in PostgreSQL. Here is the safe sequence - **the order matters.**
 
-### Step 1 — Back up the database (non-negotiable)
+> ⚠️ **Upgrading from an image that still had the :8080 listener?** Since the
+> single-port change (see `CHANGELOG.md` → Breaking changes), the container serves
+> **HTTPS :8443 only** - the :8080 HTTP→HTTPS redirect listener is gone. Before
+> rolling the new image, remove anything that targets :8080: port mappings,
+> monitoring probes, bookmarks/links, K8s `containerPort: 8080`, and the
+> `APP_HTTP_PORT` / `HTTP_PORT` / `PUBLIC_HTTPS_PORT` variables. The HTTP→HTTPS
+> redirect is now the Gateway's job (deployment guide §6.9.2).
+
+### Step 1 - Back up the database (non-negotiable)
 
 ```bash
 pg_dump -h $POSTGRES_HOST -U $POSTGRES_USER -d $POSTGRES_DB -Fc \
@@ -152,7 +160,7 @@ pg_dump -h $POSTGRES_HOST -U $POSTGRES_USER -d $POSTGRES_DB -Fc \
 Store this off the app host. If anything in the update goes wrong, this is your
 undo button (§6).
 
-### Step 2 — Get the new image onto the run world
+### Step 2 - Get the new image onto the run world
 
 - If you shipped a tar (4.a): `docker load -i teamfollowup-1.1.0.tar` (un-gzip
   first if needed). On Kubernetes nodes without a registry, `docker load` /
@@ -160,13 +168,13 @@ undo button (§6).
 - If you pushed to an internal registry (4.b): nothing to do; the cluster will
   pull `:1.1.0` on demand.
 
-### Step 3 — Run migrations with exactly ONE instance
+### Step 3 - Run migrations with exactly ONE instance
 
 This is the single most important rule for schema safety. The container's
 entrypoint runs `alembic upgrade head` on start. If two fresh instances start at
 once, they **race** on the schema. So for the first start of a new version:
 
-- **docker compose / single VM**: you already have one app container — just
+- **docker compose / single VM**: you already have one app container - just
   recreate it with the new image; it migrates on boot.
 
   ```bash
@@ -189,7 +197,7 @@ once, they **race** on the schema. So for the first start of a new version:
   (The Deployment Guide already calls this out: *"deploy the first rollout with 1
   instance so two instances don't race the schema, then scale out."*)
 
-### Step 4 — Smoke-test, then keep the old image around
+### Step 4 - Smoke-test, then keep the old image around
 
 - Log in as the break-glass admin, open the dashboard, a squad page, run an export.
 - Watch logs for errors for a few minutes.
@@ -212,7 +220,7 @@ pg_dump -h $POSTGRES_HOST -U $POSTGRES_USER -d $POSTGRES_DB -Fc -f snapshot.dump
 pg_restore -h $POSTGRES_HOST -U $POSTGRES_USER -d $POSTGRES_DB --clean --if-exists snapshot.dump
 ```
 
-Test your restore at least once in a staging DB — an untested backup is a rumor.
+Test your restore at least once in a staging DB - an untested backup is a rumor.
 
 ---
 
@@ -226,7 +234,7 @@ Two different things can go wrong, and they roll back differently:
 | **A migration** corrupted or mis-shaped data | Redeploy old image **and restore the pre-update DB dump** (§6, Step 1). This is why the backup is non-negotiable and comes *first*. |
 
 > **Alembic migrations are effectively forward-only in practice.** Don't count on
-> `alembic downgrade` to save you in prod — a downgrade that drops a column also
+> `alembic downgrade` to save you in prod - a downgrade that drops a column also
 > drops its data. The reliable "undo" for a schema change is **restore the dump**,
 > not downgrade. Plan migrations to be *expand/contract* (next section) so you
 > rarely need to undo at all.
@@ -239,11 +247,11 @@ The way to almost never need a rollback is to make every schema change **additiv
 and backward-compatible**, so the old and new app versions can both run against
 the new schema during the switch:
 
-1. **Expand** — add new tables/columns as **nullable / with defaults**. Deploy.
-   (Old code ignores them; new code uses them.) This is what migrations 0013–0016
-   already do — e.g. `weekdays` defaults to `[]`, `hour` defaults to `8`.
+1. **Expand** - add new tables/columns as **nullable / with defaults**. Deploy.
+   (Old code ignores them; new code uses them.) This is what migrations 0013-0016
+   already do - e.g. `weekdays` defaults to `[]`, `hour` defaults to `8`.
 2. **Migrate data** in a separate step if needed (backfill).
-3. **Contract** — only once nothing uses the old column anymore, a *later* release
+3. **Contract** - only once nothing uses the old column anymore, a *later* release
    removes it.
 
 Never rename-in-place or drop-and-recreate a column that holds data in a single
@@ -267,13 +275,13 @@ allows a bit more, these are progressively cleaner:
   deterministically. Removes "works on my machine" risk.
 - **GitOps (Argo CD / Flux) for GKE.** The cluster watches a git repo of manifests
   and reconciles itself to the declared image tag. Updating = commit "image:
-  1.1.0". Gives you history, review, and one-click rollback — all inside the
+  1.1.0". Gives you history, review, and one-click rollback - all inside the
   perimeter.
 - **Blue/green or canary** for zero-downtime: run 1.1.0 alongside 1.0.0, shift
   traffic gradually, roll back instantly by shifting it back. Only worthwhile once
   migrations are reliably expand/contract (§8), since both versions share one DB.
 
-You don't need these on day one. Start with §4–§5; graduate to a registry, then CI,
+You don't need these on day one. Start with §4-§5; graduate to a registry, then CI,
 then GitOps as the need (and the environment's openness) grows.
 
 ---
@@ -298,6 +306,6 @@ then GitOps as the need (and the environment's openness) grows.
 
 ---
 
-*See also:* [12 — Deployment Guide](12-deployment-guide.md) ·
-[06 — Operations Runbook](06-operations-runbook.md) ·
-[08 — Testing Strategy](08-testing-strategy.md).
+*See also:* [12 - Deployment Guide](12-deployment-guide.md) ·
+[06 - Operations Runbook](06-operations-runbook.md) ·
+[08 - Testing Strategy](08-testing-strategy.md).

@@ -1,9 +1,10 @@
-# 06 — Operations Runbook
+# 06 - Operations Runbook
 
 ## Topology
 
 One **app** container (Uvicorn, serves API + SPA) + one **Postgres** container with a named volume
-`db_data`. Exposed on host `:8080` → container `:8000` (`APP_PORT` overridable).
+`db_data`. Exposed on a **single port**: host `:8443` → container `:8443` (**HTTPS**). Override with
+`APP_HTTPS_PORT`. No HTTP listener - HTTP→HTTPS redirection is handled upstream (e.g. GKE Gateway API).
 
 ## Deploy / upgrade
 
@@ -18,7 +19,7 @@ On startup, `docker-entrypoint.sh` runs:
 1. wait for Postgres,
 2. `alembic upgrade head` (idempotent migrations),
 3. `python -m app.init_db` (break-glass admin + demo seed if `SEED_DEMO=true`),
-4. `uvicorn app.main:app`.
+4. `python -m app.server` (HTTPS :8443, single port).
 
 A container restart is safe and idempotent. Health: `docker compose ps` shows `healthy`
 (healthcheck via `curl`), and `GET /api/config` returns 200.
@@ -31,8 +32,9 @@ docker compose exec app alembic downgrade -1           # roll back one
 docker compose exec app alembic revision -m "msg"      # author new (then edit)
 docker compose exec app alembic current                # show version
 ```
-Migration chain: `0001 → … → 0008_milestone_release_stage`. **Always** add a migration for any model
-change (tests use `create_all`, prod uses Alembic — do not rely on `create_all`).
+Migration chain: `0001 → … → 0026_api_keys` (see `backend/alembic/versions/` for the current head).
+**Always** add a migration for any model change (tests use `create_all`, prod uses Alembic - do not
+rely on `create_all`).
 
 ## Backup & restore (Postgres)
 
@@ -43,7 +45,7 @@ docker compose exec -T db pg_dump -U tribe tribe > backup_$(date +%F).sql
 docker compose exec -T db psql -U tribe -d tribe < backup_YYYY-MM-DD.sql
 # Volume snapshot alternative: back up the db_data volume.
 ```
-> No automated backup is configured — **add a scheduled `pg_dump`** (cron/sidecar) before production.
+> No automated backup is configured - **add a scheduled `pg_dump`** (cron/sidecar) before production.
 
 ## Scheduled jobs (in-process)
 
@@ -54,7 +56,7 @@ and roadmap). Manual trigger: `POST /api/admin/progress/run-weekly` (admin).
 ## Configuration
 
 Runtime config lives in DB (`app_settings`) and is editable from **Admin** (modules, personas,
-settings, SMTP, report, auth). Bootstrap/infra config is environment variables — see
+settings, SMTP, report, auth). Bootstrap/infra config is environment variables - see
 [`backend/.env.example`](../backend/.env.example).
 
 ## Monitoring & logging (current state + gaps)
@@ -77,7 +79,7 @@ settings, SMTP, report, auth). Bootstrap/infra config is environment variables �
 
 ## Rollback
 
-Code rollback = redeploy previous image tag. **Migrations are not auto-reverted** — if a release
+Code rollback = redeploy previous image tag. **Migrations are not auto-reverted** - if a release
 added a migration, roll it back explicitly (`alembic downgrade`) *before* deploying older code that
 doesn't expect the new schema. Prefer additive, backward-compatible migrations.
 </content>

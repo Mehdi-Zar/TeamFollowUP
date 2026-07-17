@@ -1,4 +1,4 @@
-# ADR-0008 — Server-side report/roadmap rendering (HTML + PPTX)
+# ADR-0008 - Server-side report/roadmap rendering (HTML + PPTX)
 
 **Status:** Accepted
 
@@ -17,7 +17,7 @@ Option 1. `report.py` builds a data model (`build_report_data`) then renders HTM
 matrix (quarters × squads, EA/GA, status colours) that always fits **one slide** via dynamic sizing.
 
 ## Rationale
-Same renderer powers on-demand downloads, email attachments and the scheduler — one source of truth.
+Same renderer powers on-demand downloads, email attachments and the scheduler - one source of truth.
 No browser dependency; deterministic output; i18n-aware.
 
 ## Consequences

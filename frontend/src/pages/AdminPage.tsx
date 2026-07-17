@@ -214,9 +214,6 @@ function TlsAdmin() {
 
   const flash = (m: string) => { setMsg(m); setTimeout(() => setMsg(null), 2500); };
 
-  async function toggleRedirect(v: boolean) {
-    await wrap(async () => { setSt(await api.put<any>("/api/admin/tls-config", { redirect_http: v })); });
-  }
   async function regen() {
     await wrap(async () => {
       setSt(await api.post<any>("/api/admin/tls-config/self-signed", { cn, sans }));
@@ -297,7 +294,7 @@ function TlsAdmin() {
           <div className="stack" style={{ gap: 2 }}>
             <div className="small"><b>{t("tls.subject")}:</b> {a.subject}</div>
             <div className="small"><b>{t("tls.issuer")}:</b> {a.issuer}</div>
-            <div className="small"><b>SAN:</b> {(a.sans || []).join(", ") || "—"}</div>
+            <div className="small"><b>SAN:</b> {(a.sans || []).join(", ") || "-"}</div>
             <div className="small"><b>{t("tls.valid_until")}:</b> {a.not_after?.slice(0, 10)}</div>
             <div className="small muted" style={{ wordBreak: "break-all" }}><b>SHA-256:</b> {a.fingerprint_sha256}</div>
             {st.chain_len > 0 && <div className="small muted">{t("tls.chain_len", { n: st.chain_len })}</div>}
@@ -306,16 +303,6 @@ function TlsAdmin() {
         <div className="inline">
           <a className="btn-secondary btn-sm" href="/api/admin/tls-config/active/download">{t("tls.download_active")}</a>
         </div>
-      </div>
-
-      {/* Options */}
-      <div className="card stack" style={{ gap: 10 }}>
-        <label className="switch">
-          <input type="checkbox" checked={!!st.redirect_http} onChange={(e) => toggleRedirect(e.target.checked)} />
-          <span className="track"><span className="knob" /></span>
-          <span className="strong">{t("tls.redirect_http")}</span>
-        </label>
-        <div className="small muted">{t("tls.redirect_hint")}</div>
       </div>
 
       {/* Self-signed */}
@@ -614,7 +601,7 @@ const WEEKDAYS_FR = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"
 const WEEKDAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 
 /** Single, unified reporting menu: automatic report + change notifications,
- *  one full (advanced) view — no simple/advanced toggle. Shown in the Admin
+ *  one full (advanced) view - no simple/advanced toggle. Shown in the Admin
  *  "Reporting" tab and inside the reporting popup for admins. */
 export function ReportingAdmin() {
   const { t } = useI18n();
@@ -669,7 +656,7 @@ export function ReportingAdmin() {
   }
 
   // One shared recipients list and one shared "attach PPTX", written to both
-  // delivery triggers — that's the whole point of merging the two menus.
+  // delivery triggers - that's the whole point of merging the two menus.
   const recipients = Array.isArray(rep.recipients) ? rep.recipients.join("\n") : (rep.recipients ?? "");
   const setRecipients = (text: string) => {
     const list = text.split("\n");
@@ -699,7 +686,7 @@ export function ReportingAdmin() {
 
         <div className="strong" style={{ marginTop: 2 }}>{t("reporting.when")}</div>
 
-        {/* Trigger 1 — scheduled */}
+        {/* Trigger 1 - scheduled */}
         <div className="stack" style={{ gap: 10, ...sep }}>
           <label className="switch">
             <input type="checkbox" checked={!!rep.enabled} onChange={(e) => setR("enabled", e.target.checked)} />
@@ -740,7 +727,7 @@ export function ReportingAdmin() {
           )}
         </div>
 
-        {/* Trigger 2 — on change */}
+        {/* Trigger 2 - on change */}
         <div className="stack" style={{ gap: 10, ...sep }}>
           <label className="switch">
             <input type="checkbox" checked={!!chg.enabled} onChange={(e) => setC("enabled", e.target.checked)} />
@@ -889,28 +876,74 @@ function LogExportAdmin() {
         )}
 
         {(dest === "gcs" || dest === "bigquery") && (
-          <div className="row">
-            {fld(t("logs.universe"), "universe_domain", "text", "googleapis.com")}
-          </div>
-        )}
-        {(dest === "gcs" || dest === "bigquery") && (
-          <div className="small muted" style={{ marginTop: -4 }}>{t("logs.universe_hint")}</div>
-        )}
+          <>
+            <div className="row">
+              {fld(t("logs.universe"), "universe_domain", "text", "googleapis.com")}
+            </div>
+            <div className="small muted" style={{ marginTop: -4 }}>{t("logs.universe_hint")}</div>
 
-        {(dest === "gcs" || dest === "bigquery") && (
-          <div>
-            <label>
-              {t("logs.gcp_creds")}
-              {cfg.gcp_credentials_json_set && <span className="badge badge-green" style={{ marginLeft: 8 }}>{t("logs.creds_set")}</span>}
-            </label>
-            <textarea
-              rows={4}
-              placeholder={t("logs.gcp_creds_ph")}
-              value={cfg.gcp_credentials_json ?? ""}
-              onChange={(e) => set("gcp_credentials_json", e.target.value)}
-            />
-            <div className="small muted" style={{ marginTop: 4 }}>{t("logs.gcp_creds_hint")}</div>
-          </div>
+            <div style={{ maxWidth: 420 }}>
+              <label>{t("logs.auth_method")}</label>
+              <select value={cfg.auth_method ?? "adc"} onChange={(e) => set("auth_method", e.target.value)}>
+                <option value="adc">{t("logs.auth.adc")}</option>
+                <option value="wif">{t("logs.auth.wif")}</option>
+                <option value="impersonation">{t("logs.auth.impersonation")}</option>
+                <option value="key">{t("logs.auth.key")}</option>
+              </select>
+            </div>
+
+            {cfg.auth_method === "adc" && (
+              <div className="small muted">{t("logs.auth_adc_hint")}</div>
+            )}
+
+            {cfg.auth_method === "wif" && (
+              <div>
+                <div className="small muted" style={{ marginBottom: 4 }}>{t("logs.auth_wif_hint")}</div>
+                <label>{t("logs.wif_config")}</label>
+                <textarea
+                  rows={4}
+                  placeholder={t("logs.wif_config_ph")}
+                  value={cfg.wif_config_json ?? ""}
+                  onChange={(e) => set("wif_config_json", e.target.value)}
+                />
+              </div>
+            )}
+
+            {cfg.auth_method === "impersonation" && (
+              <div>
+                <div className="small muted" style={{ marginBottom: 4 }}>{t("logs.auth_impersonation_hint")}</div>
+                {fld(t("logs.impersonate_sa"), "impersonate_service_account", "text", t("logs.impersonate_sa_ph"))}
+              </div>
+            )}
+
+            {cfg.auth_method === "key" && (
+              <>
+                <div className="banner" style={{ background: "var(--red-bg, #fdecec)", color: "var(--red)" }}>
+                  {t("logs.auth_key_warning")}
+                </div>
+                <div>
+                  <label>
+                    {t("logs.gcp_creds")}
+                    {cfg.gcp_credentials_json_set && <span className="badge badge-green" style={{ marginLeft: 8 }}>{t("logs.creds_set")}</span>}
+                  </label>
+                  <textarea
+                    rows={4}
+                    placeholder={t("logs.gcp_creds_ph")}
+                    value={cfg.gcp_credentials_json ?? ""}
+                    onChange={(e) => set("gcp_credentials_json", e.target.value)}
+                  />
+                  <div className="small muted" style={{ marginTop: 4 }}>{t("logs.gcp_creds_hint")}</div>
+                </div>
+              </>
+            )}
+
+            {/* Optional impersonation on top of ADC/WIF (not for the impersonation method, which has its own field). */}
+            {(cfg.auth_method === "adc" || cfg.auth_method === "wif") && (
+              <div className="row">
+                {fld(t("logs.impersonate_sa_optional"), "impersonate_service_account", "text", t("logs.impersonate_sa_ph"))}
+              </div>
+            )}
+          </>
         )}
       </div>
 
@@ -1934,7 +1967,7 @@ function ApiAdmin() {
   }, []);
 
   const fmt = (iso: string | null) =>
-    iso ? new Date(iso).toLocaleDateString(lang === "en" ? "en-GB" : "fr-FR") : "—";
+    iso ? new Date(iso).toLocaleDateString(lang === "en" ? "en-GB" : "fr-FR") : "-";
 
   async function create() {
     await wrap(async () => {
@@ -2028,7 +2061,7 @@ function ApiAdmin() {
                     onChange={(e) => setPicked(e.target.checked ? [...picked, s.key] : picked.filter((x) => x !== s.key))}
                   />
                   <span>
-                    <code className="small">{s.key}</code> {"—"} {s.label}
+                    <code className="small">{s.key}</code> {"-"} {s.label}
                     <div className="small muted">{s.desc}</div>
                   </span>
                 </label>

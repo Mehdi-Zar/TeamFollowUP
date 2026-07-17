@@ -1,4 +1,4 @@
-# ADR-0003 — Session-cookie auth with OIDC/SAML/break-glass
+# ADR-0003 - Session-cookie auth with OIDC/SAML/break-glass
 
 **Status:** Accepted
 
@@ -25,7 +25,7 @@ theft). SSO covers enterprise; break-glass guarantees recovery; local passwords 
 - Logout/secret rotation invalidates sessions globally.
 
 ## Risks
-- Cookie must be `Secure`/`https_only` behind TLS in prod (currently `https_only=False`) — see [05](../05-security.md).
+- Cookie must be `Secure`/`https_only` behind TLS in prod (currently `https_only=False`) - see [05](../05-security.md).
 - CSRF surface on cookie-auth mutations; `SameSite=Lax` mitigates partially → add CSRF token/Strict for mutations.
 - No rate-limiting/lockout on login yet.
 

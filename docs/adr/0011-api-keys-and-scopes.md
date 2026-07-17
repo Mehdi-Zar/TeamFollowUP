@@ -1,4 +1,4 @@
-# ADR-0011 — API keys and scopes (machine access)
+# ADR-0011 - API keys and scopes (machine access)
 
 **Status:** Accepted · **Date:** 2026-07-13
 
@@ -7,7 +7,7 @@
 The API only ever accepted a **session cookie** (`deps.get_current_user_any_status`).
 A script or a BI tool that needed the data had exactly one option: log in as a real
 human with their password and carry their cookie. That is a personal credential
-used as a machine credential — it dies when the person leaves, it carries *all*
+used as a machine credential - it dies when the person leaves, it carries *all*
 their rights, and it is invisible in any audit ("who pulled this export?" → "a
 human, apparently").
 
@@ -26,7 +26,7 @@ revocable and least-privileged.
    the **argon2 hash** of the secret plus the non-secret `prefix`. The prefix is
    the handle: it is what the admin UI displays and what we look the key up by,
    so a call costs one hash verification, not one per row. A lost key is not
-   recoverable — it is replaced.
+   recoverable - it is replaced.
 
 3. **Authority = scopes ∩ tribe.** `scopes` (`dashboard:read`, `roadmap:read`,
    `reports:read`, `org:read`, `budget:read`) say *which resources*; `tribe_id`
@@ -69,5 +69,5 @@ revocable and least-privileged.
   of protection. Tracked separately.
 - **`/docs` and `/openapi.json` are still public.** Unrelated to keys, but it
   means the API surface is world-readable. Tracked separately.
-- **Write scopes**, IP allow-listing, and key rotation with overlapping validity —
+- **Write scopes**, IP allow-listing, and key rotation with overlapping validity -
   all standard next steps once a real write use-case exists.

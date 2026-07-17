@@ -87,7 +87,7 @@ export default function DashboardPage() {
                 ))}
               </div>
               <ReportingButton />
-              <ExportMenu year={data.year} />
+              <ExportMenu year={data.year} docs={["dashboard", "report"]} />
             </>
           ),
         }

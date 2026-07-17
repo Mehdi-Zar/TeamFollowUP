@@ -95,7 +95,7 @@ function RequestRow({ req, opts, roleLabel, t, onApprove, onDeny }: {
           <div>
             <label>{t("access.squad")}{squadRequired ? " *" : ""}</label>
             <select value={squadId} onChange={(e) => setSquadId(e.target.value ? Number(e.target.value) : "")}>
-              <option value="">{squadRequired ? t("access.choose_squad") : "—"}</option>
+              <option value="">{squadRequired ? t("access.choose_squad") : "-"}</option>
               {opts.squads.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </div>

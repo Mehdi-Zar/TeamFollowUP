@@ -119,6 +119,33 @@ def test_squad_roadmap_html_export(client, seeded):
     assert client.get(f"/api/squads/{seeded['squad_c']}/roadmap.html").status_code == 403
 
 
+def test_jalons_are_squad_leader_only(client, seeded):
+    """Milestones (jalons) are stewarded by the squad's OWN leader (or admin) -
+    the tribe leader is deliberately excluded (assert_leads_squad)."""
+    sa = seeded["squad_a"]
+    body = {"squad_id": sa, "year": YEAR, "quarter": 1, "title": "J", "theme": "LZ"}
+
+    # Squad leader of squad A: allowed.
+    login(client, seeded["sl_a"])
+    r = client.post("/api/roadmap-items", json=body)
+    assert r.status_code == 201, r.text
+    item_id = r.json()["id"]
+
+    # Tribe leader (same tribe): denied create / update / delete.
+    login(client, seeded["tribe"])
+    assert client.post("/api/roadmap-items", json=body).status_code == 403
+    assert client.put(f"/api/roadmap-items/{item_id}", json={"title": "x"}).status_code == 403
+    assert client.delete(f"/api/roadmap-items/{item_id}").status_code == 403
+
+    # Another squad's leader: denied (not their squad).
+    login(client, seeded["sl_b"])
+    assert client.post("/api/roadmap-items", json=body).status_code == 403
+
+    # Admin: allowed.
+    login(client, seeded["admin"])
+    assert client.put(f"/api/roadmap-items/{item_id}", json={"title": "ok"}).status_code == 200
+
+
 def test_objective_status_is_derived_not_stored(client, seeded, db):
     login(client, seeded["admin"])
     # Create an objective with a deadline already in the past → must be red despite

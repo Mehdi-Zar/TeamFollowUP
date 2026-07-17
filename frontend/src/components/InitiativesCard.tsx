@@ -2,7 +2,7 @@ import { Initiative } from "../types";
 import { useI18n } from "../i18n";
 
 /** Read-only Initiatives card (assigned to the squad by the tribe leader). Always
- *  shown — even when empty — so the exact same rendering appears at the top of the
+ *  shown - even when empty - so the exact same rendering appears at the top of the
  *  squad page and of the reporting (saisie), keeping the two views coherent. */
 export function InitiativesCard({ initiatives }: { initiatives: Initiative[] }) {
   const { t } = useI18n();

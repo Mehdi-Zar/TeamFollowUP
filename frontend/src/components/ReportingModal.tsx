@@ -11,7 +11,7 @@ const WEEKDAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 
 /** "Subscribe to a report" popup, opened from the dashboard (and anywhere else).
  *  No dedicated tab: the general/org configuration lives in Administration, and
- *  this window adapts to the persona — admins get the full config, everyone else
+ *  this window adapts to the persona - admins get the full config, everyone else
  *  gets their personal subscription (which days + hour to receive the report). */
 export function ReportingModal({ onClose }: { onClose: () => void }) {
   const { t } = useI18n();
