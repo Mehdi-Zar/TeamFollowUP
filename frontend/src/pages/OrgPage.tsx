@@ -400,7 +400,7 @@ function NodeForm({
   const { t } = useI18n();
   const valid = form.kind === "squad" ? !!form.squad_id : !!form.title.trim();
   return (
-    <div className="card" style={{ borderLeft: "4px solid var(--accent)" }}>
+    <div className="card">
       <h3>{form.mode === "create" ? t("org.new") : t("org.edit")}</h3>
       <div className="row" style={{ alignItems: "flex-end" }}>
         <div style={{ width: 220 }}>
