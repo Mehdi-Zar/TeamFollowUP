@@ -182,7 +182,6 @@ tr:last-child td { border-bottom: none; }
   color: var(--text);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
-  border-left: 6px solid var(--line);
   padding: 20px;
   cursor: pointer;
   transition: transform .12s, box-shadow .12s;
@@ -217,9 +216,6 @@ tr:last-child td { border-bottom: none; }
 .rag-counts { display: inline-flex; gap: 10px; align-items: center; }
 .rag-counts span { display: inline-flex; align-items: center; gap: 4px; font-weight: 700; font-size: 14px; }
 .squad-card:hover { transform: translateY(-2px); box-shadow: 0 4px 10px rgba(20,27,71,.12), 0 10px 24px rgba(20,27,71,.10); }
-.squad-card.s-red { border-left-color: var(--red); }
-.squad-card.s-orange { border-left-color: var(--orange); }
-.squad-card.s-green { border-left-color: var(--green); }
 
 /* Quarter mini-bars */
 .quarters { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 12px; }
@@ -307,7 +303,6 @@ tr:last-child td { border-bottom: none; }
 }
 .org-leader { background: var(--ice-soft); border-color: var(--ice-blue); }
 .org-node {
-  border-left: 5px solid var(--line);
   display: inline-flex;
   flex-direction: column;
   justify-content: center;
@@ -316,9 +311,6 @@ tr:last-child td { border-bottom: none; }
   width: 170px;
   min-height: 78px;
 }
-.org-node.s-red { border-left-color: var(--red); }
-.org-node.s-orange { border-left-color: var(--orange); }
-.org-node.s-green { border-left-color: var(--green); }
 .org-subtree { display: flex; flex-direction: column; align-items: center; }
 
 /* Org-chart connectors: a vertical stub down from a parent, then a horizontal
@@ -482,10 +474,6 @@ tr:last-child td { border-bottom: none; }
 .notif-item.unread:hover { background: var(--ice-blue); }
 
 /* Feed (tweet zone) */
-.feed-post { border-left: 4px solid var(--line); }
-.feed-post.k-incident { border-left-color: var(--red); }
-.feed-post.k-info { border-left-color: var(--accent); }
-.feed-post.k-success { border-left-color: var(--green); }
 .feed-kind { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; text-transform: uppercase; letter-spacing: .03em; }
 .feed-kind.k-incident { background: rgba(180,35,24,.12); color: var(--red); }
 .feed-kind.k-info { background: var(--ice-soft); color: var(--accent); }
@@ -635,10 +623,7 @@ tr:last-child td { border-bottom: none; }
 /* Progress review */
 .change-list { margin: 4px 0 0; padding-left: 18px; }
 .change-list li { margin: 1px 0; }
-.progress-point { border-left: 3px solid var(--line); padding: 8px 0 8px 12px; }
-.progress-point.k-review { border-left-color: var(--accent); }
-.progress-point.k-weekly { border-left-color: var(--navy); }
-.progress-point.k-auto { border-left-color: var(--line); }
+.progress-point { padding: 8px 0; }
 .progress-delta-up { color: var(--green); font-weight: 700; }
 .progress-delta-down { color: var(--red); font-weight: 700; }
 .progress-delta-flat { color: var(--grey); font-weight: 700; }
