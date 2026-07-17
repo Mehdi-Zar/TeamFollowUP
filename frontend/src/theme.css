@@ -790,7 +790,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); width
 .admin-nav-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--grey); padding: 4px 12px; }
 .admin-nav-item { display: block; width: 100%; text-align: left; background: transparent; border: none; border-radius: 8px; padding: 8px 12px; font-size: 14px; color: var(--text); cursor: pointer; transition: background .12s, color .12s; }
 .admin-nav-item:hover { background: var(--ice-soft); }
-.admin-nav-item.active { background: var(--ice-soft); color: var(--navy); font-weight: 600; box-shadow: inset 3px 0 0 var(--navy); }
+.admin-nav-item.active { background: var(--ice-soft); color: var(--navy); font-weight: 600; }
 .admin-content { flex: 1; min-width: 0; }
 @media (max-width: 820px) {
   .admin-layout { flex-direction: column; }
