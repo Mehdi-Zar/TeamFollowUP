@@ -35,6 +35,7 @@ def _defaults() -> dict:
         "leaf_key_pem": "",           # active private key (PEM, unencrypted) - never exposed
         "bundled_chain_pem": "",      # intermediates that shipped with the leaf (PFX/PEM)
         "cas": [],                    # admin-managed CA store (root + intermediate)
+        "enabled": None,              # admin toggle: None -> use env default; True/False -> override
     }
 
 
@@ -261,11 +262,16 @@ def status(db: Session) -> dict:
         {k: v for k, v in c.items() if k != "pem"}
         for c in cfg.get("cas", [])
     ]
+    stored = cfg.get("enabled")
+    # Effective preference applied at the next server start (admin toggle, else env).
+    effective = settings.tls_enabled if stored is None else bool(stored)
     return {
-        # False when the app serves plain HTTP and the infrastructure terminates
-        # TLS (GKE Gateway/ALB): in that mode nothing below affects serving, so the
-        # admin UI marks the panel inactive rather than pretending it applies.
-        "tls_enabled": settings.tls_enabled,
+        # tls_enabled: whether the app should terminate TLS itself (the toggle's
+        # effective value). tls_running: whether the CURRENTLY running server does
+        # so (a live SSLContext was set at boot). They differ after a toggle until
+        # the next restart, so the UI can flag a pending change.
+        "tls_enabled": effective,
+        "tls_running": tls.is_serving_tls(),
         "mode": cfg.get("mode", "self_signed"),
         "self_signed": cfg.get("self_signed", {}),
         "active": active,
@@ -274,6 +280,27 @@ def status(db: Session) -> dict:
         "roots": [c for c in cas if c["kind"] == "root"],
         "intermediates": [c for c in cas if c["kind"] == "intermediate"],
     }
+
+
+def is_tls_enabled(db: Session) -> bool:
+    """Effective serving mode read at server startup: the admin toggle if it has
+    been set, otherwise the env default (``settings.tls_enabled``). True means the
+    app terminates TLS itself; False means it serves plain HTTP (infra does TLS)."""
+    stored = _read(db).get("enabled")
+    return settings.tls_enabled if stored is None else bool(stored)
+
+
+def set_tls_enabled(db: Session, enabled: bool) -> dict:
+    """Persist the admin toggle for in-app TLS termination and return status.
+
+    Applied at the NEXT server start: the listener's port/protocol is bound at
+    boot and cannot be swapped on a live process, so the running mode only changes
+    after a restart (``docker compose up -d`` / pod rollout)."""
+    cfg = _read(db)
+    cfg["enabled"] = bool(enabled)
+    _write(db, cfg)
+    db.commit()
+    return status(db)
 
 
 def export_ca_pem(db: Session, ca_id: str) -> str:

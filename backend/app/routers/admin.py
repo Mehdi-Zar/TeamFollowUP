@@ -492,6 +492,23 @@ def read_tls_config(db: Session = Depends(get_db), admin: User = Depends(require
     return status(db)
 
 
+@router.post("/tls-config/enabled")
+def tls_set_enabled(payload: dict = Body(default=None), db: Session = Depends(get_db),
+                    admin: User = Depends(require_admin)):
+    """POST /api/admin/tls-config/enabled - toggle in-app TLS termination.
+
+    Body: ``{"enabled": bool}``. When false the app serves plain HTTP and the
+    infrastructure (Gateway/ALB) terminates TLS. Applied at the next server start
+    (the listener is bound at boot), so the response's ``tls_running`` may still
+    differ from ``tls_enabled`` until then. Admin only. Audited."""
+    from ..tlsconfig import set_tls_enabled
+    enabled = bool((payload or {}).get("enabled"))
+    st = set_tls_enabled(db, enabled)
+    record_audit(db, admin.id, "tls_config.set_enabled", entity="tls", detail={"enabled": enabled})
+    db.commit()
+    return st
+
+
 @router.post("/tls-config/self-signed")
 def tls_regenerate_self_signed(payload: dict = Body(default=None), db: Session = Depends(get_db),
                                admin: User = Depends(require_admin)):
