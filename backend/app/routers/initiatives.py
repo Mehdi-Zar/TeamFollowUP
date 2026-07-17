@@ -24,12 +24,15 @@ def _scope_tribe(user: User, tribe_id: int | None) -> int | None:
 
 
 def _out(init: Initiative) -> InitiativeOut:
+    """Serialize an initiative, filling in the assigned squad's display name."""
     out = InitiativeOut.model_validate(init)
     out.squad_name = init.squad.name if init.squad else None
     return out
 
 
 def _validate_squad(db: Session, tribe_id: int, squad_id: int | None) -> None:
+    """Guard: the optionally-assigned squad must belong to this initiative's tribe
+    (400 otherwise). Prevents assigning an initiative to a foreign squad."""
     if squad_id is None:
         return
     sq = db.get(Squad, squad_id)
@@ -41,8 +44,12 @@ def _validate_squad(db: Session, tribe_id: int, squad_id: int | None) -> None:
 def list_initiatives(tribe_id: int | None = Query(default=None), year: int | None = Query(default=None),
                      squad_id: int | None = Query(default=None),
                      db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """Flat list of initiatives, visible to everyone in scope (read-only for non
-    tribe-leaders). Optionally filtered to a single squad (for that squad's report)."""
+    """GET /api/initiatives — flat list of initiatives, visible to everyone in
+    scope (read-only for non tribe-leaders).
+
+    Scope: an admin may target any ``tribe_id``; others are pinned to their
+    visible tribe. Optionally filtered to a single ``squad_id`` (for that squad's
+    report) and a ``year`` (defaults to current)."""
     year = year or st.current_year_quarter()[0]
     scope = _scope_tribe(user, tribe_id) if user.role == "admin" else visible_tribe_id(user)
     q = select(Initiative).where(Initiative.year == year).order_by(Initiative.display_order, Initiative.id)
@@ -56,6 +63,11 @@ def list_initiatives(tribe_id: int | None = Query(default=None), year: int | Non
 @router.post("", response_model=InitiativeOut, status_code=201)
 def create_initiative(payload: InitiativeCreate, db: Session = Depends(get_db),
                       user: User = Depends(require_tribe_or_admin)):
+    """POST /api/initiatives — create an initiative (201). Tribe leader or admin.
+
+    Requires ``assert_can_manage_tribe_reporting`` for the target tribe (404 if
+    the tribe is unknown) and that any assigned squad belongs to that tribe.
+    Audited."""
     if db.get(Tribe, payload.tribe_id) is None:
         raise HTTPException(status_code=404, detail="Tribe introuvable")
     assert_can_manage_tribe_reporting(user, payload.tribe_id)
@@ -73,6 +85,11 @@ def create_initiative(payload: InitiativeCreate, db: Session = Depends(get_db),
 @router.put("/{initiative_id}", response_model=InitiativeOut)
 def update_initiative(initiative_id: int, payload: InitiativeUpdate, db: Session = Depends(get_db),
                       user: User = Depends(require_tribe_or_admin)):
+    """PUT /api/initiatives/{initiative_id} — update an initiative. Tribe leader
+    or admin.
+
+    Requires ``assert_can_manage_tribe_reporting`` for the initiative's tribe;
+    any (re)assigned squad is re-validated against that tribe. Audited."""
     init = db.get(Initiative, initiative_id)
     if init is None:
         raise HTTPException(status_code=404, detail="Initiative introuvable")
@@ -90,6 +107,8 @@ def update_initiative(initiative_id: int, payload: InitiativeUpdate, db: Session
 @router.delete("/{initiative_id}", status_code=204)
 def delete_initiative(initiative_id: int, db: Session = Depends(get_db),
                       user: User = Depends(require_tribe_or_admin)):
+    """DELETE /api/initiatives/{initiative_id} — delete an initiative (204). Tribe
+    leader or admin, requires ``assert_can_manage_tribe_reporting``. Audited."""
     init = db.get(Initiative, initiative_id)
     if init is None:
         raise HTTPException(status_code=404, detail="Initiative introuvable")
@@ -104,7 +123,9 @@ def delete_initiative(initiative_id: int, db: Session = Depends(get_db),
 def initiatives_html(tribe_id: int | None = Query(default=None), year: int | None = Query(default=None),
                      lang: str | None = Query(default=None),
                      db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """Flat initiatives list as a standalone page."""
+    """GET /api/initiatives/report.html — flat initiatives list as a standalone
+    page. Any authenticated user; scoped like the list endpoint (admins may target
+    a tribe, others are pinned)."""
     from ..report import build_initiative_list, render_initiatives_html
     year = year or st.current_year_quarter()[0]
     scope = _scope_tribe(user, tribe_id) if user.role == "admin" else visible_tribe_id(user)
@@ -116,7 +137,10 @@ def initiatives_html(tribe_id: int | None = Query(default=None), year: int | Non
 def initiatives_pptx(tribe_id: int | None = Query(default=None), year: int | None = Query(default=None),
                      lang: str | None = Query(default=None),
                      db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """Flat initiatives list as a branded deck."""
+    """GET /api/initiatives/report.pptx — flat initiatives list as a branded deck.
+
+    Any authenticated user; scoped like the list endpoint. Returns 501 if
+    python-pptx is not installed."""
     from ..report import build_initiative_list, render_initiatives_pptx
     year = year or st.current_year_quarter()[0]
     scope = _scope_tribe(user, tribe_id) if user.role == "admin" else visible_tribe_id(user)

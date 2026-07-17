@@ -1,3 +1,13 @@
+/**
+ * Internationalization (i18n) layer.
+ *
+ * Holds the FR/EN translation dictionary (`DICT`) plus small enum->label maps
+ * (RAG/roadmap/trend/role), and exposes them through the {@link useI18n} hook.
+ * `useI18n().t(key, vars)` looks up a key for the active language and
+ * interpolates `{name}` placeholders; sibling helpers format statuses, roles,
+ * freshness and dates for the current locale. The chosen language is persisted
+ * in localStorage (`trt_lang`).
+ */
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { Rag, RoadmapStatus, Trend } from "./types";
 
@@ -1889,6 +1899,11 @@ interface I18n {
 
 const I18nContext = createContext<I18n | undefined>(undefined);
 
+/**
+ * Provides the i18n context. Initialises the language from localStorage
+ * (defaulting to French), persists it and mirrors it onto `<html lang>` on
+ * change, and builds the translation/formatting functions for consumers.
+ */
 export function I18nProvider({ children }: { children: ReactNode }) {
   const [lang, setLangState] = useState<Lang>(() => (localStorage.getItem("trt_lang") as Lang) || "fr");
   useEffect(() => {
@@ -1896,6 +1911,11 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     document.documentElement.lang = lang;
   }, [lang]);
 
+  /**
+   * Translate `key` for the active language, interpolating any `{name}`
+   * placeholders from `vars`. Falls back to the raw key if it's missing, so a
+   * missing translation is visible rather than blank.
+   */
   const t = (key: string, vars?: Record<string, string | number>) => {
     let s = DICT[lang][key] ?? key;
     if (vars) for (const k of Object.keys(vars)) s = s.replace(`{${k}}`, String(vars[k]));
@@ -1923,6 +1943,10 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
 }
 
+/**
+ * Access the i18n context (`t`, `lang`, `setLang`, and the status/date
+ * formatters). Throws if used outside {@link I18nProvider}.
+ */
 export function useI18n() {
   const ctx = useContext(I18nContext);
   if (!ctx) throw new Error("useI18n must be used within I18nProvider");

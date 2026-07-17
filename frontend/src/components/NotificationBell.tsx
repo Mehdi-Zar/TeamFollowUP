@@ -1,3 +1,7 @@
+// NotificationBell: top-bar bell showing the unread in-app notification count with
+// a dropdown of recent items. Polls the API on an interval, marks items read on
+// open, and navigates to each item's deep link. Rendered only when the in-app
+// notifications module is enabled.
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api";
@@ -5,6 +9,7 @@ import { useI18n } from "../i18n";
 import { useModule } from "../config";
 import { Notif, NotificationsResponse } from "../types";
 
+/** Inline bell glyph (kept local so this component has no icon dependency). */
 function BellIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -14,6 +19,8 @@ function BellIcon() {
   );
 }
 
+/** Bell button + notifications dropdown. Self-contained: fetches its own data,
+ *  polls every 15s, and closes on outside click. Returns null when disabled. */
 export default function NotificationBell() {
   const { t, formatDateTime } = useI18n();
   const navigate = useNavigate();
@@ -27,6 +34,7 @@ export default function NotificationBell() {
     if (!inappOn) return;
     api.get<NotificationsResponse>("/api/notifications").then(setData).catch(() => {});
   }
+  // Poll for new notifications every 15s while mounted.
   useEffect(() => {
     load();
     const id = setInterval(load, 15000);

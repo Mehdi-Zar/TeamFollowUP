@@ -1,3 +1,12 @@
+/**
+ * DashboardPage - the leadership overview of every squad's health.
+ *
+ * Shows a KPI band (average progress, blocked/at-risk milestones, stale squads,
+ * squad count), an absences widget, a filter/search/sort toolbar, and a grid of
+ * one squad-health card each. Admins additionally get a tribe filter and see the
+ * tribe badge on every card. The "Initiatives" tab lives under the same menu and
+ * simply routes to /initiatives. Data comes from a single /api/dashboard call.
+ */
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../api";
@@ -14,12 +23,20 @@ import { useSetPageChrome } from "../components/pageChrome";
 type SortKey = "risk" | "progress" | "name" | "fresh";
 type Health = "all" | "blocked" | "at_risk" | "on_track";
 
+/** Derive a squad's overall health from its milestone counts: any blocked
+ *  milestone -> "blocked", else any at-risk -> "at_risk", else "on_track".
+ *  Drives both the status dot/colour and the health filter. */
 function healthOf(c: SquadCard): "blocked" | "at_risk" | "on_track" {
   if (c.blocked_count > 0) return "blocked";
   if (c.at_risk_count > 0) return "at_risk";
   return "on_track";
 }
 
+/**
+ * Dashboard overview page. Loads the squad-health cards for a given year (and,
+ * for admins, an optional tribe), then filters/sorts them client-side.
+ * Access: any authenticated user; only admins see the tribe filter + tribe badges.
+ */
 export default function DashboardPage() {
   const { t, roadmap } = useI18n();
   const { default_year } = useConfig();
@@ -39,13 +56,16 @@ export default function DashboardPage() {
   const [tribeFilter, setTribeFilter] = useState<string>("");
   const [query, setQuery] = useState("");
 
+  // Seed the selected year from the org default once it is known.
   useEffect(() => {
     if (year === null && default_year) setYear(default_year);
   }, [default_year]);
+  // Tribe list only needed to populate the admin-only tribe filter.
   useEffect(() => {
     if (isAdmin) api.get<Tribe[]>("/api/tribes").then(setTribes).catch(() => {});
   }, [isAdmin]);
 
+  // (Re)load the dashboard whenever the year or (admin) tribe filter changes.
   useEffect(() => {
     const p = new URLSearchParams();
     if (year) p.set("year", String(year));
@@ -53,6 +73,7 @@ export default function DashboardPage() {
     api.get<DashboardOut>(`/api/dashboard?${p.toString()}`).then(setData).catch((e) => setError(e.message));
   }, [year, tribeFilter, isAdmin]);
 
+  // Client-side view of the cards: apply search + health + freshness filters, then sort.
   const cards = useMemo(() => {
     if (!data) return [];
     const needle = query.trim().toLowerCase();
@@ -64,6 +85,7 @@ export default function DashboardPage() {
       return true;
     });
     r = [...r];
+    // "risk": most at-risk first (risk rank, then blocked count, then name as tie-breakers).
     if (sort === "risk") r.sort((a, b) => b.risk_rank - a.risk_rank || b.blocked_count - a.blocked_count || a.name.localeCompare(b.name));
     else if (sort === "progress") r.sort((a, b) => a.annual_progress - b.annual_progress);
     else if (sort === "name") r.sort((a, b) => a.name.localeCompare(b.name));
@@ -175,6 +197,13 @@ export default function DashboardPage() {
   );
 }
 
+/**
+ * One squad-health card in the dashboard grid. Shows identity (name, leader,
+ * member count), annual progress bar, and a one-line health readout with a
+ * freshness badge. Colour/dot reflect health (blocked/at-risk/on-track).
+ * Clicking navigates to that squad's detail page. `showTribe` adds the tribe
+ * badge (admin cross-tribe view only).
+ */
 function Card({ card, showTribe }: { card: SquadCard; showTribe?: boolean }) {
   const navigate = useNavigate();
   const { t, roadmap } = useI18n();

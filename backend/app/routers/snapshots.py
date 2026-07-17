@@ -1,3 +1,11 @@
+"""Report snapshots: frozen point-in-time captures of a squad's reporting cycle.
+
+Submitting a cycle ("Saisie") serializes the squad's current objectives, roadmap,
+quarterly progress and KPIs into an immutable ReportSnapshot; the read routes expose
+a squad's snapshot history and let two snapshots be diffed. The router is gated by
+the `reporting` module; submission additionally needs the `reporting` capability
+plus writer rights on the squad, while reads follow the normal squad-visibility rules.
+"""
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -14,6 +22,9 @@ router = APIRouter(prefix="/api/squads/{squad_id}/snapshots", tags=["snapshots"]
 
 
 def build_payload(squad: Squad, year: int) -> dict:
+    """Serialize the squad's current state for `year` into the snapshot payload dict:
+    objectives (with computed RAG), roadmap items, per-quarter progress/comments and
+    KPIs. This frozen JSON is what makes a snapshot independent of later edits."""
     progress = st.year_progress(squad, year)
     comments = st.quarter_comments(squad, year)
     return {
@@ -47,12 +58,21 @@ def build_payload(squad: Squad, year: int) -> dict:
              dependencies=[Depends(require_capability("reporting"))])
 def submit_cycle(squad_id: int, payload: SubmitCycleIn, db: Session = Depends(get_db),
                  user: User = Depends(require_writer)):
+    """Freeze the squad's current reporting cycle into a new snapshot.
+
+    POST /api/squads/{squad_id}/snapshots
+    Access: writer role + edit rights on the squad; additionally gated by the
+    `reporting` capability. Business rules: defaults to the current year, and
+    auto-labels the cycle "Soumission N" when no label is provided.
+    Side effects: writes a "cycle.submit" audit entry.
+    """
     squad = db.get(Squad, squad_id)
     if squad is None:
         raise HTTPException(status_code=404, detail="Squad introuvable")
     assert_can_edit_squad(db, user, squad_id)
     year = payload.year or st.current_year_quarter()[0]
 
+    # Auto-number the cycle label from how many snapshots already exist.
     existing = db.scalars(select(ReportSnapshot).where(ReportSnapshot.squad_id == squad_id)).all()
     label = payload.cycle_label or f"Soumission {len(existing) + 1}"
 
@@ -71,6 +91,11 @@ def submit_cycle(squad_id: int, payload: SubmitCycleIn, db: Session = Depends(ge
 
 @router.get("", response_model=list[SnapshotMeta])
 def list_snapshots(squad_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """List a squad's snapshots (metadata only), newest first.
+
+    GET /api/squads/{squad_id}/snapshots
+    Access: any user who can see the squad. 404 if the squad is unknown.
+    """
     if db.get(Squad, squad_id) is None:
         raise HTTPException(status_code=404, detail="Squad introuvable")
     snaps = db.scalars(
@@ -83,6 +108,12 @@ def list_snapshots(squad_id: int, db: Session = Depends(get_db), user: User = De
 @router.get("/{snapshot_id}", response_model=SnapshotOut)
 def get_snapshot(squad_id: int, snapshot_id: int, db: Session = Depends(get_db),
                  user: User = Depends(get_current_user)):
+    """Return one full snapshot (frozen payload included).
+
+    GET /api/squads/{squad_id}/snapshots/{snapshot_id}
+    Access: any user who can see the squad. 404 if the snapshot is missing or does
+    not belong to this squad (the squad_id/snapshot_id pairing is verified).
+    """
     snap = db.get(ReportSnapshot, snapshot_id)
     if snap is None or snap.squad_id != squad_id:
         raise HTTPException(status_code=404, detail="Snapshot introuvable")
@@ -92,6 +123,13 @@ def get_snapshot(squad_id: int, snapshot_id: int, db: Session = Depends(get_db),
 @router.get("/{snapshot_id}/compare", response_model=dict)
 def compare_to_previous(squad_id: int, snapshot_id: int, db: Session = Depends(get_db),
                         user: User = Depends(get_current_user)):
+    """Diff a snapshot against the squad's immediately preceding one.
+
+    GET /api/squads/{squad_id}/snapshots/{snapshot_id}/compare
+    Access: any user who can see the squad. Returns the current and previous
+    payloads plus a per-section diff (added/changed/removed). When there is no
+    earlier snapshot, `previous` is null and everything reads as "added".
+    """
     snap = db.get(ReportSnapshot, snapshot_id)
     if snap is None or snap.squad_id != squad_id:
         raise HTTPException(status_code=404, detail="Snapshot introuvable")
@@ -108,10 +146,17 @@ def compare_to_previous(squad_id: int, snapshot_id: int, db: Session = Depends(g
 
 
 def _index(items):
+    """Index a list of snapshot items by their `id` for O(1) prev/cur matching."""
     return {it["id"]: it for it in (items or [])}
 
 
 def _diff(prev: dict | None, cur: dict) -> dict:
+    """Compute a per-section diff between two snapshot payloads.
+
+    For each of objectives/roadmap_items/kpis, classify every item as added (only in
+    cur), removed (only in prev) or changed (field-level from/to deltas). A None
+    `prev` yields an all-"added" diff.
+    """
     result = {}
     for section in ("objectives", "roadmap_items", "kpis"):
         prev_idx = _index((prev or {}).get(section, []))

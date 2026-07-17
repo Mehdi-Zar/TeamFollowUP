@@ -41,6 +41,8 @@ def _scope_tribe(user: User) -> int | None:
 
 
 def _name(db: Session, uid: int | None, cache: dict) -> str | None:
+    """Resolve a user id to a display name, memoized in `cache` to avoid re-querying
+    the same user across a batch of serialized leaves. Falls back to "#<id>"."""
     if uid is None:
         return None
     if uid not in cache:
@@ -50,6 +52,13 @@ def _name(db: Session, uid: int | None, cache: dict) -> str | None:
 
 
 def _serialize(db: Session, lv: Leave, viewer: User, cache: dict) -> LeaveOut:
+    """Shape a Leave for a specific viewer, computing that viewer's rights on it.
+
+    The free-text motif/comment and decision comment are only exposed to the owner,
+    their manager or an admin (may_see_comment); can_edit/can_decide drive the UI
+    (owner may edit while pending/approved; a manager may edit and, if pending,
+    approve/reject).
+    """
     is_owner = lv.user_id == viewer.id
     manages = can_manage_leave(db, viewer, lv.user_id)
     may_see_comment = is_owner or manages
@@ -71,6 +80,8 @@ def _serialize(db: Session, lv: Leave, viewer: User, cache: dict) -> LeaveOut:
 
 
 def _validate_range(start: date, end: date, start_half: bool, end_half: bool) -> None:
+    """Reject an inconsistent date range (422): end before start, or a single day
+    flagged as a half-day both in the morning and the afternoon."""
     if end < start:
         raise HTTPException(status_code=422, detail="La date de fin précède la date de début")
     if start == end and start_half and end_half:
@@ -78,6 +89,8 @@ def _validate_range(start: date, end: date, start_half: bool, end_half: bool) ->
 
 
 def _get_type(db: Session, type_id: int) -> LeaveType:
+    """Fetch a leave type, treating an inactive one as not found (404) so retired
+    types cannot be used on new/edited leaves."""
     lt = db.get(LeaveType, type_id)
     if lt is None or not lt.is_active:
         raise HTTPException(status_code=404, detail="Type d'absence introuvable")
@@ -85,11 +98,14 @@ def _get_type(db: Session, type_id: int) -> LeaveType:
 
 
 def _require_detail(lt: LeaveType, detail: str | None) -> None:
+    """Enforce the type's `requires_detail` rule: a non-empty precision is mandatory
+    for such types (422 otherwise)."""
     if lt.requires_detail and not (detail or "").strip():
         raise HTTPException(status_code=422, detail="Une précision est requise pour ce type d'absence")
 
 
 def _users_in_squad(db: Session, squad_id: int) -> list[int]:
+    """Return the user ids of squad members that are linked to a user account."""
     return list(db.scalars(select(Member.user_id).where(
         Member.squad_id == squad_id, Member.user_id.isnot(None))).all())
 
@@ -99,6 +115,11 @@ def _users_in_squad(db: Session, squad_id: int) -> list[int]:
 @router.get("/types", response_model=list[LeaveTypeOut])
 def list_types(include_inactive: bool = Query(default=False),
                db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """List leave types (active only by default; include_inactive shows retired ones).
+
+    GET /api/leaves/types
+    Access: any authenticated user (types are visible to everyone).
+    """
     stmt = select(LeaveType)
     if not include_inactive:
         stmt = stmt.where(LeaveType.is_active.is_(True))
@@ -107,6 +128,11 @@ def list_types(include_inactive: bool = Query(default=False),
 
 @router.post("/types", response_model=LeaveTypeOut, status_code=201)
 def create_type(payload: LeaveTypeIn, db: Session = Depends(get_db), user: User = Depends(require_admin)):
+    """Create a leave type.
+
+    POST /api/leaves/types
+    Access: admin only. Side effects: writes a "leave_type.create" audit entry.
+    """
     lt = LeaveType(label=payload.label.strip(), color=payload.color, is_active=payload.is_active,
                    display_order=payload.display_order)
     db.add(lt)
@@ -120,6 +146,11 @@ def create_type(payload: LeaveTypeIn, db: Session = Depends(get_db), user: User 
 @router.put("/types/{type_id}", response_model=LeaveTypeOut)
 def update_type(type_id: int, payload: LeaveTypeIn, db: Session = Depends(get_db),
                 user: User = Depends(require_admin)):
+    """Update a leave type (label/color/order/active flag).
+
+    PUT /api/leaves/types/{type_id}
+    Access: admin only. 404 if the type is unknown.
+    """
     lt = db.get(LeaveType, type_id)
     if lt is None:
         raise HTTPException(status_code=404, detail="Type d'absence introuvable")
@@ -134,6 +165,13 @@ def update_type(type_id: int, payload: LeaveTypeIn, db: Session = Depends(get_db
 
 @router.delete("/types/{type_id}", status_code=204)
 def delete_type(type_id: int, db: Session = Depends(get_db), user: User = Depends(require_admin)):
+    """Delete (or soft-retire) a leave type.
+
+    DELETE /api/leaves/types/{type_id} -> 204 No Content
+    Access: admin only. Business rule: if any leave still references the type it is
+    deactivated (is_active=False) rather than deleted, to preserve referential
+    integrity; only unused types are hard-deleted.
+    """
     lt = db.get(LeaveType, type_id)
     if lt is None:
         raise HTTPException(status_code=404, detail="Type d'absence introuvable")
@@ -148,6 +186,8 @@ def delete_type(type_id: int, db: Session = Depends(get_db), user: User = Depend
 # ----- per-tribe configuration ---------------------------------------------------
 
 def _resolve_tribe(db: Session, user: User, tribe_id: int | None) -> Tribe:
+    """Resolve the tribe to configure: the explicit tribe_id or the caller's own.
+    400 when there is no tribe to target, 404 when the id is unknown."""
     if tribe_id is None:
         tribe_id = user.tribe_id
     if tribe_id is None:
@@ -161,6 +201,12 @@ def _resolve_tribe(db: Session, user: User, tribe_id: int | None) -> Tribe:
 @router.get("/config", response_model=LeaveConfigOut)
 def get_config(tribe_id: int | None = Query(default=None),
                db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Return a tribe's leave configuration (approval requirement, overlap threshold).
+
+    GET /api/leaves/config?tribe_id=...
+    Access: any authenticated user, but only within their own leave-visibility
+    perimeter (can_see_leaves_of) - 403 otherwise.
+    """
     tribe = _resolve_tribe(db, user, tribe_id)
     if not can_see_leaves_of(user, tribe.id):
         raise HTTPException(status_code=403, detail="Hors de votre périmètre")
@@ -172,6 +218,12 @@ def get_config(tribe_id: int | None = Query(default=None),
 @router.put("/config", response_model=LeaveConfigOut)
 def set_config(payload: LeaveConfigIn, tribe_id: int | None = Query(default=None),
                db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Update a tribe's leave configuration.
+
+    PUT /api/leaves/config?tribe_id=...
+    Access: admin or tribe leader; a tribe leader may only configure their own tribe.
+    Side effects: writes a "leave_config.update" audit entry.
+    """
     if user.role not in (ADMIN, TRIBE):
         raise HTTPException(status_code=403, detail="Réservé au tribe leader")
     tribe = _resolve_tribe(db, user, tribe_id)
@@ -224,6 +276,13 @@ def list_leaves(
     mine: bool = Query(default=False),
     db: Session = Depends(get_db), user: User = Depends(get_current_user),
 ):
+    """List leaves matching the given filters, within the caller's tribe scope.
+
+    GET /api/leaves?from=&to=&user_id=&squad_id=&status=&mine=
+    Access: any authenticated user; non-admins are limited to their own tribe.
+    Filters: date overlap (from/to), a single user (or mine=true), a squad's
+    members, and status. Serialization hides comments the caller may not see.
+    """
     stmt = select(Leave)
     scope = _scope_tribe(user)
     if scope is not None:
@@ -248,6 +307,16 @@ def list_leaves(
 
 @router.post("", response_model=LeaveOut, status_code=201)
 def create_leave(payload: LeaveIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """File a leave for oneself or, for a manager, on behalf of someone in scope.
+
+    POST /api/leaves
+    Access: any authenticated user for their own leave; filing on behalf of another
+    requires manage rights over that person (can_manage_leave) - 403 otherwise.
+    Business rules: validates the type/detail/date range; whether approval is needed
+    comes from the target's tribe (leaves_require_approval), but a manager filing is
+    an approver so the leave is auto-approved.
+    Side effects: writes a "leave.create" audit entry.
+    """
     target_id = payload.user_id or user.id
     target = db.get(User, target_id)
     if target is None:
@@ -287,6 +356,14 @@ def create_leave(payload: LeaveIn, db: Session = Depends(get_db), user: User = D
 @router.put("/{leave_id}", response_model=LeaveOut)
 def update_leave(leave_id: int, payload: LeaveUpdate, db: Session = Depends(get_db),
                  user: User = Depends(get_current_user)):
+    """Edit a leave.
+
+    PUT /api/leaves/{leave_id}
+    Access: the owner (while pending or approved) or a manager of the person.
+    Business rules: re-validates type/detail/range; if the owner (not a manager)
+    edits an approved leave in a tribe that requires approval, it is reset to
+    pending and its decision fields cleared. A manager's edit keeps the status.
+    """
     lv = db.get(Leave, leave_id)
     if lv is None:
         raise HTTPException(status_code=404, detail="Absence introuvable")
@@ -324,6 +401,13 @@ def update_leave(leave_id: int, payload: LeaveUpdate, db: Session = Depends(get_
 @router.post("/{leave_id}/decision", response_model=LeaveOut)
 def decide_leave(leave_id: int, payload: LeaveDecisionIn, db: Session = Depends(get_db),
                  user: User = Depends(get_current_user)):
+    """Approve or reject a leave.
+
+    POST /api/leaves/{leave_id}/decision
+    Access: a manager of the person the leave belongs to (can_manage_leave) - 403
+    otherwise. Records the decider/decision time/comment.
+    Side effects: writes a "leave.decision" audit entry.
+    """
     lv = db.get(Leave, leave_id)
     if lv is None:
         raise HTTPException(status_code=404, detail="Absence introuvable")
@@ -342,6 +426,12 @@ def decide_leave(leave_id: int, payload: LeaveDecisionIn, db: Session = Depends(
 
 @router.delete("/{leave_id}", status_code=204)
 def delete_leave(leave_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Delete a leave.
+
+    DELETE /api/leaves/{leave_id} -> 204 No Content
+    Access: the owner or a manager of the person - 403 otherwise.
+    Side effects: writes a "leave.delete" audit entry.
+    """
     lv = db.get(Leave, leave_id)
     if lv is None:
         raise HTTPException(status_code=404, detail="Absence introuvable")
@@ -362,7 +452,13 @@ def overlaps(
     db: Session = Depends(get_db), user: User = Depends(get_current_user),
 ):
     """Days where a squad has at least `overlap_threshold` people away at once,
-    restricted to the squads the caller can manage."""
+    restricted to the squads the caller can manage.
+
+    GET /api/leaves/overlaps?from=&to=
+    Access: leaders only (admin -> all squads, tribe leader -> own tribe, squad
+    leader -> led squads; others get an empty list); gated by `leaves >
+    overlap_alert`. The window is capped at ~1 year (422 beyond).
+    """
     if user.role == ADMIN:
         squads = db.scalars(select(Squad)).all()
     elif user.role == TRIBE:
@@ -405,6 +501,13 @@ def export_csv(
     date_to: date | None = Query(default=None, alias="to"),
     db: Session = Depends(get_db), user: User = Depends(get_current_user),
 ):
+    """Export leaves as a CSV attachment, within the caller's tribe scope.
+
+    GET /api/leaves/export.csv?from=&to=
+    Access: any authenticated user; non-admins limited to their own tribe. The
+    "Motif" column reflects the same comment-visibility rules as the API (only
+    populated for leaves whose comment the caller may see).
+    """
     stmt = select(Leave)
     scope = _scope_tribe(user)
     if scope is not None:

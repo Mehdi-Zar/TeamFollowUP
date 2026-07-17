@@ -1,3 +1,7 @@
+// PrintSquadPage - print/PDF-oriented view of a single squad's report.
+// It is a bare, unchromed layout (no app nav) meant to be opened in its own
+// window and immediately sent to the browser's print dialog. It also exports the
+// shared ReportHeader / ReportFooter used by the other print pages.
 import { useEffect, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { api } from "../api";
@@ -5,6 +9,11 @@ import { useI18n } from "../i18n";
 import { SquadDetail } from "../types";
 import { useModule } from "../config";
 
+/**
+ * Shared report banner (product label + title) with a "PDF" button that triggers
+ * the print dialog. The button carries `no-print` so it is excluded from output.
+ * Exported for reuse by the other print pages.
+ */
 export function ReportHeader({ title }: { title: string }) {
   return (
     <div style={{ borderBottom: "2px solid var(--navy)", paddingBottom: 8, marginBottom: 16 }}>
@@ -21,6 +30,7 @@ export function ReportHeader({ title }: { title: string }) {
   );
 }
 
+/** Shared report footer showing the generation timestamp. Exported for reuse. */
 export function ReportFooter() {
   return (
     <div className="small muted" style={{ borderTop: "1px solid var(--line)", paddingTop: 8, marginTop: 20 }}>
@@ -29,6 +39,10 @@ export function ReportFooter() {
   );
 }
 
+/**
+ * One report row: a left label, an optional right-aligned value (e.g. status),
+ * and an optional muted sub-label. Used for roadmap items, objectives and KPIs.
+ */
 function Line({ left, right, sub }: { left: string; right?: string; sub?: string }) {
   return (
     <div style={{ display: "flex", justifyContent: "space-between", borderBottom: "1px solid var(--line)", padding: "5px 0" }}>
@@ -41,6 +55,20 @@ function Line({ left, right, sub }: { left: string; right?: string; sub?: string
   );
 }
 
+/**
+ * Printable one-squad report: annual/quarterly progress, roadmap items grouped by
+ * quarter, objectives, and (when the KPI module + squad opt-in are on) KPIs.
+ *
+ * Business logic:
+ * - Squad id comes from the route (`:id`); an optional `?year=` narrows the report
+ *   to a given reporting year.
+ * - Once the squad data has loaded, a short timeout auto-opens the print dialog so
+ *   the page behaves like a "generate PDF" action.
+ * - The KPI block is doubly gated: the `squad_content.kpis` module must be enabled
+ *   AND the squad must have KPIs enabled.
+ *
+ * Access: users who can view the squad (route/endpoint enforce it).
+ */
 export default function PrintSquadPage() {
   const { id } = useParams();
   const [params] = useSearchParams();
@@ -49,10 +77,12 @@ export default function PrintSquadPage() {
   const kpisOn = useModule()("squad_content", "kpis");
   const [squad, setSquad] = useState<SquadDetail | null>(null);
 
+  // Fetch the squad detail whenever the id or year changes.
   useEffect(() => {
     api.get<SquadDetail>(`/api/squads/${id}${year ? `?year=${year}` : ""}`).then(setSquad);
   }, [id, year]);
 
+  // Auto-trigger printing once data is in; the delay lets the DOM paint first.
   useEffect(() => {
     if (squad) setTimeout(() => window.print(), 400);
   }, [squad]);
@@ -70,6 +100,7 @@ export default function PrintSquadPage() {
         </tbody>
       </table>
 
+      {/* One section per quarter: its progress % plus that quarter's roadmap items */}
       {[1, 2, 3, 4].map((q) => {
         const cell = squad.quarter_progress[String(q)];
         const items = squad.roadmap_items.filter((r) => r.quarter === q);

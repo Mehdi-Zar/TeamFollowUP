@@ -26,6 +26,7 @@ _T = {
 
 
 def _lang(lang: str | None) -> str:
+    """Normalize a language hint to a supported code ('en' or, by default, 'fr')."""
     return "en" if lang == "en" else "fr"
 
 
@@ -57,6 +58,10 @@ _ORG_CSS = """<style>
 
 
 def _node_html(node: dict, e) -> str:
+    """Recursively render one org node (and its children) as a nested <li>.
+
+    A node bound to a squad is tinted with that squad's derived status colour.
+    `e` is the HTML-escaper passed down to avoid re-importing it per call."""
     status = node.get("squad_status") if node.get("squad_id") else None
     cls = "org-node" + (" has-status" if status else "")
     style = ""
@@ -73,6 +78,8 @@ def _node_html(node: dict, e) -> str:
 
 def render_org_html(roots: list[dict], scope_name: str, *, lang: str = "fr",
                     standalone: bool = True) -> str:
+    """Render an org tree as a printable HTML page (CSS-drawn connectors between
+    boxes). standalone wraps the fragment in a full <html> document."""
     e = html.escape
     lang = _lang(lang)
     title = _T[lang]["org"]
@@ -129,6 +136,11 @@ def _layout(roots: list[dict]) -> tuple[list[dict], int, int]:
 
 
 def render_org_pptx(roots: list[dict], scope_name: str, *, lang: str = "fr") -> bytes:
+    """Render the org tree as a single-slide PPTX.
+
+    Uses _layout to assign each node a leaf-slot x and a depth, then scales box
+    size / row height to fit everything on one 13.33x7.5in slide. Connectors are
+    drawn first so the boxes sit on top; squad-bound boxes are status-coloured."""
     Presentation, Inches, Pt, Emu, RGBColor, PP_ALIGN, MSO_ANCHOR, MSO_SHAPE = _pptx_toolkit()
     from pptx.enum.shapes import MSO_CONNECTOR
 

@@ -1,3 +1,25 @@
+"""FastAPI dependencies enforcing authentication, RBAC and tribe-scoped access.
+
+This is the security backbone of the API: it turns the session cookie (or an API
+key) into an authenticated principal and exposes the reusable authorization
+building blocks that every router depends on. Two orthogonal axes are enforced
+here:
+
+  * Role tiers (admin > tribe_leader > squad_leader > member) grant coarse-grained
+    write/manage rights.
+  * Tribe scope confines non-admins to their own tribe's data, and squad
+    ownership further narrows squad leaders to the squads they lead.
+
+Design conventions used throughout:
+  * ``get_current_user`` is the default gate (valid session AND an "active"
+    account); ``get_current_user_any_status`` is the deliberate exception for the
+    handful of endpoints a pending/disabled user still needs.
+  * ``can_*`` helpers return a bool (for branching), while the ``assert_*`` /
+    ``require_*`` wrappers raise an HTTPException so they can be dropped straight
+    into a route as a guard/dependency.
+  * A denied request returns 403 (forbidden) except when the resource must stay
+    hidden, where 404 is used instead (see ``require_module``).
+"""
 from fastapi import Depends, HTTPException, Request, status as http_status
 from sqlalchemy.orm import Session
 
@@ -8,7 +30,8 @@ from .security import decode_session
 
 THRESHOLD_KEY = "staleness_threshold_days"
 
-# Role tiers
+# Role tiers, from most to least privileged. String literals are the values
+# persisted on User.role; these constants avoid magic strings across the codebase.
 ADMIN = "admin"
 TRIBE = "tribe_leader"
 SQUAD = "squad_leader"
@@ -16,16 +39,24 @@ MEMBER = "member"
 
 
 def get_threshold(db: Session) -> int:
+    """Days after which a reporting item is considered stale (from general config)."""
     from .generalconfig import get_general
     return get_general(db)["staleness_threshold_days"]
 
 
 def set_threshold(db: Session, value: int) -> None:
+    """Persist the staleness threshold (admin-configurable general setting)."""
     from .generalconfig import set_general
     set_general(db, {"staleness_threshold_days": value})
 
 
 def record_audit(db: Session, user_id, action, entity=None, entity_id=None, detail=None) -> None:
+    """Append an audit-trail entry within the caller's transaction.
+
+    Only stages the row (no commit) so the audit line lives or dies with the
+    business change it records. ``entity_id`` is coerced to str for uniform
+    storage across entity types.
+    """
     db.add(AuditLog(user_id=user_id, action=action, entity=entity,
                     entity_id=str(entity_id) if entity_id is not None else None, detail=detail))
 
@@ -42,8 +73,10 @@ def get_current_user_any_status(request: Request, db: Session = Depends(get_db))
         raise HTTPException(status_code=401, detail="Session invalide")
     user = db.get(User, user_id)
     if user is None:
+        # Session referenced a user that no longer exists (deleted account).
         raise HTTPException(status_code=401, detail="Utilisateur introuvable")
-    # Surface impersonation context (admin viewing the app as another user).
+    # Surface impersonation context (admin viewing the app as another user) on
+    # request.state so downstream code/audit can tell who is really acting.
     request.state.impersonator_id = impersonator_id
     return user
 
@@ -59,18 +92,21 @@ def get_current_user(user: User = Depends(get_current_user_any_status)) -> User:
 
 
 def require_admin(user: User = Depends(get_current_user)) -> User:
+    """Route guard: allow only administrators."""
     if user.role != ADMIN:
         raise HTTPException(status_code=403, detail="Accès réservé aux administrateurs")
     return user
 
 
 def require_tribe_or_admin(user: User = Depends(get_current_user)) -> User:
+    """Route guard: allow tribe leaders and admins (tribe-level management)."""
     if user.role not in (ADMIN, TRIBE):
         raise HTTPException(status_code=403, detail="Accès réservé au tribe leader")
     return user
 
 
 def require_writer(user: User = Depends(get_current_user)) -> User:
+    """Route guard: allow anyone who can write (admin/tribe/squad); members are read-only."""
     if user.role not in (ADMIN, TRIBE, SQUAD):
         raise HTTPException(status_code=403, detail="Accès en écriture refusé")
     return user
@@ -82,18 +118,26 @@ def visible_tribe_id(user: User) -> int | None:
 
 
 def tribe_in_scope(user: User, tribe_id: int | None) -> bool:
+    """True if the user may act on ``tribe_id``: admins anywhere, others only in
+    their own tribe. A None target is out of scope for non-admins (no cross-tribe
+    or org-wide reach)."""
     if user.role == ADMIN:
         return True
     return tribe_id is not None and tribe_id == user.tribe_id
 
 
 def assert_tribe_scope(user: User, tribe_id: int | None) -> None:
+    """Raising counterpart of ``tribe_in_scope`` for use as an inline guard."""
     if not tribe_in_scope(user, tribe_id):
         raise HTTPException(status_code=403, detail="Cette tribe n'est pas dans votre périmètre")
 
 
 def can_edit_squad(db: Session, user: User, squad_id: int) -> bool:
-    """Roadmap / KPIs / members / progress of a squad (tribe-scoped)."""
+    """Roadmap / KPIs / members / progress of a squad (tribe-scoped).
+
+    Admin edits any squad; a tribe leader any squad of their tribe; a squad leader
+    only the squads they lead. Unknown squad -> denied.
+    """
     squad = db.get(Squad, squad_id)
     if squad is None:
         return False
@@ -107,6 +151,7 @@ def can_edit_squad(db: Session, user: User, squad_id: int) -> bool:
 
 
 def assert_can_edit_squad(db: Session, user: User, squad_id: int) -> None:
+    """Raising counterpart of ``can_edit_squad``."""
     if not can_edit_squad(db, user, squad_id):
         raise HTTPException(status_code=403, detail="Vous ne pouvez éditer que votre squad")
 
@@ -127,6 +172,7 @@ def leads_squad(db: Session, user: User, squad_id: int) -> bool:
 
 
 def assert_leads_squad(db: Session, user: User, squad_id: int) -> None:
+    """Raising counterpart of ``leads_squad`` (excludes the tribe leader)."""
     if not leads_squad(db, user, squad_id):
         raise HTTPException(status_code=403,
                             detail="Réservé au squad leader de cette squad")
@@ -193,6 +239,7 @@ def can_see_leaves_of(viewer: User, tribe_id: int | None) -> bool:
 
 
 def require_org_editor(user: User = Depends(get_current_user)) -> User:
+    """Route guard: only tribe leaders and admins may edit the org chart."""
     if user.role not in (ADMIN, TRIBE):
         raise HTTPException(status_code=403, detail="L'organigramme est géré par le tribe leader")
     return user

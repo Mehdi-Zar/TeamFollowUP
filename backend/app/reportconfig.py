@@ -13,6 +13,11 @@ REPORT_KEY = "weekly_report"
 
 
 def _defaults() -> dict:
+    """Baseline weekly-report schedule (disabled; Monday 08:00 UTC, 7-day window).
+
+    Also carries legacy single-`weekday`/`last_sent_week` fields kept only so old
+    stored blobs still read cleanly and can be migrated to the `weekdays` list.
+    """
     return {
         "enabled": False,
         # Fixed recipients (admins set these) - they receive the GLOBAL report.
@@ -43,6 +48,11 @@ KEYS = set(_defaults().keys())
 
 
 def get_report(db: Session) -> dict:
+    """Effective schedule config, migrating the legacy single `weekday` on read.
+
+    If a stored blob predates multi-day scheduling it only has `weekday`; we fold
+    it into a one-element `weekdays` list so the rest of the code sees one shape.
+    """
     cfg = _defaults()
     row = db.get(AppSetting, REPORT_KEY)
     if row:
@@ -60,6 +70,9 @@ def get_report(db: Session) -> dict:
 
 
 def _clean_recipients(value) -> list[str]:
+    """Normalize recipients (list or comma/semicolon/newline string) to unique
+    addresses. Keeps only entries containing '@', de-duplicated case-insensitively
+    while preserving original casing and order."""
     if isinstance(value, str):
         parts = value.replace(",", "\n").replace(";", "\n").splitlines()
     elif isinstance(value, list):
@@ -76,6 +89,8 @@ def _clean_recipients(value) -> list[str]:
 
 
 def _clean_weekdays(value) -> list[int]:
+    """Coerce to a sorted, de-duplicated list of valid weekday ints (0=Mon..6=Sun).
+    Non-int and out-of-range entries are dropped; empty result defaults to [0]."""
     out = []
     for x in value or []:
         try:
@@ -88,6 +103,11 @@ def _clean_weekdays(value) -> list[int]:
 
 
 def set_report(db: Session, patch: dict) -> dict:
+    """Validate and persist a schedule update, clamping every field to its range.
+
+    Accepts the legacy single `weekday` for back-compat and keeps `weekday` in sync
+    with `weekdays[0]` on write, so old readers and new readers stay consistent.
+    """
     cfg = get_report(db)
     for k, v in patch.items():
         if k in KEYS:

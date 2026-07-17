@@ -1,3 +1,11 @@
+"""FastAPI application factory and wiring.
+
+Defines the single ``app`` instance: mounts the session middleware, registers
+every feature router, wires the startup hooks (security warnings + the in-process
+weekly-report scheduler), exposes the small meta endpoints, and finally serves the
+built single-page app with client-side-routing fallback. This is the module
+``app.server`` / uvicorn loads.
+"""
 import logging
 import os
 
@@ -138,11 +146,13 @@ async def _start_weekly_progress_scheduler():
 
 @app.get("/api/health", tags=["meta"])
 def health():
+    """Liveness probe: cheap, unauthenticated, no DB access."""
     return {"status": "ok", "app": settings.app_name}
 
 
 @app.get("/api/config", tags=["meta"])
 def public_app_config(db=Depends(get_db)):
+    """Public (pre-login) app configuration the SPA needs to render its shell."""
     from .generalconfig import public_config
     return public_config(db)
 

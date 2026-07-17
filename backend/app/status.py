@@ -11,12 +11,15 @@ from .models import Squad
 
 
 def _aware(dt: datetime | None) -> datetime | None:
+    """Coerce a datetime to timezone-aware UTC (naive values are treated as UTC),
+    so date arithmetic never mixes naive and aware datetimes."""
     if dt is None:
         return None
     return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
 def current_year_quarter(now: datetime | None = None) -> tuple[int, int]:
+    """Return (year, quarter 1..4) for the given instant (default: now, UTC)."""
     now = now or datetime.now(timezone.utc)
     return now.year, (now.month - 1) // 3 + 1
 
@@ -83,6 +86,7 @@ def objective_status(obj, squad: Squad, now: datetime | None = None) -> str:
 
 
 def quarter_comments(squad: Squad, year: int) -> dict[int, str | None]:
+    """The free-text comment recorded for each quarter of the year (None if unset)."""
     out = {q: None for q in (1, 2, 3, 4)}
     for qp in squad.quarter_progress:
         if qp.year == year and qp.quarter in out:
@@ -103,14 +107,19 @@ def quarter_breakdown(squad: Squad, year: int, quarter: int | None) -> dict:
 
 
 def blocked_count(squad: Squad, year: int, quarter: int | None = None) -> int:
+    """Number of blocked milestones in the year (or a single quarter if given)."""
     return sum(1 for r in squad.roadmap_items if r.year == year and r.status == "blocked" and (quarter is None or r.quarter == quarter))
 
 
 def at_risk_count(squad: Squad, year: int, quarter: int | None = None) -> int:
+    """Number of at-risk milestones in the year (or a single quarter if given)."""
     return sum(1 for r in squad.roadmap_items if r.year == year and r.status == "at_risk" and (quarter is None or r.quarter == quarter))
 
 
 def counts(squad: Squad, year: int) -> dict:
+    """Aggregate counters for a squad/year: objectives by derived RAG and milestones
+    by status. Objective RAGs are computed (objective_status), not stored, so the
+    red/amber/green tallies reflect the auto-derived health."""
     objectives = [o for o in squad.objectives if o.is_active and o.year == year]
     items = [r for r in squad.roadmap_items if r.year == year]
     obj_rags = [objective_status(o, squad) for o in objectives]
@@ -128,12 +137,20 @@ def counts(squad: Squad, year: int) -> dict:
 
 
 def last_submission(squad: Squad) -> datetime | None:
+    """Timestamp of the squad's most recent reporting snapshot, or None if it has
+    never submitted."""
     if not squad.snapshots:
         return None
     return max(_aware(s.submitted_at) for s in squad.snapshots)
 
 
 def freshness(squad: Squad, threshold: int | None = None, now: datetime | None = None) -> dict:
+    """Reporting-freshness readout for a squad.
+
+    Compares the last submission against `threshold` days (falling back to the
+    configured default). A squad that never submitted is treated as stale. Returns
+    last_submitted_at, age_days, is_stale, threshold_days and never_submitted -
+    used to flag squads whose reporting is out of date."""
     now = now or datetime.now(timezone.utc)
     last = last_submission(squad)
     threshold = threshold if threshold is not None else settings.staleness_threshold_days
@@ -146,6 +163,7 @@ def freshness(squad: Squad, threshold: int | None = None, now: datetime | None =
 
 
 def risk_rank(status: str) -> int:
+    """Numeric severity for sorting (blocked=3 > at_risk=2 > on_track=1 > 0)."""
     return {"blocked": 3, "at_risk": 2, "on_track": 1}.get(status, 0)
 
 

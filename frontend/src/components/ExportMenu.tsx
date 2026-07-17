@@ -1,3 +1,9 @@
+// ExportMenu: the single "Export / Share" dropdown reused across pages. It gathers
+// every export (HTML preview, JPG render, PPTX download) and the "email report"
+// action behind one button, showing only the documents allowed by the current
+// tab, the enabled modules, and the persona's capabilities. HTML opens in an
+// in-app window (HtmlPreviewModal); global roadmap/dashboard exports first pick
+// which squads to include via SquadExportPicker.
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../api";
 import { useI18n } from "../i18n";
@@ -52,6 +58,9 @@ async function renderHtmlToJpg(url: string, filename: string): Promise<void> {
   }
 }
 
+/** The export/share dropdown. `squadId` scopes exports to one squad (per-squad
+ *  roadmap/dashboard); when absent the global variants open a squad picker.
+ *  `docs` restricts which documents this instance may offer (see DocKind). */
 export default function ExportMenu({ year, squadId, sinceDays = 7, docs }: Props) {
   const { t, lang } = useI18n();
   const { smtp_enabled } = useConfig();
@@ -120,6 +129,8 @@ export default function ExportMenu({ year, squadId, sinceDays = 7, docs }: Props
     }
   }
 
+  // A single menu row: renders as a link when `href` is given (download or new
+  // tab), otherwise as a button that runs `onClick`. Closes the menu on activation.
   const Item = ({ children, onClick, href, download }: any) =>
     href ? (
       <a className="menu-item" href={href} target={download ? undefined : "_blank"} rel="noreferrer" onClick={() => setOpen(false)}>{children}</a>

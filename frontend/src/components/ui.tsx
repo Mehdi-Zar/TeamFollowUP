@@ -1,3 +1,7 @@
+// ui: the shared design-system primitives used across the app — selectable list
+// items, the modal dialog, collapsible cards, RAG/health/freshness badges,
+// progress indicators, spinner, and error/empty states. Keeping them here makes
+// every screen look and behave consistently and accessibly.
 import { ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Freshness, QuarterHealth, Rag } from "../types";
 import { badgeClass, dotClass, qhToRag, ragClass } from "../labels";
@@ -73,6 +77,8 @@ export function FitScale({ children, fitHeight }: { children: ReactNode; fitHeig
   );
 }
 
+/** Small coloured RAG status dot. Pass `decorative` when an adjacent text label
+ *  already names the status, so screen readers don't announce it twice. */
 export function Dot({ status, decorative }: { status: Rag; decorative?: boolean }) {
   const { rag } = useI18n();
   // Status conveyed by colour needs a text alternative (colour-blind + SR), unless
@@ -149,6 +155,7 @@ export function Collapsible({
   );
 }
 
+/** Pill badge for a RAG status: coloured dot + its translated label. */
 export function StatusBadge({ status }: { status: Rag }) {
   const { rag } = useI18n();
   return (
@@ -171,6 +178,8 @@ export function HealthBadge({ status }: { status: QuarterHealth }) {
   );
 }
 
+/** Badge showing how recently something was updated; when `is_stale` it switches
+ *  to a muted grey variant with a "stale" suffix to flag data needing a refresh. */
 export function FreshnessBadge({ freshness }: { freshness: Freshness }) {
   const { freshness: ft, t } = useI18n();
   const text = ft(freshness);
@@ -190,6 +199,8 @@ export function FreshnessBadge({ freshness }: { freshness: Freshness }) {
   );
 }
 
+/** Horizontal progress bar. `pct` is clamped to 0..100; optional `tone` colours
+ *  the fill with a RAG class. */
 export function ProgressBar({ pct, tone }: { pct: number; tone?: Rag }) {
   const cls = tone ? ragClass(tone) : "";
   return (
@@ -199,6 +210,8 @@ export function ProgressBar({ pct, tone }: { pct: number; tone?: Rag }) {
   );
 }
 
+/** Four mini progress bars (Q1..Q4) for quarterly completion. `progress` maps the
+ *  quarter number (as a string) to its percentage; `currentQuarter` is highlighted. */
 export function QuarterBars({ progress, currentQuarter }: { progress: Record<string, number>; currentQuarter?: number }) {
   return (
     <div className="quarters">
@@ -218,11 +231,14 @@ export function QuarterBars({ progress, currentQuarter }: { progress: Record<str
   );
 }
 
+/** Inline loading indicator with a polite live region; defaults to a translated
+ *  "loading…" label when none is supplied. */
 export function Spinner({ label }: { label?: string }) {
   const { t } = useI18n();
   return <div className="spinner" role="status" aria-live="polite">{label ?? t("common.loading")}</div>;
 }
 
+/** Red alert banner for error messages (announced via role="alert"). */
 export function ErrorBanner({ message }: { message: string }) {
   return <div className="banner banner-red" role="alert">{message}</div>;
 }

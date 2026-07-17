@@ -1,3 +1,14 @@
+"""Tribe endpoints (prefix ``/api/tribes``).
+
+A tribe is the top-level org unit; each tribe owns squads, users, and an org
+chart. This router covers listing tribes, the admin-only cross-tribe org
+overview, and tribe CRUD.
+
+Access model: listing is open to any authenticated user; the org overview and
+create/delete are admin-only (``require_admin``); update is allowed for the
+tribe's own leader (``can_edit_tribe``) with global-ordering fields reserved to
+admins. Mutations are audited.
+"""
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -14,13 +25,18 @@ router = APIRouter(prefix="/api/tribes", tags=["tribes"])
 
 @router.get("", response_model=list[TribeOut])
 def list_tribes(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """GET /api/tribes — list all tribes, ordered. Any authenticated user."""
     # All authenticated users can see the list of tribes (e.g. to browse org charts).
     return list(db.scalars(select(Tribe).order_by(Tribe.display_order, Tribe.id)).all())
 
 
 @router.get("/org-overview", response_model=list[TribeOrg])
 def org_overview(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
-    """Read-only org charts of ALL tribes (one per tribe). Admin only."""
+    """GET /api/tribes/org-overview — read-only org charts of ALL tribes (one per
+    tribe). Admin only.
+
+    Builds a per-squad status map for the current year and a per-tribe squad count,
+    then assembles each tribe's org tree from its ``OrgNode`` rows."""
     cur_year, _ = st.current_year_quarter()
     squads = db.scalars(select(Squad)).all()
     status_map = {s.id: st.squad_status(s, cur_year, None) for s in squads}
@@ -41,6 +57,11 @@ def org_overview(db: Session = Depends(get_db), admin: User = Depends(require_ad
 
 @router.post("", response_model=TribeOut, status_code=201)
 def create_tribe(payload: TribeCreate, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    """POST /api/tribes — create a tribe (201). Admin only.
+
+    Optional ``leader_user_id`` promotes an existing user to tribe leader of the
+    new tribe (404 if unknown; the break-glass account cannot be made a tribe
+    leader). Audited."""
     data = payload.model_dump()
     leader_user_id = data.pop("leader_user_id", None)
     tribe = Tribe(**data)
@@ -65,6 +86,11 @@ def create_tribe(payload: TribeCreate, db: Session = Depends(get_db), admin: Use
 @router.put("/{tribe_id}", response_model=TribeOut)
 def update_tribe(tribe_id: int, payload: TribeUpdate, db: Session = Depends(get_db),
                  user: User = Depends(get_current_user)):
+    """PUT /api/tribes/{tribe_id} — update a tribe.
+
+    Allowed for an admin or the tribe's own leader (``can_edit_tribe``); 403
+    otherwise. ``display_order`` is a global ordering concern, so it is dropped
+    from the payload for non-admins. Audited."""
     from ..rbac import can_edit_tribe
     tribe = db.get(Tribe, tribe_id)
     if tribe is None:
@@ -85,6 +111,11 @@ def update_tribe(tribe_id: int, payload: TribeUpdate, db: Session = Depends(get_
 
 @router.delete("/{tribe_id}", status_code=204)
 def delete_tribe(tribe_id: int, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    """DELETE /api/tribes/{tribe_id} — delete a tribe (204). Admin only.
+
+    Refuses with 409 while the tribe still has squads (they must be moved or
+    deleted first). Side effects: users of the tribe are detached (``tribe_id``
+    cleared) and the tribe's org-chart nodes are deleted. Audited."""
     tribe = db.get(Tribe, tribe_id)
     if tribe is None:
         raise HTTPException(status_code=404, detail="Tribe introuvable")

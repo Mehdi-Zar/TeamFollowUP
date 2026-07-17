@@ -1,3 +1,13 @@
+/**
+ * OrgPage - the tribe organisation chart (entities + squads).
+ *
+ * Renders a tribe's org structure as either a tree (with optional embedded squad
+ * teams, a fit-to-screen frame and a zoomable fullscreen mode) or a flat list.
+ * Nodes are either free-form "entities" or "squad" nodes linking to a squad.
+ * Editing (add/edit/delete nodes) is allowed only on the viewer's OWN tribe -
+ * admins may edit any tribe they select (`editable`). Other tribes are read-only.
+ * An export button produces the chart as HTML/PPTX with a branch picker.
+ */
 import { MouseEvent as ReactMouseEvent, ReactNode, WheelEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../api";
@@ -27,6 +37,8 @@ interface Flat {
   depth: number;
 }
 
+/** Flatten the tree into indented `{id,label}` rows for the "attach to" parent
+ *  <select> (label prefixed with "- " per depth level). */
 function flatten(nodes: OrgNode[], depth = 0, acc: Flat[] = []): Flat[] {
   for (const n of nodes) {
     acc.push({ id: n.id, label: `${"- ".repeat(depth)}${n.title}`, depth });
@@ -35,6 +47,7 @@ function flatten(nodes: OrgNode[], depth = 0, acc: Flat[] = []): Flat[] {
   return acc;
 }
 
+/** Flatten the tree preserving depth, for the indented list view. */
 function flattenNodes(nodes: OrgNode[], depth = 0, acc: { node: OrgNode; depth: number }[] = []) {
   for (const n of nodes) {
     acc.push({ node: n, depth });
@@ -43,6 +56,8 @@ function flattenNodes(nodes: OrgNode[], depth = 0, acc: { node: OrgNode; depth: 
   return acc;
 }
 
+/** All descendant ids of a node - used to forbid re-parenting a node under
+ *  itself or one of its own descendants. */
 function descendantIds(node: OrgNode, acc: number[] = []): number[] {
   for (const c of node.children) {
     acc.push(c.id);
@@ -51,6 +66,7 @@ function descendantIds(node: OrgNode, acc: number[] = []): number[] {
   return acc;
 }
 
+/** Depth-first lookup of a node by id within the tree. */
 function findNode(nodes: OrgNode[], id: number): OrgNode | null {
   for (const n of nodes) {
     if (n.id === id) return n;
@@ -60,6 +76,11 @@ function findNode(nodes: OrgNode[], id: number): OrgNode | null {
   return null;
 }
 
+/**
+ * Org chart root. Loads the tree + squads for the selected tribe, resolves edit
+ * rights (own tribe, or admin on any tribe), and hosts the tree/list views, the
+ * node create/edit form, fullscreen mode and the export button.
+ */
 export default function OrgPage() {
   const { user, effectiveRole } = useAuth();
   const { t } = useI18n();
@@ -112,6 +133,7 @@ export default function OrgPage() {
     });
   }
 
+  // Create or update a node. A "squad" node borrows the squad's name as its title.
   async function save() {
     if (!form) return;
     let title = form.title;
@@ -191,7 +213,8 @@ export default function OrgPage() {
   if (error) return <ErrorBanner message={error} />;
   if (!tree) return <Spinner />;
 
-  // parent options: all nodes except (when editing) self and its descendants
+  // Parent options for the form: every node except (when editing) the node itself
+  // and its descendants, which would create a cycle.
   let exclude: number[] = [];
   if (form?.mode === "edit" && form.id) {
     const node = findNode(tree, form.id);
@@ -259,6 +282,12 @@ export default function OrgPage() {
   );
 }
 
+/**
+ * Recursive tree node. Renders one org box (a squad node links to the squad when
+ * `linkSquads`), optional per-node edit controls (`editable`), and its children.
+ * A squad node can reveal its team (SquadTeam) on demand or via `forceShowTeam`.
+ * Terminal-only children are stacked vertically to keep the chart compact.
+ */
 function NodeView({
   node,
   editable,
@@ -332,6 +361,11 @@ function NodeView({
   );
 }
 
+/**
+ * Embedded squad team sub-chart shown under a squad node. Fetches the squad and
+ * renders its members as a reporting tree (grouped by manager_id, like SquadOrg).
+ * Renders nothing if the fetch fails (e.g. no access to that squad).
+ */
 function SquadTeam({ squadId }: { squadId: number }) {
   const { t } = useI18n();
   const [data, setData] = useState<SquadDetail | null>(null);
@@ -382,6 +416,11 @@ function SquadTeam({ squadId }: { squadId: number }) {
   );
 }
 
+/**
+ * Create/edit form for an org node: kind (entity vs squad), the entity title or
+ * a squad picker, and the parent to attach under. Save is disabled until the
+ * required field for the chosen kind is filled.
+ */
 function NodeForm({
   form,
   squads,

@@ -29,6 +29,12 @@ HOST = os.environ.get("BIND_HOST", "0.0.0.0")
 
 
 def main() -> None:
+    """Entry point: materialize the TLS cert, then run the HTTPS uvicorn server.
+
+    Order matters — the certificate must exist on disk before uvicorn builds its
+    SSLContext. After ``load()`` we hand the live SSLContext to ``tls`` so an admin
+    certificate upload can swap it in place without restarting the process.
+    """
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 

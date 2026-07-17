@@ -79,10 +79,19 @@ def split_key(presented: str) -> tuple[str, str] | None:
 
 
 def hash_key(secret: str) -> str:
+    """Hash a key secret with the same argon2 hasher used for passwords.
+
+    Reusing the password hasher means keys benefit from the same tuned argon2
+    parameters; only the hash is ever stored, never the secret.
+    """
     return hash_password(secret)
 
 
 def is_live(key: ApiKey, now: datetime | None = None) -> bool:
+    """True if the key is usable now: not revoked and not past its expiry.
+
+    A key with no `expires_at` never expires. Revocation takes precedence.
+    """
     now = now or utcnow()
     if key.revoked_at is not None:
         return False

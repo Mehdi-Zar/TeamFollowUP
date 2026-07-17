@@ -1,3 +1,15 @@
+/**
+ * SquadDetailPage - the read-oriented detail view of a single squad for a year.
+ *
+ * Assembles the full squad picture: header (progress, freshness, products), the
+ * assigned initiatives, annual objectives (OTD), the per-quarter roadmap, key
+ * messages + budget, incoming dependencies, KPIs, committees, the team org chart
+ * and the reporting history. Each section is gated by its module flag and, where
+ * data is sensitive (OTD, KPIs, budget), by role: see the `privileged`,
+ * `canToggleBudget` and `leadsThisSquad` checks in the main component. Editing of
+ * key messages / budget / committees happens inline via small panels here; the
+ * heavy roadmap/objective editing lives on the reporting (EntryPage) instead.
+ */
 import { useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { api } from "../api";
@@ -11,6 +23,11 @@ import ExportMenu from "../components/ExportMenu";
 import { useSetPageChrome } from "../components/pageChrome";
 import { roadmapRag, trendRag } from "../labels";
 
+/**
+ * Squad detail root. Reads the squad id from the route and the year from the
+ * `?year=` query param; loads the squad, its snapshots, incoming dependents and
+ * initiatives, then computes the viewer's edit rights before rendering sections.
+ */
 export default function SquadDetailPage() {
   const { id } = useParams();
   const squadId = Number(id);
@@ -43,6 +60,7 @@ export default function SquadDetailPage() {
     api.get<SnapshotMeta[]>(`/api/squads/${squadId}/snapshots`).then(setSnapshots).catch(() => {});
   }, [squadId, yearParam]);
 
+  // Once the squad (and thus its year) is known, load the year-scoped extras.
   useEffect(() => {
     if (!squad) return;
     api.get<DependentItem[]>(`/api/squads/${squadId}/dependents?year=${squad.year}`).then(setDependents).catch(() => {});
@@ -247,10 +265,17 @@ export default function SquadDetailPage() {
   );
 }
 
+/** Map a key-message kind to its badge colour class (success/risk/alert). */
 function kmKindClass(k: KeyMessageKind): string {
   return k === "success" ? "badge-green" : k === "risk" ? "badge-red" : "badge-orange";
 }
 
+/**
+ * Key messages panel: the squad's highlights (success / alert / risk) for the
+ * year. Visible to everyone who can see the squad; editable only by the squad
+ * leader or admin (`canEdit`, from `leadsThisSquad`). Supports inline add / edit
+ * / delete and calls onChange (reload) after each mutation.
+ */
 function KeyMessagesPanel({ squad, canEdit, onChange }:
   { squad: SquadDetail; canEdit: boolean; onChange: () => void }) {
   const { t, formatDateTime } = useI18n();
@@ -349,6 +374,7 @@ function freqLabel(c: Committee, t: (k: string, v?: any) => string): string {
   return t(`committee.freq.${c.frequency}`);
 }
 
+/** Blank committee used to seed the "new committee" form. */
 const emptyCommittee = (order: number): Partial<Committee> => ({
   name: "", objective: "", frequency: "monthly", frequency_other: "", day_of_week: null,
   time_of_day: "", duration_minutes: null, participants: "",
@@ -364,7 +390,9 @@ function whenDurationLabel(c: Committee, t: (k: string, v?: any) => string): str
   return parts.join(" · ") || "-";
 }
 
-// Time picker constrained to 30-minute steps, with ± buttons for hour and minute.
+/** Time picker constrained to 30-minute steps, with ± buttons for hour and
+ *  minute. Emits "HH:00" / "HH:30" (or null when cleared). Minutes are snapped
+ *  to 0 or 30 on parse, and stepping minutes rolls the hour over. */
 function HalfHourTime({ value, onChange }: { value?: string | null; onChange: (v: string | null) => void }) {
   const parse = (v?: string | null): [number, number] | null => {
     if (!v) return null;
@@ -401,11 +429,17 @@ function HalfHourTime({ value, onChange }: { value?: string | null; onChange: (v
   );
 }
 
+/**
+ * Create/edit dialog for a committee (comitologie). The day-of-week field only
+ * shows for recurring frequencies, and a free-text "other" field shows when the
+ * frequency is "other". Save is disabled until a name is entered.
+ */
 function CommitteeModal({ initial, isNew, onSave, onClose }:
   { initial: Partial<Committee>; isNew: boolean; onSave: (c: Partial<Committee>) => void; onClose: () => void }) {
   const { t } = useI18n();
   const [c, setC] = useState<Partial<Committee>>(initial);
   const set = (k: keyof Committee, v: any) => setC((prev) => ({ ...prev, [k]: v }));
+  // A weekday only makes sense for recurring cadences.
   const recurring = c.frequency === "daily" || c.frequency === "weekly" || c.frequency === "biweekly";
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -476,6 +510,11 @@ function CommitteeModal({ initial, isNew, onSave, onClose }:
   );
 }
 
+/**
+ * Committees table for the squad (declared by the squad leader, visible to the
+ * tribe leader). Read-only unless `canEdit` (privileged), in which case rows can
+ * be added/edited/removed through CommitteeModal.
+ */
 function CommitteesPanel({ squad, canEdit, onChange }:
   { squad: SquadDetail; canEdit: boolean; onChange: () => void }) {
   const { t } = useI18n();
@@ -562,6 +601,7 @@ const BUDGET_STATUS_BADGE: Record<string, string> = {
   on_track: "badge-green", at_risk: "badge-orange", over: "badge-red",
 };
 
+/** Coloured status badge for a budget; when "over", appends the overrun amount/%. */
 function BudgetStatusBadge({ b, t }: { b: Budget; t: any }) {
   const cls = BUDGET_STATUS_BADGE[b.status] ?? "badge-grey";
   const label = t(`budget.status.${b.status}`);
@@ -573,6 +613,14 @@ function BudgetStatusBadge({ b, t }: { b: Budget; t: any }) {
   );
 }
 
+/**
+ * Budget panel. Two permission levels:
+ *  - `canToggle` (tribe leader / admin): owns the envelope - can enable/disable
+ *    tracking and set the total.
+ *  - `canEdit` (any privileged viewer): edits spent / forecast / comment; the
+ *    total is shown locked. `total` is ignored server-side for a squad leader.
+ * Renders a consumed/forecast gauge and a remaining figure (red if negative).
+ */
 function BudgetPanel({ squad, canEdit, canToggle, onChange }:
   { squad: SquadDetail; canEdit: boolean; canToggle: boolean; onChange: () => void }) {
   const { t, formatDate } = useI18n();
@@ -617,6 +665,7 @@ function BudgetPanel({ squad, canEdit, canToggle, onChange }:
     }).then(() => { setEditing(false); onChange(); }).catch(() => {});
   };
 
+  // Landing point = forecast if given, else spent; "remaining" is total minus that.
   const reference = b?.forecast ?? b?.spent ?? null;            // where the squad will land
   const remaining = b?.total != null && reference != null ? b.total - reference : null;
   const hasFigures = b != null && (b.total != null || b.spent != null || b.forecast != null);
@@ -703,6 +752,11 @@ function BudgetPanel({ squad, canEdit, canToggle, onChange }:
   );
 }
 
+/**
+ * Read-only milestone (jalon) detail modal: quarter/theme/stage/status badges,
+ * owner, and the non-empty text fields (description, success criteria, benefit,
+ * dependencies, risks). Opened by clicking a roadmap row.
+ */
 function JalonView({ jalon, onClose, t, roadmap }: { jalon: RoadmapItem; onClose: () => void; t: any; roadmap: any }) {
   const fields: Array<[string, string | null | undefined]> = [
     [t("jalon.desc"), jalon.description],
@@ -743,8 +797,14 @@ function JalonView({ jalon, onClose, t, roadmap }: { jalon: RoadmapItem; onClose
   );
 }
 
+/**
+ * Squad org chart: builds the reporting tree from the flat member list by
+ * grouping on manager_id (members with no manager are roots) and rendering each
+ * node with its children recursively.
+ */
 function SquadOrg({ squad, emptyLabel }: { squad: SquadDetail; emptyLabel: string }) {
   if (squad.members.length === 0) return <div className="small muted">{emptyLabel}</div>;
+  // Group members by their manager id; "root" holds the top-level members.
   const byManager: Record<string, Member[]> = {};
   for (const m of squad.members) {
     const key = m.manager_id == null ? "root" : String(m.manager_id);
@@ -777,6 +837,10 @@ function SquadOrg({ squad, emptyLabel }: { squad: SquadDetail; emptyLabel: strin
   );
 }
 
+/**
+ * Reporting history (collapsible): lists past snapshots; opening one fetches a
+ * diff against the previous snapshot and renders it via <Compare>.
+ */
 function History({ squadId, snapshots }: { squadId: number; snapshots: SnapshotMeta[] }) {
   const { t, formatDateTime } = useI18n();
   const [selected, setSelected] = useState<number | null>(null);
@@ -811,6 +875,11 @@ function History({ squadId, snapshots }: { squadId: number; snapshots: SnapshotM
   );
 }
 
+/**
+ * Renders one snapshot-vs-previous diff: for each section (objectives, roadmap,
+ * KPIs when enabled) it lists added (+), removed (-) and changed (field from->to)
+ * items. Shows "-" when there is no previous snapshot or no change.
+ */
 function Compare({ compare }: { compare: any | null }) {
   const { t, formatDateTime } = useI18n();
   const kpisOn = useModule()("squad_content", "kpis");

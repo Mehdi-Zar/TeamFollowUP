@@ -25,6 +25,8 @@ TLS_KEY = "tls"
 
 
 def _defaults() -> dict:
+    """The empty TLS blob shape (no cert yet). `leaf_key_pem` is a secret and is
+    never included in any status/read model returned to a client."""
     return {
         "mode": "self_signed",       # self_signed | custom
         "self_signed": {},            # {cn, sans, generated_at}
@@ -36,6 +38,11 @@ def _defaults() -> dict:
 
 
 def _read(db: Session) -> dict:
+    """Load the full TLS blob (including the private key) from the DB.
+
+    Internal use only - it deliberately returns secrets. Client-facing callers go
+    through `status()`/`export_*`, which never expose the key.
+    """
     cfg = _defaults()
     row = db.get(AppSetting, TLS_KEY)
     if row:
@@ -47,6 +54,7 @@ def _read(db: Session) -> dict:
 
 
 def _write(db: Session, cfg: dict) -> None:
+    """Upsert the TLS blob. Does not commit - the caller commits then materialises."""
     row = db.get(AppSetting, TLS_KEY)
     payload = json.dumps(cfg)
     if row is None:
@@ -56,6 +64,7 @@ def _write(db: Session, cfg: dict) -> None:
 
 
 def _now_iso() -> str:
+    """Current UTC timestamp as ISO-8601 (used for CA `added_at` / generation time)."""
     return datetime.now(timezone.utc).isoformat()
 
 
@@ -130,6 +139,11 @@ def ensure_materialized(db: Session) -> dict:
 # ---------------------------------------------------------------------------
 
 def _apply_self_signed(db: Session, cfg: dict, cn: str, sans: list[str]) -> None:
+    """Generate a fresh self-signed leaf into `cfg` and persist (no commit here).
+
+    Clears any bundled chain (a self-signed cert has none) and records the CN/SANs
+    plus generation time under `self_signed` for the status view.
+    """
     cert_pem, key_pem = tls.generate_self_signed(cn, sans)
     cfg["mode"] = "self_signed"
     cfg["leaf_cert_pem"] = cert_pem
@@ -140,6 +154,10 @@ def _apply_self_signed(db: Session, cfg: dict, cn: str, sans: list[str]) -> None
 
 
 def regenerate_self_signed(db: Session, cn: str = "localhost", sans: list[str] | None = None) -> dict:
+    """Admin action: mint a new self-signed cert, commit, and hot-reload the server.
+
+    Empty SANs default to the CN plus loopback addresses. Returns the status view.
+    """
     cn = (cn or "localhost").strip()
     sans = [s.strip() for s in (sans or []) if s and s.strip()]
     if not sans:
@@ -209,6 +227,11 @@ def add_ca(db: Session, pem: str, name: str | None = None) -> dict:
 
 
 def remove_ca(db: Session, ca_id: str) -> dict:
+    """Delete a CA from the store by id, then re-materialise the served chain.
+
+    Raises if the id is unknown. Removing an intermediate may shorten the chain
+    presented to clients, hence the materialise.
+    """
     cfg = _read(db)
     before = len(cfg["cas"])
     cfg["cas"] = [c for c in cfg["cas"] if c["id"] != ca_id]
@@ -249,6 +272,7 @@ def status(db: Session) -> dict:
 
 
 def export_ca_pem(db: Session, ca_id: str) -> str:
+    """Return a stored CA certificate's PEM for download (public material)."""
     for c in _read(db).get("cas", []):
         if c["id"] == ca_id:
             return c["pem"]

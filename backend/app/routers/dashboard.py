@@ -1,3 +1,10 @@
+"""Dashboard endpoint (prefix ``/api/dashboard``).
+
+Serves the aggregated squad-card overview (per-squad status, risk, freshness) plus
+a roll-up summary. The whole router is gated by the ``dashboard`` module, and the
+read endpoint additionally requires the ``dashboard`` persona capability. Results
+are scoped to the caller's visible tribe.
+"""
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
@@ -17,6 +24,13 @@ router = APIRouter(prefix="/api/dashboard", tags=["dashboard"],
 @router.get("", response_model=DashboardOut, dependencies=[Depends(require_capability("dashboard"))])
 def get_dashboard(year: int | None = Query(default=None), tribe_id: int | None = Query(default=None),
                   db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """GET /api/dashboard — squad cards + summary for a year.
+
+    Requires the ``dashboard`` module and capability. Squads are scoped to the
+    caller's visible tribe; an admin (no scope) may filter by ``tribe_id``. Cards
+    are ordered worst-first (risk, then blocked count, then name), and the summary
+    aggregates totals (blocked/at-risk milestones, stale squads, average
+    progress). ``year`` defaults to the current one."""
     threshold = get_threshold(db)
     cur_year, cur_q = st.current_year_quarter()
     if year is None:

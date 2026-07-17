@@ -18,6 +18,8 @@ router = APIRouter(prefix="/api/org", tags=["org-export"],
 
 
 def _tree_dicts(db: Session, tid: int) -> tuple[list[dict], str]:
+    """Build the tribe's org tree as plain dicts (ready for the renderers) plus the
+    tribe display name, falling back to "-" when the tribe is missing."""
     nodes = list(db.scalars(select(OrgNode).where(OrgNode.tribe_id == tid)).all())
     roots = [r.model_dump() for r in build_org_tree(nodes, _squad_status_map(db))]
     tribe = db.get(Tribe, tid)
@@ -57,6 +59,12 @@ def export_html(tribe_id: int | None = Query(default=None),
                 node_ids: list[int] | None = Query(default=None),
                 lang: str | None = Query(default=None),
                 db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Render the org chart as a standalone HTML page.
+
+    GET /api/org/export.html
+    Access: any authenticated user (same module/capability gate as viewing).
+    node_ids, when given, restricts the export to the selected top-level branches.
+    """
     tid = _resolve_tribe(user, tribe_id, db)
     roots, name = _tree_dicts(db, tid) if tid is not None else ([], "-")
     roots = _prune(roots, set(node_ids or []))
@@ -68,6 +76,12 @@ def export_pptx(tribe_id: int | None = Query(default=None),
                 node_ids: list[int] | None = Query(default=None),
                 lang: str | None = Query(default=None),
                 db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Render the org chart as a single-slide PPTX download.
+
+    GET /api/org/export.pptx
+    Access: any authenticated user (same module/capability gate as viewing).
+    node_ids, when given, restricts the export to the selected top-level branches.
+    """
     tid = _resolve_tribe(user, tribe_id, db)
     roots, name = _tree_dicts(db, tid) if tid is not None else ([], "-")
     roots = _prune(roots, set(node_ids or []))

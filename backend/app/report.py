@@ -36,11 +36,17 @@ def _budget_for_report(squad, year: int, viewer) -> dict | None:
 
 
 def _aware(dt: datetime | None) -> datetime | None:
+    """Coerce a datetime to timezone-aware UTC (naive values are treated as UTC).
+
+    Snapshots/models may store naive datetimes; comparisons and formatting here
+    must be tz-aware to avoid mixing naive and aware values."""
     if dt is None:
         return None
     return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 # ----- RAG / status presentation -------------------------------------------------
+# Presentation-layer maps and helpers that turn raw status codes into colours and
+# localized labels. RAG = Red/Amber/Green (+ grey for "unknown").
 
 RAG_COLOR = {"red": "#dc2626", "amber": "#d97706", "green": "#16a34a", "grey": "#6b7280"}
 
@@ -179,6 +185,7 @@ _RT = {
 
 
 def _lang(lang: str | None) -> str:
+    """Normalize a language hint to a supported code ('en' or, by default, 'fr')."""
     return "en" if lang == "en" else "fr"
 
 
@@ -190,6 +197,8 @@ _LEAVE_TYPE_EN = {
 
 
 def leave_type_label(label: str, lang: str) -> str:
+    """Localize a leave-type label. Leave types are stored in French; for an
+    English report keep the French original in parentheses so it stays recognizable."""
     if _lang(lang) != "en":
         return label
     en = _LEAVE_TYPE_EN.get(label)
@@ -197,19 +206,28 @@ def leave_type_label(label: str, lang: str) -> str:
 
 
 def rt(lang: str, key: str, **kw) -> str:
+    """Translate a report string by key, with optional str.format() interpolation.
+
+    Falls back to the key itself if it is unknown (so a missing string is visible
+    rather than crashing)."""
     s = _RT[_lang(lang)].get(key, key)
     return s.format(**kw) if kw else s
 
 
 def _status_rag(status: str | None) -> str:
+    """Map a milestone/objective status code to its RAG colour ('grey' if unknown)."""
     return _STATUS_RAG.get(status or "", "grey")
 
 
 def _status_label(status: str | None, lang: str = "fr") -> str:
+    """Localized human label for a status code ('-' when absent/unknown)."""
     return _STATUS_LABELS[_lang(lang)].get(status or "", status or "-")
 
 
 def _change_text(ch: dict, lang: str = "fr") -> str:
+    """Render one change record (from the per-squad 'changes' list) as a localized
+    sentence, e.g. 'Milestone X: At risk → Blocked'. Handles added items and
+    from/to transitions, adapting the separator to the language."""
     kind = ch.get("kind", "")
     label = ch.get("label", "")
     frm, to = ch.get("from"), ch.get("to")
@@ -444,6 +462,7 @@ def _upcoming_leaves(db: Session, scope_tribe: int | None, squad_id: int | None,
 # ----- HTML rendering -------------------------------------------------------------
 
 def _bar(pct: int, rag: str = "green") -> str:
+    """HTML progress bar clamped to 0..100, filled with the RAG colour."""
     pct = max(0, min(100, int(pct or 0)))
     color = RAG_COLOR.get(rag, RAG_COLOR["green"])
     return (
@@ -453,6 +472,7 @@ def _bar(pct: int, rag: str = "green") -> str:
 
 
 def _delta_html(delta: int) -> str:
+    """Week-over-week delta as a coloured arrow (▲ green / ▼ red / → neutral)."""
     if delta > 0:
         return f'<span style="color:{RAG_COLOR["green"]}">▲ +{delta}</span>'
     if delta < 0:
@@ -577,6 +597,7 @@ def _app_css() -> str:
 
 
 def _dot(rag: str) -> str:
+    """Small coloured status dot using the application's own CSS classes."""
     return f'<span class="dot {_DOT_CLASS.get(rag, "dot-green")}"></span>'
 
 
@@ -719,12 +740,14 @@ def _render_squad_page(data: dict, standalone: bool, e, lang: str) -> str:
 # =============================================================================
 
 def _ms_lbl(status: str, lang: str) -> str:
+    """Localized milestone-status label for the changelog (passes unknowns through)."""
     return rt(lang, {"on_track": "ms_on_track", "at_risk": "ms_at_risk",
                      "blocked": "ms_blocked", "done": "ms_done"}.get(status, "h_status")) \
         if status in ("on_track", "at_risk", "blocked", "done") else status
 
 
 def _rag_lbl(rag: str, lang: str) -> str:
+    """Localized RAG label for the changelog (passes unknown values through)."""
     return rt(lang, {"green": "rag_green", "amber": "rag_amber", "red": "rag_red"}.get(rag, "rag_green")) \
         if rag in ("green", "amber", "red") else rag
 
@@ -799,6 +822,8 @@ def diff_report(prev: dict | None, cur: dict, lang: str) -> dict:
                 items.append(rt(lang, "chg_unstale"))
         if items:
             by_squad.append({"name": c["name"], "items": items})
+    # Squads present in the baseline but gone from the current report (deleted /
+    # moved out of scope) are reported as removals.
     for sid, p in prev.items():
         if sid not in cur:
             by_squad.append({"name": p["name"], "items": [rt(lang, "chg_squad_removed", name=p["name"])]})
@@ -826,6 +851,11 @@ def subject_prefix(changes: dict | None, lang: str) -> str:
 
 
 def render_changes_html(changes: dict | None, lang: str) -> str:
+    """Render the "What's new since your last report" box as HTML.
+
+    Three states: first report (nothing to compare), no changes (up-to-date
+    banner), or a per-squad list. Lists are capped (12 squads, 8 items each) to
+    keep the email digestible. Returns '' when there is nothing to show."""
     if not changes:
         return ""
     e = html.escape
@@ -849,12 +879,19 @@ def render_changes_html(changes: dict | None, lang: str) -> str:
 
 
 def get_baseline(db, scope_key: str) -> dict | None:
+    """Load the stored signature for a scope (used as the 'previous' side of a
+    diff). scope_key identifies the recipient scope, e.g. 'global', 'tribe:3',
+    'sub:12'. Returns None when no baseline exists yet (first report)."""
     from .models import ReportBaseline
     row = db.get(ReportBaseline, scope_key)
     return row.signature if row else None
 
 
 def set_baseline(db, scope_key: str, signature: dict) -> None:
+    """Persist the current signature as the new baseline for a scope (upsert).
+
+    Called after a report is prepared so the next send diffs against this state.
+    Does not commit - the caller controls the transaction."""
     from .models import ReportBaseline
     row = db.get(ReportBaseline, scope_key)
     if row is None:
@@ -865,6 +902,14 @@ def set_baseline(db, scope_key: str, signature: dict) -> None:
 
 
 def render_html(data: dict, *, standalone: bool = True, changes: dict | None = None) -> str:
+    """Render the full weekly report as an HTML document.
+
+    Layout: header → optional "what's new" box → summary KPI cards → attention
+    list → upcoming absences → one table per tribe → full per-squad detail blocks.
+    A single-squad export is delegated to _render_squad_page (it mirrors the squad
+    page rather than the dashboard). standalone wraps the body in a full <html>
+    document; otherwise only the report fragment (with inlined CSS) is returned so
+    it can be embedded. changes, when given, injects the changelog box."""
     e = html.escape
     lang = data.get("lang", "fr")
     # A single-squad export mirrors the squad page, not the whole dashboard report.
@@ -1802,6 +1847,8 @@ _INIT_T = {
 
 
 def _deadline_str(d) -> str:
+    """Format a deadline as an ISO date string (YYYY-MM-DD), '-' when missing.
+    Accepts a datetime, a date, or an already-string value."""
     if not d:
         return "-"
     if isinstance(d, datetime):
@@ -1825,6 +1872,7 @@ def build_initiative_list(db: Session, scope_tribe: int | None, year: int) -> di
 
 
 def render_initiatives_html(data: dict, *, lang: str = "fr", standalone: bool = True) -> str:
+    """Render the flat initiatives list (title / owner / squad / deadline) as HTML."""
     e = html.escape
     lang = _lang(lang)
     T = _INIT_T[lang]
@@ -1851,6 +1899,7 @@ def render_initiatives_html(data: dict, *, lang: str = "fr", standalone: bool = 
 
 
 def render_initiatives_pptx(data: dict, *, lang: str = "fr") -> bytes:
+    """Render the initiatives list as a single branded table slide (max 18 rows)."""
     Presentation, Inches, Pt, Emu, RGBColor, PP_ALIGN, MSO_ANCHOR, MSO_SHAPE = _pptx_toolkit()
 
     def rgb(h):
@@ -1909,6 +1958,7 @@ def render_initiatives_pptx(data: dict, *, lang: str = "fr") -> bytes:
 # ----- Automatic weekly send ------------------------------------------------------
 
 def _iso_week_key(dt: datetime) -> str:
+    """ISO week identifier 'YYYY-Www' used to make the weekly send idempotent."""
     y, w, _ = dt.isocalendar()
     return f"{y}-W{w:02d}"
 
@@ -2228,6 +2278,8 @@ def build_dependencies_data(db: Session, scope_tribe: int | None, year: int | No
 
 
 def render_dependencies_html(data: dict, *, standalone: bool = True) -> str:
+    """Render the milestone-dependency report as HTML: one section per waited-on
+    entity (tribe/squad/external), each with a table of the jalons depending on it."""
     e = html.escape
     lang = _lang(data.get("lang", "fr"))
     T = _DEP_T[lang]

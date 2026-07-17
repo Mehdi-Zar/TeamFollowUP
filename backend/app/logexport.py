@@ -57,6 +57,11 @@ def _service_endpoint(service: str, universe: str) -> str:
 
 
 class LogExportError(Exception):
+    """A user-facing export failure (bad config, auth or destination error).
+
+    Caught by `export_entries` and turned into an (ok=False, message) result, so
+    the admin UI shows a clear reason instead of a stack trace.
+    """
     pass
 
 
@@ -88,6 +93,7 @@ def serialize_entries(db: Session, limit: int = 200) -> list[dict]:
 
 
 def sample_entry() -> dict:
+    """A synthetic audit entry used by the admin 'send a test event' button."""
     return {
         "id": 0,
         "timestamp": datetime.utcnow().isoformat() + "Z",
@@ -126,6 +132,12 @@ def export_entries(cfg: dict, entries: list[dict]) -> tuple[bool, str]:
 # syslog
 # --------------------------------------------------------------------------- #
 def _send_syslog(cfg: dict, entries: list[dict]) -> tuple[bool, str]:
+    """Emit each entry as one RFC 5424-style syslog line over UDP or TCP.
+
+    The message body is the entry serialized as JSON. TCP uses octet-counting
+    framing (RFC 6587) because plain newline framing is ambiguous when the JSON
+    payload itself may contain newlines.
+    """
     host = (cfg.get("syslog_host") or "").strip()
     port = int(cfg.get("syslog_port") or 514)
     proto = cfg.get("syslog_protocol", "udp")
@@ -177,6 +189,10 @@ class _HttpxAuthRequest(_AuthRequest):
 
 
 def _load_key_info(cfg: dict) -> dict:
+    """Parse the stored service-account key JSON (the 'key' auth method only).
+
+    Raises a user-facing LogExportError if the key is missing or not valid JSON.
+    """
     raw = cfg.get("gcp_credentials_json") or ""
     if not raw.strip():
         raise LogExportError("Clé de compte de service Google manquante.")
@@ -266,6 +282,11 @@ def _token_and_universe(cfg: dict, scope: str) -> tuple[str, str]:
 # GCS
 # --------------------------------------------------------------------------- #
 def _upload_gcs(cfg: dict, entries: list[dict]) -> tuple[bool, str]:
+    """Upload the entries as a single timestamped NDJSON object to a GCS bucket.
+
+    Uses the media-upload REST endpoint on the resolved universe host (so S3NS /
+    Cloud de Confiance works), authenticated with a keyless-first bearer token.
+    """
     bucket = (cfg.get("gcs_bucket") or "").strip()
     prefix = (cfg.get("gcs_prefix") or "").strip().strip("/")
     if not bucket:
@@ -292,6 +313,11 @@ def _upload_gcs(cfg: dict, entries: list[dict]) -> tuple[bool, str]:
 # BigQuery
 # --------------------------------------------------------------------------- #
 def _insert_bigquery(cfg: dict, entries: list[dict]) -> tuple[bool, str]:
+    """Stream the entries into a BigQuery table via tabledata.insertAll.
+
+    The row's `id` is used as `insertId` so BigQuery best-effort de-duplicates
+    retries. Partial row rejections are reported (ok=False) with BigQuery's errors.
+    """
     project = (cfg.get("bq_project") or "").strip()
     dataset = (cfg.get("bq_dataset") or "").strip()
     table = (cfg.get("bq_table") or "").strip()

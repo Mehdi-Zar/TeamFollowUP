@@ -51,4 +51,6 @@ def send_email(cfg: dict, to: str, subject: str, body: str, attachment: tuple | 
 
 
 def send_async(cfg: dict, to: str, subject: str, body: str, attachment: tuple | None = None) -> None:
+    """Send an email on a daemon thread so the caller (a request) is never blocked
+    by SMTP latency. Fire-and-forget: the outcome is only logged, not returned."""
     threading.Thread(target=send_email, args=(cfg, to, subject, body, attachment), daemon=True).start()

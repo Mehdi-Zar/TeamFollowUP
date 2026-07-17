@@ -102,18 +102,22 @@ def generate_self_signed(common_name: str = "localhost",
 # =============================================================================
 
 def _load_first_cert(pem: str) -> x509.Certificate:
+    """Parse the first certificate from a PEM string (raises on invalid PEM)."""
     return x509.load_pem_x509_certificate(pem.encode())
 
 
 def _load_all_certs(pem: str) -> list[x509.Certificate]:
+    """Parse every certificate from a concatenated PEM bundle."""
     return list(x509.load_pem_x509_certificates(pem.encode()))
 
 
 def _fingerprint(cert: x509.Certificate) -> str:
+    """Colon-separated uppercase SHA-256 fingerprint (stable identity of a cert)."""
     return cert.fingerprint(hashes.SHA256()).hex(":").upper()
 
 
 def _name_str(name: x509.Name) -> str:
+    """Human label for an X.509 name: the Common Name, else the full RFC4514 DN."""
     try:
         cn = name.get_attributes_for_oid(NameOID.COMMON_NAME)
         if cn:
@@ -124,6 +128,7 @@ def _name_str(name: x509.Name) -> str:
 
 
 def _sans(cert: x509.Certificate) -> list[str]:
+    """Subject Alternative Names (DNS + IP) as strings; [] if the extension is absent."""
     try:
         ext = cert.extensions.get_extension_for_oid(ExtensionOID.SUBJECT_ALTERNATIVE_NAME)
         out: list[str] = []
@@ -138,6 +143,7 @@ def _sans(cert: x509.Certificate) -> list[str]:
 
 
 def _is_ca(cert: x509.Certificate) -> bool:
+    """True if BasicConstraints marks this cert as a CA (no extension → not a CA)."""
     try:
         bc = cert.extensions.get_extension_for_oid(ExtensionOID.BASIC_CONSTRAINTS)
         return bool(bc.value.ca)
@@ -212,6 +218,8 @@ def key_matches_cert(cert_pem: str, key_pem: str) -> bool:
 
 @dataclass
 class PfxContents:
+    """The three parts extracted from a PKCS#12 bundle: private key, leaf cert,
+    and any additional CA certificates shipped inside it (all as PEM strings)."""
     key_pem: str
     cert_pem: str
     ca_pems: list[str]
@@ -264,6 +272,11 @@ def build_context() -> ssl.SSLContext:
 
 
 def set_live_context(ctx: ssl.SSLContext) -> None:
+    """Register the running server's SSLContext so later uploads can hot-reload it.
+
+    Called once by the launcher after `build_context`; without this handle a
+    certificate change could only take effect on a full restart.
+    """
     global _live_context
     _live_context = ctx
 

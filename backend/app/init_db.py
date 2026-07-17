@@ -1,4 +1,9 @@
-"""Post-migration initialization: breaking-glass admin + demo seed."""
+"""Post-migration initialization: breaking-glass admin + demo seed.
+
+Run once after Alembic migrations (schema already exists). Idempotent: it ensures
+the break-glass admin login, seeds the default leave types, and applies the demo
+dataset - each step is a no-op if already done - so it is safe to run on every boot.
+"""
 import logging
 
 from .bootstrap import ensure_breakglass
@@ -11,6 +16,7 @@ logger = logging.getLogger("trt.init")
 
 
 def main() -> None:
+    """Open a session and run the three idempotent init steps, then close it."""
     db = SessionLocal()
     try:
         ensure_breakglass(db)

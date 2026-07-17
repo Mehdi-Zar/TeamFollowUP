@@ -1,8 +1,27 @@
+"""Application configuration.
+
+Single source of truth for every tunable of the backend. Values are read (in
+order of precedence) from environment variables, then a local ``.env`` file,
+then the defaults declared below. Grouped by concern: core/session, security
+hardening, database, business rules, seeding, break-glass access and the two
+SSO backends (OIDC / SAML).
+
+The settings object is built once and cached (:func:`get_settings`) so the
+whole process shares one immutable configuration; import ``settings`` to use it.
+"""
 from functools import lru_cache
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    """Typed, validated configuration loaded from the environment / ``.env``.
+
+    Each attribute is a setting with a safe default for local development;
+    production overrides them via environment variables. ``extra="ignore"`` lets
+    unrelated environment variables coexist without raising a validation error.
+    """
+
+    # Load overrides from a local .env file; ignore env vars we don't declare.
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     # --- Core ---
@@ -55,6 +74,11 @@ class Settings(BaseSettings):
 
     @property
     def database_url(self) -> str:
+        """Assemble the SQLAlchemy connection URL from the postgres_* parts.
+
+        Kept as a derived property (rather than a stored setting) so the DSN
+        always stays in sync with the individual host/port/credentials fields.
+        """
         return (
             f"postgresql+psycopg2://{self.postgres_user}:{self.postgres_password}"
             f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
@@ -63,7 +87,13 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
+    """Return the process-wide Settings singleton.
+
+    Cached so configuration is parsed from the environment only once; every
+    caller shares the same instance.
+    """
     return Settings()
 
 
+# Module-level shortcut so callers can simply `from .config import settings`.
 settings = get_settings()

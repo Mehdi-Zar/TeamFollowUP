@@ -1,3 +1,6 @@
+// TribesPage - admin-facing grid of every tribe in the organization.
+// It is a navigation surface only: it lists tribes with a squad count and,
+// on click, hands off to the shared Org chart page pre-filtered to that tribe.
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api";
@@ -5,8 +8,18 @@ import { useI18n } from "../i18n";
 import { TribeOrg } from "../types";
 import { Spinner, ErrorBanner } from "../components/ui";
 
-/** Admin overview of all tribes. Selecting a tribe opens the main Org chart
- *  page, pre-selected on that tribe (no separate embedded view). */
+/**
+ * Admin overview of all tribes. Selecting a tribe opens the main Org chart
+ * page, pre-selected on that tribe (no separate embedded view).
+ *
+ * Business logic:
+ * - Fetches `/api/tribes/org-overview` once on mount; shows spinner/error while
+ *   pending or on failure.
+ * - Each card navigates to `/organigramme?tribe=<id>` so the org chart reuses
+ *   its existing rendering instead of duplicating it here.
+ *
+ * Access: global admin (route is admin-gated; endpoint enforces the same).
+ */
 export default function TribesPage() {
   const { t } = useI18n();
   const navigate = useNavigate();

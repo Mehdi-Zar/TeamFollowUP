@@ -15,6 +15,12 @@ MODULES_KEY = "modules"
 
 
 def _defaults() -> dict:
+    """The default module/feature switch map (everything on except `committees`).
+
+    Each entry is a module; `enabled` gates the whole module and every other key is
+    a sub-feature boolean. This dict is also the schema source of truth: `_SCHEMA`
+    is derived from it, so a module/feature only exists if it is listed here.
+    """
     return {
         "dashboard": {"enabled": True},
         "org": {"enabled": True},
@@ -36,6 +42,12 @@ _SCHEMA = {m: {k for k in feats if k != "enabled"} for m, feats in _defaults().i
 
 
 def get_modules(db: Session) -> dict:
+    """Return the effective module map: defaults overlaid with stored overrides.
+
+    Stored values are applied defensively - unknown modules/features are skipped
+    and every flag is coerced to bool - so the returned shape always matches the
+    schema regardless of what was persisted.
+    """
     cfg = _defaults()
     row = db.get(AppSetting, MODULES_KEY)
     if row:
@@ -55,6 +67,11 @@ def get_modules(db: Session) -> dict:
 
 
 def set_modules(db: Session, patch: dict) -> dict:
+    """Merge a partial switch update into the stored map and persist it.
+
+    Same validation as reads (unknown keys ignored, values coerced to bool), so an
+    admin can send only the modules/features they changed. Returns the new map.
+    """
     cfg = get_modules(db)
     if isinstance(patch, dict):
         for module, feats in patch.items():
@@ -76,6 +93,9 @@ def set_modules(db: Session, patch: dict) -> dict:
 
 def is_active(cfg: dict, module: str, feature: str | None = None) -> bool:
     """True if the module is enabled (and the optional feature flag is on)."""
+    # Fail-open on unknown module/feature (default True): a switch that predates a
+    # rename must not silently hide an existing section. Access control proper is
+    # done by personas/scopes elsewhere; this only toggles optional features.
     m = cfg.get(module) or {}
     if not m.get("enabled", True):
         return False

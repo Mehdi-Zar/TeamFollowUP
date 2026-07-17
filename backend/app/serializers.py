@@ -1,3 +1,10 @@
+"""ORM → DTO assembly for the API layer.
+
+Turns SQLAlchemy models (Squad and friends) into the Pydantic schemas returned by
+the routers. Derived values (progress, RAG, freshness, budget status) come from
+the `status` module rather than stored columns, so a serialized payload always
+reflects the computed health. Budget figures are visibility-gated: they are only
+attached for a privileged viewer (see squad_detail's `privileged` flag)."""
 from . import status as st
 from .models import OrgNode, Squad
 from .schemas import (
@@ -16,17 +23,22 @@ from .schemas import (
 
 
 def leader_info(squad: Squad) -> LeaderInfo:
+    """Leader identity DTO for a squad (empty LeaderInfo when there is no leader)."""
     if squad.leader is None:
         return LeaderInfo()
     return LeaderInfo(id=squad.leader.id, display_name=squad.leader.display_name, email=squad.leader.email)
 
 
 def ref_quarter(year: int) -> int | None:
+    """The quarter to highlight ("focus") for a year: the current quarter when the
+    year is the current one, otherwise None (past/future years have no focus)."""
     cur_year, cur_q = st.current_year_quarter()
     return cur_q if year == cur_year else None
 
 
 def annual_progress(squad: Squad, year: int) -> int:
+    """Annual progress as the mean of the four quarter percentages (0..100).
+    Kept in sync with status.annual_progress_pct."""
     p = st.year_progress(squad, year)
     return round(sum(p.values()) / 4)
 
@@ -49,6 +61,8 @@ def dependency_label(r) -> str | None:
 
 
 def roadmap_item_out(r) -> RoadmapItemOut:
+    """Milestone DTO, enriched with the resolved dependency label and the title of
+    the OTD it contributes to (both denormalized here for the client's convenience)."""
     out = RoadmapItemOut.model_validate(r)
     out.dependency_label = dependency_label(r)
     out.otd_label = r.otd.title if getattr(r, "otd", None) else None
@@ -96,6 +110,13 @@ def budget_out(squad: Squad, year: int) -> SquadBudgetOut:
 
 
 def squad_detail(squad: Squad, year: int, threshold: int, privileged: bool = False) -> SquadDetail:
+    """Full squad payload for the squad page: identity, per-quarter progress and
+    comments, objectives (with derived RAG), roadmap items, KPIs, members, key
+    messages and committees, all scoped to `year`.
+
+    `threshold` drives the freshness (staleness) computation. `privileged` gates
+    the budget: figures are attached only for an authorized viewer AND when budget
+    tracking is enabled for the squad - otherwise `budget` is None."""
     progress = st.year_progress(squad, year)
     comments = st.quarter_comments(squad, year)
     return SquadDetail(
@@ -132,9 +153,13 @@ def squad_detail(squad: Squad, year: int, threshold: int, privileged: bool = Fal
 
 
 def squad_card(squad: Squad, year: int, threshold: int) -> SquadCard:
+    """Compact squad card for dashboard/list views: progress, quarter breakdowns,
+    counts, freshness and a risk_rank (3 blocked > 2 at-risk > 1 healthy) used to
+    sort the most-at-risk squads first. Never exposes budget."""
     progress = st.year_progress(squad, year)
     blocked = st.blocked_count(squad, year, None)
     at_risk = st.at_risk_count(squad, year, None)
+    # Worst-of risk rank: any blocker outranks any at-risk item, else healthy.
     risk = 3 if blocked > 0 else 2 if at_risk > 0 else 1
     return SquadCard(
         squad_id=squad.id,
@@ -156,6 +181,11 @@ def squad_card(squad: Squad, year: int, threshold: int) -> SquadCard:
 
 
 def build_org_tree(nodes: list[OrgNode], squad_status: dict[int, str]) -> list[OrgNodeTree]:
+    """Assemble a flat list of org nodes into nested OrgNodeTree roots.
+
+    Children are grouped by parent_id and ordered by (display_order, id); a node
+    bound to a squad carries that squad's derived status (from `squad_status`) so
+    the org chart can colour it. Returns the top-level nodes (parent_id is None)."""
     by_parent: dict[int | None, list[OrgNode]] = {}
     for n in nodes:
         by_parent.setdefault(n.parent_id, []).append(n)
@@ -163,6 +193,7 @@ def build_org_tree(nodes: list[OrgNode], squad_status: dict[int, str]) -> list[O
         children.sort(key=lambda n: (n.display_order, n.id))
 
     def build(node: OrgNode) -> OrgNodeTree:
+        """Recursively build the subtree rooted at `node`."""
         return OrgNodeTree(
             id=node.id,
             parent_id=node.parent_id,

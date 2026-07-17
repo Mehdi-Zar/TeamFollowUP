@@ -20,6 +20,8 @@ type ChromeCtx = {
 
 const Ctx = createContext<ChromeCtx | null>(null);
 
+/** Context provider holding the current page's chrome. Wraps the app so any page
+ *  can publish its title/tabs/actions and the Layout top bar can read them. */
 export function PageChromeProvider({ children }: { children: ReactNode }) {
   const [chrome, setChrome] = useState<PageChrome>({});
   return <Ctx.Provider value={{ chrome, setChrome }}>{children}</Ctx.Provider>;

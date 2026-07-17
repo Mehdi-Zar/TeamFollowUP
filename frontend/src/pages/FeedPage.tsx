@@ -1,3 +1,12 @@
+/**
+ * FeedPage - the team activity feed (announcements / incidents / info / success).
+ *
+ * Shows a chronological list of posts, optionally filtered by squad and by kind.
+ * Writers (see `isWriter`) get a composer to publish posts and can pin/unpin;
+ * everyone else reads only. Reactions, replies, pinning and post kinds are each
+ * gated behind a "feed" module feature flag so an admin can turn them off.
+ * The list live-refreshes every 5 seconds.
+ */
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { useAuth } from "../auth";
@@ -10,14 +19,22 @@ import { isWriter } from "../perms";
 
 const KINDS: FeedKind[] = ["incident", "info", "success"];
 
+/** Build the avatar initials (up to 2 letters) from a display name; "?" if none. */
 function initials(name?: string | null): string {
   if (!name) return "?";
   return name.split(" ").filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase()).join("");
 }
 
+/**
+ * Feed root page: composer + filters + post list.
+ * Access: any authenticated user can read; only "writers" (admin / tribe leader /
+ * squad leader, per `isWriter`) may post and pin. Reactions/replies/pin/kinds are
+ * each toggled by their "feed" module feature flag.
+ */
 export default function FeedPage() {
   const { user, effectiveRole } = useAuth();
   const { t, formatDateTime } = useI18n();
+  // effectiveRole may be a previewed role; fall back to the least-privileged one.
   const role = (effectiveRole ?? "member") as Role;
   const canPost = isWriter(role);
   const canPin = isWriter(role);
@@ -38,6 +55,8 @@ export default function FeedPage() {
   const [kind, setKind] = useState<FeedKind>("info");
   const [squadId, setSquadId] = useState<string>("");
 
+  // Keep the current filters in a ref so the interval-driven load() (below) always
+  // reads the latest values without re-registering the interval on every change.
   const filterRef = useRef({ squadFilter, kindFilter });
   filterRef.current = { squadFilter, kindFilter };
 
@@ -58,7 +77,7 @@ export default function FeedPage() {
   useEffect(() => {
     load();
   }, [squadFilter, kindFilter]);
-  // live refresh
+  // Live refresh: re-fetch every 5s so new posts/replies appear without reload.
   useEffect(() => {
     const id = setInterval(load, 5000);
     return () => clearInterval(id);
@@ -129,6 +148,7 @@ export default function FeedPage() {
         <EmptyState message={t("feed.empty")} />
       ) : (
         posts.map((p) => (
+          // canDelete: the post's own author, or a moderator (admin / tribe leader).
           <PostCard key={p.id} post={p} canPin={canPin && pinOn} reactionsOn={reactionsOn} repliesOn={repliesOn}
                     canDelete={p.author?.id === user?.id || role === "admin" || role === "tribe_leader"}
                     userId={user?.id} onChange={load} t={t} formatDateTime={formatDateTime} />
@@ -138,6 +158,12 @@ export default function FeedPage() {
   );
 }
 
+/**
+ * A single feed post with its actions (react / reply / pin / delete) and reply list.
+ * The action buttons are shown according to the flags passed in by the parent:
+ * `reactionsOn`/`repliesOn` (module features), `canPin` and `canDelete` (permissions).
+ * A reply can only be deleted by its own author (`r.author?.id === userId`).
+ */
 function PostCard({ post, canPin, reactionsOn, repliesOn, canDelete, userId, onChange, t, formatDateTime }: any) {
   const [reply, setReply] = useState("");
 

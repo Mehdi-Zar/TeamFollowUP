@@ -39,11 +39,18 @@ def _default_caps(key: str) -> dict:
 
 
 def _normalize_caps(raw: dict | None) -> dict:
+    """Coerce arbitrary input into the full capability set, defaulting to off.
+
+    Security: every capability is present in the result and any missing/unknown
+    entry becomes False (deny by default), so a malformed payload can only remove
+    access, never silently grant it.
+    """
     raw = raw if isinstance(raw, dict) else {}
     return {c: bool(raw.get(c, False)) for c in CAPABILITIES}
 
 
 def _builtin_personas() -> list[dict]:
+    """The four built-in personas with their legacy-equivalent default caps."""
     return [{"key": k, "label": k, "builtin": True, "caps": _default_caps(k)} for k in BUILTINS]
 
 
@@ -77,6 +84,11 @@ def get_personas(db: Session) -> list[dict]:
 
 
 def _slug(label: str) -> str:
+    """Turn a free-text label into a stable, filesystem/URL-safe persona key.
+
+    Lowercases and collapses any run of non-alphanumerics to a single underscore;
+    falls back to "persona" if nothing usable remains. Callers then de-duplicate.
+    """
     s = re.sub(r"[^a-z0-9]+", "_", (label or "").strip().lower()).strip("_")
     return s or "persona"
 
@@ -121,6 +133,11 @@ def set_personas(db: Session, payload: list[dict]) -> list[dict]:
 
 
 def persona_caps(db: Session, role_key: str) -> dict:
+    """The capability map for a role key; all-False if the persona is gone.
+
+    Denying access to an unknown/deleted persona (rather than raising) is the safe
+    default: a user whose custom persona was removed simply loses every section.
+    """
     for p in get_personas(db):
         if p["key"] == role_key:
             return p["caps"]
@@ -128,8 +145,18 @@ def persona_caps(db: Session, role_key: str) -> dict:
 
 
 def can(db: Session, user, capability: str) -> bool:
+    """True iff the user's persona grants `capability`. The server-side gate.
+
+    This is the authoritative check enforced on protected endpoints; the SPA uses
+    the same capabilities only to hide UI. Missing capability → False (deny).
+    """
     return bool(persona_caps(db, user.role).get(capability, False))
 
 
 def valid_role_keys(db: Session) -> set[str]:
+    """Set of currently-defined persona keys (built-in + custom).
+
+    Used to validate a role assigned to a user, so a user cannot be pinned to a
+    persona that no longer exists.
+    """
     return {p["key"] for p in get_personas(db)}

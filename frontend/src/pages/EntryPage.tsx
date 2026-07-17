@@ -1,3 +1,14 @@
+/**
+ * EntryPage - the reporting screen where a squad's data is entered/updated.
+ *
+ * Lets a user pick a squad + year and edit its objectives, quarterly roadmap
+ * (milestones) and KPIs, then "submit" a snapshot of the current state. Which
+ * squads appear depends on the role: admins / tribe leaders (and preview mode)
+ * see all squads; a squad leader only sees the squads they lead. Write access is
+ * decided per squad by `canEditSquad`; objectives editing by `canManageObjectives`.
+ * A visual "how to report" intro (ReportIntro) sits at the top. Each section is
+ * behind its squad_content module flag.
+ */
 import { useEffect, useMemo, useState } from "react";
 import { api, ApiError } from "../api";
 import { useAuth } from "../auth";
@@ -12,6 +23,11 @@ import { roadmapRag } from "../labels";
 
 const ROADMAP_STATUSES: RoadmapStatus[] = ["on_track", "at_risk", "blocked", "done"];
 
+/**
+ * Reporting root. Owns the squad/year selection, loads the selected SquadDetail
+ * and its assigned initiatives, and orchestrates the section editors plus the
+ * submit-snapshot flow. Read-only when the viewer cannot write to the squad.
+ */
 export default function EntryPage() {
   const { user, effectiveRole, isPreview } = useAuth();
   const { t, roadmap, trend, rag, freshness } = useI18n();
@@ -33,6 +49,8 @@ export default function EntryPage() {
   const [error, setError] = useState<string | null>(null);
   const [recap, setRecap] = useState(false);
 
+  // Squad picker scope: leaders/admins (and preview mode) can report on any
+  // squad; a squad leader is limited to the squads they lead.
   const canPickAll = role === "admin" || role === "tribe_leader" || isPreview;
   const editable = useMemo(() => (canPickAll ? squads : squads.filter((s) => s.leader_user_id === user?.id)), [squads, user, canPickAll]);
 
@@ -76,6 +94,7 @@ export default function EntryPage() {
     }
   }
 
+  // Per-squad write permission (drives read-only banner + disabled submit).
   const writeAllowed = squad ? canEditSquad(role, user?.id, squad) : false;
 
   useSetPageChrome(
@@ -104,6 +123,7 @@ export default function EntryPage() {
   if (error) return <ErrorBanner message={error} />;
   if (editable.length === 0) return <EmptyState message={t("entry.no_squad")} />;
 
+  // Objectives are managed by tribe leaders/admins, not squad leaders.
   const objAllowed = canManageObjectives(role);
 
   return (
@@ -142,6 +162,11 @@ export default function EntryPage() {
   );
 }
 
+/**
+ * Pre-submit checklist modal. Before taking a snapshot it shows a soft, purely
+ * informational readiness check (has milestones / progress / KPIs / members) so
+ * the user can confirm; none of these block submission.
+ */
 function SubmitRecap({ squad, onConfirm, onCancel, t }: any) {
   const [busy, setBusy] = useState(false);
   const hasJalons = squad.roadmap_items.length > 0;
@@ -177,6 +202,7 @@ function SubmitRecap({ squad, onConfirm, onCancel, t }: any) {
   );
 }
 
+/** Small section wrapper used by the editors: title, optional hint + action slot. */
 function Card({ title, hint, action, children }: any) {
   return (
     <div className="card">
@@ -190,10 +216,16 @@ function Card({ title, hint, action, children }: any) {
   );
 }
 
+/** Blank milestone pre-set to the given quarter, seeding the "new jalon" form. */
 function emptyJalon(year: number, quarter: number): Partial<RoadmapItem> {
   return { year, quarter, title: "", theme: "", release_stage: "EA", description: "", success_criteria: "", user_benefit: "", dependencies: "", dependency_kind: null, dependency_squad_id: null, dependency_tribe_id: null, risks: "", owner: "", status: "on_track", objective_id: null };
 }
 
+/**
+ * Roadmap editor: four QuarterEditor columns plus a JalonModal for create/edit.
+ * `save` decides POST (new) vs PUT (existing, stripping id/squad_id). Read-only
+ * mode hides add/edit affordances. Includes a per-squad roadmap PPTX export link.
+ */
 function RoadmapEditor({ squad, year, onChange, readonly, t, roadmap, squads, tribes }: any) {
   const { lang } = useI18n();
   const [editing, setEditing] = useState<Partial<RoadmapItem> | null>(null);
@@ -245,6 +277,10 @@ function RoadmapEditor({ squad, year, onChange, readonly, t, roadmap, squads, tr
   );
 }
 
+/**
+ * One quarter column: its milestones and an auto-computed progress bar. Rows are
+ * clickable to edit unless read-only. Progress is derived, never entered.
+ */
 function QuarterEditor({ squad, quarter, readonly, t, onAdd, onEdit }: any) {
   const items = squad.roadmap_items.filter((r: RoadmapItem) => r.quarter === quarter);
   // Progress is auto-derived from milestone advancement (share done), never typed.
@@ -281,6 +317,12 @@ function QuarterEditor({ squad, quarter, readonly, t, onAdd, onEdit }: any) {
   );
 }
 
+/**
+ * Milestone create/edit form (modal). Beyond the plain fields it offers theme
+ * reuse (datalist of existing themes), owner suggestions from squad members,
+ * optional link to an objective, and a dependency that can be free text, another
+ * squad, or a tribe (`depKind`). Title + theme are required to save.
+ */
 function JalonModal({ jalon, members, objectives, onSave, onCancel, t, roadmap, squads, tribes, currentSquadId }: any) {
   const [f, setF] = useState<Partial<RoadmapItem>>(jalon);
   const [themes, setThemes] = useState<string[]>([]);
@@ -393,6 +435,11 @@ function JalonModal({ jalon, members, objectives, onSave, onCancel, t, roadmap, 
   );
 }
 
+/**
+ * Annual objectives editor. When `editable` (tribe leader / admin) titles and
+ * target dates can be changed and objectives added/removed; otherwise it is a
+ * read-only list. The RAG status is auto-derived from advancement, never edited.
+ */
 function ObjectivesEditor({ squad, year, onChange, editable, t, rag }: any) {
   const [title, setTitle] = useState("");
   async function add() {
@@ -444,9 +491,14 @@ function ObjectivesEditor({ squad, year, onChange, editable, t, rag }: any) {
   );
 }
 
+/**
+ * KPI editor: name, trend, current/target/unit per KPI. Read-only mode disables
+ * inputs. Only rendered when the squad has KPIs enabled and the module is on.
+ */
 function KpisEditor({ squad, onChange, readonly, t, trend }: any) {
   const [name, setName] = useState("");
   const trends: Trend[] = ["on_target", "under_pressure", "missed"];
+  // Parse a numeric input into a number or null (blank / non-numeric -> null).
   const num = (v: string) => (v.trim() === "" ? null : Number.isNaN(Number(v)) ? null : Number(v));
   async function add() {
     if (!name.trim()) return;
@@ -515,6 +567,8 @@ const FLOW_ICONS = {
   ),
 };
 
+/** Decorative "how to report" header: a hero line plus a 4-step icon flow
+ *  (objectives -> milestones -> status -> submit) and an "auto" footnote. */
 function ReportIntro({ t }: { t: any }) {
   const flow = [
     { key: "s1", icon: FLOW_ICONS.target, color: "#1E2761" },
