@@ -1,16 +1,28 @@
 """End-to-end functional test of Tribe Cockpit against the running app."""
 import json
+import os
+import ssl
 import urllib.request
 import urllib.error
 import http.cookiejar
 
-BASE = "http://localhost:8080"
+# The app serves HTTPS on :8443, its only port (self-signed cert by default).
+# Override with E2E_BASE_URL to target another host/port mapping.
+BASE = os.environ.get("E2E_BASE_URL", "https://localhost:8443")
 results = []
+
+# Accept the self-signed dev cert (public-API equivalent of an unverified context).
+_SSL_CTX = ssl.create_default_context()
+_SSL_CTX.check_hostname = False
+_SSL_CTX.verify_mode = ssl.CERT_NONE
 
 
 def session():
     cj = http.cookiejar.CookieJar()
-    return urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
+    return urllib.request.build_opener(
+        urllib.request.HTTPSHandler(context=_SSL_CTX),
+        urllib.request.HTTPCookieProcessor(cj),
+    )
 
 
 def req(op, method, path, body=None, expect=None):
@@ -189,8 +201,12 @@ if s == 201:
     check("admin update user role", s2 == 200, s2)
     s3, _ = req(admin, "DELETE", f"/api/admin/users/{nu['id']}")
     check("admin delete user", s3 == 204, s3)
+# User management is capability-based: admins AND tribe leaders may list users;
+# plain members may not (see admin._require_user_manager).
 s, _ = req(tribe, "GET", "/api/admin/users")
-check("tribe leader blocked from admin users", s == 403, s)
+check("tribe leader can list users", s == 200, s)
+s, _ = req(hugo, "GET", "/api/admin/users")
+check("member blocked from admin users", s == 403, s)
 
 s, gset = req(admin, "GET", "/api/admin/settings")
 check("admin settings has all keys", all(k in gset for k in ("app_name", "default_lang", "default_year", "feed_post_scope", "staleness_threshold_days")), list(gset.keys()))
@@ -203,16 +219,16 @@ s, audit = req(admin, "GET", "/api/audit-log")
 check("audit log not empty", s == 200 and len(audit) > 0, len(audit) if s == 200 else s)
 
 # ---- SAML metadata generation (enable, fetch, disable) ----
-req(admin, "PUT", "/api/admin/auth-config", {"saml_enabled": True, "saml_sp_entity_id": "http://localhost:8080/api/auth/saml/metadata", "saml_acs_url": "http://localhost:8080/api/auth/saml/acs"})
+req(admin, "PUT", "/api/admin/auth-config", {"saml_enabled": True, "saml_sp_entity_id": "https://localhost:8443/api/auth/saml/metadata", "saml_acs_url": "https://localhost:8443/api/auth/saml/acs"})
 s, md = req(admin, "GET", "/api/auth/saml/metadata")
 check("SAML SP metadata generated", s == 200 and "EntityDescriptor" in str(md), s)
 req(admin, "PUT", "/api/admin/auth-config", {"saml_enabled": False})
 
-# ---- exports ----
-s, csv1 = req(admin, "GET", "/api/exports/dashboard.csv")
-check("dashboard CSV", s == 200 and "squad" in str(csv1), s)
-s, csv2 = req(admin, "GET", f"/api/exports/squad/{gid}.csv")
-check("squad CSV", s == 200, s)
+# ---- exports (HTML/PPTX under /api/reports) ----
+s, html1 = req(admin, "GET", "/api/reports/dashboard.html")
+check("dashboard HTML export", s == 200, s)
+s, html2 = req(admin, "GET", "/api/reports/roadmap.html")
+check("roadmap HTML export", s == 200, s)
 
 # ---- member read-only ----
 s, _ = req(hugo, "GET", "/api/dashboard")
@@ -244,15 +260,13 @@ check("mark all read", n3["unread_count"] == 0, n3.get("unread_count"))
 s, p2 = req(hugo, "PUT", "/api/me/preferences", {"email_notifications": True})
 check("update preference", s == 200 and p2["email_notifications"] is True, p2)
 
-# ---- SMTP config + email export ----
+# ---- SMTP config ----
 s, smtp = req(admin, "GET", "/api/admin/smtp-config")
 check("admin reads smtp config", s == 200 and "enabled" in smtp, list(smtp.keys()) if s == 200 else s)
 s, _ = req(admin, "PUT", "/api/admin/smtp-config", {"host": "smtp.example", "port": 587})
 check("admin saves smtp config", s == 200, s)
 s, cfg2 = req(admin, "GET", "/api/config")
 check("smtp_enabled in public config", "smtp_enabled" in cfg2, cfg2)
-s, _ = req(admin, "POST", "/api/exports/dashboard/email", {"to": "someone@example.com"})
-check("email export blocked when SMTP off", s == 400, s)
 s, _ = req(hugo, "GET", "/api/admin/smtp-config")
 check("non-admin cannot read smtp config", s == 403, s)
 

@@ -28,9 +28,18 @@ export const isWriter = (r: Role) => r === "admin" || r === "tribe_leader" || r 
 // squads via the admin "Squads" tab (KPIs on/off, annual objectives), not reporting.
 export const canSeeSaisie = (r: Role) => r === "admin" || r === "squad_leader";
 
-/** Can this role (with this user id) edit the given squad's roadmap/KPIs/members? */
+/** Can this role (with this user id) edit the given squad's KPIs/members/budget? */
 export function canEditSquad(role: Role, userId: number | undefined, squad: Pick<SquadDetail, "leader_user_id">): boolean {
   if (role === "admin" || role === "tribe_leader") return true;
+  if (role === "squad_leader") return squad.leader_user_id === userId;
+  return false;
+}
+
+/** Stricter than canEditSquad: only the squad's OWN leader (or admin) - the tribe
+ *  leader is deliberately excluded. Mirrors backend deps.assert_leads_squad.
+ *  Used for milestones (jalons) and key messages, stewarded by the squad leader alone. */
+export function leadsSquad(role: Role, userId: number | undefined, squad: Pick<SquadDetail, "leader_user_id">): boolean {
+  if (role === "admin") return true;
   if (role === "squad_leader") return squad.leader_user_id === userId;
   return false;
 }

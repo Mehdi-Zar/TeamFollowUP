@@ -111,6 +111,27 @@ def assert_can_edit_squad(db: Session, user: User, squad_id: int) -> None:
         raise HTTPException(status_code=403, detail="Vous ne pouvez éditer que votre squad")
 
 
+def leads_squad(db: Session, user: User, squad_id: int) -> bool:
+    """Stricter than ``can_edit_squad``: ONLY the squad's own leader (or admin).
+    The tribe leader is deliberately excluded. Used for squad-owned content whose
+    stewardship belongs to the squad leader alone - roadmap milestones (jalons)
+    and key messages."""
+    squad = db.get(Squad, squad_id)
+    if squad is None:
+        return False
+    if user.role == ADMIN:
+        return True
+    if user.role == SQUAD:
+        return squad.leader_user_id == user.id
+    return False
+
+
+def assert_leads_squad(db: Session, user: User, squad_id: int) -> None:
+    if not leads_squad(db, user, squad_id):
+        raise HTTPException(status_code=403,
+                            detail="Réservé au squad leader de cette squad")
+
+
 def is_squad_privileged(user: User, squad: Squad) -> bool:
     """Can see a squad's restricted data (objectives, KPIs, budget): admin, the
     squad's tribe leader, or the squad's own leader."""

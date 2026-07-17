@@ -1,4 +1,4 @@
-# ADR-0010 — Alembic migrations as schema source of truth
+# ADR-0010 - Alembic migrations as schema source of truth
 
 **Status:** Accepted
 

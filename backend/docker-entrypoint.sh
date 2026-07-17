@@ -32,8 +32,9 @@ alembic upgrade head
 echo "[entrypoint] Bootstrap (compte de secours) + seed de démonstration..."
 python -m app.init_db
 
-echo "[entrypoint] Démarrage de l'API (HTTPS + redirection HTTP)..."
-# server.py sert l'app en HTTPS (certificat auto-signé par défaut, ou celui
-# importé via l'admin) et redirige le HTTP vers HTTPS. Il génère/écrit le
-# certificat avant d'ouvrir le port TLS.
+echo "[entrypoint] Démarrage de l'API (HTTPS, port unique 8443)..."
+# server.py sert l'app en HTTPS sur un seul port (certificat auto-signé par
+# défaut, ou celui importé via l'admin). Il génère/écrit le certificat avant
+# d'ouvrir le port TLS. La redirection HTTP->HTTPS est gérée par l'infra
+# (ex. Gateway API sur GKE), pas par l'app.
 exec python -m app.server

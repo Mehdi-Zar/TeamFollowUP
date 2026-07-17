@@ -2,7 +2,7 @@
 the tribe leader and visible to everyone. Each initiative is assigned to one squad,
 so it surfaces in that squad's report + dashboard. No milestones, no OTD here."""
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -125,8 +125,9 @@ def initiatives_pptx(tribe_id: int | None = Query(default=None), year: int | Non
         payload = render_initiatives_pptx(data, lang=lang or "fr")
     except ImportError:
         raise HTTPException(status_code=501, detail="Génération PPTX indisponible (python-pptx non installé)")
-    return StreamingResponse(
-        iter([payload]),
+    # Buffered artifact → plain Response so Content-Length is set (not chunked).
+    return Response(
+        content=payload,
         media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
         headers={"Content-Disposition": f'attachment; filename="initiatives_{data["year"]}.pptx"'},
     )

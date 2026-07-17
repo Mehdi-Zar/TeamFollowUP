@@ -1,4 +1,4 @@
-# 05 — Security Model
+# 05 - Security Model
 
 ## Authentication
 
@@ -15,22 +15,22 @@ session with `impersonator_id`.
 
 ## Transport security (native HTTPS / TLS)
 
-The application **terminates TLS itself** — no external reverse proxy is required
+The application **terminates TLS itself** - no external reverse proxy is required
 to get HTTPS (though you may still put one in front). The launcher `app/server.py`
-serves HTTPS on port **8443** and runs a plain-HTTP listener on **8080** that
-`301`-redirects everything to HTTPS.
+serves HTTPS on a **single port, 8443**. There is **no HTTP listener**: HTTP→HTTPS
+redirection is an infrastructure concern (e.g. the GKE Gateway API redirect route),
+never the app's.
 
 - **Out of the box:** if no certificate is configured, a **self-signed** cert is
   generated on first boot (`tls.generate_self_signed`, CN `localhost` + SANs), so
-  the site is HTTPS immediately. Browsers warn until it is trusted — expected for
+  the site is HTTPS immediately. Browsers warn until it is trusted - expected for
   internal use.
 - **Bring your own cert** from **Administration → HTTPS / Certificats** (admin-only):
   - import a **PEM** certificate (+ intermediates) and its private key (optionally
     passphrase-protected), or a **PFX / PKCS#12** bundle;
   - manage the **root** and **intermediate CA** store (intermediates are appended
     to the served chain);
-  - regenerate a self-signed cert with a custom CN/SAN;
-  - toggle the HTTP→HTTPS redirect.
+  - regenerate a self-signed cert with a custom CN/SAN.
 - **Source of truth = the database** (`AppSetting` key `tls`); on boot and on every
   change the material is written to `CERT_DIR` (`/app/certs`) and the **live
   `SSLContext` is hot-reloaded** (`ssl.SSLContext.load_cert_chain`), so a new
@@ -38,24 +38,24 @@ serves HTTPS on port **8443** and runs a plain-HTTP listener on **8080** that
   is never returned by the API; uploads are audited (`tls_config.*`).
 
 Because the site is HTTPS by default, set **`COOKIE_SECURE=true`** (the compose
-default) so session cookies are `Secure`. Endpoints: `GET/PUT /api/admin/tls-config`,
+default) so session cookies are `Secure`. Endpoints: `GET /api/admin/tls-config`,
 `POST /api/admin/tls-config/{self-signed,import-pem,import-pfx,ca}`,
 `DELETE /api/admin/tls-config/ca/{id}`.
 
 ## SSO provisioning & access approval
 
 **SSO authenticates *who* you are; the app authorizes *whether* you may enter.** An
-IdP login is necessary but not sufficient — identity ≠ access.
+IdP login is necessary but not sufficient - identity ≠ access.
 
 - **Account lifecycle** (`users.status`): `pending → active → disabled`. Only
   `active` accounts may use the app. Locally-created and break-glass accounts are
   `active`; SSO-provisioned ones start `pending`.
 - **Two gates at the SSO callback** (`_provision` + `authconfig`):
-  1. **Email-domain allowlist** (`allowed_email_domains`, optional) — outside the
+  1. **Email-domain allowlist** (`allowed_email_domains`, optional) - outside the
      allowed domains, no account is even created.
-  2. **Manual approval** (`require_approval`, default on) — new accounts are
+  2. **Manual approval** (`require_approval`, default on) - new accounts are
      `pending` and gain nothing until a manager validates them.
-- **Authorization gate** (`deps.get_current_user`) — every protected endpoint
+- **Authorization gate** (`deps.get_current_user`) - every protected endpoint
   requires `status == "active"`; otherwise `403 access_pending|access_disabled`.
   Only `/api/auth/me` + `/me/permissions` resolve any-status (so the SPA can show
   the "pending / revoked" screen). A `disabled` account also fails local login.
@@ -63,7 +63,7 @@ IdP login is necessary but not sufficient — identity ≠ access.
   admins validate anyone (any role/tribe); tribe leaders validate into **their
   tribe** (squad_leader/member); squad leaders validate into **their own squad**
   (member). The *visibility* of the pending queue is broad (a new account has no
-  tribe yet) but the *grant* is strictly scoped — and **deny** (disable) is reserved
+  tribe yet) but the *grant* is strictly scoped - and **deny** (disable) is reserved
   to admin / tribe leaders. Every decision is audited (`access.approve|deny`).
 - Reviewers are notified (in-app + best-effort email) of new requests; the user is
   notified on approval. *(SCIM auto-deprovisioning is a future enhancement; the
@@ -73,12 +73,12 @@ IdP login is necessary but not sufficient — identity ≠ access.
 
 Three independent layers, all enforced **server-side** (the SPA only hides UI):
 
-1. **Role tiers** — `admin > tribe_leader > squad_leader > member` (+ custom persona keys).
+1. **Role tiers** - `admin > tribe_leader > squad_leader > member` (+ custom persona keys).
    Coarse guards: `require_admin`, `require_tribe_or_admin`, `require_writer`.
-2. **Persona → capability matrix** (`personasconfig`) — section access (`dashboard, roadmap, org,
+2. **Persona → capability matrix** (`personasconfig`) - section access (`dashboard, roadmap, org,
    feed, reporting, mysquads, leaves`) per persona, enforced by `require_capability(cap)`.
    Admin-configurable in **Admin → Personas**. See [ADR-0005](adr/0005-persona-capability-model.md).
-3. **Module on/off** (`modulesconfig`) — `require_module(module[,feature])` returns 404 when a feature
+3. **Module on/off** (`modulesconfig`) - `require_module(module[,feature])` returns 404 when a feature
    is disabled (a disabled service is indistinguishable from a missing one).
 
 Plus **tribe scoping** (`assert_tribe_scope`, `visible_tribe_id`) and **ownership**
@@ -89,20 +89,20 @@ a squad leader of a squad the target belongs to): it gates approve/edit/cancel-f
 visibility of the private motif. Absences are otherwise readable by anyone in the same tribe; the leave
 type and detail are public.
 
-## OWASP Top 10 (2021) — quick assessment
+## OWASP Top 10 (2021) - quick assessment
 
 | # | Risk | Status |
 |---|------|--------|
-| A01 Broken Access Control | **Mitigated** — layered server-side guards + tribe scoping + tests (`test_rbac*`, `test_personas`, `test_review_access`). |
-| A02 Cryptographic Failures | **Partial** — Argon2 for passwords; **session cookie `https_only=False`** and a **default `secret_key`** must be overridden in prod (see TD/risks). |
-| A03 Injection | **Mitigated** — SQLAlchemy ORM/parameterized queries; Pydantic validation; SPA escapes; report HTML uses `html.escape`. |
-| A04 Insecure Design | **Mitigated** — explicit RBAC, derived statuses, immutable snapshots. |
-| A05 Security Misconfiguration | **Action needed** — prod must set `SECRET_KEY`, `POSTGRES_PASSWORD`, `BREAKGLASS_PASSWORD`, HTTPS, and `https_only` cookie. See `.env.example`. |
-| A06 Vulnerable Components | **Process gap** — no dependency scanning/Dependabot yet (CI added; see roadmap). |
-| A07 Auth Failures | **Mitigated** — Argon2, session expiry, break-glass guarded; **no account lockout / rate limiting** (tracked). |
-| A08 Integrity Failures | **Mitigated** — audit log; immutable snapshots; signed cookie. |
-| A09 Logging & Monitoring | **Partial** — `audit_log` + app logs; **no centralized monitoring/alerting** (tracked). |
-| A10 SSRF | **Low** — outbound only to configured SMTP/IdP. |
+| A01 Broken Access Control | **Mitigated** - layered server-side guards + tribe scoping + tests (`test_rbac*`, `test_personas`, `test_review_access`). |
+| A02 Cryptographic Failures | **Partial** - Argon2 for passwords; **session cookie `https_only=False`** and a **default `secret_key`** must be overridden in prod (see TD/risks). |
+| A03 Injection | **Mitigated** - SQLAlchemy ORM/parameterized queries; Pydantic validation; SPA escapes; report HTML uses `html.escape`. |
+| A04 Insecure Design | **Mitigated** - explicit RBAC, derived statuses, immutable snapshots. |
+| A05 Security Misconfiguration | **Action needed** - prod must set `SECRET_KEY`, `POSTGRES_PASSWORD`, `BREAKGLASS_PASSWORD`, HTTPS, and `https_only` cookie. See `.env.example`. |
+| A06 Vulnerable Components | **Process gap** - no dependency scanning/Dependabot yet (CI added; see roadmap). |
+| A07 Auth Failures | **Mitigated** - Argon2, session expiry, break-glass guarded; **no account lockout / rate limiting** (tracked). |
+| A08 Integrity Failures | **Mitigated** - audit log; immutable snapshots; signed cookie. |
+| A09 Logging & Monitoring | **Partial** - `audit_log` + app logs; **no centralized monitoring/alerting** (tracked). |
+| A10 SSRF | **Low** - outbound only to configured SMTP/IdP. |
 
 ## Risk matrix
 
@@ -121,5 +121,24 @@ type and detail are public.
 Configuration comes from environment variables (Pydantic Settings, `backend/app/config.py`).
 **Defaults are dev-only.** See [`backend/.env.example`](../backend/.env.example) for the full list.
 Production must inject: `SECRET_KEY`, `POSTGRES_PASSWORD`, `BREAKGLASS_PASSWORD`, OIDC/SAML and SMTP
-credentials — via the orchestrator's secret store (never committed).
+credentials - via the orchestrator's secret store (never committed).
+
+### GCP authentication for audit-log export (keyless by default)
+
+The audit-log export to **GCS / BigQuery** (Admin → Logs) authenticates through
+Google's recommended ladder, **keyless first** ([ADR-0012](adr/0012-gcp-auth-keyless.md)):
+
+- **`adc` (default)** - Application Default Credentials: the **attached service
+  account** (Workload Identity Federation for GKE, or the Cloud Run/GCE identity).
+  **No secret stored** in the app or DB.
+- **`wif`** - Workload Identity Federation via an `external_account` config file
+  (not a key) for workloads running **off** Google Cloud.
+- **`impersonation`** - an ADC base identity impersonating a target service account.
+- **`key`** - a downloaded JSON key. **Discouraged** (long-lived secret; Google
+  advises `iam.disableServiceAccountKeyCreation`). Kept for compatibility, stored
+  masked in `app_settings`, shown behind a warning in the UI.
+
+Prefer keyless in production so no Google credential ever lives in the database.
+On GKE this requires binding the pod's Kubernetes ServiceAccount to a Google
+service account - see the deployment guide's IAM section.
 </content>

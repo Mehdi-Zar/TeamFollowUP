@@ -1,4 +1,4 @@
-# 11 — Roadmap & Enterprise Readiness
+# 11 - Roadmap & Enterprise Readiness
 
 ## Enterprise readiness assessment
 
@@ -23,7 +23,7 @@ needs the P1 track before scale or external/SaaS use.
 ## Roadmap
 
 ### Quick wins (days)
-- [x] CI pipeline (backend tests + FE typecheck/test/build + i18n parity + image build) — `.github/workflows/ci.yml`
+- [x] CI pipeline (backend tests + FE typecheck/test/build + i18n parity + image build) - `.github/workflows/ci.yml`
 - [x] `.env.example` documenting all config/secrets
 - [x] Startup guard: loud warning when default `SECRET_KEY`/Postgres password are in use (`main.py`)
 - [x] `https_only` / `SameSite` session cookie now **env-driven** (`COOKIE_SECURE`, `COOKIE_SAMESITE`)
@@ -33,9 +33,9 @@ needs the P1 track before scale or external/SaaS use.
 
 ### High impact (weeks)
 - [ ] Observability: structured logs + Prometheus/OTel metrics + alerting + uptime probe
-- [x] Login rate-limiting (per-IP throttle, env-configurable) — `auth.py`
+- [x] Login rate-limiting (per-IP throttle, env-configurable) - `auth.py`
 - [x] Frontend tests (Vitest, 11 tests) wired into CI; **E2E (Playwright)** still to add
-- [x] Externalize the scheduler via **Postgres advisory lock** (multi-replica safe) — `main.py`
+- [x] Externalize the scheduler via **Postgres advisory lock** (multi-replica safe) - `main.py`
 - [x] Performance: **eager-loading** on dashboard/report (N+1 removed) + **route code-splitting**
       (initial bundle 384→246 KB); audit-log pagination still open
 - [x] Data retention: opt-in purge of old audit/auto-progress records (`maintenance.py`)
@@ -44,7 +44,7 @@ needs the P1 track before scale or external/SaaS use.
 - [ ] Environment promotion (dev → staging → prod) + CD with migrations gating
 - [ ] Backups → full DR runbook (RPO/RTO targets) + restore drills
 - [ ] Design tokens + component-library extraction; split large components
-- [ ] Data retention/archival policy (audit_log, progress_updates) + GDPR/DPA posture
+- [ ] Data retention/archival policy (audit_log, report_snapshots) + GDPR/DPA posture
 
 ### Long-term evolution
 - [ ] True multi-tenancy / SaaS (per-tenant isolation, billing, FinOps dashboards)

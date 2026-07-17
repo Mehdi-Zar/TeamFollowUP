@@ -94,8 +94,8 @@ _RT = {
         "h_progress_long": "Progression", "h_delta": "Δ sem.", "h_blocked": "Bloqués",
         "h_atrisk": "À risque", "h_facts": "Faits de la semaine",
         "squad_scope": "Squad {name}", "more_squads": "… +{n} autres squads",
-        "subject": "Rapport hebdomadaire — {scope} — semaine {w}", "synthesis": "Synthèse",
-        "subject_personal": "Rapport — {scope} — {n} j",
+        "subject": "Rapport hebdomadaire - {scope} - semaine {w}", "synthesis": "Synthèse",
+        "subject_personal": "Rapport - {scope} - {n} j",
         "detail_title": "Détail par squad", "h_objectives": "OTD",
         "h_roadmap": "Roadmap & jalons", "deadline": "échéance", "no_obj": "Aucun objectif",
         "no_jalon": "Aucun jalon", "dep": "Dép.", "roadmap_report": "Roadmap",
@@ -114,7 +114,7 @@ _RT = {
         "leaves_upcoming": "Absences à venir (30 j)", "leaves_pending": "à valider", "days_short": "j",
         # --- "What's new since your last report" changelog ---
         "whatsnew": "Nouveautés depuis votre dernier rapport",
-        "first_report": "Premier rapport — pas encore de comparaison.",
+        "first_report": "Premier rapport - pas encore de comparaison.",
         "no_changes": "Aucun changement depuis le dernier rapport.",
         "subj_changes": "[{n} nouveauté(s)]", "subj_uptodate": "[à jour]",
         "chg_progress": "avancement {d} pts", "chg_status": "statut {frm} → {to}",
@@ -140,8 +140,8 @@ _RT = {
         "h_progress_long": "Progress", "h_delta": "Δ wk", "h_blocked": "Blocked",
         "h_atrisk": "At risk", "h_facts": "This week",
         "squad_scope": "Squad {name}", "more_squads": "… +{n} more squads",
-        "subject": "Weekly report — {scope} — week {w}", "synthesis": "Summary",
-        "subject_personal": "Report — {scope} — {n}d",
+        "subject": "Weekly report - {scope} - week {w}", "synthesis": "Summary",
+        "subject_personal": "Report - {scope} - {n}d",
         "detail_title": "Detail by squad", "h_objectives": "OTD",
         "h_roadmap": "Roadmap & milestones", "deadline": "due", "no_obj": "No objective",
         "no_jalon": "No milestone", "dep": "Dep.", "roadmap_report": "Roadmap",
@@ -160,7 +160,7 @@ _RT = {
         "leaves_upcoming": "Upcoming absences (30 d)", "leaves_pending": "to approve", "days_short": "d",
         # --- "What's new since your last report" changelog ---
         "whatsnew": "What's new since your last report",
-        "first_report": "First report — nothing to compare yet.",
+        "first_report": "First report - nothing to compare yet.",
         "no_changes": "No changes since the last report.",
         "subj_changes": "[{n} update(s)]", "subj_uptodate": "[up to date]",
         "chg_progress": "progress {d} pts", "chg_status": "status {frm} → {to}",
@@ -524,7 +524,7 @@ def _squad_detail_parts(r: dict, lang: str, e, *, with_title: bool = True) -> li
             rag = km_rag.get(m["kind"], "grey")
             ts = f' <span class="muted">· {e(m["created_at"])}</span>' if m.get("created_at") else ""
             parts.append(f'<li><span class="dot" style="background:{RAG_COLOR[rag]}"></span>'
-                         f'<strong>{e(rt(lang, "km_" + m["kind"]))}</strong> — {e(m["text"])}{ts}</li>')
+                         f'<strong>{e(rt(lang, "km_" + m["kind"]))}</strong> - {e(m["text"])}{ts}</li>')
         parts.append('</ul>')
     else:
         parts.append(f'<div class="muted small">{e(rt(lang, "no_key_message"))}</div>')
@@ -586,7 +586,7 @@ def _squad_app_cards(det: dict, lang: str, e, year: int) -> list[str]:
     fmtn = lambda v: "-" if v is None else f"{v:,.0f} €"
     C: list[str] = []
 
-    # Initiatives — always shown (even empty), to mirror the squad page.
+    # Initiatives - always shown (even empty), to mirror the squad page.
     inits = det.get("initiatives") or []
     C.append(f'<div class="card"><h2>{e(rt(lang, "h_initiatives"))}</h2>')
     if inits:
@@ -714,7 +714,7 @@ def _render_squad_page(data: dict, standalone: bool, e, lang: str) -> str:
 
 
 # =============================================================================
-# "What's new since your last report" — change detection against a stored
+# "What's new since your last report" - change detection against a stored
 # per-scope baseline (see models.ReportBaseline).
 # =============================================================================
 
@@ -879,7 +879,7 @@ def render_html(data: dict, *, standalone: bool = True, changes: dict | None = N
     parts.append(f'<div class="sub">{e(data["scope_name"])} · {e(rt(lang, "year"))} {data["year"]} · '
                  f'{e(rt(lang, "generated"))} {e(gen_str)} · {e(rt(lang, "window", n=data["since_days"]))}</div></div>')
 
-    # "What's new since your last report" — right under the header.
+    # "What's new since your last report" - right under the header.
     if changes is not None:
         parts.append(render_changes_html(changes, lang))
 
@@ -920,7 +920,7 @@ def render_html(data: dict, *, standalone: bool = True, changes: dict | None = N
             pending = f' <span class="badge">{e(rt(lang, "leaves_pending"))}</span>' if lv["status"] == "pending" else ""
             parts.append(
                 f'<li><span class="dot" style="background:{e(lv["type_color"])}"></span>'
-                f'<strong>{e(lv["name"])}</strong> — {e(leave_type_label(lv["type_label"], lang))}'
+                f'<strong>{e(lv["name"])}</strong> - {e(leave_type_label(lv["type_label"], lang))}'
                 f'{e(" (" + lv["detail"] + ")") if lv.get("detail") else ""} '
                 f'<span class="muted">({e(lv["start"])} → {e(lv["end"])}, {lv["days"]:g} {e(rt(lang, "days_short"))})</span>'
                 f'{pending}</li>')

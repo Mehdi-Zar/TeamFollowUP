@@ -38,6 +38,7 @@ RUN chmod +x ./docker-entrypoint.sh
 ENV CERT_DIR=/app/certs
 RUN mkdir -p /app/certs
 
-# 8443 = HTTPS (primary), 8080 = HTTP -> HTTPS redirect.
-EXPOSE 8443 8080
+# Single port: 8443 = HTTPS. HTTP->HTTPS redirection is the infrastructure's
+# job (e.g. GKE Gateway API redirect route), not the app's.
+EXPOSE 8443
 ENTRYPOINT ["./docker-entrypoint.sh"]

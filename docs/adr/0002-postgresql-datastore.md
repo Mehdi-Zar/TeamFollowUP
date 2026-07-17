@@ -1,4 +1,4 @@
-# ADR-0002 — PostgreSQL as the system of record
+# ADR-0002 - PostgreSQL as the system of record
 
 **Status:** Accepted
 
