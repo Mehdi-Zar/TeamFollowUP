@@ -12,7 +12,7 @@ their own tribe (see ``_require_user_manager`` / ``users_scope_tribe``). Every
 mutating endpoint writes an audit entry via ``record_audit`` before committing.
 """
 from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, UploadFile
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -742,3 +742,54 @@ def delete_api_key(key_id: int, db: Session = Depends(get_db),
                  detail={"name": key.name, "prefix": key.prefix})
     db.delete(key)
     db.commit()
+
+
+# ----- Organisation import (Admin -> Organisation) ----------------------------
+# Populate a fresh environment (local or S3NS) from a filled Excel file, uploaded
+# through the running app. No image rebuild is needed: the file is parsed in
+# memory and imported idempotently (see app/import_org.py).
+
+_XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+@router.get("/import-org/template")
+def download_org_template(admin: User = Depends(require_admin)):
+    """GET /api/admin/import-org/template — download the blank Excel template
+    (4 sheets: Tribu / Squads / Initiatives / OTD) to fill in. Admin only."""
+    from ..import_org import template_bytes
+    return Response(
+        content=template_bytes(),
+        media_type=_XLSX_MIME,
+        headers={"Content-Disposition": 'attachment; filename="org.template.xlsx"'},
+    )
+
+
+@router.post("/import-org")
+async def import_org_upload(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    """POST /api/admin/import-org — upload a filled Excel (.xlsx) or YAML file and
+    import the organisation (tribe, squads + leaders, initiatives, OTD). Admin
+    only. Idempotent: re-running updates existing rows instead of duplicating.
+
+    Returns a summary of what was processed. 400 if the file is the wrong format
+    or has no tribe. Audited."""
+    from ..import_org import import_org, read_upload
+
+    content = await file.read()
+    try:
+        data = read_upload(file.filename or "", content)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    if not data or not (data.get("tribe") or {}).get("name"):
+        raise HTTPException(status_code=400, detail="Le fichier doit definir une tribu (onglet 'Tribu' rempli).")
+    try:
+        summary = import_org(db, data)
+    except Exception as exc:  # bad references, malformed cells, etc.
+        db.rollback()
+        raise HTTPException(status_code=400, detail=f"Import impossible : {exc}")
+    record_audit(db, admin.id, "org.import", entity="tribe", detail=summary)
+    db.commit()
+    return summary

@@ -27,6 +27,7 @@ import { useSetPageChrome } from "../components/pageChrome";
 // Label key for each admin tab (server decides which a role may open).
 const TAB_LABEL: Record<string, string> = {
   tribes: "admin.tab.tribes",
+  import: "admin.tab.import",
   tribe: "admin.tab.my_tribe",
   squads: "admin.tab.squads",
   users: "admin.tab.users",
@@ -47,7 +48,7 @@ const TAB_LABEL: Record<string, string> = {
 
 // Admin sections grouped by purpose (only the items a role may open are shown).
 const ADMIN_GROUPS: { titleKey: string; items: string[] }[] = [
-  { titleKey: "admin.group.org", items: ["tribes", "tribe", "squads", "my_squads", "users", "personas"] },
+  { titleKey: "admin.group.org", items: ["tribes", "import", "tribe", "squads", "my_squads", "users", "personas"] },
   { titleKey: "admin.group.config", items: ["modules", "report", "leaves", "settings"] },
   { titleKey: "admin.group.access", items: ["auth", "api", "smtp", "tls"] },
   { titleKey: "admin.group.oversight", items: ["moderation", "logs", "audit"] },
@@ -115,6 +116,7 @@ export default function AdminPage() {
       </nav>
       <div className="admin-content stack" style={{ gap: 16 }}>
         {tab === "tribes" && <TribesAdmin />}
+        {tab === "import" && <ImportOrgAdmin />}
         {tab === "tribe" && <TribeSelfAdmin perms={perms} />}
         {tab === "squads" && <SquadsAdmin perms={perms} />}
         {tab === "users" && <UsersAdmin perms={perms} />}
@@ -1183,6 +1185,87 @@ function TribesAdmin() {
         </div>
         <div className="small muted" style={{ marginTop: 6 }}>{t("admin.tribe_leader_hint")}</div>
       </div>
+    </div>
+  );
+}
+
+type ImportSummary = {
+  tribe: string; year: number; squads: number; initiatives: number; otds: number;
+  created: { users: number; squads: number; initiatives: number; otds: number };
+};
+
+/** Admin > Import: fill an Excel file with your real organisation (tribe, squads,
+ *  leaders, initiatives, OTD), upload it here, and the app imports it directly.
+ *  Idempotent and rebuild-free: works the same locally and in production (S3NS).
+ *  Admin only. */
+function ImportOrgAdmin() {
+  const { t } = useI18n();
+  const [file, setFile] = useState<File | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<ImportSummary | null>(null);
+  const { error, wrap } = useErr();
+
+  async function submit() {
+    if (!file) return;
+    setResult(null);
+    setBusy(true);
+    await wrap(async () => {
+      const form = new FormData();
+      form.append("file", file);
+      setResult(await api.postForm<ImportSummary>("/api/admin/import-org", form));
+    });
+    setBusy(false);
+  }
+
+  return (
+    <div className="stack">
+      {error && <ErrorBanner message={error} />}
+      <div className="card stack" style={{ gap: 12 }}>
+        <div>
+          <h3 style={{ margin: 0 }}>{t("import.title")}</h3>
+          <div className="small muted" style={{ marginTop: 4 }}>{t("import.intro")}</div>
+        </div>
+        <ol className="stack" style={{ gap: 6, margin: 0, paddingLeft: 18 }}>
+          <li>
+            {t("import.step_download")}{" "}
+            <a className="btn-secondary btn-sm" href="/api/admin/import-org/template" style={{ marginLeft: 6 }}>
+              {t("import.download")}
+            </a>
+          </li>
+          <li>{t("import.step_fill")}</li>
+          <li>{t("import.step_upload")}</li>
+        </ol>
+        <div className="row" style={{ alignItems: "center", gap: 10 }}>
+          <input type="file" accept=".xlsx,.xlsm,.yaml,.yml"
+                 onChange={(e) => { setFile(e.target.files?.[0] ?? null); setResult(null); }} />
+          <button onClick={submit} disabled={!file || busy}>
+            {busy ? t("import.importing") : t("import.import")}
+          </button>
+        </div>
+        <div className="small muted">{t("import.idempotent")}</div>
+      </div>
+
+      {result && (
+        <div className="card stack" style={{ gap: 6 }}>
+          <h3 style={{ margin: 0 }}>{t("import.done")}</h3>
+          <div>{t("import.result_tribe")} <strong>{result.tribe}</strong> ({result.year})</div>
+          <div className="small">
+            {t("import.result_counts", {
+              squads: String(result.squads),
+              initiatives: String(result.initiatives),
+              otds: String(result.otds),
+            })}
+          </div>
+          <div className="small muted">
+            {t("import.result_created", {
+              users: String(result.created.users),
+              squads: String(result.created.squads),
+              initiatives: String(result.created.initiatives),
+              otds: String(result.created.otds),
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
