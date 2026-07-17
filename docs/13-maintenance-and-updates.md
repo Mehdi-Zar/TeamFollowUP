@@ -2,9 +2,9 @@
 
 This document answers a very specific, real-world question:
 
-> *"I develop the app on my machine with Claude. But the place where the app
-> actually runs (S3NS / GKE, possibly air-gapped) has **no Claude and no
-> internet**. How do I produce a new version here, push it over there, and update
+> *"I develop the app on my machine with my usual dev tooling. But the place where
+> the app actually runs (S3NS / GKE, possibly air-gapped) has **no dev tooling and
+> no internet**. How do I produce a new version here, push it over there, and update
 > the running app **without losing the data**?"*
 
 It is written for the exact setup of this project: **one Docker image** + **one
@@ -22,20 +22,20 @@ that never connect directly**:
 | | **Dev world** (your laptop) | **Run world** (S3NS / prod) |
 |---|---|---|
 | Has internet | yes | no (or restricted) |
-| Has Claude CLI | yes | no |
+| Has dev tooling / CLI | yes | no |
 | Has the source code | yes | **no - and it shouldn't** |
 | Runs the app for users | no | yes |
 | Holds the real data | no | **yes (PostgreSQL)** |
 
 You **build** in the dev world and you **run** in the run world. The only thing
 that crosses the gap is a **finished, self-contained artifact: the Docker image.**
-Source code, `node_modules`, Claude, and the internet all stay on the dev side.
+Source code, `node_modules`, the dev tooling, and the internet all stay on the dev side.
 This is what makes the air-gap manageable - you never need a toolchain in prod.
 
 ```
-  DEV WORLD (laptop, internet, Claude)            RUN WORLD (air-gapped prod)
+  DEV WORLD (laptop, internet, dev tooling)       RUN WORLD (air-gapped prod)
   ───────────────────────────────────            ────────────────────────────
-  1. dev + test with Claude                       (nothing changes yet - app
+  1. dev + test locally                           (nothing changes yet - app
   2. build image  →  app:1.1.0                     keeps serving users on 1.0.0)
   3. export the image to a file  ──────┐
                                        │  transfer the file (USB, bastion,
@@ -85,13 +85,13 @@ new one" and "the old one" become indistinguishable and rollback is guesswork.
 
 > Keeping git tag, app version, and image tag identical means that from a running
 > container you can always answer "what source produced this?" - essential when
-> Claude isn't there to ask.
+> the source and your dev tooling aren't there to consult.
 
 ---
 
 ## 4. Build the artifact in the dev world
 
-On your laptop, after you and Claude finish a version and **all tests pass**
+On your laptop, after you finish a version and **all tests pass**
 (`pytest` + frontend `tsc`/`vitest` - see [§8 Testing](08-testing-strategy.md)):
 
 ```bash
@@ -271,7 +271,7 @@ allows a bit more, these are progressively cleaner:
   approach the S3NS section is built around.
 - **A CI pipeline as the "build world".** Instead of building on your laptop, let
   an internal CI runner build, test, tag, and push the image on every git tag.
-  Claude still helps you *write* the code; CI produces the *artifact*
+  You still *write* the code locally; CI produces the *artifact*
   deterministically. Removes "works on my machine" risk.
 - **GitOps (Argo CD / Flux) for GKE.** The cluster watches a git repo of manifests
   and reconciles itself to the declared image tag. Updating = commit "image:
@@ -289,7 +289,7 @@ then GitOps as the need (and the environment's openness) grows.
 ## 10. The update checklist (print this)
 
 **Dev world**
-- [ ] Feature done with Claude; `pytest` + frontend `tsc`/`vitest` green.
+- [ ] Feature done; `pytest` + frontend `tsc`/`vitest` green.
 - [ ] Bump `version` in `backend/app/main.py`; `git tag vX.Y.Z`.
 - [ ] `docker build -t teamfollowup:X.Y.Z .`
 - [ ] Local smoke test (`docker compose up`, click around).
