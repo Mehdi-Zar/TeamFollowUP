@@ -611,12 +611,56 @@ kind: Service
 metadata:
   name: tribe-app
   annotations:
-    cloud.google.com/app-protocols: '{"https":"HTTPS"}'   # the pod speaks HTTPS on 8443
+    cloud.google.com/app-protocols: '{"https":"HTTPS"}'   # legacy signal (Ingress-style)
 spec:
   type: ClusterIP                                         # exposure is the Gateway's job (§6.9)
   selector: { app: tribe-app }
-  ports: [{ name: https, port: 443, targetPort: 8443 }]
+  # appProtocol: HTTPS is the Gateway-API-native signal that the pod speaks TLS on
+  # 8443. WITHOUT it the ALB data path defaults to cleartext HTTP against the
+  # TLS-only port and EVERY request is reset with
+  #   "reset reason: connection termination"
+  # even though the HTTPS HealthCheckPolicy keeps the backend marked HEALTHY.
+  ports: [{ name: https, port: 443, targetPort: 8443, appProtocol: HTTPS }]
 ```
+
+> #### 6.8.a Recommended: let the infrastructure terminate TLS (`TLS_ENABLED=false`)
+>
+> The manifest above has the app terminate TLS itself on 8443. The **simpler and
+> recommended** GKE model is to let the **Gateway + ALB do all the TLS** and run the
+> app as **plain HTTP on 8000** (`app/server.py` switches mode on `TLS_ENABLED`).
+> This removes the HTTPS-backend class of failures entirely (no cert on the pod, no
+> `connection termination` from a protocol mismatch). Apply these deltas:
+>
+> ```yaml
+> # Deployment: container
+>   ports:
+>     - { containerPort: 8000, name: http }
+>   env:
+>     - { name: TLS_ENABLED, value: "false" }   # serve plain HTTP; infra does TLS
+>     - { name: HTTP_PORT,   value: "8000" }
+>     - { name: LOG_FORMAT,  value: "json" }    # GCP Cloud Logging structured logs
+>     - { name: COOKIE_SECURE, value: "true" }  # clients still reach the ALB over HTTPS
+>     # ... (the other env vars are unchanged)
+>   readinessProbe:
+>     httpGet: { path: /api/health, port: 8000, scheme: HTTP }   # plain HTTP now
+>     initialDelaySeconds: 20
+>     periodSeconds: 10
+> ---
+> # Service: plain HTTP backend - no app-protocols HTTPS annotation, appProtocol: HTTP
+> apiVersion: v1
+> kind: Service
+> metadata: { name: tribe-app }
+> spec:
+>   type: ClusterIP
+>   selector: { app: tribe-app }
+>   ports: [{ name: http, port: 80, targetPort: 8000, appProtocol: HTTP }]
+> ```
+>
+> With this model the **`HealthCheckPolicy` (§6.9.2) is no longer needed** - the ALB's
+> default HTTP health check works - and the `HTTPRoute` `backendRefs` port becomes `80`.
+> The Gateway still serves your PKI/self-signed cert to clients (§6.9.1); only the
+> ALB->pod hop changes from HTTPS to HTTP. Because the app trusts `X-Forwarded-Proto`
+> (uvicorn `proxy_headers`), it still sees requests as `https` - keep `COOKIE_SECURE=true`.
 
 **Apply, then check:**
 ```bash
@@ -884,6 +928,7 @@ file) or, only if nothing else is possible, the **`key`** method.
 | Readiness probe never passes, `curl` to :8000 or :8080 refused | probe/Service pointing at the wrong port | The app listens on **8443 (HTTPS) only** - never 8000, and there is no :8080 listener. Probe must use `port: 8443, scheme: HTTPS`, and the Service `targetPort: 8443`. |
 | `Gateway` stuck, `Programmed=False`, never gets an address | the **proxy-only subnet** is missing | Create it once per VPC + region - §6.9.1 (`--purpose=REGIONAL_MANAGED_PROXY`). This is by far the most common Gateway failure. |
 | Gateway is up but every request returns **502** | the ALB is health-checking the backend over **HTTP**, while the pod speaks HTTPS | Both are required: `cloud.google.com/app-protocols: '{"https":"HTTPS"}'` on the Service (§6.8) **and** the `HealthCheckPolicy` with `type: HTTPS`, `port: 8443` (§6.9.2). Check backend health: `gcloud compute backend-services get-health …`. |
+| Backend is **healthy** yet requests intermittently fail with `upstream connect error or disconnect/reset before headers. reset reason: connection termination` | the app's HTTP keep-alive timeout is **shorter** than the ALB's backend idle timeout, so the LB reuses a connection uvicorn just closed | The server sets `timeout_keep_alive=620s` (> the Google ALB default of 600s) - see `app/server.py` (`KEEPALIVE_TIMEOUT`). If your LB uses a longer idle timeout, raise it via the `KEEPALIVE_TIMEOUT` env var so it stays above the LB's. |
 | `HTTPRoute` shows `Accepted=False` / `NotAllowedByListeners` | hostname or `sectionName` mismatch | The route's `hostnames` must match the listener's `hostname`, and `parentRefs.sectionName` must name an existing listener (`https` / `http`). |
 | Browser: "your connection is not private" / `NET::ERR_CERT_AUTHORITY_INVALID` | the gateway is still on the **self-signed** certificate | Expected - click through, or swap in your PKI cert (§6.9.1.a step 2). Not a misconfiguration. |
 | `Gateway` listener `Programmed=False`, `Invalid certificate` | the `tribe-tls` secret is missing, or key and cert don't match | `kubectl get secret tribe-tls`; recreate it (§6.9.1.a). The **ALB** serves this certificate - the pod's own self-signed one is never shown to users. |
