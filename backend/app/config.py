@@ -18,7 +18,6 @@ class Settings(BaseSettings):
     login_max_attempts: int = 10        # per IP per window (0 = disabled)
     login_window_seconds: int = 300     # 5 min
     audit_retention_days: int = 0       # 0 = keep forever
-    progress_retention_days: int = 0    # 0 = keep forever
 
     # --- Database ---
     postgres_host: str = "db"
@@ -42,15 +41,15 @@ class Settings(BaseSettings):
     oidc_issuer_url: str = ""
     oidc_client_id: str = ""
     oidc_client_secret: str = ""
-    oidc_redirect_uri: str = "http://localhost:8080/api/auth/oidc/callback"
+    oidc_redirect_uri: str = "https://localhost:8443/api/auth/oidc/callback"
     oidc_scopes: str = "openid email profile"
 
     # --- SAML ---
     saml_enabled: bool = False
     saml_idp_metadata_url: str = ""
     saml_idp_metadata_path: str = ""
-    saml_sp_entity_id: str = "http://localhost:8080/api/auth/saml/metadata"
-    saml_acs_url: str = "http://localhost:8080/api/auth/saml/acs"
+    saml_sp_entity_id: str = "https://localhost:8443/api/auth/saml/metadata"
+    saml_acs_url: str = "https://localhost:8443/api/auth/saml/acs"
     saml_sp_cert: str = ""
     saml_sp_key: str = ""
 

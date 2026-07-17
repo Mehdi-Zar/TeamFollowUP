@@ -78,7 +78,7 @@ async def _start_weekly_progress_scheduler():
 
     from sqlalchemy import text
 
-    from .database import SessionLocal
+    from .database import SessionLocal, engine
     from .maintenance import purge_old_records
     from .report import send_due_weekly_reports, send_personal_subscriptions
 
@@ -89,34 +89,48 @@ async def _start_weekly_progress_scheduler():
         await asyncio.sleep(20)
         while True:
             try:
-                db = SessionLocal()
+                # The advisory lock is a *session-level* (per-connection) lock, so it
+                # MUST be acquired and released on the SAME, dedicated connection held
+                # for the whole tick. The work below opens its own Session(s) whose
+                # commits return THEIR connections to the pool; if we locked on one of
+                # those, the later unlock could land on a different pooled connection,
+                # silently fail, and leak the lock forever (every later tick then finds
+                # it held → automatic sends stop across all replicas). AUTOCOMMIT keeps
+                # the lock independent of any transaction.
+                lock_conn = None
                 got_lock = True
                 try:
-                    # Multi-replica safety: skip the tick if another instance holds the lock.
                     try:
-                        got_lock = bool(db.execute(text("SELECT pg_try_advisory_lock(:k)"),
-                                                   {"k": _LOCK_KEY}).scalar())
+                        lock_conn = engine.connect().execution_options(isolation_level="AUTOCOMMIT")
+                        got_lock = bool(lock_conn.execute(text("SELECT pg_try_advisory_lock(:k)"),
+                                                          {"k": _LOCK_KEY}).scalar())
                     except Exception:
-                        got_lock = True  # non-Postgres (tests) - proceed
-                    if not got_lock:
-                        continue
-                    sent = send_due_weekly_reports(db)
-                    if sent:
-                        logging.getLogger("trt.report").info("Weekly reports emailed: %s", sent)
-                    subs = send_personal_subscriptions(db)
-                    if subs:
-                        logging.getLogger("trt.report").info("Personal report subscriptions emailed: %s", subs)
-                    purge_old_records(db)
-                finally:
+                        got_lock = True  # non-Postgres (tests) - proceed without a lock
                     if got_lock:
+                        db = SessionLocal()
                         try:
-                            db.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": _LOCK_KEY})
-                            db.commit()
+                            sent = send_due_weekly_reports(db)
+                            if sent:
+                                logging.getLogger("trt.report").info("Weekly reports emailed: %s", sent)
+                            subs = send_personal_subscriptions(db)
+                            if subs:
+                                logging.getLogger("trt.report").info("Personal report subscriptions emailed: %s", subs)
+                            purge_old_records(db)
+                        finally:
+                            db.close()
+                finally:
+                    if lock_conn is not None:
+                        try:
+                            if got_lock:
+                                lock_conn.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": _LOCK_KEY})
                         except Exception:
                             pass
-                    db.close()
+                        finally:
+                            lock_conn.close()
             except Exception as exc:  # never crash the loop
                 logging.getLogger("trt.progress").warning("weekly scheduler error: %s", exc)
+            # ALWAYS wait a full hour before the next attempt - even when another
+            # replica held the lock (no tight busy-loop on the non-leader replicas).
             await asyncio.sleep(3600)
 
     asyncio.create_task(loop())

@@ -1,9 +1,9 @@
-# DECISIONS.md — choix tranchés en autonomie
+# DECISIONS.md - choix tranchés en autonomie
 
 Journal des décisions prises sans validation, selon le principe « le plus simple
 qui satisfait la spec ».
 
-## Refonte v2 (squads + roadmap trimestrielle) — voir REFONTE_SPEC.md
+## Refonte v2 (squads + roadmap trimestrielle) - voir REFONTE_SPEC.md
 
 - **Charte graphique reprise de RunAssessment** : abandon de Tailwind au profit d'un
   `theme.css` à tokens (navy `#1E2761`, accent `#175CD3`, Calibri), en-tête dégradé
@@ -23,7 +23,7 @@ qui satisfait la spec ».
   considère les jalons de toute l'année (`quarter=None`).
 - **Dashboard = vue annuelle** : sélecteur d'année (défaut année courante), grille de
   cartes (4 mini-barres Q1→Q4 + pastille), tri « pire en haut » (risque puis retards).
-- **Détail conservé** : KPIs, points saillants, historique + comparaison, exports — tout
+- **Détail conservé** : KPIs, points saillants, historique + comparaison, exports - tout
   sous le drill-down d'une squad.
 - **Rôle `lead` renommé `leader`** ; mécanisme de soumission (snapshot immuable +
   fraîcheur) conservé. Le snapshot fige objectifs + jalons + avancement + KPIs + highlights.
@@ -37,8 +37,12 @@ qui satisfait la spec ».
   supprime une couche de configuration et garantit que l'origine est identique
   pour le front et l'API (cookies de session sans CORS). Le compose comporte donc
   deux services : `app` et `db`. Critère « mono-commande » pleinement respecté.
-- **Port hôte 8080 → conteneur 8000.** L'app écoute en 8000 dans le conteneur,
-  exposée sur `http://localhost:8080`.
+- **Port unique : HTTPS 8443.** L'app sert le TLS nativement en 8443 (certificat
+  auto-signé par défaut, remplaçable via l'admin) et n'a **aucun listener HTTP** :
+  la redirection HTTP→HTTPS est déléguée à l'infrastructure (ex. route de
+  redirection du Gateway API sur GKE) - exposée sur `https://localhost:8443`.
+  *(Historique : v1 = hôte 8080 → conteneur 8000 en HTTP simple ; v2 = 8443 HTTPS
+  + 8080 redirigeant en 301, listener retiré depuis.)*
 - **La base de données n'est pas exposée sur l'hôte.** Elle reste sur le réseau
   interne du compose (sécurité + évite les collisions de port 5432). Accès DB
   uniquement via le service `app`.
@@ -77,7 +81,7 @@ qui satisfait la spec ».
   unifié pour toutes les équipes. Export **CSV** servi par l'API (`/api/exports/...`).
 - **Rapport hebdomadaire HTML + PPTX** (`app/report.py`, `/api/reports/weekly.*`) :
   document combiné *dashboard (état actuel) + revue hebdo (mouvements de la semaine)*.
-  Le HTML est autonome (CSS inline) — sert à la fois au téléchargement, à l'aperçu
+  Le HTML est autonome (CSS inline) - sert à la fois au téléchargement, à l'aperçu
   navigateur et au corps d'email. Le **PPTX** est généré côté serveur avec
   `python-pptx` (pur Python, pas de LibreOffice) : slide titre + synthèse + points
   d'attention + une slide-table par tribu. Rendu dégradé en HTML seul si `python-pptx`

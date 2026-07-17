@@ -58,6 +58,11 @@ def test_dashboard_export_pptx(client, seeded):
     assert r.status_code == 200
     assert "presentationml" in r.headers["content-type"]
     assert r.content[:2] == b"PK"
+    # Reliability: the deck is fully buffered, so it must ship with a
+    # Content-Length (not chunked). Without it a mid-transfer TLS blip yields a
+    # truncated, un-detectable download ("check your connection" in the browser).
+    assert r.headers.get("content-length") == str(len(r.content))
+    assert "chunked" not in r.headers.get("transfer-encoding", "").lower()
 
 
 def test_dashboard_export_gated_by_dashboard_module(client, seeded):
@@ -110,7 +115,7 @@ def _slide_texts(prs):
 
 def test_dashboard_pptx_never_silently_drops_squads(db, seeded):
     """Regression for the 40-slide cap: a large selection must yield one detail
-    slide per squad — no squad the user picked may vanish from the deck."""
+    slide per squad - no squad the user picked may vanish from the deck."""
     pptx = pytest.importorskip("pptx")
     import io
     from app.models import Squad
@@ -133,7 +138,7 @@ def test_dashboard_pptx_never_silently_drops_squads(db, seeded):
 
 def test_dashboard_pptx_marks_omitted_squads_when_cap_hit(db, seeded, monkeypatch):
     """If the runaway guard is ever exceeded, the omitted squads are announced on
-    a visible notice slide — never dropped without a trace."""
+    a visible notice slide - never dropped without a trace."""
     pptx = pytest.importorskip("pptx")
     import io
     import app.report as report_mod

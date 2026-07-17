@@ -67,6 +67,8 @@ def seeded(db):
         "sl_a": sl_a.email, "sl_b": sl_b.email, "member": member.email,
         "squad_a": squad_a.id, "squad_b": squad_b.id, "squad_c": squad_c.id,
         "t1": t1.id, "t2": t2.id,
+        # user ids (for endpoints that take an owner/user id, not an email)
+        "sl_a_id": sl_a.id, "sl_b_id": sl_b.id, "member_id": member.id,
     }
 
 

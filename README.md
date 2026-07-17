@@ -9,7 +9,7 @@ fraîcheur** des données.
 
 Charte graphique alignée sur l'application RunAssessment (thème navy `#1E2761`).
 
-## 📚 Documentation complète
+## Documentation complète
 
 La documentation produit/technique/ops **à jour et faisant foi** se trouve dans **[`docs/`](docs/README.md)** :
 architecture (diagrammes Mermaid), [modèle de données + ERD](docs/03-data-model.md),
@@ -39,10 +39,11 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-Puis ouvrez **https://localhost:8443** (le site est servi en **HTTPS** avec un
-certificat **auto-signé** par défaut — votre navigateur affichera un avertissement,
-c'est normal ; acceptez-le). L'adresse **http://localhost:8080** redirige
-automatiquement vers HTTPS. Vous pouvez importer votre propre certificat (PEM/PFX)
+Puis ouvrez **https://localhost:8443** (le site est servi en **HTTPS** sur ce
+**port unique**, avec un certificat **auto-signé** par défaut - votre navigateur
+affichera un avertissement, c'est normal ; acceptez-le). L'app ne gère pas de
+redirection HTTP→HTTPS : c'est le rôle de l'infrastructure en amont (ex. Gateway
+API sur GKE). Vous pouvez importer votre propre certificat (PEM/PFX)
 et gérer les CA racines/intermédiaires depuis **Administration → HTTPS / Certificats**.
 
 Au premier démarrage, le conteneur `app` attend PostgreSQL, applique les migrations
@@ -131,7 +132,7 @@ La donnée est **périmée** si la dernière soumission dépasse le seuil (défa
   l'application « en tant que » n'importe quelle persona (aperçu lecture seule).
 - **tribe_leader** : crée et gère les squads, gère les membres, **définit les objectifs et leur
   statut**, construit et modifie l'**organigramme global** de la tribe.
-- **squad_leader** : gère **sa** squad — roadmap (jalons + avancement), KPIs, membres ; soumet
+- **squad_leader** : gère **sa** squad - roadmap (jalons + avancement), KPIs, membres ; soumet
   les cycles. Les objectifs lui sont en **lecture seule** (posés par le tribe leader).
 - **member** : lecture seule de ce que voit un squad leader (dashboard, détail, organigramme).
 
@@ -141,8 +142,7 @@ Toutes les variables ont un défaut fonctionnel (voir `.env.example`).
 
 | Variable | Défaut | Rôle |
 |----------|--------|------|
-| `APP_HTTPS_PORT` | `8443` | Port hôte HTTPS (principal). |
-| `APP_HTTP_PORT` | `8080` | Port hôte HTTP (redirige en 301 vers HTTPS). |
+| `APP_HTTPS_PORT` | `8443` | Port hôte HTTPS (port unique de l'app). |
 | `COOKIE_SECURE` | `true` | Cookies de session en `Secure` (HTTPS actif par défaut). |
 | `POSTGRES_DB` / `POSTGRES_USER` / `POSTGRES_PASSWORD` | `tribe` | Base PostgreSQL (interne). |
 | `SECRET_KEY` | *(à changer)* | Clé de signature des sessions. |
@@ -156,7 +156,8 @@ Toutes les variables ont un défaut fonctionnel (voir `.env.example`).
 ## Brancher OIDC
 
 1. Déclarez une application cliente chez votre fournisseur d'identité.
-2. URL de redirection : `http://localhost:8080/api/auth/oidc/callback`.
+2. URL de redirection : `https://localhost:8443/api/auth/oidc/callback` (adaptez
+   host/port à votre exposition réelle).
 3. Dans `.env` : `OIDC_ENABLED=true`, `OIDC_ISSUER_URL`, `OIDC_CLIENT_ID`,
    `OIDC_CLIENT_SECRET`, `OIDC_REDIRECT_URI`, `OIDC_SCOPES`.
 4. `docker compose up -d`. Un bouton « Se connecter via OIDC » apparaît ; provisioning
@@ -165,12 +166,12 @@ Toutes les variables ont un défaut fonctionnel (voir `.env.example`).
 ## Brancher SAML / PingFederate
 
 1. Côté PingFederate, créez une connexion SP :
-   - **Entity ID (SP)** : `http://localhost:8080/api/auth/saml/metadata`
-   - **ACS URL** : `http://localhost:8080/api/auth/saml/acs` (HTTP-POST)
+   - **Entity ID (SP)** : `https://localhost:8443/api/auth/saml/metadata`
+   - **ACS URL** : `https://localhost:8443/api/auth/saml/acs` (HTTP-POST)
    - **NameID** : e-mail ; **attributs** : `email`, `displayName`.
 2. Dans `.env` : `SAML_ENABLED=true`, `SAML_IDP_METADATA_URL` (ou `_PATH`),
    `SAML_SP_ENTITY_ID`, `SAML_ACS_URL`, et `SAML_SP_CERT`/`SAML_SP_KEY` si signature requise.
-3. Métadonnées SP exposées sur `http://localhost:8080/api/auth/saml/metadata`.
+3. Métadonnées SP exposées sur `https://localhost:8443/api/auth/saml/metadata`.
 
 Avec OIDC et SAML à `false`, l'application reste pleinement fonctionnelle via le compte de secours.
 

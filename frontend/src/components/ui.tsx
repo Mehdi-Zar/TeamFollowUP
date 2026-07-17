@@ -3,6 +3,30 @@ import { Freshness, QuarterHealth, Rag } from "../types";
 import { badgeClass, dotClass, qhToRag, ragClass } from "../labels";
 import { useI18n } from "../i18n";
 
+/** A clean, consistent selectable item (checkbox row/chip). Use everywhere a user
+ *  ticks items in a list (squad export picker, OTD milestones, ...) so selection
+ *  always looks the same and tidy. */
+export function PickItem({ selected, disabled, onToggle, title, meta, tag }: {
+  selected: boolean; onToggle: () => void; disabled?: boolean;
+  title: ReactNode; meta?: ReactNode; tag?: ReactNode;
+}) {
+  return (
+    <div
+      className={`pick-item${selected ? " on" : ""}${disabled ? " disabled" : ""}`}
+      role="checkbox" aria-checked={selected} aria-disabled={disabled} tabIndex={disabled ? -1 : 0}
+      onClick={() => !disabled && onToggle()}
+      onKeyDown={(e) => { if (!disabled && (e.key === " " || e.key === "Enter")) { e.preventDefault(); onToggle(); } }}
+    >
+      <span className="pick-box">{selected ? "✓" : ""}</span>
+      <span className="pick-main">
+        <span className="pick-title">{title}</span>
+        {meta != null && <span className="pick-meta">{meta}</span>}
+      </span>
+      {tag != null && <span className="pick-tag">{tag}</span>}
+    </div>
+  );
+}
+
 /** Scales its content down (never up) so it always fits the available space -
  *  keeps the org chart readable on one page without scrollbars. With fitHeight
  *  it fits BOTH width and height of its container (for a fullscreen view). */

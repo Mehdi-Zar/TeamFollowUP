@@ -1,4 +1,4 @@
-# ADR-0001 — Monolith serves the SPA (single deployable)
+# ADR-0001 - Monolith serves the SPA (single deployable)
 
 **Status:** Accepted
 

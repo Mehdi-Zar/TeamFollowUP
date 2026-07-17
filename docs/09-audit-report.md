@@ -1,4 +1,4 @@
-# 09 — Consolidated Audit Report
+# 09 - Consolidated Audit Report
 
 This is a point-in-time assessment across product, UX, UI, code, architecture, performance and
 DevOps. Many findings from earlier audit loops have already been **remediated** (noted ✅); residual
@@ -18,13 +18,13 @@ backups, frontend/E2E tests, secret hardening, horizontal-scale of the scheduler
 - ✅ Coherent capability/feature matrix; modules + personas give real governance.
 - ✅ Business rules made explicit (derived objective status, quarter-scoped health, EA/GA, dependencies).
 - Residual: no external tool sync (Jira/ADO); no multi-tenant isolation beyond tribe scoping; objective
-  has no per-objective progress (status derived from squad annual %) — acceptable, documented.
+  has no per-objective progress (status derived from squad annual %) - acceptable, documented.
 
 ## UX audit
 - ✅ Empty states unified (`EmptyState`), error surfacing (Audit/Review), guided reporting section-nav,
   global roadmap view, command palette, COPIL presentation mode, anti-double-submit on cycle submit.
 - ✅ Navigation: capability-driven, no infinite-redirect (capability denial → `/preferences`).
-- Residual: deeper onboarding wizard (create first tribe/squad) — proposed; not built.
+- Residual: deeper onboarding wizard (create first tribe/squad) - proposed; not built.
 
 ## UI audit
 - ✅ Single CSS design system (`theme.css` + `ui.tsx`), consistent badges/dots/buttons; responsive
@@ -37,7 +37,7 @@ backups, frontend/E2E tests, secret hardening, horizontal-scale of the scheduler
   unused render branch). Constants used over string literals where it matters.
 - ✅ i18n: 0 missing keys, FR/EN parity enforced.
 - Residual: a few large components (`AdminPage.tsx` ~1.3k lines) could be split; `report.py` is large
-  (rendering) — readable but a candidate for module split.
+  (rendering) - readable but a candidate for module split.
 
 ## Architecture audit
 - ✅ Simple, debuggable monolith serving the SPA; module/persona/role layering; Alembic migrations.

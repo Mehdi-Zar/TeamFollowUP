@@ -4,7 +4,7 @@ The automatic weekly send lives in app.report.send_due_weekly_reports, driven by
 the in-process scheduler in main.py.
 """
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, Response
 from sqlalchemy.orm import Session
 
 from .. import status as st
@@ -93,8 +93,11 @@ def weekly_pptx(request: Request, tribe_id: int | None = Query(default=None), ye
     except ImportError:
         raise HTTPException(status_code=501, detail="Génération PPTX indisponible (python-pptx non installé)")
     filename = f"rapport_{data['year']}.pptx"
-    return StreamingResponse(
-        iter([payload]),
+    # Fully buffered artifact → a plain Response so Starlette sets Content-Length
+    # (not chunked). Without it the browser can't detect a truncated download and
+    # shows "check your connection" on any mid-transfer TLS blip. See ADR/CHANGELOG.
+    return Response(
+        content=payload,
         media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
@@ -125,8 +128,11 @@ def dashboard_pptx(request: Request, tribe_id: int | None = Query(default=None),
     except ImportError:
         raise HTTPException(status_code=501, detail="Génération PPTX indisponible (python-pptx non installé)")
     filename = f"dashboard_{data['year']}.pptx"
-    return StreamingResponse(
-        iter([payload]),
+    # Fully buffered artifact → a plain Response so Starlette sets Content-Length
+    # (not chunked). Without it the browser can't detect a truncated download and
+    # shows "check your connection" on any mid-transfer TLS blip. See ADR/CHANGELOG.
+    return Response(
+        content=payload,
         media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
@@ -156,8 +162,11 @@ def roadmap_pptx(request: Request, tribe_id: int | None = Query(default=None), y
     except ImportError:
         raise HTTPException(status_code=501, detail="Génération PPTX indisponible (python-pptx non installé)")
     filename = f"roadmap_{data['year']}.pptx"
-    return StreamingResponse(
-        iter([payload]),
+    # Fully buffered artifact → a plain Response so Starlette sets Content-Length
+    # (not chunked). Without it the browser can't detect a truncated download and
+    # shows "check your connection" on any mid-transfer TLS blip. See ADR/CHANGELOG.
+    return Response(
+        content=payload,
         media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
@@ -198,8 +207,11 @@ def dependencies_pptx(request: Request, tribe_id: int | None = Query(default=Non
     except ImportError:
         raise HTTPException(status_code=501, detail="Génération PPTX indisponible (python-pptx non installé)")
     filename = f"dependances_{data['year']}.pptx"
-    return StreamingResponse(
-        iter([payload]),
+    # Fully buffered artifact → a plain Response so Starlette sets Content-Length
+    # (not chunked). Without it the browser can't detect a truncated download and
+    # shows "check your connection" on any mid-transfer TLS blip. See ADR/CHANGELOG.
+    return Response(
+        content=payload,
         media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

@@ -80,6 +80,10 @@ export default function SquadDetailPage() {
     (role === "squad_leader" && squad.leader_user_id === user?.id);
   // Enabling/disabling budget tracking is a tribe-leader (or admin) decision.
   const canToggleBudget = role === "admin" || (role === "tribe_leader" && user?.tribe_id === squad.tribe_id);
+  // Key messages are stewarded by the squad leader alone (or admin) - the tribe
+  // leader can see them (visible to all) but not edit them. Mirrors backend
+  // deps.assert_leads_squad.
+  const leadsThisSquad = role === "admin" || (role === "squad_leader" && squad.leader_user_id === user?.id);
 
   return (
     <div className="stack" style={{ gap: 18 }}>
@@ -114,8 +118,7 @@ export default function SquadDetailPage() {
 
       {squad.description && <div className="muted small">{squad.description}</div>}
 
-      {/* Initiatives assignées à la squad (définies par le tribe leader) - tout en haut, au-dessus des OTD.
-          Même composant que le reporting, toujours affiché même vide, pour un rendu cohérent. */}
+      {/* Initiatives assignées à la squad (définies par le tribe leader). */}
       <InitiativesCard initiatives={initiatives} />
 
       {/* OTD - objectifs annuels engagés, en tête de page (définis par le tribe leader) */}
@@ -178,7 +181,7 @@ export default function SquadDetailPage() {
 
       {/* Messages clés + Budget, directement sous la roadmap */}
       <div className="grid" style={{ gridTemplateColumns: privileged ? "repeat(auto-fit, minmax(320px, 1fr))" : "1fr", gap: 18, alignItems: "start" }}>
-        <KeyMessagesPanel squad={squad} canEdit={privileged} onChange={reload} />
+        <KeyMessagesPanel squad={squad} canEdit={leadsThisSquad} onChange={reload} />
         {privileged && <BudgetPanel squad={squad} canEdit={privileged} canToggle={canToggleBudget} onChange={reload} />}
       </div>
 
@@ -340,7 +343,7 @@ const FREQ_BADGE: Record<CommitteeFrequency, string> = {
   other: "badge-grey",
 };
 
-// Label for the frequency badge — the custom text when "other".
+// Label for the frequency badge - the custom text when "other".
 function freqLabel(c: Committee, t: (k: string, v?: any) => string): string {
   if (c.frequency === "other") return c.frequency_other?.trim() || t("committee.freq.other");
   return t(`committee.freq.${c.frequency}`);
@@ -352,13 +355,13 @@ const emptyCommittee = (order: number): Partial<Committee> => ({
   is_active: true, display_order: order,
 });
 
-// "Mardi · 09:30 · 60 min" — day / time / duration combined into one column.
+// "Mardi · 09:30 · 60 min" - day / time / duration combined into one column.
 function whenDurationLabel(c: Committee, t: (k: string, v?: any) => string): string {
   const parts: string[] = [];
   if (c.day_of_week) parts.push(t(`committee.day.${c.day_of_week}`));
   if (c.time_of_day) parts.push(c.time_of_day);
   if (c.duration_minutes != null) parts.push(t("committee.duration_val", { n: c.duration_minutes }));
-  return parts.join(" · ") || "—";
+  return parts.join(" · ") || "-";
 }
 
 // Time picker constrained to 30-minute steps, with ± buttons for hour and minute.
@@ -428,7 +431,7 @@ function CommitteeModal({ initial, isNew, onSave, onClose }:
               <div style={{ flex: "1 1 150px" }}>
                 <label className="field-label">{t("committee.day")}</label>
                 <select className="select-nice" value={c.day_of_week ?? ""} onChange={(e) => set("day_of_week", (e.target.value || null) as Weekday | null)}>
-                  <option value="">—</option>
+                  <option value="">-</option>
                   {WEEKDAYS.map((d) => <option key={d} value={d}>{t(`committee.day.${d}`)}</option>)}
                 </select>
               </div>
@@ -529,10 +532,10 @@ function CommitteesPanel({ squad, canEdit, onChange }:
                       {!c.is_active && <span className="badge badge-grey">{t("committee.inactive")}</span>}
                     </div>
                   </td>
-                  <td className="small muted" style={{ maxWidth: 280 }}>{c.objective || "—"}</td>
+                  <td className="small muted" style={{ maxWidth: 280 }}>{c.objective || "-"}</td>
                   <td><span className={`badge ${FREQ_BADGE[c.frequency]}`}>{freqLabel(c, t)}</span></td>
                   <td className="small" style={{ whiteSpace: "nowrap" }}>{whenDurationLabel(c, t)}</td>
-                  <td className="small muted" style={{ maxWidth: 220 }}>{c.participants || "—"}</td>
+                  <td className="small muted" style={{ maxWidth: 220 }}>{c.participants || "-"}</td>
                   {canEdit && (
                     <td>
                       <span className="inline" style={{ gap: 6, justifyContent: "flex-end" }}>

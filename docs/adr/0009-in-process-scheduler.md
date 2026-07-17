@@ -1,4 +1,4 @@
-# ADR-0009 — In-process background scheduler
+# ADR-0009 - In-process background scheduler
 
 **Status:** Accepted (revisit at scale)
 
@@ -21,7 +21,7 @@ within a tick window.
 
 ## Consequences
 - Works out of the box with `docker compose`.
-- **Correct only with a single app replica** — multiple replicas would each run the loop.
+- **Correct only with a single app replica** - multiple replicas would each run the loop.
 
 ## Risks
 - Horizontal scaling would duplicate scheduled work (R-3). Idempotency (per-week guard) limits but does

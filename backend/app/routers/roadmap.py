@@ -3,7 +3,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..deps import assert_can_edit_squad, record_audit, require_module, require_writer
+from ..deps import assert_leads_squad, record_audit, require_module, require_writer
 from ..changenotify import notify_change
 from ..models import RoadmapItem, Squad, User
 from ..schemas import RoadmapItemCreate, RoadmapItemOut, RoadmapItemUpdate
@@ -57,7 +57,7 @@ def create_item(payload: RoadmapItemCreate, db: Session = Depends(get_db),
                 user: User = Depends(require_writer)):
     if db.get(Squad, payload.squad_id) is None:
         raise HTTPException(status_code=404, detail="Squad introuvable")
-    assert_can_edit_squad(db, user, payload.squad_id)
+    assert_leads_squad(db, user, payload.squad_id)
     item = RoadmapItem(**payload.model_dump())
     _normalize_dependency(item)
     _validate_objective(db, item)
@@ -77,7 +77,7 @@ def update_item(item_id: int, payload: RoadmapItemUpdate, db: Session = Depends(
     item = db.get(RoadmapItem, item_id)
     if item is None:
         raise HTTPException(status_code=404, detail="Jalon introuvable")
-    assert_can_edit_squad(db, user, item.squad_id)
+    assert_leads_squad(db, user, item.squad_id)
     data = payload.model_dump(exclude_unset=True)
     for k, v in data.items():
         setattr(item, k, v)
@@ -97,7 +97,7 @@ def delete_item(item_id: int, db: Session = Depends(get_db), user: User = Depend
     item = db.get(RoadmapItem, item_id)
     if item is None:
         raise HTTPException(status_code=404, detail="Jalon introuvable")
-    assert_can_edit_squad(db, user, item.squad_id)
+    assert_leads_squad(db, user, item.squad_id)
     sq_id, yr = item.squad_id, item.year
     record_audit(db, user.id, "roadmap.delete", entity="roadmap_item", entity_id=item.id,
                  detail={"squad_id": item.squad_id})

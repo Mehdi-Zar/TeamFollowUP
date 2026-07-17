@@ -1,7 +1,7 @@
 """Org-chart export endpoints: HTML + single-slide PPTX, with optional selection of
 which top-level branches to include. Same module/capability gate as the org view."""
 from fastapi import APIRouter, Depends, Query
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -72,8 +72,9 @@ def export_pptx(tribe_id: int | None = Query(default=None),
     roots, name = _tree_dicts(db, tid) if tid is not None else ([], "-")
     roots = _prune(roots, set(node_ids or []))
     payload = render_org_pptx(roots, name, lang=lang or "fr")
-    return StreamingResponse(
-        iter([payload]),
+    # Buffered artifact → plain Response so Content-Length is set (not chunked).
+    return Response(
+        content=payload,
         media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
         headers={"Content-Disposition": f'attachment; filename="organigramme_{name}.pptx"'},
     )

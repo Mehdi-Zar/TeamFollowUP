@@ -257,7 +257,7 @@ function MineView({ bump, onOpen, onNew }: { bump: number; onOpen: (l: Leave) =>
 
   useEffect(() => {
     api.get<Leave[]>("/api/leaves?mine=true").then(setMine).catch(() => setMine([]));
-    // Pending requests the current user can decide (leaders) — across their scope.
+    // Pending requests the current user can decide (leaders) - across their scope.
     api.get<Leave[]>("/api/leaves?status=pending").then((rows) =>
       setPending(rows.filter((r) => r.can_decide))).catch(() => setPending([]));
   }, [bump]);
@@ -424,7 +424,7 @@ function LeaveDetail({ leave, onClose, onEdit, onChanged }: {
         {leave.comment && <div><div className="field-label">{t("leaves.comment")}</div><div className="small">{leave.comment}</div></div>}
         {leave.decided_by_name && (
           <div className="small muted">{t("leaves.decided_by", { name: leave.decided_by_name })}
-            {leave.decision_comment ? ` — ${leave.decision_comment}` : ""}</div>
+            {leave.decision_comment ? ` - ${leave.decision_comment}` : ""}</div>
         )}
 
         {leave.can_decide && (

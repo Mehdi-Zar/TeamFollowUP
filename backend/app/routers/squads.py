@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -9,6 +9,7 @@ from ..deps import (
     ADMIN,
     TRIBE,
     assert_can_edit_squad,
+    assert_leads_squad,
     assert_tribe_scope,
     get_current_user,
     get_threshold,
@@ -129,8 +130,10 @@ def export_squad_roadmap_pptx(squad_id: int, year: int | None = Query(default=No
         payload = render_roadmap_pptx(data)
     except ImportError:
         raise HTTPException(status_code=501, detail="Génération PPTX indisponible (python-pptx non installé)")
-    return StreamingResponse(
-        iter([payload]),
+    # Buffered artifact → plain Response so Content-Length is set (not chunked),
+    # so a truncated download is detectable instead of silently corrupt.
+    return Response(
+        content=payload,
         media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
         headers={"Content-Disposition": f'attachment; filename="roadmap_{squad_id}_{year}.pptx"'},
     )
@@ -272,7 +275,7 @@ def _get_key_message(db: Session, user: User, squad_id: int, msg_id: int) -> Key
     squad = db.get(Squad, squad_id)
     if squad is None:
         raise HTTPException(status_code=404, detail="Squad introuvable")
-    assert_can_edit_squad(db, user, squad_id)
+    assert_leads_squad(db, user, squad_id)   # key messages: squad leader (+admin) only
     km = db.get(KeyMessage, msg_id)
     if km is None or km.squad_id != squad_id:
         raise HTTPException(status_code=404, detail="Message introuvable")
@@ -285,7 +288,7 @@ def create_key_message(squad_id: int, payload: KeyMessageCreate, year: int | Non
     squad = db.get(Squad, squad_id)
     if squad is None:
         raise HTTPException(status_code=404, detail="Squad introuvable")
-    assert_can_edit_squad(db, user, squad_id)
+    assert_leads_squad(db, user, squad_id)   # key messages: squad leader (+admin) only
     if year is None:
         year = st.current_year_quarter()[0]
     km = KeyMessage(squad_id=squad_id, year=year, kind=payload.kind, text=payload.text,

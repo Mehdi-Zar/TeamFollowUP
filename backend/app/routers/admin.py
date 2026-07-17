@@ -322,7 +322,7 @@ def test_change_notify_config(payload: dict = Body(default=None), db: Session = 
                       "application", "vnd.openxmlformats-officedocument.presentationml.presentation")
     except Exception:
         pass
-    ok = send_email(cfg, to, f"[Reporting] {squad.name} — test", html_body, attachment=attachment, html=True)
+    ok = send_email(cfg, to, f"[Reporting] {squad.name} - test", html_body, attachment=attachment, html=True)
     record_audit(db, admin.id, "change_notify_config.test", entity="change_notify",
                  detail={"ok": ok, "to": to, "squad": squad.name})
     db.commit()
@@ -392,17 +392,6 @@ async def _text_from(upload: UploadFile | None, pasted: str | None) -> str:
 def read_tls_config(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     from ..tlsconfig import status
     return status(db)
-
-
-@router.put("/tls-config")
-def update_tls_config(payload: dict = Body(...), db: Session = Depends(get_db),
-                      admin: User = Depends(require_admin)):
-    from ..tlsconfig import set_options
-    cfg = set_options(db, payload)
-    record_audit(db, admin.id, "tls_config.update", entity="tls",
-                 detail={"redirect_http": cfg["redirect_http"]})
-    db.commit()
-    return cfg
 
 
 @router.post("/tls-config/self-signed")
