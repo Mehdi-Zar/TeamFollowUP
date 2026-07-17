@@ -63,6 +63,34 @@ for r in (auth, tribes, squads, dashboard, org, orgexport, objectives, roadmap, 
     app.include_router(r.router)
 
 
+def custom_openapi():
+    """OpenAPI schema with an API-key (Bearer) security scheme.
+
+    Declaring ``ApiKeyAuth`` (HTTP bearer) gives the Swagger UI an **Authorize**
+    button: paste an API key (Admin > API) and Swagger sends it as
+    ``Authorization: Bearer <key>`` on every "Try it out" call - matching
+    ``deps.api_key_from_request``. Security is ``[{}, {ApiKeyAuth: []}]`` (the
+    empty alternative) so it stays optional: human/session-cookie calls, which
+    the same-origin browser sends automatically, keep working without a key.
+    """
+    if app.openapi_schema:
+        return app.openapi_schema
+    from fastapi.openapi.utils import get_openapi
+    schema = get_openapi(title=app.title, version=app.version,
+                         description=app.description, routes=app.routes)
+    schema.setdefault("components", {}).setdefault("securitySchemes", {})["ApiKeyAuth"] = {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Clé d'API créée dans Admin > API, envoyée en `Authorization: Bearer <clé>`.",
+    }
+    schema["security"] = [{}, {"ApiKeyAuth": []}]
+    app.openapi_schema = schema
+    return schema
+
+
+app.openapi = custom_openapi
+
+
 @app.on_event("startup")
 async def _warn_on_insecure_defaults():
     """Fail loud (log) if dev-default secrets are still in use - see docs/05-security.md."""
