@@ -271,6 +271,12 @@ def build_context() -> ssl.SSLContext:
     return ctx
 
 
+def is_serving_tls() -> bool:
+    """True if the running server terminates TLS itself (a live SSLContext was set
+    at boot). False in plain-HTTP mode - lets the admin UI show the real mode."""
+    return _live_context is not None
+
+
 def set_live_context(ctx: ssl.SSLContext) -> None:
     """Register the running server's SSLContext so later uploads can hot-reload it.
 

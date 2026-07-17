@@ -285,11 +285,19 @@ function TlsAdmin() {
   async function removeCa(id: string) {
     await wrap(async () => { setSt(await api.del<any>(`/api/admin/tls-config/ca/${id}`)); });
   }
+  async function toggleTls(enabled: boolean) {
+    await wrap(async () => {
+      setSt(await api.post<any>("/api/admin/tls-config/enabled", { enabled }));
+      flash(t("tls.applied"));
+    });
+  }
 
   const a = st.active || {};
-  // When the app does not terminate TLS (infra does, e.g. GKE Gateway/ALB),
-  // nothing here affects serving: mark the panel inactive and disable the actions.
-  const inactive = st.tls_enabled === false;
+  // enabled: whether the app should terminate TLS itself (the toggle's value).
+  // pending: the running server is still in the other mode until the next restart.
+  const enabled = st.tls_enabled !== false;
+  const inactive = !enabled;
+  const pending = st.tls_running != null && st.tls_enabled !== st.tls_running;
   // Expiry badge colour: red if expired, orange if under 30 days, else green.
   const expClass = a.expired ? "badge-red" : (a.days_remaining != null && a.days_remaining < 30 ? "badge-orange" : "badge-green");
 
@@ -311,9 +319,25 @@ function TlsAdmin() {
   return (
     <div className="stack" style={{ maxWidth: 760 }}>
       {error && <ErrorBanner message={error} />}
-      {inactive
-        ? <div className="banner" style={{ borderLeft: "4px solid var(--orange)" }}>⚠️ {t("tls.infra_managed")}</div>
-        : <div className="banner">{t("tls.intro")}</div>}
+
+      {/* Master toggle: does the app terminate TLS itself, or the infrastructure? */}
+      <div className="card stack" style={{ gap: 8 }}>
+        <div className="between">
+          <span className="strong">{t("tls.toggle_title")}</span>
+          <label className="switch">
+            <input type="checkbox" checked={enabled} onChange={(e) => toggleTls(e.target.checked)} />
+            <span className="track"><span className="knob" /></span>
+            <span className="small">{enabled ? t("tls.toggle_on") : t("tls.toggle_off")}</span>
+          </label>
+        </div>
+        <div className="small muted">{t("tls.toggle_hint")}</div>
+        {pending && <div className="banner" style={{ borderLeft: "4px solid var(--orange)" }}>⚠️ {t("tls.pending_restart")}</div>}
+      </div>
+
+      {!enabled && <div className="banner" style={{ borderLeft: "4px solid var(--orange)" }}>{t("tls.infra_managed")}</div>}
+
+      {enabled && <>
+      <div className="banner">{t("tls.intro")}</div>
 
       {/* Active certificate */}
       <div className="card stack" style={{ gap: 8 }}>
@@ -414,6 +438,7 @@ function TlsAdmin() {
           <button className="btn-secondary" onClick={addCa} disabled={inactive}>{t("tls.add_ca")}</button>
         </div>
       </div>
+      </>}
 
       {msg && <div className="small" style={{ color: "var(--green)" }}>{msg}</div>}
     </div>

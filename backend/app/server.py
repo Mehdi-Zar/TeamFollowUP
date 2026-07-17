@@ -54,11 +54,20 @@ def main() -> None:
     configure_logging(settings.log_format, settings.log_level)
     log_cfg = uvicorn_log_config(settings.log_format, settings.log_level)
 
+    # Serving mode: the admin toggle persisted in the DB wins, else the env default
+    # (settings.tls_enabled). Read once here - the port/protocol is bound for the
+    # process lifetime, so a toggle change only takes effect on the next start.
+    db = SessionLocal()
+    try:
+        tls_on = tlsconfig.is_tls_enabled(db)
+    finally:
+        db.close()
+
     # Infra-terminated TLS (the supported GKE model): serve plain HTTP and let the
     # Gateway API + ALB do TLS. No certificate is materialised. proxy_headers +
     # forwarded_allow_ips let the app trust the ALB's X-Forwarded-Proto so it still
     # sees the original request as https (correct redirect URLs, secure cookies).
-    if not settings.tls_enabled:
+    if not tls_on:
         log.info("TLS disabled: serving plain HTTP on :%s (TLS terminated upstream by the infrastructure).",
                  settings.http_port)
         http_cfg = uvicorn.Config(
