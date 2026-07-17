@@ -11,11 +11,10 @@ export default defineConfig({
     port: 5173,
     proxy: {
       "/api": {
-        // Backend from `docker compose up` serves HTTPS on :8443 (self-signed
-        // cert by default, hence secure: false).
-        target: "https://localhost:8443",
+        // Backend from `docker compose up` serves plain HTTP on :8000 (the app
+        // no longer terminates TLS locally - that's the infra's job on GKE).
+        target: "http://localhost:8000",
         changeOrigin: true,
-        secure: false,
       },
     },
   },
