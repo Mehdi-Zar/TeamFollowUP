@@ -4,7 +4,10 @@ All endpoints are under `/api`. Humans authenticate with a **signed session cook
 automatically by the SPA with `credentials: include`). Machines authenticate with an **API key**
 (`Authorization: Bearer trt_…`) on the read-only routes that opted in - see *Machine access* below.
 The live, always-accurate contract is the FastAPI-generated **OpenAPI** at `/openapi.json` and
-Swagger UI at `/docs`. This page is a curated map.
+Swagger UI at `/docs` (linked from **Administration → API**, with a step-by-step guide). Swagger
+exposes an **Authorize** button (`ApiKeyAuth`): paste an API key and it is sent as
+`Authorization: Bearer …` on every "Try it out" call; a logged-in admin's session cookie is also
+sent automatically (same origin). This page is a curated map.
 
 ## Conventions / guards
 
