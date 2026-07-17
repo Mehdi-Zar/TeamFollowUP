@@ -37,32 +37,31 @@ services:
       OIDC_ISSUER_URL: ${OIDC_ISSUER_URL:-}
       OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
       OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
-      OIDC_REDIRECT_URI: ${OIDC_REDIRECT_URI:-https://localhost:8443/api/auth/oidc/callback}
+      OIDC_REDIRECT_URI: ${OIDC_REDIRECT_URI:-http://localhost:8000/api/auth/oidc/callback}
       OIDC_SCOPES: ${OIDC_SCOPES:-openid email profile}
       SAML_ENABLED: ${SAML_ENABLED:-false}
       SAML_IDP_METADATA_URL: ${SAML_IDP_METADATA_URL:-}
       SAML_IDP_METADATA_PATH: ${SAML_IDP_METADATA_PATH:-}
-      SAML_SP_ENTITY_ID: ${SAML_SP_ENTITY_ID:-https://localhost:8443/api/auth/saml/metadata}
-      SAML_ACS_URL: ${SAML_ACS_URL:-https://localhost:8443/api/auth/saml/acs}
+      SAML_SP_ENTITY_ID: ${SAML_SP_ENTITY_ID:-http://localhost:8000/api/auth/saml/metadata}
+      SAML_ACS_URL: ${SAML_ACS_URL:-http://localhost:8000/api/auth/saml/acs}
       SAML_SP_CERT: ${SAML_SP_CERT:-}
       SAML_SP_KEY: ${SAML_SP_KEY:-}
-      # Site is HTTPS by default, so secure cookies are appropriate.
-      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      # Local serves plain HTTP (no in-app TLS), so Secure cookies must be OFF -
+      # a browser won't send a Secure cookie over http://localhost.
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
       COOKIE_SAMESITE: ${COOKIE_SAMESITE:-lax}
       LOGIN_MAX_ATTEMPTS: ${LOGIN_MAX_ATTEMPTS:-10}
       LOGIN_WINDOW_SECONDS: ${LOGIN_WINDOW_SECONDS:-300}
       AUDIT_RETENTION_DAYS: ${AUDIT_RETENTION_DAYS:-0}
-      # --- HTTPS / TLS ---
-      CERT_DIR: /app/certs
-      HTTPS_PORT: 8443
+      # --- Serving: plain HTTP, TLS is the infra's job (same model as GKE) ---
+      TLS_ENABLED: ${TLS_ENABLED:-false}
+      HTTP_PORT: ${HTTP_PORT:-8000}
+      LOG_FORMAT: ${LOG_FORMAT:-json}   # GCP Cloud Logging structured logs
     ports:
-      # Single port: HTTPS. No HTTP listener - redirection is an infra concern.
-      - "${APP_HTTPS_PORT:-8443}:8443"
-    volumes:
-      # Active cert/key materialised here at boot (DB stays the source of truth).
-      - certs_data:/app/certs
+      # Plain HTTP: the app no longer terminates TLS (that's the infra's job).
+      - "${APP_HTTP_PORT:-8000}:8000"
     healthcheck:
-      test: ["CMD", "curl", "-fsSk", "https://localhost:8443/api/health"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/health"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -98,4 +97,3 @@ services:
 
 volumes:
   db_data:
-  certs_data:
