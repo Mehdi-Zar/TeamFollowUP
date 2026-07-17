@@ -1,0 +1,77 @@
+# =============================================================================
+# Definition de votre organisation reelle.
+#
+# 1. Copiez ce fichier :        cp data/org.example.yaml data/org.yaml
+# 2. Remplissez-le (voir plus bas).
+# 3. Importez-le :
+#      local :  docker compose exec app python -m app.import_org
+#      prod  :  kubectl exec deploy/tribe-app -- python -m app.import_org
+#
+# Ré-executable sans risque : les elements existants sont mis a jour, pas
+# dupliques (cle naturelle : nom de tribu, email d'utilisateur, nom de squad,
+# titre d'initiative / OTD pour l'annee donnee).
+# =============================================================================
+
+# Annee de reporting (les initiatives et OTD y sont rattachees).
+year: 2026
+
+# La tribu et son responsable (tribe leader). Le leader est cree s'il n'existe
+# pas encore, et rattache par email (compatible SSO : au 1er login via votre IdP
+# la personne est reconnue par cet email et garde ce compte / ce role).
+tribe:
+  name: "Cloud Foundations"
+  description: "Socle cloud souverain et services associes."
+  leader:
+    email: "nadia.khaldi@votre-domaine.com"
+    name: "Nadia Khaldi"
+
+# Les squads de la tribu. `type` = product (reporting par roadmap/jalons) ou
+# transverse (reporting par initiatives / OTD). `leader` est le squad leader.
+squads:
+  - name: "Portal"
+    type: product
+    leader:
+      email: "leo.martin@votre-domaine.com"
+      name: "Leo Martin"
+    products: ["Portal self-service"]
+    hardware: []
+    kpis_enabled: true
+    budget_enabled: false
+
+  - name: "GCP / S3NS"
+    type: product
+    leader:
+      email: "sara.dubois@votre-domaine.com"
+      name: "Sara Dubois"
+
+  - name: "Run & Operation"
+    type: transverse
+    leader:
+      email: "paul.lemoine@votre-domaine.com"
+      name: "Paul Lemoine"
+
+# Initiatives strategiques (definies par le tribe leader, visibles par tous).
+# `squad` (optionnel) = la squad concernee, par son nom exact ci-dessus.
+initiatives:
+  - title: "Souverainete cloud & FinOps"
+    squad: "Portal"
+    owner: "Nadia Khaldi"
+    deadline: 2026-12-31
+    description: "Reduire la dependance et le cout du socle cloud."
+
+  - title: "Valorisation de la donnee"
+    squad: "GCP / S3NS"
+    owner: "Nadia Khaldi"
+    deadline: 2026-09-30
+
+# OTD (On-Time Delivery) : engagements de livraison dates. L'owner est
+# automatiquement le leader de la squad referencee (`squad`).
+otds:
+  - title: "Data lake GCP en production"
+    squad: "GCP / S3NS"
+    committed_date: 2026-09-30
+    description: "Mise en production du data lake, supervision incluse."
+
+  - title: "Portail self-service GA"
+    squad: "Portal"
+    committed_date: 2026-06-30
