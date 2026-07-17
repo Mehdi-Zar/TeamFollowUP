@@ -79,6 +79,7 @@ export default function AdminPage() {
   return (
     <div className="admin-layout">
       <nav className="admin-nav" aria-label={t("admin.title")}>
+        <div className="admin-nav-head">{t("admin.title")}</div>
         {groups.map((g) => (
           <div key={g.titleKey} className="admin-nav-group">
             <div className="admin-nav-title">{t(g.titleKey)}</div>
