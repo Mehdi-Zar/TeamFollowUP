@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from . import tls
+from .config import settings
 from .models import AppSetting
 
 log = logging.getLogger("trt.tls")
@@ -261,6 +262,10 @@ def status(db: Session) -> dict:
         for c in cfg.get("cas", [])
     ]
     return {
+        # False when the app serves plain HTTP and the infrastructure terminates
+        # TLS (GKE Gateway/ALB): in that mode nothing below affects serving, so the
+        # admin UI marks the panel inactive rather than pretending it applies.
+        "tls_enabled": settings.tls_enabled,
         "mode": cfg.get("mode", "self_signed"),
         "self_signed": cfg.get("self_signed", {}),
         "active": active,

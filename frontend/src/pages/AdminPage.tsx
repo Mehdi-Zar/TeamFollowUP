@@ -287,6 +287,9 @@ function TlsAdmin() {
   }
 
   const a = st.active || {};
+  // When the app does not terminate TLS (infra does, e.g. GKE Gateway/ALB),
+  // nothing here affects serving: mark the panel inactive and disable the actions.
+  const inactive = st.tls_enabled === false;
   // Expiry badge colour: red if expired, orange if under 30 days, else green.
   const expClass = a.expired ? "badge-red" : (a.days_remaining != null && a.days_remaining < 30 ? "badge-orange" : "badge-green");
 
@@ -300,7 +303,7 @@ function TlsAdmin() {
       <div className="small muted">{t("tls.expires")}: {c.not_after?.slice(0, 10)}</div>
       <div className="inline" style={{ gap: 8 }}>
         <a className="btn-secondary btn-sm" href={`/api/admin/tls-config/ca/${c.id}/download`}>{t("tls.download")}</a>
-        <button className="btn-danger btn-sm" onClick={() => removeCa(c.id)}>{t("action.delete")}</button>
+        <button className="btn-danger btn-sm" onClick={() => removeCa(c.id)} disabled={inactive}>{t("action.delete")}</button>
       </div>
     </div>
   );
@@ -308,7 +311,9 @@ function TlsAdmin() {
   return (
     <div className="stack" style={{ maxWidth: 760 }}>
       {error && <ErrorBanner message={error} />}
-      <div className="banner">{t("tls.intro")}</div>
+      {inactive
+        ? <div className="banner" style={{ borderLeft: "4px solid var(--orange)" }}>⚠️ {t("tls.infra_managed")}</div>
+        : <div className="banner">{t("tls.intro")}</div>}
 
       {/* Active certificate */}
       <div className="card stack" style={{ gap: 8 }}>
@@ -346,7 +351,7 @@ function TlsAdmin() {
           <div style={{ flex: 2, minWidth: 220 }}><label>{t("tls.sans")}</label>
             <input value={sans} onChange={(e) => setSans(e.target.value)} placeholder="host.example.com, 10.0.0.5" /></div>
         </div>
-        <div><button className="btn-secondary" onClick={regen}>{t("tls.generate")}</button></div>
+        <div><button className="btn-secondary" onClick={regen} disabled={inactive}>{t("tls.generate")}</button></div>
       </div>
 
       {/* Import PEM */}
@@ -369,7 +374,7 @@ function TlsAdmin() {
           <div style={{ width: 260 }}><label>{t("tls.key_passphrase")}</label>
             <input type="password" value={pemPass} onChange={(e) => setPemPass(e.target.value)} /></div>
         </div>
-        <div><button onClick={importPem}>{t("tls.install")}</button></div>
+        <div><button onClick={importPem} disabled={inactive}>{t("tls.install")}</button></div>
       </div>
 
       {/* Import PFX */}
@@ -384,7 +389,7 @@ function TlsAdmin() {
           <div style={{ width: 260 }}><label>{t("tls.pfx_password")}</label>
             <input type="password" value={pfxPass} onChange={(e) => setPfxPass(e.target.value)} /></div>
         </div>
-        <div><button onClick={importPfx}>{t("tls.install")}</button></div>
+        <div><button onClick={importPfx} disabled={inactive}>{t("tls.install")}</button></div>
       </div>
 
       {/* CA store */}
@@ -406,7 +411,7 @@ function TlsAdmin() {
             <label>{t("tls.ca_name")}</label>
             <input value={caName} onChange={(e) => setCaName(e.target.value)} />
           </div>
-          <button className="btn-secondary" onClick={addCa}>{t("tls.add_ca")}</button>
+          <button className="btn-secondary" onClick={addCa} disabled={inactive}>{t("tls.add_ca")}</button>
         </div>
       </div>
 
@@ -2161,6 +2166,27 @@ function ApiAdmin() {
         <p className="small muted">{t("api.intro")}</p>
       </div>
       {error && <ErrorBanner message={error} />}
+
+      {/* Interactive API docs (Swagger) + how-to guide */}
+      <div className="card stack" style={{ gap: 10, padding: 16 }}>
+        <span className="strong">{t("api.docs_title")}</span>
+        <div className="small muted">{t("api.docs_intro")}</div>
+        <div className="inline" style={{ gap: 8 }}>
+          <a className="btn btn-secondary btn-sm" href="/docs" target="_blank" rel="noopener noreferrer">{t("api.docs_open_swagger")}</a>
+          <a className="btn btn-secondary btn-sm" href="/openapi.json" target="_blank" rel="noopener noreferrer">{t("api.docs_openapi")}</a>
+        </div>
+        <ol className="small" style={{ margin: 0, paddingLeft: 18, lineHeight: 1.6 }}>
+          <li>{t("api.guide_1")}</li>
+          <li>{t("api.guide_2")}</li>
+          <li>{t("api.guide_3")}</li>
+          <li>{t("api.guide_4")}</li>
+        </ol>
+        <div className="small muted">{t("api.guide_curl")}</div>
+        <code style={{ display: "block", padding: 10, background: "rgba(127,127,127,.12)",
+                       borderRadius: 6, wordBreak: "break-all", fontSize: 12 }}>
+          curl -H "Authorization: Bearer &lt;clé&gt;" {window.location.origin}/api/otds
+        </code>
+      </div>
 
       {secret && (
         <Modal
