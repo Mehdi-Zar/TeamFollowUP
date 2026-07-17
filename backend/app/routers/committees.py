@@ -19,6 +19,13 @@ router = APIRouter(prefix="/api/committees", tags=["committees"],
 @router.post("", response_model=CommitteeOut, status_code=201)
 def create_committee(payload: CommitteeCreate, db: Session = Depends(get_db),
                      user: User = Depends(require_writer)):
+    """Declare a committee for a squad.
+
+    POST /api/committees
+    Access: writer role + edit rights on the target squad (assert_can_edit_squad).
+    Side effects: records the creator and writes a "committee.create" audit entry.
+    Returns 404 if the referenced squad does not exist.
+    """
     if db.get(Squad, payload.squad_id) is None:
         raise HTTPException(status_code=404, detail="Squad introuvable")
     assert_can_edit_squad(db, user, payload.squad_id)
@@ -35,6 +42,13 @@ def create_committee(payload: CommitteeCreate, db: Session = Depends(get_db),
 @router.put("/{committee_id}", response_model=CommitteeOut)
 def update_committee(committee_id: int, payload: CommitteeUpdate, db: Session = Depends(get_db),
                      user: User = Depends(require_writer)):
+    """Partially update a committee.
+
+    PUT /api/committees/{committee_id}
+    Access: writer role + edit rights on the committee's squad.
+    Side effects: writes a "committee.update" audit entry (with the changed fields).
+    Only fields present in the payload are applied (exclude_unset). 404 if unknown.
+    """
     item = db.get(Committee, committee_id)
     if item is None:
         raise HTTPException(status_code=404, detail="Comité introuvable")
@@ -51,6 +65,12 @@ def update_committee(committee_id: int, payload: CommitteeUpdate, db: Session = 
 @router.delete("/{committee_id}", status_code=204)
 def delete_committee(committee_id: int, db: Session = Depends(get_db),
                      user: User = Depends(require_writer)):
+    """Delete a committee.
+
+    DELETE /api/committees/{committee_id} -> 204 No Content
+    Access: writer role + edit rights on the committee's squad.
+    Side effects: writes a "committee.delete" audit entry. 404 if unknown.
+    """
     item = db.get(Committee, committee_id)
     if item is None:
         raise HTTPException(status_code=404, detail="Comité introuvable")

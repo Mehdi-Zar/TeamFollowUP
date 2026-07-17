@@ -54,4 +54,9 @@ def leave_days(lv: Leave) -> float:
 
 
 def overlaps(a_start: date, a_end: date, b_start: date, b_end: date) -> bool:
+    """True if two inclusive [start, end] date ranges intersect.
+
+    Used by the overlap-alert feature to flag concurrent absences in a squad.
+    Ranges are inclusive on both ends (touching endpoints count as overlapping).
+    """
     return a_start <= b_end and b_start <= a_end

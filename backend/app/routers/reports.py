@@ -78,6 +78,13 @@ def weekly_html(request: Request, tribe_id: int | None = Query(default=None), ye
                 since_days: int = Query(default=7, ge=1, le=365), squad_id: int | None = Query(default=None),
                 lang: str | None = Query(default=None),
                 db: Session = Depends(get_db), user: User = Depends(_weekly_caller)):
+    """Weekly report as a standalone HTML page.
+
+    GET /api/reports/weekly.html
+    Access: human via `dashboard` capability, or API key with `reports:read` scope
+    (the _weekly_caller); gated by the `review > weekly_report` module. squad_id
+    narrows to one squad, else the caller's tribe scope (admins may target a tribe).
+    """
     data = _data(request, db, user, tribe_id, year, since_days, squad_id, lang)
     return HTMLResponse(render_html(data, standalone=True))
 
@@ -87,6 +94,12 @@ def weekly_pptx(request: Request, tribe_id: int | None = Query(default=None), ye
                 since_days: int = Query(default=7, ge=1, le=365), squad_id: int | None = Query(default=None),
                 lang: str | None = Query(default=None),
                 db: Session = Depends(get_db), user: User = Depends(_weekly_caller)):
+    """Weekly report as a PPTX download.
+
+    GET /api/reports/weekly.pptx
+    Access/scoping identical to weekly_html. Returns 501 when the python-pptx
+    backend is not installed.
+    """
     data = _data(request, db, user, tribe_id, year, since_days, squad_id, lang)
     try:
         payload = render_pptx(data)
@@ -218,6 +231,8 @@ def dependencies_pptx(request: Request, tribe_id: int | None = Query(default=Non
 
 
 def _sub_out(db: Session, sub, squad_id: int | None) -> ReportSubscriptionOut:
+    """Serialize a subscription row into its API form, resolving the squad name and
+    supplying sensible defaults (interval 0 = unsubscribed) when `sub` is None."""
     from ..models import Squad
     name = None
     if squad_id is not None:
@@ -234,6 +249,12 @@ def _sub_out(db: Session, sub, squad_id: int | None) -> ReportSubscriptionOut:
 
 @router.get("/subscriptions", response_model=list[ReportSubscriptionOut], dependencies=[_report_gate, _report_cap])
 def list_my_subscriptions(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """List the caller's report subscriptions (dashboard + any per-squad ones).
+
+    GET /api/reports/subscriptions
+    Access: cookie user with the `dashboard` capability; gated by `review >
+    weekly_report`. Personal, so no API-key surface.
+    """
     from ..subscriptions import list_subscriptions
     return [_sub_out(db, s, s.squad_id) for s in list_subscriptions(db, user)]
 
@@ -241,6 +262,12 @@ def list_my_subscriptions(db: Session = Depends(get_db), user: User = Depends(ge
 @router.get("/subscription", response_model=ReportSubscriptionOut, dependencies=[_report_gate, _report_cap])
 def get_my_subscription(squad_id: int | None = Query(default=None),
                         db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Return the caller's subscription for a given squad (or the global dashboard
+    one when squad_id is omitted).
+
+    GET /api/reports/subscription?squad_id=...
+    Access: cookie user with `dashboard`; gated by `review > weekly_report`.
+    """
     from ..subscriptions import get_subscription
     return _sub_out(db, get_subscription(db, user.id, squad_id), squad_id)
 
@@ -248,6 +275,14 @@ def get_my_subscription(squad_id: int | None = Query(default=None),
 @router.put("/subscription", response_model=ReportSubscriptionOut, dependencies=[_report_gate, _report_cap])
 def set_my_subscription(payload: ReportSubscriptionIn, db: Session = Depends(get_db),
                         user: User = Depends(get_current_user)):
+    """Create or update the caller's report subscription (cadence/weekdays/hour).
+
+    PUT /api/reports/subscription
+    Access: cookie user with `dashboard`; gated by `review > weekly_report`.
+    Business rules: a per-squad subscription requires visibility of that squad
+    (404 otherwise); for the global (squad_id=None) subscription the legacy
+    User.report_* flags are kept in sync with the new schedule.
+    """
     from ..subscriptions import set_subscription, user_can_see_squad
     if payload.squad_id is not None and not user_can_see_squad(db, user, payload.squad_id):
         raise HTTPException(status_code=404, detail="Squad introuvable")
@@ -266,7 +301,14 @@ def set_my_subscription(payload: ReportSubscriptionIn, db: Session = Depends(get
 @router.post("/weekly/email", dependencies=[_report_gate, _report_cap])
 def weekly_email(request: Request, payload: dict = Body(default=None), db: Session = Depends(get_db),
                  user: User = Depends(get_current_user)):
-    """Send the report now to a chosen address (HTML body + PPTX attachment)."""
+    """Send the report now to a chosen address (HTML body + PPTX attachment).
+
+    POST /api/reports/weekly/email
+    Access: cookie user with `dashboard`; gated by `review > weekly_report`.
+    Requires SMTP to be enabled (400 otherwise); defaults the recipient to the
+    caller's own e-mail. Sends HTML-only if the PPTX backend is unavailable, and
+    returns 502 when the actual send fails.
+    """
     from ..smtpconfig import get_smtp
     from ..mail import send_email
 

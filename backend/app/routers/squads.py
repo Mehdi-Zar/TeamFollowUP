@@ -1,3 +1,21 @@
+"""Squad endpoints (prefix ``/api/squads``).
+
+A squad is the reporting unit inside a tribe. This router covers reading squads
+and their quarterly detail, dependency surfacing, per-squad roadmap exports
+(PPTX/HTML), CRUD on squads, and the squad-leader reporting surface: quarter
+progress, budget, and curated key messages.
+
+Access model (layered helpers from ``deps``):
+- ``assert_tribe_scope`` — the caller may only see/act within their own tribe
+  (admins see everything).
+- ``assert_can_edit_squad`` — the caller may report on this squad (squad leader,
+  tribe leader, or admin).
+- ``assert_leads_squad`` — stricter: squad leader of this squad (or admin) only.
+- ``require_tribe_or_admin`` — tribe leader or admin.
+Some tribe-leader-only fields are additionally gated inside ``update_squad``.
+Reporting mutations write an audit entry and emit ``notify_change`` so the
+change-notification pipeline can pick them up.
+"""
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from sqlalchemy import select
@@ -52,6 +70,10 @@ router = APIRouter(prefix="/api/squads", tags=["squads"])
 @router.get("", response_model=list[SquadOut])
 def list_squads(tribe_id: int | None = Query(default=None),
                 db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """GET /api/squads — list squads visible to the caller.
+
+    A tribe-scoped user is pinned to their own tribe; an admin (no scope) may
+    filter by the optional ``tribe_id`` query param."""
     q = select(Squad).order_by(Squad.display_order, Squad.id)
     scope = visible_tribe_id(user)
     if scope is not None:
@@ -64,6 +86,11 @@ def list_squads(tribe_id: int | None = Query(default=None),
 @router.get("/{squad_id}", response_model=SquadDetail)
 def get_squad(squad_id: int, year: int | None = Query(default=None),
               db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """GET /api/squads/{squad_id} — full squad detail for a year.
+
+    Requires the caller to be in the squad's tribe. ``privileged`` (budget and
+    other sensitive fields) is computed from ``is_squad_privileged`` and controls
+    what the serializer exposes. ``year`` defaults to the current one."""
     squad = db.get(Squad, squad_id)
     if squad is None:
         raise HTTPException(status_code=404, detail="Squad introuvable")
@@ -76,10 +103,12 @@ def get_squad(squad_id: int, year: int | None = Query(default=None),
 @router.get("/{squad_id}/dependents", response_model=list[DependentItemOut])
 def squad_dependents(squad_id: int, year: int | None = Query(default=None),
                      db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """Milestones in *other* squads that declared a dependency on this squad.
+    """GET /api/squads/{squad_id}/dependents — milestones in *other* squads that
+    declared a dependency on this squad.
 
     A dependency targets this squad directly, or this squad's tribe. This lets a
     squad surface what other teams are waiting on from them ("le faire apparaître").
+    Requires tribe scope on the squad; ``year`` defaults to the current one.
     """
     squad = db.get(Squad, squad_id)
     if squad is None:
@@ -108,6 +137,9 @@ def squad_dependents(squad_id: int, year: int | None = Query(default=None),
 
 
 def _roadmap_data(db: Session, user: User, squad_id: int, year: int | None, lang: str | None):
+    """Shared loader for the per-squad roadmap exports: verifies the squad exists
+    and the caller is in its tribe, then builds the report payload. Returns the
+    ``(data, year)`` pair (year resolved to the current one when omitted)."""
     from ..report import build_report_data
     squad = db.get(Squad, squad_id)
     if squad is None:
@@ -123,7 +155,11 @@ def _roadmap_data(db: Session, user: User, squad_id: int, year: int | None, lang
 def export_squad_roadmap_pptx(squad_id: int, year: int | None = Query(default=None),
                               lang: str | None = Query(default=None),
                               db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """Roadmap-only PowerPoint for a single squad (title slide + roadmap slide)."""
+    """GET /api/squads/{squad_id}/roadmap.pptx — roadmap-only PowerPoint for a
+    single squad (title slide + roadmap slide).
+
+    Gated by the ``squad_content``/``roadmap`` module and tribe scope. Returns 501
+    if python-pptx is not installed."""
     from ..report import render_roadmap_pptx
     data, year = _roadmap_data(db, user, squad_id, year, lang)
     try:
@@ -144,7 +180,8 @@ def export_squad_roadmap_pptx(squad_id: int, year: int | None = Query(default=No
 def export_squad_roadmap_html(squad_id: int, year: int | None = Query(default=None),
                               lang: str | None = Query(default=None),
                               db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """Roadmap-only web page for a single squad."""
+    """GET /api/squads/{squad_id}/roadmap.html — roadmap-only web page for a
+    single squad. Gated by the roadmap module and tribe scope."""
     from fastapi.responses import HTMLResponse
     from ..report import render_roadmap_html
     data, _ = _roadmap_data(db, user, squad_id, year, lang)
@@ -153,6 +190,11 @@ def export_squad_roadmap_html(squad_id: int, year: int | None = Query(default=No
 
 @router.post("", response_model=SquadOut, status_code=201)
 def create_squad(payload: SquadCreate, db: Session = Depends(get_db), user: User = Depends(require_tribe_or_admin)):
+    """POST /api/squads — create a squad (201). Tribe leader or admin only.
+
+    A tribe leader may only create in their own tribe (the payload's ``tribe_id``
+    is ignored for them and forced to their tribe); an admin picks the tribe.
+    Audited."""
     # tribe leaders can only create squads in their own tribe
     tribe_id = payload.tribe_id if user.role == ADMIN else user.tribe_id
     if tribe_id is None:
@@ -172,6 +214,12 @@ def create_squad(payload: SquadCreate, db: Session = Depends(get_db), user: User
 @router.put("/{squad_id}", response_model=SquadOut)
 def update_squad(squad_id: int, payload: SquadUpdate, db: Session = Depends(get_db),
                  user: User = Depends(get_current_user)):
+    """PUT /api/squads/{squad_id} — update a squad.
+
+    Requires tribe scope. Only an admin may move a squad to another tribe.
+    Structural fields (leader assignment, ordering, KPI/budget toggles) are
+    reserved to tribe leaders and admins; a squad leader may edit the squad but
+    not those fields (403 if attempted). Audited."""
     squad = db.get(Squad, squad_id)
     if squad is None:
         raise HTTPException(status_code=404, detail="Squad introuvable")
@@ -195,6 +243,11 @@ def update_squad(squad_id: int, payload: SquadUpdate, db: Session = Depends(get_
 
 @router.delete("/{squad_id}", status_code=204)
 def delete_squad(squad_id: int, db: Session = Depends(get_db), user: User = Depends(require_tribe_or_admin)):
+    """DELETE /api/squads/{squad_id} — delete a squad (204). Tribe leader or admin
+    only, within tribe scope.
+
+    Side effect: org-chart nodes and feed posts that pointed at this squad are
+    detached (their ``squad_id`` is cleared) rather than deleted. Audited."""
     squad = db.get(Squad, squad_id)
     if squad is None:
         raise HTTPException(status_code=404, detail="Squad introuvable")
@@ -212,6 +265,11 @@ def delete_squad(squad_id: int, db: Session = Depends(get_db), user: User = Depe
 @router.put("/{squad_id}/quarter-progress", response_model=QuarterProgressOut)
 def set_quarter_progress(squad_id: int, payload: QuarterProgressIn, db: Session = Depends(get_db),
                          user: User = Depends(get_current_user)):
+    """PUT /api/squads/{squad_id}/quarter-progress — set the squad's progress %
+    and comment for a given year/quarter (upsert).
+
+    Squad-leader reporting: requires ``assert_can_edit_squad``. Audited, then
+    emits ``notify_change(..., "progress", ...)``."""
     squad = db.get(Squad, squad_id)
     if squad is None:
         raise HTTPException(status_code=404, detail="Squad introuvable")
@@ -242,6 +300,14 @@ def set_quarter_progress(squad_id: int, payload: QuarterProgressIn, db: Session 
 @router.put("/{squad_id}/budget", response_model=SquadBudgetOut)
 def set_squad_budget(squad_id: int, payload: SquadBudgetIn, year: int | None = Query(default=None),
                      db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """PUT /api/squads/{squad_id}/budget — set the squad's budget line for a year
+    (upsert).
+
+    Requires ``assert_can_edit_squad`` and the squad's budget module to be enabled
+    (403 otherwise). Business rule: the total envelope is a tribe-leader/admin
+    decision — a squad leader may only report spent/forecast/comment, so an
+    incoming ``total`` from a squad leader is ignored. Audited, then
+    ``notify_change(..., "budget", ...)``."""
     squad = db.get(Squad, squad_id)
     if squad is None:
         raise HTTPException(status_code=404, detail="Squad introuvable")
@@ -272,6 +338,9 @@ def set_squad_budget(squad_id: int, payload: SquadBudgetIn, year: int | None = Q
 
 # ---------- Key messages (curated success / alert / risk) ----------
 def _get_key_message(db: Session, user: User, squad_id: int, msg_id: int) -> KeyMessage:
+    """Fetch a key message, asserting the caller leads the squad (squad leader or
+    admin) and that the message actually belongs to that squad. 404 if either the
+    squad or the message is missing/mismatched."""
     squad = db.get(Squad, squad_id)
     if squad is None:
         raise HTTPException(status_code=404, detail="Squad introuvable")
@@ -285,6 +354,11 @@ def _get_key_message(db: Session, user: User, squad_id: int, msg_id: int) -> Key
 @router.post("/{squad_id}/key-messages", response_model=KeyMessageOut, status_code=201)
 def create_key_message(squad_id: int, payload: KeyMessageCreate, year: int | None = Query(default=None),
                        db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """POST /api/squads/{squad_id}/key-messages — add a curated key message
+    (success/alert/risk) for a year (201).
+
+    Squad leader (or admin) only. Audited, then ``notify_change(..., "key_message",
+    ...)``. ``year`` defaults to the current one."""
     squad = db.get(Squad, squad_id)
     if squad is None:
         raise HTTPException(status_code=404, detail="Squad introuvable")
@@ -305,6 +379,10 @@ def create_key_message(squad_id: int, payload: KeyMessageCreate, year: int | Non
 @router.put("/{squad_id}/key-messages/{msg_id}", response_model=KeyMessageOut)
 def update_key_message(squad_id: int, msg_id: int, payload: KeyMessageUpdate,
                        db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """PUT /api/squads/{squad_id}/key-messages/{msg_id} — update a key message.
+
+    Squad leader (or admin) only, message must belong to the squad. Audited, then
+    ``notify_change(..., "key_message", ...)``."""
     km = _get_key_message(db, user, squad_id, msg_id)
     for k, v in payload.model_dump(exclude_unset=True).items():
         setattr(km, k, v)
@@ -319,6 +397,11 @@ def update_key_message(squad_id: int, msg_id: int, payload: KeyMessageUpdate,
 @router.delete("/{squad_id}/key-messages/{msg_id}", status_code=204)
 def delete_key_message(squad_id: int, msg_id: int,
                        db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """DELETE /api/squads/{squad_id}/key-messages/{msg_id} — delete a key message
+    (204).
+
+    Squad leader (or admin) only, message must belong to the squad. Audited, then
+    ``notify_change(..., "key_message", ...)``."""
     km = _get_key_message(db, user, squad_id, msg_id)
     km_year = km.year
     record_audit(db, user.id, "key_message.delete", entity="squad", entity_id=squad_id, detail={"id": msg_id})

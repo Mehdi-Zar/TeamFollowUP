@@ -1,3 +1,7 @@
+// InitiativesPage - the "Initiatives" tab of the dashboard.
+// Shows a flat, year-scoped list of initiatives (the top of the reporting chain).
+// Everyone can read it; tribe leaders manage their own tribe's initiatives and
+// admins can manage any tribe (and filter by tribe). Includes HTML/PPTX export.
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api";
@@ -9,10 +13,24 @@ import { HtmlPreviewButton } from "../components/HtmlPreview";
 import { useSetPageChrome } from "../components/pageChrome";
 
 const CUR_YEAR = new Date().getFullYear();
+/** Trim an ISO datetime to its YYYY-MM-DD date part, or show a dash when absent. */
 const fmtDate = (d?: string | null) => (d ? d.slice(0, 10) : "-");
 
-/** Global flat list of initiatives (initiative / owner / squad / deadline), set by
- *  the tribe leader and visible to everyone. Each one surfaces in its squad's report. */
+/**
+ * Global flat list of initiatives (initiative / owner / squad / deadline), set by
+ * the tribe leader and visible to everyone. Each one surfaces in its squad's report.
+ *
+ * Business logic:
+ * - `canEdit` = admin or tribe_leader; only they see create/edit/delete controls.
+ * - Admins can pick any tribe via the tribe selector (`tribeId`); tribe leaders are
+ *   implicitly scoped to their own `user.tribe_id`. `tribeForNew` resolves which
+ *   tribe a newly created initiative belongs to.
+ * - `qs` builds the shared query string (year, and tribe filter for admins) reused
+ *   by both the list fetch and the export URLs.
+ * - Data reloads whenever year/tribe/role changes or after a mutation (`reload`).
+ *
+ * Access: read = everyone; write = admin / tribe_leader (backend enforces scope).
+ */
 export default function InitiativesPage() {
   const { t } = useI18n();
   const { effectiveRole, user } = useAuth();
@@ -33,13 +51,16 @@ export default function InitiativesPage() {
   const tribeForNew = isAdmin ? (tribeId ? Number(tribeId) : tribes[0]?.id) : user?.tribe_id;
   const qs = `?year=${year}${isAdmin && tribeId ? `&tribe_id=${tribeId}` : ""}`;
 
+  // Only admins get the tribe picker, so only they need the full tribe list.
   useEffect(() => { if (isAdmin) api.get<Tribe[]>("/api/tribes").then(setTribes).catch(() => {}); }, [isAdmin]);
+  // (Re)load initiatives + the squads used by the editor's squad dropdown.
   useEffect(() => {
     setItems(null); setError(null);
     api.get<Initiative[]>(`/api/initiatives${qs}`).then(setItems).catch((e) => setError(e.message));
     api.get<Squad[]>(`/api/squads${isAdmin && tribeId ? `?tribe_id=${tribeId}` : ""}`).then(setSquads).catch(() => {});
   }, [year, tribeId, isAdmin, reload]);
 
+  // Bump the counter to trigger the effect above after a create/edit/delete.
   const refresh = () => setReload((n) => n + 1);
 
   useSetPageChrome({
@@ -119,16 +140,28 @@ export default function InitiativesPage() {
   );
 }
 
+/**
+ * Modal to create or edit a single initiative (title, squad, deadline, owner).
+ * Reused for both cases: an existing `id` on the form means PUT (edit), otherwise
+ * POST (create). Only rendered for users with edit rights by the parent page.
+ *
+ * @param init     initial/partial initiative (blank template when creating)
+ * @param squads   squads offered in the "squad" dropdown (optional link)
+ * @param tribeId  fallback tribe id applied when the form has none
+ * @param onSaved  called after a successful save so the parent can refresh
+ */
 function InitiativeEditor({ init, squads, tribeId, onClose, onSaved, t }: any) {
   const [f, setF] = useState<Partial<Initiative>>(init);
   const set = (k: string, v: any) => setF((p: any) => ({ ...p, [k]: v }));
 
   async function save() {
+    // Title is the only required field; abort silently on empty.
     if (!f.title?.trim()) return;
     const body = {
       tribe_id: f.tribe_id ?? tribeId, year: f.year,
       title: f.title, squad_id: f.squad_id ?? null,
       owner: f.owner?.trim() || null,
+      // Normalize the date-only input into a UTC datetime the API expects.
       deadline: f.deadline ? `${String(f.deadline).slice(0, 10)}T00:00:00Z` : null,
     };
     if (f.id) await api.put(`/api/initiatives/${f.id}`, body);
@@ -167,6 +200,11 @@ function InitiativeEditor({ init, squads, tribeId, onClose, onSaved, t }: any) {
   );
 }
 
+/**
+ * Export dialog offering the current (year/tribe-filtered) initiative list as an
+ * HTML preview or a downloadable PPTX. `qs` is the same query string the page
+ * uses for its data fetch, so exports match exactly what is on screen.
+ */
 function ExportModal({ qs, onClose, t }: { qs: string; onClose: () => void; t: any }) {
   return (
     <Modal width={460} title={t("init.export_title")} onClose={onClose}

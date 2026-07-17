@@ -1,8 +1,13 @@
+// CommandPalette: the ⌘K / Ctrl+K quick switcher overlay. Merges the visible nav
+// pages (passed in) with the squads fetched from the API into one searchable,
+// keyboard-navigable list, and navigates on selection.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { useI18n } from "../i18n";
 
+// One selectable row. `hint` is the right-hand label (e.g. "Page" / "Squad");
+// `key` is a stable de-dup key prefixed by source ("p:" pages, "s:" squads).
 type Item = { key: string; label: string; to: string; hint: string };
 
 /** Quick switcher: ⌘K / Ctrl+K (or the topbar button) opens a searchable list of

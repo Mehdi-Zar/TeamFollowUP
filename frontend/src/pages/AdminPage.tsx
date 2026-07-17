@@ -1,3 +1,18 @@
+/**
+ * AdminPage - the administration console, a left-nav shell hosting many panels.
+ *
+ * The page loads the current user's permissions and shows only the tabs that
+ * user's role may open (`admin_tabs`), grouped into Org / Config / Access /
+ * Oversight sections. Each tab mounts a self-contained *Admin panel below.
+ * The server is always authoritative: the SPA merely hides what a role cannot
+ * use, and every panel's own API calls are re-checked server-side. Admins can
+ * preview another role, which narrows the visible tab set to that role's.
+ *
+ * Panels here cover: tribes / squads / users / personas, module & reporting &
+ * leave config, auth (OIDC/SAML) + API keys + SMTP + TLS, and moderation / log
+ * export / settings / audit oversight. Many share the small useErr() helper and
+ * the "load -> edit local state -> PUT -> flash saved" pattern.
+ */
 import { Fragment, useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api, ApiError } from "../api";
@@ -38,6 +53,10 @@ const ADMIN_GROUPS: { titleKey: string; items: string[] }[] = [
   { titleKey: "admin.group.oversight", items: ["moderation", "logs", "audit"] },
 ];
 
+/**
+ * Admin shell: fetches permissions, resolves the allowed tab set (honouring role
+ * preview and a `?section=` deep link), and renders the nav + the active panel.
+ */
 export default function AdminPage() {
   const { t } = useI18n();
   const { effectiveRole } = useAuth();
@@ -59,6 +78,8 @@ export default function AdminPage() {
       ? ADMIN_TABS_BY_ROLE[effectiveRole] ?? []
       : perms?.admin_tabs ?? [];
 
+  // Pick the active tab: honour a valid `?section=` deep link, else keep the
+  // current tab if still allowed, else fall back to the first allowed tab.
   useEffect(() => {
     const want = params.get("section");
     setTab((cur) => {
@@ -115,6 +136,8 @@ export default function AdminPage() {
   );
 }
 
+/** Admin > SMTP: configure the outbound mail server (host/port/credentials/TLS)
+ *  used for notifications and reports, with a "send test email" action. Admin only. */
 function SmtpAdmin() {
   const { t } = useI18n();
   const [cfg, setCfg] = useState<any | null>(null);
@@ -125,6 +148,7 @@ function SmtpAdmin() {
   useEffect(() => { api.get<any>("/api/admin/smtp-config").then(setCfg); }, []);
   if (!cfg) return <div className="spinner">{t("common.loading")}</div>;
   const set = (k: string, v: any) => setCfg({ ...cfg, [k]: v });
+  // Small helper to render a labelled config input bound to cfg[key].
   const fld = (label: string, key: string, type = "text") => (
     <div style={{ flex: 1, minWidth: 200 }}>
       <label>{label}</label>
@@ -187,6 +211,9 @@ function SmtpAdmin() {
   );
 }
 
+/** Admin > TLS: manage the gateway certificate. Shows the active cert, and lets
+ *  the admin regenerate a self-signed one, import a PEM or PFX, and manage the
+ *  trusted CA store (roots/intermediates). Admin only. */
 function TlsAdmin() {
   const { t } = useI18n();
   const [st, setSt] = useState<any | null>(null);
@@ -258,6 +285,7 @@ function TlsAdmin() {
   }
 
   const a = st.active || {};
+  // Expiry badge colour: red if expired, orange if under 30 days, else green.
   const expClass = a.expired ? "badge-red" : (a.days_remaining != null && a.days_remaining < 30 ? "badge-orange" : "badge-green");
 
   const caRow = (c: any) => (
@@ -398,6 +426,9 @@ const MODULE_TREE: { key: ModuleKey; features: string[] }[] = [
   { key: "leaves", features: ["overlap_alert"] },
 ];
 
+/** Admin > Modules: master on/off switches for each app module and its sub-features
+ *  (from MODULE_TREE). Saving reloads the global config so the UI reflects the
+ *  change immediately (nav, gated sections). Admin only. */
 function ModulesAdmin() {
   const { t } = useI18n();
   const reloadConfig = useReloadConfig();
@@ -465,6 +496,8 @@ function ModulesAdmin() {
 }
 
 /* ---------- Leave / absence administration ---------- */
+/** Admin > Leaves: settings section (approval + overlap threshold) for everyone
+ *  who can open it; the leave-type catalogue is admin-only. */
 function LeavesAdmin({ perms }: { perms: Permissions }) {
   const isAdmin = perms.role === "admin";
   return (
@@ -475,6 +508,8 @@ function LeavesAdmin({ perms }: { perms: Permissions }) {
   );
 }
 
+/** Leave settings (approval required, overlap alert threshold). For an admin the
+ *  config is per-tribe (with a tribe picker); a tribe leader edits their own. */
 function LeaveSettingsAdmin({ isAdmin }: { isAdmin: boolean }) {
   const { t } = useI18n();
   const [tribes, setTribes] = useState<Tribe[]>([]);
@@ -539,6 +574,8 @@ function LeaveSettingsAdmin({ isAdmin }: { isAdmin: boolean }) {
   );
 }
 
+/** Admin-only catalogue of leave types (label, colour, order, active, whether a
+ *  detail note is required). Edits are per-row; delete is confirmed. */
 function LeaveTypesAdmin() {
   const { t } = useI18n();
   const [types, setTypes] = useState<LeaveType[]>([]);
@@ -782,6 +819,10 @@ export function ReportingAdmin() {
   );
 }
 
+/** Admin > Logs: ship the audit log to an external sink - syslog, GCS or
+ *  BigQuery. The GCP sinks expose several auth methods (ADC / Workload Identity
+ *  Federation / impersonation / service-account key). Test + flush actions let
+ *  the admin verify the pipe. Admin only. */
 function LogExportAdmin() {
   const { t } = useI18n();
   const [cfg, setCfg] = useState<any | null>(null);
@@ -1020,6 +1061,8 @@ function MySquadsAdmin() {
   );
 }
 
+/** One squad card in the squad-leader "my squads" admin: rename the squad and
+ *  add/remove its members. Reloads its own detail after each change. */
 function SquadSelfCard({ squadId }: { squadId: number }) {
   const { t } = useI18n();
   const [squad, setSquad] = useState<SquadDetail | null>(null);
@@ -1073,6 +1116,8 @@ function SquadSelfCard({ squadId }: { squadId: number }) {
   );
 }
 
+/** Admin > Tribes: full CRUD over tribes (name, description, tribe leader).
+ *  Inline edits save on blur; a form at the bottom creates new tribes. Admin only. */
 function TribesAdmin() {
   const { t } = useI18n();
   const [tribes, setTribes] = useState<Tribe[]>([]);
@@ -1142,6 +1187,8 @@ function TribesAdmin() {
   );
 }
 
+/** Admin > Moderation: review every feed post (and replies) with delete + pin
+ *  controls. Used to police the shared feed regardless of authorship. */
 function ModerationAdmin() {
   const { t, formatDateTime } = useI18n();
   const [posts, setPosts] = useState<any[]>([]);
@@ -1189,6 +1236,9 @@ function ModerationAdmin() {
   );
 }
 
+/** Admin > Auth: SSO configuration - OIDC and/or SAML (PingFederate) settings,
+ *  group->role mappings, and self-service access rules (approval requirement +
+ *  allowed email domains). Admin only. */
 function AuthAdmin() {
   const { t, role: roleLabel } = useI18n();
   const [cfg, setCfg] = useState<any | null>(null);
@@ -1319,6 +1369,9 @@ function AuthAdmin() {
   );
 }
 
+/** Shared error helper for the admin panels: exposes an `error` string and a
+ *  `wrap` that runs an async action, clearing then capturing any ApiError message
+ *  and returning undefined on failure (so callers can guard on the result). */
 function useErr() {
   const [error, setError] = useState<string | null>(null);
   const wrap = async <T,>(fn: () => Promise<T>): Promise<T | undefined> => {
@@ -1337,6 +1390,8 @@ function useErr() {
 // (No team management here - that's the squad leader's job in reporting.)
 const RAGS: Array<"green" | "amber" | "red"> = ["green", "amber", "red"];
 
+/** Expandable per-squad settings row inside SquadsAdmin: toggle KPIs on/off and
+ *  manage the squad's annual objectives (title + deadline; RAG is auto-derived). */
 function SquadParamsPanel({ squadId }: { squadId: number }) {
   const { t, rag } = useI18n();
   const kpisModuleOn = useModule()("squad_content", "kpis");
@@ -1399,6 +1454,10 @@ function SquadParamsPanel({ squadId }: { squadId: number }) {
   );
 }
 
+/** Admin > Squads: table of squads (name, tribe, leader, order) with inline edit,
+ *  an expandable params panel, and a create form. A tribe leader is scoped to
+ *  their own tribe (tribe column read-only, create fixed to their tribe); an
+ *  admin can move squads across tribes. */
 function SquadsAdmin({ perms }: { perms: Permissions }) {
   const { t } = useI18n();
   const isAdmin = perms.role === "admin";
@@ -1548,9 +1607,14 @@ function SquadsAdmin({ perms }: { perms: Permissions }) {
   );
 }
 
+/** Admin > Users: list/create/update/delete users and reset passwords. A
+ *  non-admin manager may only act on users whose role is within their grant
+ *  (`assignable_roles`) and is scoped to their tribe; break-glass accounts are
+ *  never editable here. Custom persona labels decorate the role dropdowns. */
 function UsersAdmin({ perms }: { perms: Permissions }) {
   const { t, role: roleLabel, formatDateTime } = useI18n();
   const isAdmin = perms.role === "admin";
+  // Roles this manager may assign (falls back to all roles for a full admin).
   const roleOptions = perms.assignable_roles.length ? perms.assignable_roles : ALL_ROLES;
   const [users, setUsers] = useState<User[]>([]);
   const [tribes, setTribes] = useState<Tribe[]>([]);
@@ -1718,6 +1782,9 @@ function UsersAdmin({ perms }: { perms: Permissions }) {
 
 // Personas & permissions: a single matrix of persona × section-access toggles,
 // plus custom persona creation. Mirrors Admin → Modules wiring.
+/** Admin > Personas: the persona x capability matrix. Built-in roles show a fixed
+ *  label; custom personas are renameable and deletable. The "admin" persona is
+ *  locked all-on (superuser). Saving persists the whole set. Admin only. */
 function PersonasAdmin() {
   const { t, role: roleLabel } = useI18n();
   const [caps, setCaps] = useState<string[]>([]);
@@ -1802,6 +1869,8 @@ function PersonasAdmin() {
   );
 }
 
+/** Admin > Settings: global app settings - branding (name/subtitle), default
+ *  language and year, staleness threshold, and feed scope/retention. Admin only. */
 function SettingsAdmin() {
   const { t } = useI18n();
   const [cfg, setCfg] = useState<any | null>(null);
@@ -1882,6 +1951,8 @@ function SettingsAdmin() {
   );
 }
 
+/** Admin > Audit: read-only table of the audit log (timestamp, user, action,
+ *  entity, detail) for security/compliance review. Admin only. */
 function AuditAdmin() {
   const { t, formatDateTime } = useI18n();
   const [entries, setEntries] = useState<AuditEntry[] | null>(null);
@@ -1941,6 +2012,10 @@ type ApiKeyRow = {
   revoked_at: string | null; live: boolean;
 };
 
+/** Admin > API: issue and manage machine API keys for the read-only API. Creating
+ *  a key returns its secret exactly once (shown in a modal, never re-fetchable);
+ *  the server keeps only the hash. Keys can be scoped, tribe-limited, given an
+ *  expiry, and later revoked or deleted. Admin only. */
 function ApiAdmin() {
   const { t, lang } = useI18n();
   const [scopes, setScopes] = useState<ApiScope[]>([]);

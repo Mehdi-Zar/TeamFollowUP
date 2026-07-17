@@ -30,6 +30,13 @@ def notify_change(squad_id: int, event: str, actor_name: str | None = None,
 
 
 def _run(squad_id: int, event: str, actor_name: str | None, year: int | None) -> None:
+    """Background worker: render the squad's export and email the configured
+    recipients. Runs on its own thread with its own DB session.
+
+    Enforces every guard from the change-notify config before sending: feature
+    enabled, event opted-in, weekly-report module active, squad in the (optional)
+    scope, current-year-only filter, and a per-squad debounce. All exceptions are
+    swallowed and logged so a notification can never break the triggering request."""
     from .database import SessionLocal
     db = SessionLocal()
     try:
@@ -110,12 +117,14 @@ def _run(squad_id: int, event: str, actor_name: str | None, year: int | None) ->
         seen = set()
         for addr in recipients:
             key = addr.lower()
-            if key in seen:
+            if key in seen:  # de-duplicate recipients case-insensitively
                 continue
             seen.add(key)
             if send_email(smtp, addr, subject, html_body, attachment=attachment, html=True):
                 sent += 1
 
+        # Only arm the debounce once at least one email actually went out, so a
+        # failed send does not suppress the next attempt.
         if sent:
             state[str(squad.id)] = now.isoformat()
             set_state(db, state)
@@ -129,4 +138,5 @@ def _run(squad_id: int, event: str, actor_name: str | None, year: int | None) ->
 
 
 def _slug(name: str) -> str:
+    """Filesystem-safe slug for the PPTX filename (non-alphanumerics → '_')."""
     return "".join(c if c.isalnum() else "_" for c in name).strip("_") or "squad"

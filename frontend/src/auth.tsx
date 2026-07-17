@@ -1,7 +1,18 @@
+/**
+ * Authentication & authorization context.
+ *
+ * Single source of truth for "who is the current user, what may they see, and
+ * are they being impersonated". Exposes the session user, their persona
+ * capabilities (section-level access), the SSO access-review queue state, and
+ * imperative actions (login/logout/impersonate/refresh). Consumed via the
+ * {@link useAuth} hook. Security posture is fail-CLOSED: {@link can} grants
+ * nothing unless the backend explicitly returned the capability.
+ */
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { api, ApiError } from "./api";
 import { AuthConfig, Capability, Role, User } from "./types";
 
+/** Everything the auth context exposes to the app (session, permissions, actions). */
 interface AuthState {
   user: User | null;
   loading: boolean;
@@ -27,6 +38,11 @@ interface AuthState {
 
 const AuthContext = createContext<AuthState | undefined>(undefined);
 
+/**
+ * Provides {@link AuthState} to the tree. On mount it fetches the auth config
+ * and the current session (`/api/auth/me`), then keeps user + permissions in
+ * React state as login/logout/impersonation happen.
+ */
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -37,6 +53,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [canReviewAccess, setCanReviewAccess] = useState(false);
   const [pendingAccessCount, setPendingAccessCount] = useState(0);
 
+  /**
+   * Fetch the effective user's permissions (persona capabilities, impersonation
+   * state, access-review queue). On failure, reset everything to the most
+   * restrictive values - the UI must never assume access when this call fails.
+   */
   async function loadPermissions() {
     try {
       const p = await api.get<any>("/api/auth/me/permissions");
@@ -54,6 +75,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  /**
+   * Re-read the current session and its permissions. A 401 means the session is
+   * gone (expired/logged out elsewhere), so clear the user; other errors are
+   * left transient and the previous state is kept.
+   */
   async function refresh() {
     try {
       const me = await api.get<User>("/api/auth/me");
@@ -64,6 +90,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  // Boot sequence: load SSO config (which buttons to show), then resolve the
+  // session. `loading` flips false only once done, so guards can fail closed
+  // (show a spinner) until permissions are known.
   useEffect(() => {
     (async () => {
       try {
@@ -76,12 +105,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     })();
   }, []);
 
+  /** Local (email/password) login. Sets the session user and loads permissions. */
   async function login(email: string, password: string) {
     const u = await api.post<User>("/api/auth/login", { email, password });
     setUser(u);
     await loadPermissions();
   }
 
+  /** End the session server-side and clear the local user. */
   async function logout() {
     await api.post("/api/auth/logout");
     setUser(null);
@@ -95,10 +126,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (window.location.pathname === "/") window.location.reload();
     else window.location.assign("/");
   }
+  /** Admin action: start viewing the app as `userId`, then hard-reload as them. */
   async function impersonate(userId: number) {
     await api.post("/api/auth/impersonate", { user_id: userId });
     reloadHome();
   }
+  /** Exit impersonation and hard-reload back as the real (admin) user. */
   async function stopImpersonation() {
     await api.post("/api/auth/stop-impersonation");
     reloadHome();
@@ -139,6 +172,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 }
 
+/**
+ * Access the auth context. Throws if used outside {@link AuthProvider}, which
+ * turns a missing-provider mistake into a clear error instead of silent nulls.
+ */
 export function useAuth() {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error("useAuth must be used within AuthProvider");

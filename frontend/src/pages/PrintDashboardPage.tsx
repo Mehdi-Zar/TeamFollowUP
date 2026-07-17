@@ -1,3 +1,8 @@
+// PrintDashboardPage - print/PDF-oriented view of the whole-org dashboard.
+// Unchromed layout meant to be opened in its own window and auto-printed. Shows
+// the summary KPIs and a per-squad table (annual + quarterly progress, late
+// jalons, freshness). Reuses the shared ReportHeader/ReportFooter from the squad
+// print page for a consistent report look.
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api } from "../api";
@@ -5,16 +10,29 @@ import { useI18n } from "../i18n";
 import { DashboardOut } from "../types";
 import { ReportFooter, ReportHeader } from "./PrintSquadPage";
 
+/**
+ * Printable organization dashboard for a given reporting year.
+ *
+ * Business logic:
+ * - Optional `?year=` selects the reporting year; omitted means the API default.
+ * - Fetches `/api/dashboard`, then auto-opens the print dialog once data is in
+ *   (short delay so the DOM can paint first).
+ * - Renders four summary stats and one table row per squad.
+ *
+ * Access: users who can view the dashboard (route/endpoint enforce it).
+ */
 export default function PrintDashboardPage() {
   const [params] = useSearchParams();
   const year = params.get("year");
   const { t, roadmap, freshness } = useI18n();
   const [data, setData] = useState<DashboardOut | null>(null);
 
+  // Load the dashboard payload for the selected (or default) year.
   useEffect(() => {
     api.get<DashboardOut>(`/api/dashboard${year ? `?year=${year}` : ""}`).then(setData);
   }, [year]);
 
+  // Auto-print once data is ready; the delay lets the DOM paint first.
   useEffect(() => {
     if (data) setTimeout(() => window.print(), 400);
   }, [data]);
@@ -67,6 +85,7 @@ export default function PrintDashboardPage() {
   );
 }
 
+/** Single summary KPI tile (large number + caption) used in the header grid. */
 function Stat({ label, value }: { label: string; value: number }) {
   return (
     <div style={{ border: "1px solid var(--line)", borderRadius: 10, padding: "10px 6px" }}>

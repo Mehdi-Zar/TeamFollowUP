@@ -35,16 +35,28 @@ ADMIN_TABS = {
 
 
 def can_access_admin(user: User) -> bool:
+    """True if the user has any management scope (admin / tribe / squad leader).
+
+    Gate for reaching the Administration area at all; which tabs are shown is
+    then narrowed by :data:`ADMIN_TABS`.
+    """
     return user.role in MANAGER_ROLES
 
 
 # ----- tribes -------------------------------------------------------------------
 
 def can_create_or_delete_tribe(user: User) -> bool:
+    """Only admins may create or delete tribes (they are the top-level tenants)."""
     return user.role == ADMIN
 
 
 def can_edit_tribe(user: User, tribe_id: int | None) -> bool:
+    """True if the user may edit the given tribe.
+
+    Admins may edit any tribe; a tribe leader may edit only their own tribe.
+    ``tribe_id`` is optional so callers can pass an unresolved value safely - a
+    missing id can never match a leader's own tribe.
+    """
     if user.role == ADMIN:
         return True
     if user.role == TRIBE:
@@ -55,21 +67,36 @@ def can_edit_tribe(user: User, tribe_id: int | None) -> bool:
 # ----- squads -------------------------------------------------------------------
 
 def can_manage_squads_in_tribe(user: User, tribe_id: int | None) -> bool:
-    """Create / delete / set leader & order of squads in a tribe."""
+    """Create / delete / set leader & order of squads in a tribe.
+
+    Managing a tribe's squads is the same scope as editing the tribe itself, so
+    this simply delegates to :func:`can_edit_tribe`.
+    """
     return can_edit_tribe(user, tribe_id)
 
 
 def leads_squad(user: User, squad: Squad) -> bool:
+    """True if the user is the assigned leader of this specific squad.
+
+    Note it requires the SQUAD role: admins and tribe leaders are handled by the
+    tribe-level checks, not by direct squad leadership.
+    """
     return user.role == SQUAD and squad.leader_user_id == user.id
 
 
 # ----- users --------------------------------------------------------------------
 
 def can_manage_users(user: User) -> bool:
+    """True if the user may manage accounts (admins globally, tribe leaders in-tribe)."""
     return user.role in (ADMIN, TRIBE)
 
 
 def assignable_roles(user: User) -> list[str]:
+    """Roles this actor is allowed to grant to others.
+
+    Enforces privilege capping: a tribe leader may only create squad leaders and
+    members (never admins or other tribe leaders); members may grant nothing.
+    """
     if user.role == ADMIN:
         return [ADMIN, TRIBE, SQUAD, MEMBER]
     if user.role == TRIBE:
@@ -83,7 +110,14 @@ def users_scope_tribe(user: User) -> int | None:
 
 
 def can_manage_user(actor: User, target: User) -> bool:
-    """Edit/delete an existing user account."""
+    """Edit/delete an existing user account.
+
+    Break-glass accounts are protected: only an admin may ever touch them, so a
+    tribe leader can never disable the emergency admin. Otherwise admins manage
+    anyone, and a tribe leader manages only squad leaders / members in their own
+    tribe.
+    """
+    # Guard the emergency admin account against non-admin actors first.
     if target.is_break_glass and actor.role != ADMIN:
         return False
     if actor.role == ADMIN:
@@ -94,6 +128,7 @@ def can_manage_user(actor: User, target: User) -> bool:
 
 
 def can_assign_role(actor: User, role: str) -> bool:
+    """True if ``actor`` is permitted to grant ``role`` (see :func:`assignable_roles`)."""
     return role in assignable_roles(actor)
 
 

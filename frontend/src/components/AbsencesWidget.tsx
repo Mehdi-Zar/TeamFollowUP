@@ -1,3 +1,6 @@
+// AbsencesWidget: dashboard card listing the people on leave during the current
+// week. Reads the leaves module + the persona's "leaves" capability to decide
+// whether to render at all, then fetches this Monday→Sunday window from the API.
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
@@ -7,9 +10,14 @@ import { useAuth } from "../auth";
 import { Leave } from "../types";
 import { leaveLabel } from "../leaves";
 
+// Local date helpers kept minimal to avoid pulling a date library into the bundle.
+/** Zero-pad a number to two digits (e.g. 3 → "03"). */
 const pad = (n: number) => String(n).padStart(2, "0");
+/** Format a Date as a local `YYYY-MM-DD` string (avoids UTC shift of toISOString). */
 const iso = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+/** Return a new Date offset by `n` days (does not mutate the input). */
 const addDays = (d: Date, n: number) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+/** Turn an ISO `YYYY-MM-DD` into a compact `DD/MM` label for the badge tooltip. */
 const fmtShort = (s: string) => { const [, m, d] = s.split("-"); return `${d}/${m}`; };
 
 /** Dashboard card: "who is away this week". Hidden when the leaves module is off
@@ -20,6 +28,8 @@ export default function AbsencesWidget() {
   const { can } = useAuth();
   const [rows, setRows] = useState<Leave[] | null>(null);
 
+  // Current ISO week: Monday..Sunday. getDay() is 0=Sun, so (day+6)%7 gives the
+  // number of days to step back to reach this week's Monday.
   const today = new Date();
   const monday = addDays(today, -((today.getDay() + 6) % 7));
   const sunday = addDays(monday, 6);

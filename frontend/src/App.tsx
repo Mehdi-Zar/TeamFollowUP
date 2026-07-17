@@ -1,3 +1,12 @@
+/**
+ * Root router and route-guarding layer.
+ *
+ * Declares every application route and wraps them in guards that enforce three
+ * independent gates before a screen renders: authentication ({@link Protected}),
+ * whether the feature module is enabled ({@link ModuleGuard}), and the user's
+ * persona capability ({@link Section}). Screens are lazily imported for
+ * per-route code splitting.
+ */
 import { lazy, Suspense } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { useAuth } from "./auth";
@@ -27,6 +36,15 @@ const PrintSquadPage = lazy(() => import("./pages/PrintSquadPage"));
 const PrintDashboardPage = lazy(() => import("./pages/PrintDashboardPage"));
 import { PageChromeProvider } from "./components/pageChrome";
 
+/**
+ * Authentication + role gate. Renders `children` only for a logged-in, active
+ * user; otherwise redirects to /login, shows the access screen (pending/revoked
+ * SSO account), or bounces to "/" when the optional role flags aren't met.
+ *
+ * @param adminOnly Restrict to the admin role.
+ * @param adminPage Restrict to roles allowed on the Admin page (admin, tribe leader).
+ * @param manageSquads Restrict to roles that manage squads (admin, tribe/squad leader).
+ */
 function Protected({ children, adminOnly, adminPage, manageSquads }: { children: JSX.Element; adminOnly?: boolean; adminPage?: boolean; manageSquads?: boolean }) {
   const { user, loading, effectiveRole } = useAuth();
   if (loading) return <div className="spinner">Chargement…</div>;
@@ -54,6 +72,10 @@ const MODULE_HOME: { module: ModuleKey; path: string }[] = [
   { module: "reporting", path: "/saisie" },
 ];
 
+/**
+ * Renders `children` only if `module` is enabled; otherwise redirects to the
+ * first other enabled module home (or /preferences, which is always reachable).
+ */
 function ModuleGuard({ module, children }: { module: ModuleKey; children: JSX.Element }) {
   const { modules } = useConfig();
   if (moduleOn(modules, module)) return children;
@@ -63,6 +85,12 @@ function ModuleGuard({ module, children }: { module: ModuleKey; children: JSX.El
 
 // A navigable section: requires its module (if any) AND the persona capability
 // (Admin → Personas). Capability denial lands on /preferences (always reachable).
+/**
+ * Combined guard for a navigable section: the feature module (and optional
+ * sub-feature) must be enabled AND the persona must hold the `cap` capability.
+ * Module-off redirects to another module home; capability-denied lands on
+ * /preferences (always reachable).
+ */
 function Section({ module, feature, cap, children }: { module?: ModuleKey; feature?: string; cap: Capability; children: JSX.Element }) {
   const { modules } = useConfig();
   const { can } = useAuth();
@@ -74,6 +102,11 @@ function Section({ module, feature, cap, children }: { module?: ModuleKey; featu
   return children;
 }
 
+/**
+ * Application route table. Public /login, standalone /print/* pages, and the
+ * main app shell (guarded {@link Layout} with nested section routes). Unknown
+ * paths redirect home.
+ */
 export default function App() {
   return (
     <Suspense fallback={<Spinner />}>

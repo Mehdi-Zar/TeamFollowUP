@@ -1,3 +1,7 @@
+// HtmlPreview: shows server-rendered HTML exports inside an in-app modal window
+// (an authenticated iframe) instead of redirecting to a new browser tab, keeping
+// export/preview behaviour consistent everywhere. Exposes the modal itself plus a
+// convenience button that toggles it.
 import { useState } from "react";
 import { useI18n } from "../i18n";
 import { Modal } from "./ui";

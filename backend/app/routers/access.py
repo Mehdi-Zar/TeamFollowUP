@@ -19,6 +19,12 @@ router = APIRouter(prefix="/api/access-requests", tags=["access"])
 
 
 def _require_reviewer(user: User = Depends(get_current_user)) -> User:
+    """Router-wide guard: only managers (admin/tribe/squad leader) reach the queue.
+
+    Coarse gate for *viewing* the queue; the finer per-request delegation limits
+    live in ``app.access`` (approve/deny), so scope is always re-checked on the
+    mutating action, never trusted from this guard alone.
+    """
     if not acc.can_review_access(user):
         raise HTTPException(status_code=403, detail="Réservé aux managers.")
     return user
@@ -46,6 +52,7 @@ def list_requests(db: Session = Depends(get_db), user: User = Depends(_require_r
 
 
 def _target(db: Session, user_id: int) -> User:
+    """Load the pending account being acted on, or 404 if it does not exist."""
     target = db.get(User, user_id)
     if target is None:
         raise HTTPException(status_code=404, detail="Demande introuvable")
@@ -55,6 +62,11 @@ def _target(db: Session, user_id: int) -> User:
 @router.post("/{user_id}/approve", response_model=UserOut)
 def approve_request(user_id: int, payload: AccessApproveIn, db: Session = Depends(get_db),
                     user: User = Depends(_require_reviewer)):
+    """Validate a pending account with the requested role/tribe/squad.
+
+    Delegation limits (which roles/tribes/squads this reviewer may grant) are
+    enforced inside ``acc.approve`` and surface as 4xx errors.
+    """
     target = acc.approve(db, user, _target(db, user_id), role=payload.role,
                          tribe_id=payload.tribe_id, squad_id=payload.squad_id)
     db.commit()
@@ -64,6 +76,8 @@ def approve_request(user_id: int, payload: AccessApproveIn, db: Session = Depend
 
 @router.post("/{user_id}/deny", response_model=UserOut)
 def deny_request(user_id: int, db: Session = Depends(get_db), user: User = Depends(_require_reviewer)):
+    """Reject/revoke an account (disables it). Restricted to admin & tribe leaders
+    inside ``acc.deny``; the break-glass account cannot be denied."""
     target = acc.deny(db, user, _target(db, user_id))
     db.commit()
     db.refresh(target)

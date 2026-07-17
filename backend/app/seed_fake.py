@@ -101,6 +101,11 @@ PROFILES = {
 
 
 def _wipe(db: Session) -> None:
+    """Delete all business data before re-seeding, in reverse FK order.
+
+    Preserves `app_settings` (admin config) and the break-glass admin login, so a
+    reseed never locks the operator out or loses configuration.
+    """
     bg = settings.breakglass_email.lower().strip()
     for table in reversed(Base.metadata.sorted_tables):
         if table.name in PRESERVE_TABLES:
@@ -113,12 +118,19 @@ def _wipe(db: Session) -> None:
 
 
 def run(db: Session) -> None:
+    """Wipe and regenerate the Cloud Foundations tribe with rich fake data.
+
+    Uses a fixed-seed RNG (Random(42)) so successive runs produce the same dataset
+    - handy for reproducible tests/screenshots. Health per squad is driven by the
+    PROFILES table. Not idempotent: it wipes business data first (see `_wipe`).
+    """
     rng = random.Random(42)
     now = datetime.now(timezone.utc)
     year = now.year
     pw = hash_password(PASSWORD)
 
     def qdate(q: int, day: int = 15) -> datetime:
+        """A date in the middle month of quarter `q` (Q1→Feb, Q2→May, …)."""
         return datetime(year, (q - 1) * 3 + 2, day, tzinfo=timezone.utc)
 
     _wipe(db)
@@ -322,6 +334,7 @@ def run(db: Session) -> None:
                 "Mot de passe : '%s' (tribe leader : thomas.tl@local).", TRIBE_NAME, len(squads), PASSWORD)
 
 def main() -> None:
+    """Entry point for `python -m app.seed_fake`: run the fake seed in a session."""
     db = SessionLocal()
     try:
         run(db)

@@ -1,3 +1,10 @@
+// Layout: the app chrome wrapping every authenticated route — collapsible left
+// sidebar (nav), top bar (page title, notifications, ⌘K, language, admin
+// "view-as" impersonation, logout), an optional contextual sub-bar (tabs +
+// actions pushed by the current page via pageChrome), the impersonation banner,
+// the first-login welcome modal, and the command palette. The routed page renders
+// through <Outlet/>. Nav visibility is filtered by role, enabled modules, and
+// persona capabilities.
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { api } from "../api";
@@ -39,6 +46,8 @@ type NavItem = {
   cap?: Capability;
 };
 
+// The ordered sidebar entries. Each row is filtered at render time by navVisible()
+// against the effective role, enabled modules/features, and persona capabilities.
 const NAV: NavItem[] = [
   { to: "/prise-en-main", labelKey: "nav.gettingstarted", titleKey: "gs.title", Icon: IconHelp, visible: () => true, module: "getting_started" },
   { to: "/", end: true, labelKey: "nav.dashboard", titleKey: "nav.dashboard", Icon: IconDashboard, visible: () => true, module: "dashboard", cap: "dashboard" },
@@ -53,8 +62,12 @@ const NAV: NavItem[] = [
   { to: "/admin", labelKey: "nav.admin", titleKey: "nav.admin", Icon: IconAdmin, visible: canSeeAdmin },
 ];
 
+// localStorage key persisting the sidebar collapsed/expanded preference.
 const COLLAPSE_KEY = "sidebar.collapsed";
 
+/** Root layout for authenticated routes: renders the sidebar + top bar chrome and
+ *  hosts the current page through <Outlet/>. Owns cross-page UI state (sidebar
+ *  collapse, mobile drawer, admin impersonation picker, first-login welcome). */
 export default function Layout() {
   const { user, logout, effectiveRole, isPreview, impersonate, stopImpersonation, can, pendingAccessCount } = useAuth();
   const { t, role: roleLabel, lang, setLang } = useI18n();

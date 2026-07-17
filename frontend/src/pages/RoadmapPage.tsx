@@ -1,3 +1,11 @@
+/**
+ * RoadmapPage - the organisation-wide roadmap matrix (read-only).
+ *
+ * Renders every squad's milestones (jalons) as a grid: the four quarters of the
+ * year in columns, squads grouped by tribe in rows, milestones inside the cells.
+ * It is the on-screen twin of the roadmap export (HTML/PPTX). Admins get a tribe
+ * filter; all users get a free-text squad search and the roadmap-domain exports.
+ */
 import { Fragment, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
@@ -47,12 +55,14 @@ export default function RoadmapPage() {
   const [tribeId, setTribeId] = useState<string>("");
   const [q, setQ] = useState("");
 
+  // Load (or reload) the matrix; scoped to a tribe when the admin filter is set.
   useEffect(() => {
     setData(null);
     setError(null);
     api.get<RoadmapMatrix>(`/api/roadmap/matrix${tribeId ? `?tribe_id=${tribeId}` : ""}`)
       .then(setData).catch((e) => setError(e.message));
   }, [tribeId]);
+  // Tribe list only needed to populate the admin-only tribe filter.
   useEffect(() => {
     if (isAdmin) api.get<Tribe[]>("/api/tribes").then(setTribes).catch(() => {});
   }, [isAdmin]);
@@ -78,6 +88,7 @@ export default function RoadmapPage() {
   if (error) return <ErrorBanner message={error} />;
   if (!data) return <Spinner />;
 
+  // Client-side squad-name search: keep matching squads, then drop tribes left empty.
   const needle = q.trim().toLowerCase();
   const blocks = data.tribes
     .map((tb) => ({ ...tb, squads: tb.squads.filter((s) => !needle || s.name.toLowerCase().includes(needle)) }))

@@ -43,10 +43,22 @@ SEED_MARKER_EMAIL = "marie.tribe@local"
 
 
 def already_seeded(db: Session) -> bool:
+    """True if the demo dataset is present, detected via a marker user's email.
+
+    Using a well-known seeded user as a sentinel makes the seed idempotent without
+    a separate flag table.
+    """
     return db.scalar(select(User).where(User.email == SEED_MARKER_EMAIL)) is not None
 
 
 def run_seed(db: Session) -> None:
+    """Populate the demo dataset once, gated by SEED_DEMO and the marker check.
+
+    No-op when SEED_DEMO is false or the data already exists, so it is safe to call
+    on every boot. Builds a full two-tribe / nine-squad dataset exercising every
+    feature (objectives, roadmap, KPIs, org chart, feed, snapshots, budgets, OTD).
+    Demo accounts share the password "demo".
+    """
     if not settings.seed_demo:
         logger.info("SEED_DEMO=false : seed ignoré.")
         return
@@ -69,6 +81,7 @@ def run_seed(db: Session) -> None:
     db.flush()
 
     def mk_user(email, name, role, tribe=None):
+        """Create and stage a demo user (shared `pw` hash); None tribe = global."""
         u = User(email=email, display_name=name, role=role, password_hash=pw, created_at=now,
                  tribe_id=tribe.id if tribe else None)
         db.add(u)
@@ -94,6 +107,7 @@ def run_seed(db: Session) -> None:
     order = [0]
 
     def squad(name, lead_key, desc, tribe):
+        """Create a squad led by leaders[lead_key], auto-incrementing display order."""
         order[0] += 1
         s = Squad(name=name, description=desc, leader_user_id=leaders[lead_key].id,
                   display_order=order[0], tribe_id=tribe.id)
@@ -114,26 +128,32 @@ def run_seed(db: Session) -> None:
     all_squads = [aws, gcp, azure, paiements, onboarding, support, dataplat, analytics, secu]
 
     def obj(s, title, rag, w=1, desc=None, q=None):
+        """Add an annual objective; `q` sets a target date in that quarter."""
         db.add(Objective(squad_id=s.id, year=year, title=title, rag_status=rag, weight=w,
                          description=desc, target_date=qdate(q) if q else None))
 
+    # Map the seed's readable jalon statuses onto the RoadmapItem status vocabulary.
     _jmap = {"planned": "on_track", "in_progress": "on_track", "done": "done", "at_risk": "at_risk", "late": "blocked"}
 
     def jal(s, q, title, status, o=0, owner=None, benefit=None, desc=None, success=None, deps=None, risks=None):
+        """Add a roadmap milestone (jalon) in quarter `q`, translating `status`."""
         db.add(RoadmapItem(squad_id=s.id, year=year, quarter=q, title=title,
                            status=_jmap.get(status, status), display_order=o,
                            owner=owner, user_benefit=benefit, description=desc,
                            success_criteria=success, dependencies=deps, risks=risks))
 
     def prog(s, vals, comments=(None, None, None, None)):
+        """Add the four quarterly progress percentages (with optional comments)."""
         for q, v, c in zip((1, 2, 3, 4), vals, comments):
             db.add(QuarterProgress(squad_id=s.id, year=year, quarter=q, progress_pct=v, comment=c))
 
     def kpi(s, name, trend, cur=None, tgt=None, unit=None, comment=None):
+        """Add a KPI with its current/target values and trend status."""
         db.add(Kpi(squad_id=s.id, name=name, trend_status=trend, current_value=cur,
                    target_value=tgt, unit=unit, comment=comment))
 
     def members(s, people):
+        """Add squad members from (name, role_title, user_id) tuples, in order."""
         for i, (name, role_title, user_id) in enumerate(people):
             db.add(Member(squad_id=s.id, full_name=name, role_title=role_title, user_id=user_id, display_order=i))
 
@@ -370,6 +390,7 @@ def run_seed(db: Session) -> None:
 
     # ---- Org chart per tribe ----
     def build_org(tribe, leader_name, domains):
+        """Build a 3-level org tree: tribe direction → domains → squad leaf nodes."""
         root = OrgNode(tribe_id=tribe.id, parent_id=None, title="Direction de la tribu",
                        person_name=leader_name, display_order=0)
         db.add(root)
@@ -448,6 +469,7 @@ def run_seed(db: Session) -> None:
 
     # ---- Initiatives (tribe-leader strategic bets, visible to all, in exports) ----
     def initiative(tribe, title, sq, owner, q, desc=None):
+        """Add a tribe-leader strategic initiative with a quarter deadline."""
         db.add(Initiative(tribe_id=tribe.id, year=year, title=title,
                           squad_id=sq.id if sq else None, owner=owner,
                           deadline=qdate(q), description=desc))
@@ -462,6 +484,7 @@ def run_seed(db: Session) -> None:
 
     # ---- Budgets (enabled on a few squads; visible to squad leader + tribe leader) ----
     def budget(s, total, spent, forecast, comment=None):
+        """Enable budgeting on a squad and add its total/spent/forecast figures."""
         s.budget_enabled = True
         db.add(SquadBudget(squad_id=s.id, year=year, total=total, spent=spent,
                            forecast=forecast, comment=comment))
@@ -472,6 +495,7 @@ def run_seed(db: Session) -> None:
 
     # ---- Key messages (success / alert / risk), managed by squad leader, visible to all ----
     def km(s, kind, text, o=0):
+        """Add a key message (success/alert/risk) authored by the squad leader."""
         db.add(KeyMessage(squad_id=s.id, year=year, kind=kind, text=text,
                           display_order=o, created_by_user_id=s.leader_user_id))
     km(aws, "success", "Migration FinOps livrée : -12% sur la facture ce trimestre.")
@@ -482,6 +506,7 @@ def run_seed(db: Session) -> None:
 
     # ---- Committees (comitologie) on a couple of squads ----
     def committee(s, name, freq, purpose=None):
+        """Add a recurring governance committee (comitologie) for a squad."""
         db.add(Committee(squad_id=s.id, name=name, frequency=freq, objective=purpose,
                          created_by_user_id=s.leader_user_id))
     committee(aws, "Weekly FinOps", "weekly", "Suivi des économies et des engagements RI.")
@@ -492,6 +517,8 @@ def run_seed(db: Session) -> None:
     # ---- OTD (On-Time Delivery): the tribe leader commits a squad leader to a firm
     #      date; on-time status is derived from that squad's attached milestones. ----
     def otd(tribe, title, owner_leader_key, committed_q, jalon_squad, jalon_max=2):
+        """Create an OTD commitment and attach the squad's first `jalon_max`
+        milestones to it, so on-time status is derived from those milestones."""
         o = Otd(tribe_id=tribe.id, year=year, title=title,
                 owner_user_id=leaders[owner_leader_key].id,
                 committed_date=qdate(committed_q, 28))

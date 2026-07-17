@@ -1,10 +1,16 @@
+// OtdPanel: the On-Time Delivery (OTD) section shown inside a squad's management
+// page. A tribe leader/admin sets dated delivery commitments on the squad leader
+// and attaches this squad's milestones (jalons); the squad leader reads them.
+// Create/edit both flow through a single detail modal (OtdDetailModal).
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { useI18n } from "../i18n";
 import { CandidateJalon, OtdReport, SquadDetail } from "../types";
 import { Modal, PickItem } from "./ui";
 
+/** Show only the date part of an ISO timestamp, or "-" when absent. */
 const fmtDate = (d?: string | null) => (d ? d.slice(0, 10) : "-");
+// Maps an OTD status to its badge CSS class (unknown statuses fall back to grey).
 const STATUS_CLASS: Record<string, string> = {
   on_track: "badge-green", delivered: "badge-navy", at_risk: "badge-orange", late: "badge-red",
 };
@@ -21,6 +27,8 @@ export function OtdPanel({ squad, canManage, onChange }:
   const [editing, setEditing] = useState<Partial<OtdReport> | null>(null);
   const [reload, setReload] = useState(0);
 
+  // Fetch the tribe/year OTDs, then keep only those relevant to this squad: either
+  // committed by this squad's leader, or covering at least one of its milestones.
   useEffect(() => {
     api.get<OtdReport[]>(`/api/otds?year=${squad.year}`)
       .then((all) => setItems(all.filter((o) =>

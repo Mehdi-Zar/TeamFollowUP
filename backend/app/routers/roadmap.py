@@ -1,3 +1,16 @@
+"""Roadmap milestone (jalon) endpoints (prefix ``/api/roadmap-items``).
+
+Milestones are the quarter-level deliverables a squad tracks. This router covers
+theme autocomplete and milestone CRUD. The whole router is gated by the
+``squad_content``/``roadmap`` module.
+
+Access model: all mutations require ``require_writer`` and, per milestone, that
+the caller leads the owning squad (``assert_leads_squad``, i.e. squad leader or
+admin). Two invariants are enforced on write: a milestone may only link to an
+objective of its own squad, and its dependency reference is normalized to match
+the chosen kind. Mutations are audited and emit ``notify_change(..., "roadmap",
+...)``.
+"""
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -15,10 +28,11 @@ router = APIRouter(prefix="/api/roadmap-items", tags=["roadmap"],
 
 @router.get("/themes", response_model=list[str])
 def list_themes(db: Session = Depends(get_db), user: User = Depends(require_writer)):
-    """Distinct existing milestone themes, most-used first, for reuse/autocomplete.
+    """GET /api/roadmap-items/themes — distinct existing milestone themes,
+    most-used first, for reuse/autocomplete.
 
-    Scoped to the writer's visibility: admins see every theme, others see the
-    themes used across their own tribe's squads."""
+    Requires ``require_writer``. Scoped to the writer's visibility: admins see
+    every theme, others see the themes used across their own tribe's squads."""
     q = (select(RoadmapItem.theme, func.count(RoadmapItem.id).label("n"))
          .where(RoadmapItem.theme.is_not(None), func.trim(RoadmapItem.theme) != "")
          .group_by(RoadmapItem.theme))
@@ -55,6 +69,11 @@ def _normalize_dependency(item: RoadmapItem) -> None:
 @router.post("", response_model=RoadmapItemOut, status_code=201)
 def create_item(payload: RoadmapItemCreate, db: Session = Depends(get_db),
                 user: User = Depends(require_writer)):
+    """POST /api/roadmap-items — create a milestone (201).
+
+    Writer who leads the target squad only (``assert_leads_squad``). The
+    dependency reference is normalized and the linked objective validated before
+    insert. Audited, then ``notify_change(..., "roadmap", ...)``."""
     if db.get(Squad, payload.squad_id) is None:
         raise HTTPException(status_code=404, detail="Squad introuvable")
     assert_leads_squad(db, user, payload.squad_id)
@@ -74,6 +93,11 @@ def create_item(payload: RoadmapItemCreate, db: Session = Depends(get_db),
 @router.put("/{item_id}", response_model=RoadmapItemOut)
 def update_item(item_id: int, payload: RoadmapItemUpdate, db: Session = Depends(get_db),
                 user: User = Depends(require_writer)):
+    """PUT /api/roadmap-items/{item_id} — update a milestone.
+
+    Writer who leads the milestone's squad only. Dependency fields are re-
+    normalized and the objective link re-validated only when those fields are part
+    of the update. Audited, then ``notify_change(..., "roadmap", ...)``."""
     item = db.get(RoadmapItem, item_id)
     if item is None:
         raise HTTPException(status_code=404, detail="Jalon introuvable")
@@ -94,6 +118,10 @@ def update_item(item_id: int, payload: RoadmapItemUpdate, db: Session = Depends(
 
 @router.delete("/{item_id}", status_code=204)
 def delete_item(item_id: int, db: Session = Depends(get_db), user: User = Depends(require_writer)):
+    """DELETE /api/roadmap-items/{item_id} — delete a milestone (204).
+
+    Writer who leads the milestone's squad only. Audited, then
+    ``notify_change(..., "roadmap", ...)``."""
     item = db.get(RoadmapItem, item_id)
     if item is None:
         raise HTTPException(status_code=404, detail="Jalon introuvable")

@@ -1,3 +1,16 @@
+"""SQLAlchemy ORM models - the database schema of the Tribe Cockpit.
+
+Every persisted entity lives here as a declarative model mapped onto a table.
+The domain is a multi-tenant reporting tool organised around a hierarchy:
+
+    Tribe (tenant) -> Squad (team) -> Objective -> RoadmapItem (jalon/milestone)
+
+with cross-cutting entities layered on top: strategic Initiatives and OTD
+(budget delivery commitments) at tribe level, plus KPIs, budgets, key messages,
+committees, a social feed, notifications, leaves/absences, audit log and machine
+API keys. Business-rule and constraint details that aren't obvious from the
+column type are documented inline next to each field.
+"""
 from datetime import date, datetime, timezone
 
 from sqlalchemy import (
@@ -18,11 +31,21 @@ from .database import Base
 
 
 def utcnow() -> datetime:
+    """Return the current time as a timezone-aware UTC datetime.
+
+    Used as the default/onupdate for timestamp columns so every stored time is
+    unambiguously UTC (never a naive local time).
+    """
     return datetime.now(timezone.utc)
 
 
 # Global roles: admin | tribe_leader | squad_leader | member
 class Tribe(Base):
+    """A tenant: the top-level organisational unit that owns squads and users.
+
+    Also holds tribe-wide leave/absence policy (approval requirement and the
+    overlap warning threshold) configured by its tribe leader.
+    """
     __tablename__ = "tribes"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -43,18 +66,30 @@ class Tribe(Base):
 
 
 class User(Base):
+    """A login account and its role, tribe membership and notification settings.
+
+    Identity may come from SSO (``auth_subject`` links to the IdP subject) or a
+    local password (``password_hash``). ``role`` and ``status`` together decide
+    what the account may do and whether it may sign in at all.
+    """
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # Login identifier; unique + indexed because it is the natural lookup key.
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
     display_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    # Built-in role (admin|tribe_leader|squad_leader|member) or a custom persona key.
     role: Mapped[str] = mapped_column(String(20), nullable=False, default="member")
     # Access lifecycle: pending (provisioned by SSO, awaiting validation) | active
     # (validated) | disabled (revoked). Only "active" accounts may use the app.
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="active", server_default="active")
+    # Tribe the user belongs to; NULL for admins (who are global / cross-tribe).
     tribe_id: Mapped[int | None] = mapped_column(ForeignKey("tribes.id"), nullable=True, index=True)
+    # Stable IdP subject identifier for SSO logins (indexed for callback lookup).
     auth_subject: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    # Emergency local admin created at first boot; protected from non-admin edits.
     is_break_glass: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Argon2 hash for local (non-SSO) login; NULL for accounts that only use SSO.
     password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     # notification preferences
     notify_tweets: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
@@ -67,10 +102,20 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    # Squads this user leads (via Squad.leader_user_id); explicit FK because
+    # Squad references users more than once.
     led_squads: Mapped[list["Squad"]] = relationship(back_populates="leader", foreign_keys="Squad.leader_user_id")
 
 
 class Squad(Base):
+    """A team inside a tribe - the main unit that reports progress.
+
+    Carries its own reporting configuration (KPIs on/off, budget tracking on/off,
+    ``squad_type`` selecting the reporting style) and owns the bulk of the app's
+    content: objectives, roadmap milestones, members, KPIs, budgets, etc. All of
+    those child relationships cascade-delete so removing a squad cleans up its
+    entire report.
+    """
     __tablename__ = "squads"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -182,6 +227,12 @@ class Otd(Base):
 
 
 class Objective(Base):
+    """An annual squad objective, optionally contributing to a tribe initiative.
+
+    Sits in the middle of the reporting chain (Initiative -> Objective -> Jalon):
+    milestones (RoadmapItem) point back to it. ``rag_status`` is a derived
+    red/amber/green health, not hand-entered.
+    """
     __tablename__ = "objectives"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -190,7 +241,9 @@ class Objective(Base):
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     target_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Derived health roll-up (green|amber|red), computed from milestones.
     rag_status: Mapped[str] = mapped_column(String(10), nullable=False, default="green")
+    # Relative importance used to weight this objective in progress roll-ups.
     weight: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     # Which tribe initiative this objective contributes to (optional).
@@ -204,6 +257,13 @@ class Objective(Base):
 
 
 class RoadmapItem(Base):
+    """A roadmap milestone ("jalon") planned in a given year/quarter for a squad.
+
+    The most detailed reporting unit. It may link up to a squad Objective and to
+    a top-management OTD, and may declare a structured dependency on another
+    squad or tribe (or free text). ``status`` drives the at-risk/blocked signals
+    surfaced on the dashboard.
+    """
     __tablename__ = "roadmap_items"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -244,6 +304,11 @@ class RoadmapItem(Base):
 
 
 class QuarterProgress(Base):
+    """A squad's self-reported completion percentage for one year/quarter.
+
+    Unique per (squad, year, quarter) - exactly one progress figure per cell of
+    the quarterly grid.
+    """
     __tablename__ = "quarter_progress"
     __table_args__ = (UniqueConstraint("squad_id", "year", "quarter", name="uq_quarter_progress"),)
 
@@ -323,6 +388,11 @@ class Committee(Base):
 
 
 class Kpi(Base):
+    """A key performance indicator tracked by a squad (target vs current value).
+
+    Only shown when the squad has KPIs enabled. ``trend_status`` summarises how
+    the current value tracks against the target.
+    """
     __tablename__ = "kpis"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -338,12 +408,19 @@ class Kpi(Base):
 
 
 class ReportSnapshot(Base):
+    """An immutable point-in-time capture of a squad's full report at submission.
+
+    Taken when a squad submits a reporting cycle: the whole computed report is
+    frozen into ``payload`` (JSON) so it can be re-read later exactly as it was,
+    independent of subsequent edits. ``cycle_label`` names the cycle.
+    """
     __tablename__ = "report_snapshots"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     squad_id: Mapped[int] = mapped_column(ForeignKey("squads.id"), nullable=False, index=True)
     submitted_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     submitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    # Frozen copy of the entire report at submission time (self-contained JSON).
     payload: Mapped[dict] = mapped_column(JSON, nullable=False)
     cycle_label: Mapped[str] = mapped_column(String(100), nullable=False)
 
@@ -351,6 +428,11 @@ class ReportSnapshot(Base):
 
 
 class FeedPost(Base):
+    """A short message in the social feed ("tweet zone"): incident, info or success.
+
+    Can be tribe-wide or scoped to a squad, and pinned to stay at the top. Owns
+    its replies and reactions, which cascade-delete with the post.
+    """
     __tablename__ = "feed_posts"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -368,6 +450,7 @@ class FeedPost(Base):
 
 
 class FeedReply(Base):
+    """A comment on a FeedPost."""
     __tablename__ = "feed_replies"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -381,6 +464,11 @@ class FeedReply(Base):
 
 
 class FeedReaction(Base):
+    """A user's reaction (like / ack) to a FeedPost.
+
+    Unique per (post, user, kind) so each user registers a given reaction on a
+    post at most once.
+    """
     __tablename__ = "feed_reactions"
     __table_args__ = (UniqueConstraint("post_id", "user_id", "kind", name="uq_feed_reaction"),)
 
@@ -393,6 +481,11 @@ class FeedReaction(Base):
 
 
 class Notification(Base):
+    """A per-user in-app notification (e.g. a new tweet or reply mentioning them).
+
+    Denormalises the actor name / excerpt / link so the notification renders
+    without re-joining the source entity, which may later change or be deleted.
+    """
     __tablename__ = "notifications"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -440,6 +533,12 @@ class ReportSubscription(Base):
 
 
 class AppSetting(Base):
+    """A single runtime-editable setting, stored as a key/value string pair.
+
+    Generic bag for admin-tunable values that must survive restarts and be
+    changed without a redeploy (unlike the static, env-driven :mod:`.config`).
+    The key is the primary key.
+    """
     __tablename__ = "app_settings"
 
     key: Mapped[str] = mapped_column(String(100), primary_key=True)
@@ -512,6 +611,12 @@ class Leave(Base):
 
 
 class AuditLog(Base):
+    """An append-only record of a security-relevant action for traceability.
+
+    Captures who did what to which entity and when, with optional structured
+    ``detail``. ``user_id`` stays nullable so the trail survives deletion of the
+    acting user. Retention is governed by ``audit_retention_days`` in config.
+    """
     __tablename__ = "audit_log"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)

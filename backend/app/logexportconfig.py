@@ -29,6 +29,7 @@ LOG_EXPORT_KEY = "log_export"
 
 
 def _defaults() -> dict:
+    """Baseline export config (disabled; syslog destination; keyless 'adc' auth)."""
     return {
         "enabled": False,
         # "syslog" | "gcs" | "bigquery"
@@ -75,6 +76,14 @@ INT_KEYS = {"syslog_port"}
 
 
 def get_log_export(db: Session, *, reveal_secrets: bool = False) -> dict:
+    """Effective export config, with secrets masked by default.
+
+    `reveal_secrets` must stay False on any path that reaches the client: it strips
+    each SECRET_KEYS value to "" and adds a `<key>_set` boolean so the UI can show
+    "a credential is configured" without ever transmitting it. Only server-side
+    callers that must actually authenticate (e.g. `set_log_export`, the sender)
+    pass reveal_secrets=True.
+    """
     cfg = _defaults()
     row = db.get(AppSetting, LOG_EXPORT_KEY)
     if row:
@@ -91,6 +100,13 @@ def get_log_export(db: Session, *, reveal_secrets: bool = False) -> dict:
 
 
 def set_log_export(db: Session, patch: dict) -> dict:
+    """Validate and persist an export config update; return the masked view.
+
+    Reads with reveal_secrets=True so an untouched secret survives the round-trip:
+    a patch that omits (or blanks) a secret keeps the stored one rather than
+    wiping it - this is why the admin form can be saved without re-entering the
+    key. Enum fields fall back to safe defaults. The returned dict is masked.
+    """
     cfg = get_log_export(db, reveal_secrets=True)
     for k, v in patch.items():
         if k not in KEYS:
@@ -122,6 +138,7 @@ def set_log_export(db: Session, patch: dict) -> dict:
 
 
 def _mask(cfg: dict) -> dict:
+    """Client-safe copy: blank every secret, adding a `<key>_set` presence flag."""
     out = dict(cfg)
     for k in SECRET_KEYS:
         out[f"{k}_set"] = bool(out.get(k))

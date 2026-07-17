@@ -1,8 +1,19 @@
+/**
+ * Public application configuration context.
+ *
+ * Holds the server-provided {@link PublicConfig} (branding, default language/
+ * year, feed settings, and the enabled/disabled module map). It lets any screen
+ * ask "is this module/feature on?" and the admin refresh config after toggling
+ * modules. Ships with sensible defaults so the UI renders before the fetch
+ * resolves and never flickers features off by mistake.
+ */
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { api } from "./api";
 import { useI18n } from "./i18n";
 import { ModuleKey, ModulesConfig, PublicConfig } from "./types";
 
+/** Default module map: everything on except committees and squad KPIs. Used
+ *  until the server config loads, and as the fallback when config is missing. */
 export const DEFAULT_MODULES: ModulesConfig = {
   dashboard: { enabled: true },
   org: { enabled: true },
@@ -16,6 +27,7 @@ export const DEFAULT_MODULES: ModulesConfig = {
   leaves: { enabled: true, overlap_alert: true },
 };
 
+/** Full default config used as the initial context value before /api/config loads. */
 const DEFAULTS: PublicConfig = {
   app_name: "Tribe Cockpit",
   app_subtitle: "Pilotage de la tribe",
@@ -27,9 +39,12 @@ const DEFAULTS: PublicConfig = {
   modules: DEFAULT_MODULES,
 };
 
+// Two separate contexts so consumers of the config value don't re-render just
+// because the (stable) reload function is provided alongside it.
 const ConfigContext = createContext<PublicConfig>(DEFAULTS);
 const ReloadContext = createContext<() => void>(() => {});
 
+/** Fetches /api/config on mount and exposes it (plus a reload fn) to the tree. */
 export function ConfigProvider({ children }: { children: ReactNode }) {
   const { setLang } = useI18n();
   const [cfg, setCfg] = useState<PublicConfig>(DEFAULTS);
@@ -39,6 +54,8 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
       .get<PublicConfig>("/api/config")
       .then((c) => {
         setCfg(c);
+        // Apply the server's default language only if the user hasn't already
+        // picked one (persisted under trt_lang) - never override a user choice.
         if (!localStorage.getItem("trt_lang") && c.default_lang) setLang(c.default_lang);
       })
       .catch(() => {});
@@ -53,6 +70,7 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
   );
 }
 
+/** Read the current public config. */
 export function useConfig() {
   return useContext(ConfigContext);
 }

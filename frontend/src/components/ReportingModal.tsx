@@ -1,3 +1,7 @@
+// ReportingModal: the "Subscribe to a report" popup opened from the dashboard.
+// It adapts to the persona — admins get the org-wide reporting configuration
+// (ReportingAdmin), everyone else manages their personal delivery schedule
+// (which weekdays + hour to receive the weekly report by email).
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { useI18n } from "../i18n";
@@ -5,6 +9,9 @@ import { useAuth } from "../auth";
 import { useConfig, useModule } from "../config";
 import { Modal, Spinner } from "./ui";
 import { ReportingAdmin } from "../pages/AdminPage";
+
+// Shape of a user's report subscription. `weekdays` are 0=Mon..6=Sun; an empty
+// list (or interval_days 0) means the subscription is off.
 
 type Sub = { squad_id: number | null; interval_days: number; weekdays: number[]; hour: number };
 const WEEKDAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];

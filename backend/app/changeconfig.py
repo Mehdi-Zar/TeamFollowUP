@@ -18,6 +18,7 @@ ALL_EVENTS = ["progress", "roadmap", "objectives", "budget", "key_message"]
 
 
 def _defaults() -> dict:
+    """Baseline change-notification config (disabled; all event kinds, no debounce)."""
     return {
         "enabled": False,
         # Explicit recipient emails (who gets the change export).
@@ -39,6 +40,7 @@ KEYS = set(_defaults().keys())
 
 
 def get_change_notify(db: Session) -> dict:
+    """Effective change-notify config: defaults overlaid with the stored blob."""
     cfg = _defaults()
     row = db.get(AppSetting, CHANGE_KEY)
     if row:
@@ -50,6 +52,8 @@ def get_change_notify(db: Session) -> dict:
 
 
 def _clean_recipients(value) -> list[str]:
+    """Normalize recipients (list or delimited string) to unique '@' addresses,
+    de-duplicated case-insensitively while preserving original casing/order."""
     if isinstance(value, str):
         parts = value.replace(",", "\n").replace(";", "\n").splitlines()
     elif isinstance(value, list):
@@ -66,6 +70,8 @@ def _clean_recipients(value) -> list[str]:
 
 
 def _clean_int_list(value) -> list[int]:
+    """Coerce an iterable to a sorted, de-duplicated list of ints (used for squad
+    ids in `scope_squads`); non-int entries are dropped."""
     out = []
     for x in value or []:
         try:
@@ -76,6 +82,11 @@ def _clean_int_list(value) -> list[int]:
 
 
 def set_change_notify(db: Session, patch: dict) -> dict:
+    """Validate and persist a change-notify update.
+
+    Coerces booleans, cleans recipients/squad scope, keeps only known event kinds,
+    and clamps the debounce interval to [0, 1440] minutes.
+    """
     cfg = get_change_notify(db)
     for k, v in patch.items():
         if k in KEYS:
@@ -101,6 +112,11 @@ def set_change_notify(db: Session, patch: dict) -> dict:
 
 
 def get_state(db: Session) -> dict:
+    """Read the per-squad last-sent timestamps used to enforce the debounce.
+
+    Stored separately from the config (STATE_KEY) because it is runtime bookkeeping,
+    not admin-editable settings. Missing/corrupt state reads as an empty map.
+    """
     row = db.get(AppSetting, STATE_KEY)
     if row:
         try:
@@ -111,6 +127,7 @@ def get_state(db: Session) -> dict:
 
 
 def set_state(db: Session, state: dict) -> None:
+    """Upsert the per-squad debounce state (last-sent timestamps)."""
     payload = json.dumps(state)
     row = db.get(AppSetting, STATE_KEY)
     if row is None:

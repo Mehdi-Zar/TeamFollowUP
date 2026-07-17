@@ -1,3 +1,7 @@
+// AccessRequestsPage - approval queue for pending (typically SSO-provisioned)
+// accounts. An approver assigns a role and the appropriate tribe/squad, or denies
+// the request. The set of grantable roles/tribes/squads and whether denial is
+// allowed all come from the backend, which enforces the same scope server-side.
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, ApiError } from "../api";
@@ -7,8 +11,20 @@ import { AccessOptions, AccessRequest, Role } from "../types";
 import { Spinner, ErrorBanner, EmptyState } from "../components/ui";
 import { useSetPageChrome } from "../components/pageChrome";
 
-/** Manager queue to validate SSO-provisioned accounts. Each approver only sees the
- *  roles / squads / tribes they may grant (the backend enforces the same scope). */
+/**
+ * Manager queue to validate SSO-provisioned accounts. Each approver only sees the
+ * roles / squads / tribes they may grant (the backend enforces the same scope).
+ *
+ * Business logic:
+ * - Guarded by `canReviewAccess`: users without it get an "not allowed" state and
+ *   no fetch is made.
+ * - Loads `/api/access-requests`, which returns both the pending requests and the
+ *   grantable options (roles/tribes/squads, whether deny is permitted).
+ * - `act()` wraps every approve/deny call: it shows a result message, reloads the
+ *   queue, and refreshes auth (the approver's own scope may have changed).
+ *
+ * Access: reviewers only (managers / leaders with the access-review capability).
+ */
 export default function AccessRequestsPage() {
   const { t, role: roleLabel } = useI18n();
   const { canReviewAccess, refresh } = useAuth();
@@ -29,6 +45,8 @@ export default function AccessRequestsPage() {
   if (error) return <ErrorBanner message={error} />;
   if (!data) return <Spinner />;
 
+  // Run an approve/deny mutation, then reflect the result and re-sync state.
+  // refresh() re-pulls auth because approving may alter the approver's own scope.
   async function act(fn: () => Promise<unknown>, okKey: string) {
     setMsg(null);
     try { await fn(); setMsg(t(okKey)); await load(); await refresh(); }
@@ -55,6 +73,21 @@ export default function AccessRequestsPage() {
   );
 }
 
+/**
+ * One pending request card with inline role / tribe / squad selectors and the
+ * approve (and optionally deny) actions.
+ *
+ * Field visibility is driven by the approver's granted `opts`:
+ * - Tribe selector appears only when the approver isn't locked to a single tribe.
+ * - Squad selector appears whenever squads are offered; it becomes *required*
+ *   when a squad leader (no deny right, tribe locked) must place the person into
+ *   one of their own squads - the Approve button stays disabled until chosen.
+ *
+ * @param req       the account awaiting validation (name, email, SSO flag)
+ * @param opts      grantable roles/tribes/squads and permission flags
+ * @param onApprove approve with the chosen role and optional tribe/squad ids
+ * @param onDeny    reject the request (only rendered when `opts.can_deny`)
+ */
 function RequestRow({ req, opts, roleLabel, t, onApprove, onDeny }: {
   req: AccessRequest; opts: AccessOptions; roleLabel: (r: Role) => string; t: (k: string) => string;
   onApprove: (body: { role: Role; tribe_id?: number | null; squad_id?: number | null }) => void;

@@ -1,3 +1,10 @@
+// LeavesPage - team absence tracking (calendar, list, and personal views).
+// Presents three tabs: a month calendar of everyone's absences, a filterable +
+// CSV-exportable list, and "mine" (my absences plus, for leaders, the pending
+// requests I can approve). Users file their own leave; leaders can file for their
+// team members and approve/reject requests. All authorization (who can edit,
+// decide, or file for others) is decided by the backend and reflected via flags
+// like `can_edit` / `can_decide` on each Leave.
 import { useEffect, useMemo, useState } from "react";
 import { api, ApiError } from "../api";
 import { useI18n } from "../i18n";
@@ -7,6 +14,9 @@ import { Leave, LeaveConfig, LeaveOverlapDay, LeaveStatus, LeaveType } from "../
 import { leaveLabel, leaveTypeLabel } from "../leaves";
 
 /* ---------- date helpers (local, no external dep) ---------- */
+// Small pure date utilities kept in-file to avoid a date library dependency.
+// iso: Date -> "YYYY-MM-DD" | parseISO: reverse | addDays: shift | sameDay: compare
+// startOfMonth / mondayBefore: calendar-grid anchors | fmtShort: "DD/MM" display.
 const pad = (n: number) => String(n).padStart(2, "0");
 const iso = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const parseISO = (s: string) => { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); };
@@ -16,12 +26,28 @@ const startOfMonth = (d: Date) => new Date(d.getFullYear(), d.getMonth(), 1);
 const mondayBefore = (d: Date) => addDays(d, -((d.getDay() + 6) % 7));
 const fmtShort = (s: string) => { const d = parseISO(s); return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}`; };
 
+/** Leave status -> badge CSS class, so status colour is consistent everywhere. */
 const STATUS_CLASS: Record<LeaveStatus, string> = {
   pending: "badge-orange", approved: "badge-green", rejected: "badge-red", cancelled: "badge-grey",
 };
 const WEEKDAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+/** The three top-level tabs of the page. */
 type View = "calendar" | "list" | "mine";
 
+/**
+ * Leaves page shell: owns the active tab, the shared reference data (types,
+ * config, people), and the create/edit/detail modals.
+ *
+ * Business logic:
+ * - Loads leave types, config (e.g. `require_approval`) and the list of people the
+ *   user may file for, once on mount.
+ * - `bump` is a monotonic counter: incrementing it via `reload()` forces the child
+ *   views to re-fetch after any mutation, without lifting their data up here.
+ * - `canFileForOthers` is true when the people list has more than just the current
+ *   user, which only happens for leaders/managers per the backend.
+ *
+ * Access: any authenticated user; extra abilities depend on backend-provided scope.
+ */
 export default function LeavesPage() {
   const { t, lang } = useI18n();
   const { user } = useAuth();
@@ -84,12 +110,27 @@ export default function LeavesPage() {
 }
 
 /* ---------- Calendar (month) ---------- */
+/**
+ * Month calendar of team absences. Renders a fixed 6-week (42-cell) grid starting
+ * on the Monday before the 1st, and paints each person's approved/pending leave as
+ * a coloured chip on the days it covers.
+ *
+ * Business logic:
+ * - Fetches leaves and "overlaps" for the visible grid range; overlaps (days where
+ *   several people are off) drive an amber warning banner and per-cell highlight.
+ * - Only approved + pending leaves are shown; a ½ marker denotes a half-day at the
+ *   start/end, and a dot marks still-pending requests.
+ * - Re-fetches on month change or when `bump` changes (post-mutation refresh).
+ *
+ * @param onOpen invoked with a Leave when its chip is clicked (opens detail).
+ */
 function CalendarView({ bump, onOpen }: { bump: number; onOpen: (l: Leave) => void }) {
   const { t, lang } = useI18n();
   const [cursor, setCursor] = useState(() => startOfMonth(new Date()));
   const [leaves, setLeaves] = useState<Leave[] | null>(null);
   const [overlaps, setOverlaps] = useState<LeaveOverlapDay[]>([]);
 
+  // 6 weeks x 7 days = a stable 42-cell grid aligned to Monday.
   const gridStart = mondayBefore(startOfMonth(cursor));
   const days = useMemo(() => Array.from({ length: 42 }, (_, i) => addDays(gridStart, i)), [gridStart.getTime()]);
   const gridEnd = days[41];
@@ -131,6 +172,7 @@ function CalendarView({ bump, onOpen }: { bump: number; onOpen: (l: Leave) => vo
       <div className="cal-grid">
         {WEEKDAY_KEYS.map((k) => <div key={k} className="cal-head">{t(`reporting.day.${k}`)}</div>)}
         {days.map((day) => {
+          // A cell shows the leaves whose [start,end] range contains this day.
           const inMonth = day.getMonth() === cursor.getMonth();
           const dayLeaves = active.filter((l) => parseISO(l.start_date) <= day && day <= parseISO(l.end_date));
           const isToday = sameDay(day, today);
@@ -163,6 +205,7 @@ function CalendarView({ bump, onOpen }: { bump: number; onOpen: (l: Leave) => vo
   );
 }
 
+/** Colour legend mapping each leave type to its dot colour, shown under the grid. */
 function Legend() {
   const { lang } = useI18n();
   const [types, setTypes] = useState<LeaveType[]>([]);
@@ -179,6 +222,18 @@ function Legend() {
 }
 
 /* ---------- List (filterable + export) ---------- */
+/**
+ * Tabular, filterable view of leaves with CSV export.
+ *
+ * Business logic:
+ * - Date range + status are sent to the API (server-side filter); type and free-text
+ *   name search are applied client-side over the returned rows.
+ * - Defaults to the current calendar year. Clicking a row opens its detail.
+ * - The CSV link points at the export endpoint scoped to the same date range.
+ *
+ * @param types  leave types offered in the type dropdown.
+ * @param onOpen invoked with the clicked Leave (opens detail).
+ */
 function ListView({ bump, types, onOpen }: { bump: number; types: LeaveType[]; onOpen: (l: Leave) => void }) {
   const { t, lang } = useI18n();
   const year = new Date().getFullYear();
@@ -195,6 +250,7 @@ function ListView({ bump, types, onOpen }: { bump: number; types: LeaveType[]; o
     api.get<Leave[]>(`/api/leaves?${p.toString()}`).then(setRows).catch(() => setRows([]));
   }, [from, to, status, bump]);
 
+  // Client-side narrowing on top of the server range/status filter.
   const filtered = (rows ?? []).filter((r) =>
     (!typeId || r.type_id === Number(typeId)) &&
     (!q || r.user_name.toLowerCase().includes(q.toLowerCase())));
@@ -250,6 +306,18 @@ function ListView({ bump, types, onOpen }: { bump: number; types: LeaveType[]; o
 }
 
 /* ---------- My absences + pending approvals for leaders ---------- */
+/**
+ * Personal view: the current user's own absences, plus - for leaders - a queue of
+ * pending requests they are entitled to decide.
+ *
+ * Business logic:
+ * - `mine` comes from `?mine=true`.
+ * - The approvals queue fetches all pending leaves then keeps only those with
+ *   `can_decide` true (backend-computed), so a non-leader simply sees an empty
+ *   queue and no approvals card.
+ *
+ * @param onNew opens the create form; @param onOpen opens a leave's detail.
+ */
 function MineView({ bump, onOpen, onNew }: { bump: number; onOpen: (l: Leave) => void; onNew: () => void }) {
   const { t, lang } = useI18n();
   const [mine, setMine] = useState<Leave[] | null>(null);
@@ -304,6 +372,22 @@ function MineView({ bump, onOpen, onNew }: { bump: number; onOpen: (l: Leave) =>
 }
 
 /* ---------- Create / edit form ---------- */
+/**
+ * Modal to create a new leave or edit an existing one.
+ *
+ * Business logic:
+ * - Edit (`leave` provided) -> PUT; create -> POST. When filing for someone else
+ *   (leaders only, `people.length > 1` and a target other than self) the target
+ *   `user_id` is included in the create body.
+ * - The chosen type may `requires_detail`; when so, a detail field appears and is
+ *   mandatory (Save stays disabled until filled).
+ * - Half-day flags apply to the start/end days. Picking a start after the current
+ *   end auto-advances the end date.
+ * - When approval is required and the user files for themselves, a hint warns the
+ *   request will need approval.
+ *
+ * @param requireApproval config flag; @param selfId the current user's id.
+ */
 function LeaveForm({ leave, types, people, requireApproval, selfId, onClose, onSaved }: {
   leave: Leave | null; types: LeaveType[]; people: { user_id: number; name: string }[];
   requireApproval: boolean; selfId?: number; onClose: () => void; onSaved: () => void;
@@ -320,6 +404,7 @@ function LeaveForm({ leave, types, people, requireApproval, selfId, onClose, onS
   const [detail, setDetail] = useState(leave?.detail ?? "");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // Whether the currently selected type forces a free-text detail (e.g. "other").
   const needsDetail = !!types.find((tp) => tp.id === typeId)?.requires_detail;
 
   async function save() {
@@ -330,6 +415,7 @@ function LeaveForm({ leave, types, people, requireApproval, selfId, onClose, onS
       if (leave) {
         await api.put(`/api/leaves/${leave.id}`, body);
       } else {
+        // Only attach a target user when a leader is filing for someone else.
         if (people.length > 1 && userId && userId !== selfId) body.user_id = userId;
         await api.post("/api/leaves", body);
       }
@@ -337,6 +423,7 @@ function LeaveForm({ leave, types, people, requireApproval, selfId, onClose, onS
     } catch (e) { setErr(e instanceof ApiError ? e.message : "Erreur"); } finally { setBusy(false); }
   }
 
+  // Filing on behalf of another person skips the "will need approval" self-hint.
   const filingForOther = !leave && people.length > 1 && userId !== selfId;
   return (
     <Modal title={leave ? t("leaves.edit") : t("leaves.new")} onClose={onClose} width={480}
@@ -386,6 +473,15 @@ function LeaveForm({ leave, types, people, requireApproval, selfId, onClose, onS
 }
 
 /* ---------- Detail + decision ---------- */
+/**
+ * Read-only detail of a leave, plus contextual actions gated by backend flags:
+ * - `can_edit`  -> Edit / Delete buttons in the footer.
+ * - `can_decide` -> an approve/reject panel with an optional decision comment
+ *   (shown to leaders reviewing a pending request).
+ *
+ * @param onEdit    switch to the edit form for this leave.
+ * @param onChanged called after a successful decision/delete so the parent reloads.
+ */
 function LeaveDetail({ leave, onClose, onEdit, onChanged }: {
   leave: Leave; onClose: () => void; onEdit: (l: Leave) => void; onChanged: () => void;
 }) {
@@ -394,11 +490,13 @@ function LeaveDetail({ leave, onClose, onEdit, onChanged }: {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  // Approve or reject the request, carrying an optional decision comment.
   async function decide(action: "approve" | "reject") {
     setBusy(true); setErr(null);
     try { await api.post(`/api/leaves/${leave.id}/decision`, { action, comment: decisionComment || null }); onChanged(); }
     catch (e) { setErr(e instanceof ApiError ? e.message : "Erreur"); } finally { setBusy(false); }
   }
+  // Delete the leave after an explicit confirmation.
   async function remove() {
     if (!confirm(t("leaves.delete_confirm"))) return;
     setBusy(true); setErr(null);

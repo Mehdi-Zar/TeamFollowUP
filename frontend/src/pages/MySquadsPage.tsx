@@ -1,3 +1,13 @@
+/**
+ * MySquadsPage - "manage my squads", persona-aware.
+ *
+ * The page splits by role at the top level:
+ *  - squad_leader -> SquadLeaderSquads: manage the TEAM (members) of the squads
+ *    they lead.
+ *  - tribe_leader / admin -> TribeLeaderSquads: manage squads (create/edit),
+ *    KPIs on/off, the OTD (annual commitment) and the budget envelope.
+ * Server-side permissions remain authoritative; the split here is only UX.
+ */
 import { useEffect, useState } from "react";
 import { api, ApiError } from "../api";
 import { useI18n } from "../i18n";
@@ -34,6 +44,7 @@ function TribeLeaderSquads() {
       setSquads(await api.get<Squad[]>("/api/squads"));
       setUsers(await api.get<User[]>("/api/admin/users"));
       const tr = await api.get<Tribe[]>("/api/tribes");
+      // A tribe leader can only create squads in their own tribe; admins in any.
       setTribes(isAdmin ? tr : tr.filter((x) => x.id === user?.tribe_id));
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Erreur");
@@ -41,6 +52,7 @@ function TribeLeaderSquads() {
   }
   useEffect(() => { load(); }, []);
 
+  // Users eligible to be a squad's "responsible" (leader) in the dropdowns.
   const leaders = users.filter((u) => ["squad_leader", "tribe_leader", "admin"].includes(u.role));
 
   useSetPageChrome(
@@ -78,6 +90,11 @@ function TribeLeaderSquads() {
   );
 }
 
+/**
+ * Tribe-leader/admin squad summary card: name, leader, KPI/budget status badges,
+ * and an Edit button that opens the multi-step EditSquadModal. Loads its own
+ * SquadDetail so badges reflect the latest state.
+ */
 function SquadCard({ squadId, leaders, onChanged, onError }: {
   squadId: number; leaders: User[]; onChanged: () => void; onError: (m: string) => void;
 }) {
@@ -123,6 +140,14 @@ function SquadCard({ squadId, leaders, onChanged, onError }: {
   );
 }
 
+/**
+ * Tribe-leader/admin squad editor, as a 3-step wizard in a modal:
+ *   1. Infos (name, responsible, type, products/hardware)
+ *   2. OTD - the squad's single dated annual commitment
+ *   3. Budget & KPIs
+ * Every field saves immediately (PUT) and reloads the detail. The footer also
+ * offers deletion of the squad (confirmed).
+ */
 function EditSquadModal({ detail, leaders, onClose, onError }: {
   detail: SquadDetail; leaders: User[]; onClose: () => void; onError: (m: string) => void;
 }) {
@@ -244,6 +269,11 @@ function EditSquadModal({ detail, leaders, onClose, onError }: {
   );
 }
 
+/**
+ * New-squad modal. Admins must pick a tribe; a tribe leader is pinned to their
+ * own tribe (`defaultTribeId`, tribe field hidden). Optional leader and
+ * products/hardware tags. Calls onCreated on success so the list reloads.
+ */
 function CreateSquadModal({ isAdmin, tribes, leaders, defaultTribeId, onClose, onCreated, onError }: {
   isAdmin: boolean; tribes: Tribe[]; leaders: User[]; defaultTribeId: number | null;
   onClose: () => void; onCreated: () => void; onError: (m: string) => void;
@@ -347,6 +377,10 @@ function SquadLeaderSquads() {
   );
 }
 
+/**
+ * Squad-leader squad card: shows the team preview (first 5 members) and a
+ * "manage team" button opening TeamModal. Used only in the squad-leader view.
+ */
 function SLSquadCard({ squadId, onError }: { squadId: number; onError: (m: string) => void }) {
   const { t } = useI18n();
   const [d, setD] = useState<SquadDetail | null>(null);
@@ -382,6 +416,12 @@ function SLSquadCard({ squadId, onError }: { squadId: number; onError: (m: strin
   );
 }
 
+/**
+ * Squad-leader team manager (modal): rename the squad, report budget (read-only
+ * envelope), and CRUD the members incl. their "reports to" manager. Every input
+ * saves on blur/change via run() and reloads members. `managerOptions` excludes
+ * the member itself so nobody can report to themselves.
+ */
 function TeamModal({ detail, onClose, onError }: { detail: SquadDetail; onClose: () => void; onError: (m: string) => void }) {
   const { t } = useI18n();
   const [members, setMembers] = useState<Member[]>(detail.members);

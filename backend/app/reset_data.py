@@ -37,6 +37,12 @@ PRESERVE_TABLES = {"app_settings"}
 
 
 def reset(db) -> None:
+    """Wipe all business data, then recreate the Cloud Foundations tribe + squads.
+
+    Iterates tables in reverse FK-dependency order so child rows are deleted before
+    parents. `app_settings` and the break-glass admin are preserved so the existing
+    admin login and all admin-managed configuration survive the reset.
+    """
     bg_email = settings.breakglass_email.lower().strip()
     # Delete child rows first (reverse dependency order). Keep config tables and
     # the break-glass admin so the existing login keeps working.
@@ -63,6 +69,7 @@ def reset(db) -> None:
 
 
 def main() -> None:
+    """Entry point for `python -m app.reset_data`: run reset in a session."""
     db = SessionLocal()
     try:
         reset(db)

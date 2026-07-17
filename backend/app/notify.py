@@ -9,12 +9,18 @@ from .smtpconfig import get_smtp
 
 
 def _excerpt(text: str, n: int = 140) -> str:
+    """Single-line preview of a post/reply, truncated with an ellipsis at n chars."""
     text = (text or "").strip().replace("\n", " ")
     return text if len(text) <= n else text[: n - 1] + "…"
 
 
 def _emit(db: Session, smtp: dict, mods: dict, user: User, kind: str, actor: str,
           excerpt: str, link: str, subject: str) -> None:
+    """Deliver one notification to a user across the enabled channels.
+
+    Adds an in-app Notification when the in-app channel is on, and sends an email
+    when the email channel is on AND the user opted in AND SMTP is configured.
+    Each channel is gated independently so one being off never blocks the other."""
     if is_active(mods, "notifications", "inapp"):
         db.add(Notification(user_id=user.id, kind=kind, actor_name=actor, excerpt=excerpt, link=link))
     email_on = is_active(mods, "notifications", "email")
@@ -24,6 +30,10 @@ def _emit(db: Session, smtp: dict, mods: dict, user: User, kind: str, actor: str
 
 
 def notify_new_post(db: Session, post: FeedPost) -> None:
+    """Notify everyone who opted into feed posts about a new post.
+
+    Skips the author, and for a tribe-scoped post only notifies that tribe's
+    members. No-op when the notifications module is disabled."""
     mods = get_modules(db)
     if not is_active(mods, "notifications"):
         return
@@ -38,6 +48,10 @@ def notify_new_post(db: Session, post: FeedPost) -> None:
 
 
 def notify_reply(db: Session, post: FeedPost, reply: FeedReply) -> None:
+    """Notify the original poster that someone replied.
+
+    Only the post author is notified, and never for their own reply; also honours
+    the author's per-user 'notify_replies' preference. No-op when the module is off."""
     if post.author_user_id is None or post.author_user_id == reply.author_user_id:
         return
     mods = get_modules(db)

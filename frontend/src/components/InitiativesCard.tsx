@@ -1,3 +1,6 @@
+// InitiativesCard: read-only table of the initiatives a tribe leader assigned to a
+// squad. Rendered identically on the squad page and the reporting (saisie) screen
+// so both stay in sync; always shown, with an explicit empty state.
 import { Initiative } from "../types";
 import { useI18n } from "../i18n";
 

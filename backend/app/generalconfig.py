@@ -13,6 +13,11 @@ GENERAL_KEY = "general"
 
 
 def _defaults() -> dict:
+    """The baseline general settings, used when nothing is stored yet.
+
+    Seed values come from environment-driven `settings` where relevant so a fresh
+    DB reflects the deployment's configured defaults.
+    """
     return {
         "app_name": settings.app_name,
         "app_subtitle": "Pilotage de la tribe",
@@ -29,6 +34,12 @@ KEYS = set(_defaults().keys())
 
 
 def get_general(db: Session) -> dict:
+    """Return the effective general config: defaults overlaid with stored values.
+
+    Reads the single JSON blob at app_settings['general']. Unknown keys in the
+    stored blob are ignored (filtered by KEYS) so stale/renamed fields cannot leak
+    in; a corrupt blob silently falls back to defaults rather than erroring.
+    """
     cfg = _defaults()
     row = db.get(AppSetting, GENERAL_KEY)
     if row:
@@ -41,11 +52,17 @@ def get_general(db: Session) -> dict:
 
 
 def set_general(db: Session, patch: dict) -> dict:
+    """Apply a partial update to the general config and persist it.
+
+    Only whitelisted keys (KEYS) from `patch` are accepted, then every value is
+    sanitized/clamped so a malformed admin request can never store an out-of-range
+    or invalid setting. Upserts the JSON blob and returns the new effective config.
+    """
     cfg = get_general(db)
     for k, v in patch.items():
         if k in KEYS:
             cfg[k] = v
-    # sanitize
+    # sanitize: clamp/normalize every field so bad input falls back to a safe value
     try:
         cfg["staleness_threshold_days"] = max(1, min(365, int(cfg["staleness_threshold_days"])))
     except (TypeError, ValueError):
@@ -71,6 +88,12 @@ def set_general(db: Session, patch: dict) -> dict:
 
 
 def public_config(db: Session) -> dict:
+    """The unauthenticated config surface consumed by the SPA at /api/config.
+
+    Exposes only branding/language/feed defaults plus the module switches - never
+    secrets. SMTP is reduced to a single `smtp_enabled` boolean (host/credentials
+    stay server-side). Imports are local to avoid a circular import at module load.
+    """
     from .smtpconfig import get_smtp
     from .modulesconfig import get_modules
     cfg = get_general(db)

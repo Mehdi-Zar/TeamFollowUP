@@ -43,6 +43,13 @@ VALID_ROLES = {"admin", "tribe_leader", "squad_leader", "member"}
 
 
 def get_auth_config(db: Session) -> dict:
+    """Return the effective auth config: env defaults overlaid with DB overrides.
+
+    Starts from the environment-derived defaults, then merges the DB blob on top,
+    keeping only recognised keys (``EDITABLE_KEYS``) so a stale/garbage field can't
+    leak in. A missing or corrupt blob silently falls back to the env defaults so
+    auth never breaks on bad stored JSON.
+    """
     cfg = DEFAULTS_FROM_ENV()
     row = db.get(AppSetting, AUTH_KEY)
     if row:
@@ -55,11 +62,22 @@ def get_auth_config(db: Session) -> dict:
 
 
 def set_auth_config(db: Session, patch: dict) -> dict:
+    """Apply an admin patch to the auth config, sanitize it, and persist it.
+
+    Only whitelisted keys are accepted. The group->role mappings, email-domain
+    allowlist and the require_approval flag are all normalized before storage so
+    downstream code can trust their shape (valid roles only, lowercase deduped
+    domains, boolean flag). Returns the full, cleaned config.
+
+    Note: stages the row on the session but does not commit — the caller controls
+    the transaction boundary.
+    """
     cfg = get_auth_config(db)
     for k, v in patch.items():
         if k in EDITABLE_KEYS:
             cfg[k] = v
-    # sanitize mappings
+    # sanitize mappings: drop entries with a blank group or an unknown role so a
+    # malformed mapping can never grant an unexpected privilege.
     mappings = []
     for m in cfg.get("group_role_mappings") or []:
         group = (m.get("group") or "").strip()
@@ -102,6 +120,7 @@ def role_from_groups(cfg: dict, groups) -> str | None:
     if isinstance(groups, str):
         groups = [groups]
     groups = set(str(g) for g in groups)
+    # When a user is in several mapped groups, the most privileged role wins.
     priority = {"admin": 3, "tribe_leader": 2, "squad_leader": 1, "member": 0}
     best = None
     for m in cfg.get("group_role_mappings") or []:

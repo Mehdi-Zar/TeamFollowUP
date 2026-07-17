@@ -1,3 +1,8 @@
+// GettingStartedPage - the personalized onboarding / "what can I do here" screen.
+// It mirrors the navigation and the API's authorization model: a journey card is
+// shown only when the persona holds the matching capability AND its module is on
+// (fail-closed). The card order is persona-specific, and admin/steering surfaces
+// are intentionally pushed to the bottom rather than being the headline.
 import { Link } from "react-router-dom";
 import { useI18n } from "../i18n";
 import { useAuth } from "../auth";
@@ -16,15 +21,18 @@ import {
  *  how to USE your workspace (not how to install it). Admin setup is a small block
  *  at the bottom, not the headline. */
 
+/** Identifiers for each journey card that can appear in the onboarding list. */
 type CardKey =
   | "dashboard" | "reporting" | "roadmap" | "otd" | "mysquads" | "feed" | "org" | "leaves";
 
+/** Card key -> icon component (includes the two admin-only keys). */
 const ICON: Record<CardKey | "admin" | "tribes", (p: { size?: number }) => JSX.Element> = {
   dashboard: IconDashboard, reporting: IconEntry, roadmap: IconEntry, otd: IconReview,
   mysquads: IconTribes, feed: IconFeed, org: IconOrg, leaves: IconCalendar,
   admin: IconAdmin, tribes: IconTribes,
 };
 
+/** Card key -> in-app route the card's CTA links to. */
 const ROUTE: Record<CardKey, string> = {
   dashboard: "/", reporting: "/saisie", roadmap: "/roadmap", otd: "/otd",
   mysquads: "/mes-squads", feed: "/fil", org: "/organigramme", leaves: "/conges",
@@ -38,6 +46,12 @@ const ORDER: Record<Role, CardKey[]> = {
   admin: ["dashboard", "reporting", "roadmap", "otd", "mysquads", "feed", "org", "leaves"],
 };
 
+/**
+ * Renders the personalized onboarding page: a greeting header, the persona's
+ * ordered journey cards, and (for admins) a separate admin/steering section.
+ *
+ * Access: any authenticated user; content is filtered by capability + module.
+ */
 export default function GettingStartedPage() {
   const { t, role: roleLabel } = useI18n();
   const { user, effectiveRole, can } = useAuth();
@@ -124,6 +138,10 @@ export default function GettingStartedPage() {
   );
 }
 
+/**
+ * Circular icon badge for a journey card, overlaid with its 1-based step number.
+ * Purely presentational.
+ */
 function StepIcon({ Icon, n }: { Icon: (p: { size?: number }) => JSX.Element; n: number }) {
   return (
     <div style={{
@@ -140,6 +158,11 @@ function StepIcon({ Icon, n }: { Icon: (p: { size?: number }) => JSX.Element; n:
   );
 }
 
+/**
+ * Card used in the admin/steering section (Admin console, Tribes). Same layout
+ * as a journey card but without the numbered step, since these are not part of
+ * the ordered "first steps" flow.
+ */
 function AdminCard({ Icon, to, title, desc, cta }: { Icon: (p: { size?: number }) => JSX.Element; to: string; title: string; desc: string; cta: string }) {
   return (
     <div className="card" style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>

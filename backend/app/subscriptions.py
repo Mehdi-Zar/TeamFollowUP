@@ -7,6 +7,8 @@ from .models import ReportSubscription, Squad, User
 
 
 def user_can_see_squad(db: Session, user: User, squad_id: int) -> bool:
+    """Whether `user` may subscribe to a squad: admins see all, others only squads
+    in their own tribe. Used to authorize per-squad subscription requests."""
     sq = db.get(Squad, squad_id)
     if sq is None:
         return False
@@ -15,6 +17,8 @@ def user_can_see_squad(db: Session, user: User, squad_id: int) -> bool:
 
 
 def get_subscription(db: Session, user_id: int, squad_id: int | None) -> ReportSubscription | None:
+    """Fetch a user's subscription for a scope. squad_id=None is the global
+    (all-visible-tribes) subscription; a squad id targets that single squad."""
     stmt = select(ReportSubscription).where(ReportSubscription.user_id == user_id)
     stmt = stmt.where(ReportSubscription.squad_id.is_(None) if squad_id is None
                       else ReportSubscription.squad_id == squad_id)
@@ -48,6 +52,7 @@ def set_subscription(db: Session, user: User, squad_id: int | None, interval_day
 
 
 def list_subscriptions(db: Session, user: User) -> list[ReportSubscription]:
+    """All of a user's subscriptions, global one first then per-squad by squad id."""
     return list(db.scalars(
         select(ReportSubscription).where(ReportSubscription.user_id == user.id)
         .order_by(ReportSubscription.squad_id.is_(None).desc(), ReportSubscription.squad_id)
