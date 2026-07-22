@@ -29,7 +29,8 @@ review (COPIL). It replaces scattered spreadsheets and slide decks with a live, 
 
 In scope: tribe/squad org modelling, annual objectives, quarterly roadmap (milestones/jalons with
 EA/GA stage and dependencies), KPIs, progress-review timeline, COPIL review + action items, feed,
-org chart, notifications, weekly report scheduling and exports (HTML/PPTX; CSV for absences), i18n (FR/EN).
+org chart, notifications, weekly report scheduling and exports (HTML/PPTX; CSV for absences),
+monthly steering-committee reporting (Steerco one-pager), i18n (FR/EN).
 
 Out of scope (today): real-time collaboration, external ticketing sync (Jira/ADO), per-tenant data
 isolation beyond tribe scoping, mobile native apps.
@@ -46,6 +47,8 @@ isolation beyond tribe scoping, mobile native apps.
 | Objectives | `squad_content.objectives` | via reporting | status auto-derived from advancement |
 | KPIs | `squad_content.kpis` | via reporting | per-squad on/off |
 | Review (COPIL) | `review` (+notes/weekly_report) | `review` | timeline + actions + presentation mode |
+| Comitologie (committees) | `committees` (off by default) | via reporting | squad leaders declare recurring governance meetings; tribe-leader oversight |
+| Steerco (steering committee) | `steerco` (off by default) | via reporting / `dashboard` | opt-in per squad; monthly snapshot → auto-built KPI one-pager (HTML/PPTX), see [15](15-steerco.md) |
 | My squads | - | `mysquads` | management for tribe/squad leaders |
 | Exports (HTML/PPTX) | via section modules | via section gates | dashboard, weekly, roadmap & dependencies decks (`/api/reports/*`) |
 | Weekly report (HTML/PPTX/email) | `review.weekly_report` | - | scheduled + on-demand |

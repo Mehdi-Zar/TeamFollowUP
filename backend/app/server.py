@@ -52,7 +52,18 @@ def main() -> None:
     certificate upload can swap it in place without restarting the process.
     """
     configure_logging(settings.log_format, settings.log_level)
-    log_cfg = uvicorn_log_config(settings.log_format, settings.log_level)
+    # A runtime log-level override set from Admin > Ops is persisted in the DB and
+    # re-applied here so it survives restarts; otherwise the env default stands.
+    from . import logbuffer
+    db = SessionLocal()
+    try:
+        persisted = logbuffer.persisted_level(db)
+    finally:
+        db.close()
+    effective_level = persisted or settings.log_level
+    if persisted:
+        logbuffer.set_live_level(persisted)
+    log_cfg = uvicorn_log_config(settings.log_format, effective_level)
 
     # Serving mode: the admin toggle persisted in the DB wins, else the env default
     # (settings.tls_enabled). Read once here - the port/protocol is bound for the

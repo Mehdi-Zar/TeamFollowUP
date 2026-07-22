@@ -52,23 +52,34 @@ def test_json_formatter_includes_exception():
     assert "ValueError: boom" in entry["message"]
 
 
-def test_configure_logging_json_installs_single_handler():
-    """configure_logging('json') leaves exactly one JSON handler on the root."""
+def test_configure_logging_json_installs_single_stream_handler():
+    """configure_logging('json') leaves exactly one JSON stdout handler on the root.
+
+    A second, non-emitting handler (the Ops debug ring buffer) is also attached; it
+    does not write to stdout, so stdout lines are still emitted exactly once.
+    """
+    from app.logbuffer import RingBufferHandler
     configure_logging("json", "INFO")
     root = logging.getLogger()
     try:
-        assert len(root.handlers) == 1
-        assert isinstance(root.handlers[0].formatter, CloudLoggingFormatter)
+        streams = [h for h in root.handlers
+                   if isinstance(h, logging.StreamHandler) and not isinstance(h, RingBufferHandler)]
+        assert len(streams) == 1
+        assert isinstance(streams[0].formatter, CloudLoggingFormatter)
+        # exactly one ring buffer, never duplicated across repeated configure calls
+        assert sum(isinstance(h, RingBufferHandler) for h in root.handlers) == 1
     finally:
         configure_logging("text", "INFO")  # restore for other tests
 
 
 def test_uvicorn_log_config_selects_formatter():
-    """uvicorn_log_config points uvicorn's loggers at the right formatter."""
+    """uvicorn_log_config points uvicorn's loggers at the right formatter, and also
+    feeds them into the ring buffer for the Ops debug panel."""
     j = uvicorn_log_config("json")
     assert j["formatters"]["default"]["()"] == "app.logconfig.CloudLoggingFormatter"
     for lg in ("uvicorn", "uvicorn.access", "uvicorn.error"):
-        assert j["loggers"][lg]["handlers"] == ["default"]
+        assert j["loggers"][lg]["handlers"] == ["default", "ringbuffer"]
+    assert j["handlers"]["ringbuffer"]["()"] == "app.logbuffer.ring_handler"
 
     t = uvicorn_log_config("text")
     assert "format" in t["formatters"]["default"]

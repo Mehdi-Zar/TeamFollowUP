@@ -39,6 +39,7 @@ from .routers import (
     roadmapview,
     snapshots,
     squads,
+    steerco,
     tribes,
 )
 
@@ -59,7 +60,7 @@ app.add_middleware(SessionMiddleware, secret_key=settings.secret_key,
 
 for r in (auth, tribes, squads, dashboard, org, orgexport, objectives, roadmap, roadmapview, kpis,
           members, snapshots, feed, notifications, admin, audit, reports,
-          actions, initiatives, otds, access, leaves, committees):
+          actions, initiatives, otds, access, leaves, committees, steerco):
     app.include_router(r.router)
 
 

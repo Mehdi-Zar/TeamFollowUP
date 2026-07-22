@@ -21,13 +21,16 @@ import { HtmlPreviewModal } from "./HtmlPreview";
  *  menu coherent with the tab you're on (e.g. the Roadmap tab exports only the
  *  roadmap, not the dashboard or the weekly report). Omit = offer everything the
  *  modules/capabilities allow (used on the full squad page). */
-type DocKind = "dashboard" | "roadmap" | "dependencies" | "report";
+type DocKind = "dashboard" | "roadmap" | "dependencies" | "report" | "steerco";
 
 type Props = {
   year?: number;
   squadId?: number;
   sinceDays?: number;
   docs?: DocKind[];
+  // Steerco one-pager export: the current period and (optional) selected squad.
+  // When "" / omitted the squad, the consolidated all-squads document is exported.
+  steerco?: { period: string; squadId?: string };
 };
 
 type View = "menu" | "emailReport";
@@ -35,7 +38,7 @@ type Preview = { url: string; title: string };
 
 /** Render an export's HTML to a JPG (image equivalent of the HTML export):
  *  fetch the HTML, lay it out in an isolated off-screen iframe, html2canvas it. */
-async function renderHtmlToJpg(url: string, filename: string): Promise<void> {
+export async function renderHtmlToJpg(url: string, filename: string): Promise<void> {
   const iframe = document.createElement("iframe");
   try {
     const html = await (await fetch(url, { credentials: "include" })).text();
@@ -61,7 +64,7 @@ async function renderHtmlToJpg(url: string, filename: string): Promise<void> {
 /** The export/share dropdown. `squadId` scopes exports to one squad (per-squad
  *  roadmap/dashboard); when absent the global variants open a squad picker.
  *  `docs` restricts which documents this instance may offer (see DocKind). */
-export default function ExportMenu({ year, squadId, sinceDays = 7, docs }: Props) {
+export default function ExportMenu({ year, squadId, sinceDays = 7, docs, steerco }: Props) {
   const { t, lang } = useI18n();
   const { smtp_enabled } = useConfig();
   const m = useModule();
@@ -76,6 +79,7 @@ export default function ExportMenu({ year, squadId, sinceDays = 7, docs }: Props
   const roadmapOn = allow("roadmap") && m("squad_content", "roadmap") && can("roadmap");
   const dependenciesOn = allow("dependencies") && m("squad_content", "roadmap") && can("roadmap");
   const dashboardOn = allow("dashboard") && m("dashboard") && can("dashboard");
+  const steercoOn = allow("steerco") && !!steerco && m("steerco") && can("dashboard");
 
   const ref = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
@@ -95,6 +99,12 @@ export default function ExportMenu({ year, squadId, sinceDays = 7, docs }: Props
   const roadmapAvail = roadmapOn;
   const roadmapBase = squadId ? `/api/squads/${squadId}/roadmap` : "/api/reports/roadmap";
   const roadmapQs = squadId ? `${year ? `year=${year}&` : ""}lang=${lang}` : rqs;
+  // Steerco one-pager: a single squad's, or the consolidated all-squads document.
+  const steercoPq = steerco ? encodeURIComponent(steerco.period) : "";
+  const steercoHtml = steerco?.squadId
+    ? `/api/steerco/onepager.html?squad_id=${steerco.squadId}&period=${steercoPq}&lang=${lang}`
+    : `/api/steerco/document.html?period=${steercoPq}&lang=${lang}`;
+  const steercoPptx = `/api/steerco/document.pptx?period=${steercoPq}&lang=${lang}`;
 
   useEffect(() => {
     function onDoc(e: MouseEvent) {
@@ -104,7 +114,7 @@ export default function ExportMenu({ year, squadId, sinceDays = 7, docs }: Props
     return () => document.removeEventListener("mousedown", onDoc);
   }, []);
 
-  const hasDownloads = roadmapAvail || dashboardOn || dependenciesOn;
+  const hasDownloads = roadmapAvail || dashboardOn || dependenciesOn || steercoOn;
   const hasEmail = smtp_enabled && reportOn;
   if (!hasDownloads && !hasEmail) return null;
 
@@ -164,6 +174,7 @@ export default function ExportMenu({ year, squadId, sinceDays = 7, docs }: Props
               {roadmapAvail && squadId && <ExportRow label={t("export.doc_roadmap")} html={`${roadmapBase}.html?${roadmapQs}`} pptx={`${roadmapBase}.pptx?${roadmapQs}`} />}
               {roadmapAvail && !squadId && <Item onClick={() => { setRoadmapModal(true); setOpen(false); }}>{t("export.doc_roadmap")} …</Item>}
               {dependenciesOn && <ExportRow label={t("export.doc_dependencies")} html={`/api/reports/dependencies.html?${rqs}`} pptx={`/api/reports/dependencies.pptx?${rqs}`} />}
+              {steercoOn && <ExportRow label={t("export.doc_steerco")} html={steercoHtml} pptx={steercoPptx} />}
 
               {hasEmail && <div className="menu-label" style={{ marginTop: 6 }}>{t("export.group_email")}</div>}
               {hasEmail && <Item onClick={() => { setView("emailReport"); setMsg(null); }}>{t("export.send_report")} …</Item>}

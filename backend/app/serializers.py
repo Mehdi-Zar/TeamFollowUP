@@ -127,6 +127,7 @@ def squad_detail(squad: Squad, year: int, threshold: int, privileged: bool = Fal
         leader_user_id=squad.leader_user_id,
         display_order=squad.display_order,
         kpis_enabled=squad.kpis_enabled,
+        steerco_enabled=squad.steerco_enabled,
         budget_enabled=squad.budget_enabled,
         squad_type=squad.squad_type,
         products=squad.products or [],

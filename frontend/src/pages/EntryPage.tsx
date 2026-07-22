@@ -20,6 +20,8 @@ import { InitiativesCard } from "../components/InitiativesCard";
 import { canEditSquad, canManageObjectives } from "../perms";
 import { useSetPageChrome } from "../components/pageChrome";
 import { roadmapRag } from "../labels";
+import { currentSteercoPeriod, monthLongLabel } from "../steerco";
+import SteercoWizard, { SteercoPreviewModal } from "../components/SteercoWizard";
 
 const ROADMAP_STATUSES: RoadmapStatus[] = ["on_track", "at_risk", "blocked", "done"];
 
@@ -36,6 +38,7 @@ export default function EntryPage() {
   const roadmapOn = moduleOn("squad_content", "roadmap");
   const objectivesOn = moduleOn("squad_content", "objectives");
   const kpisOn = moduleOn("squad_content", "kpis");
+  const steercoOn = moduleOn("steerco");
   const role = (effectiveRole ?? "member") as Role;
   const [squads, setSquads] = useState<Squad[]>([]);
   const [tribes, setTribes] = useState<Tribe[]>([]);
@@ -141,7 +144,7 @@ export default function EntryPage() {
               <div className="strong" style={{ fontSize: 16, color: "var(--navy)" }}>{squad.name}</div>
               <div className="small muted" style={{ marginTop: 2 }}>
                 {t("squad.squad_leader")} : <span className="strong">{squad.leader?.display_name || "-"}</span>
-                {" · "}{t("entry.last_submit")} : {freshness(squad.freshness)}
+                {", "}{t("entry.last_submit")} : {freshness(squad.freshness)}
               </div>
             </div>
             <FreshnessBadge freshness={squad.freshness} />
@@ -154,6 +157,7 @@ export default function EntryPage() {
           {objectivesOn && <div id="sec-obj"><ObjectivesEditor squad={squad} year={year} onChange={reload} editable={objAllowed} t={t} rag={rag} /></div>}
           {roadmapOn && <div id="sec-roadmap"><RoadmapEditor squad={squad} year={year} onChange={reload} readonly={!writeAllowed} t={t} roadmap={roadmap} squads={squads} tribes={tribes} /></div>}
           {kpisOn && squad.kpis_enabled && <div id="sec-kpis"><KpisEditor squad={squad} onChange={reload} readonly={!writeAllowed} t={t} trend={trend} /></div>}
+          {steercoOn && <div id="sec-steerco"><SteercoSection squad={squad} readonly={!writeAllowed} onToggle={reload} t={t} /></div>}
         </>
       )}
 
@@ -292,7 +296,7 @@ function QuarterEditor({ squad, quarter, readonly, t, onAdd, onEdit }: any) {
     <div className="quarter-block">
       <div className="between">
         <h4>Q{quarter}</h4>
-        <span className="small muted" title={t("entry.progress_auto")}>{pct}% · {done}/{total}</span>
+        <span className="small muted" title={t("entry.progress_auto")}>{pct}%, {done}/{total}</span>
       </div>
       <div style={{ height: 8, background: "var(--line)", borderRadius: 6, overflow: "hidden", marginBottom: 4 }} aria-label={`${pct}%`}>
         <div style={{ width: `${pct}%`, height: "100%", background: "var(--navy)" }} />
@@ -302,7 +306,7 @@ function QuarterEditor({ squad, quarter, readonly, t, onAdd, onEdit }: any) {
           <div key={r.id} className="item-row" style={{ cursor: readonly ? "default" : "pointer" }} onClick={() => !readonly && onEdit(r)}>
             <Dot status={roadmapRag(r.status)} />
             <span className="grow small">
-              {r.theme ? <span className="strong" style={{ color: "#002060" }}>{r.theme} · </span> : null}
+              {r.theme ? <span className="strong" style={{ color: "#002060" }}>{r.theme}, </span> : null}
               {r.title}
             </span>
             <span className="badge badge-navy" style={{ fontSize: 10 }}>{r.release_stage}</span>
@@ -542,6 +546,134 @@ function KpisEditor({ squad, onChange, readonly, t, trend }: any) {
   );
 }
 
+
+/**
+ * Steerco input section. Steerco reporting is opt-in per squad and self-service.
+ * Unlike the WEEKLY reporting this section lives in, Steerco is a MONTHLY check-in:
+ * the launcher makes the cadence explicit and shows, for the current month, whether
+ * it is still to do or already filled (with when/who), so a squad leader doing their
+ * weekly reporting immediately knows if there is anything Steerco to do this month.
+ * The actual entry happens in a guided popup wizard (one specific month at a time).
+ */
+type SteercoStatus = { filled: boolean; updated_at: string | null; updated_by: string | null };
+
+function SteercoSection({ squad, readonly, onToggle, t }: any) {
+  const { lang } = useI18n();
+  const enabled: boolean = !!squad.steerco_enabled;
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [status, setStatus] = useState<SteercoStatus | null>(null);
+  const period = currentSteercoPeriod();
+  const monthName = monthLongLabel(period, lang);
+
+  // Load this month's status (filled? when? by whom?) so the launcher can tell the
+  // squad leader whether the monthly Steerco is done or still to do.
+  async function loadStatus() {
+    try {
+      const r = await api.get<SteercoStatus>(`/api/steerco/squad/${squad.id}?period=${encodeURIComponent(period)}`);
+      setStatus({ filled: !!r.filled, updated_at: r.updated_at ?? null, updated_by: r.updated_by ?? null });
+    } catch { setStatus({ filled: false, updated_at: null, updated_by: null }); }
+  }
+  useEffect(() => { if (enabled) loadStatus(); }, [enabled, squad.id]);
+
+  // Steerco on/off is a squad setting, toggled through the standard squad-update
+  // path (same as KPIs/budget) so it stays coherent with "Mes Squads". It is
+  // self-service: a squad leader may flip it on their own squad.
+  async function setEnabled(on: boolean) {
+    setBusy(true); setErr(null);
+    try {
+      await api.put(`/api/squads/${squad.id}`, { steerco_enabled: on });
+      onToggle();
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : String(e));
+    } finally { setBusy(false); }
+  }
+
+  // Not activated yet: a compact, clearly-labelled opt-in card.
+  if (!enabled) {
+    return (
+      <Card title={t("steerco.card_title")} hint={t("steerco.optin_hint")}>
+        {err && <div className="banner banner-red" style={{ marginBottom: 8 }}>{err}</div>}
+        <div className="inline" style={{ gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+          <span className="badge badge-navy">{t("steerco.badge")}</span>
+          <button className="btn-sm" disabled={readonly || busy} onClick={() => setEnabled(true)}>
+            {busy ? "…" : t("steerco.activate")}
+          </button>
+          <span className="small muted">{t("steerco.also_mysquads")}</span>
+        </div>
+      </Card>
+    );
+  }
+
+  const filled = !!status?.filled;
+  const when = status?.updated_at ? new Date(status.updated_at).toLocaleDateString(lang === "fr" ? "fr-FR" : "en-US", { day: "2-digit", month: "2-digit", year: "numeric" }) : "";
+  const by = status?.updated_by ? t("steerco.done_by", { name: status.updated_by }) : "";
+
+  return (
+    <Card
+      title={t("steerco.card_title")}
+      hint={t("steerco.form_hint")}
+      action={
+        <button className="btn-ghost btn-sm" disabled={readonly || busy} onClick={() => setEnabled(false)}
+                title={t("steerco.deactivate_hint")}>
+          {t("steerco.deactivate")}
+        </button>
+      }
+    >
+      {err && <div className="banner banner-red" style={{ marginBottom: 8 }}>{err}</div>}
+
+      {/* Cadence: make it explicit this is MONTHLY, not part of the weekly reporting. */}
+      <div className="inline" style={{ gap: 8, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
+        <span className="badge badge-navy">{t("steerco.monthly_tag")}</span>
+        <span className="small muted">{t("steerco.cadence_note")}</span>
+      </div>
+
+      {/* Monthly status strip: done (green) or to-do (ice), always for the current month. */}
+      <div className={`sc-status ${filled ? "done" : "todo"}`}>
+        <span className="sc-status-ic">{filled ? "✓" : "📅"}</span>
+        <div className="stack" style={{ gap: 2 }}>
+          <div className="strong">{filled ? t("steerco.done_title", { month: monthName }) : t("steerco.todo_title", { month: monthName })}</div>
+          <div className="small muted">
+            {filled
+              ? (status?.updated_at ? t("steerco.done_sub", { when, by }) : t("steerco.done_sub_nodate"))
+              : t("steerco.todo_sub")}
+          </div>
+        </div>
+        <div className="inline" style={{ gap: 8, marginLeft: "auto" }}>
+          {filled && (
+            <button className="btn-secondary btn-sm" onClick={() => setPreviewOpen(true)}>
+              {t("steerco.wiz.preview_btn")}
+            </button>
+          )}
+          <button className={`btn-sm ${filled ? "btn-secondary" : ""}`} onClick={() => setWizardOpen(true)}>
+            {readonly ? t("steerco.wiz.open_view") : filled ? t("steerco.edit_report") : t("steerco.wiz.open")}
+          </button>
+        </div>
+      </div>
+
+      {wizardOpen && (
+        <SteercoWizard
+          squadId={squad.id}
+          squadName={squad.name}
+          initialPeriod={period}
+          readonly={readonly}
+          onClose={() => setWizardOpen(false)}
+          onSaved={() => { loadStatus(); onToggle(); }}
+        />
+      )}
+      {previewOpen && (
+        <SteercoPreviewModal
+          squadId={squad.id}
+          squadName={squad.name}
+          period={period}
+          onClose={() => setPreviewOpen(false)}
+        />
+      )}
+    </Card>
+  );
+}
 
 /* ---- Visual "how to report" intro: a hero line + a 4-step graphic flow ---- */
 const FLOW_ICONS = {

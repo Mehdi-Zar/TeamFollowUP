@@ -44,6 +44,7 @@ const TAB_LABEL: Record<string, string> = {
   logs: "admin.tab.logs",
   settings: "admin.tab.settings",
   audit: "admin.tab.audit",
+  ops: "admin.tab.ops",
 };
 
 // Admin sections grouped by purpose (only the items a role may open are shown).
@@ -51,7 +52,7 @@ const ADMIN_GROUPS: { titleKey: string; items: string[] }[] = [
   { titleKey: "admin.group.org", items: ["tribes", "import", "tribe", "squads", "my_squads", "users", "personas"] },
   { titleKey: "admin.group.config", items: ["modules", "report", "leaves", "settings"] },
   { titleKey: "admin.group.access", items: ["auth", "api", "smtp", "tls"] },
-  { titleKey: "admin.group.oversight", items: ["moderation", "logs", "audit"] },
+  { titleKey: "admin.group.oversight", items: ["moderation", "logs", "audit", "ops"] },
 ];
 
 /**
@@ -117,6 +118,7 @@ export default function AdminPage() {
       <div className="admin-content stack" style={{ gap: 16 }}>
         {tab === "tribes" && <TribesAdmin />}
         {tab === "import" && <ImportOrgAdmin />}
+        {tab === "import" && <ImportSteercoAdmin />}
         {tab === "tribe" && <TribeSelfAdmin perms={perms} />}
         {tab === "squads" && <SquadsAdmin perms={perms} />}
         {tab === "users" && <UsersAdmin perms={perms} />}
@@ -133,6 +135,7 @@ export default function AdminPage() {
         {tab === "logs" && <LogExportAdmin />}
         {tab === "settings" && <SettingsAdmin />}
         {tab === "audit" && <AuditAdmin />}
+        {tab === "ops" && <OpsAdmin />}
       </div>
     </div>
   );
@@ -221,6 +224,8 @@ function TlsAdmin() {
   const [st, setSt] = useState<any | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const { error, wrap } = useErr();
+  const { restart, overlay } = useAppRestart();
+  const [confirmRestart, setConfirmRestart] = useState(false);
 
   // Self-signed form
   const [cn, setCn] = useState("localhost");
@@ -331,7 +336,27 @@ function TlsAdmin() {
           </label>
         </div>
         <div className="small muted">{t("tls.toggle_hint")}</div>
-        {pending && <div className="banner" style={{ borderLeft: "4px solid var(--orange)" }}>⚠️ {t("tls.pending_restart")}</div>}
+        {pending && (
+          <div className="banner" style={{ borderLeft: "4px solid var(--orange)" }}>
+            <div className="between" style={{ gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+              <span>⚠️ {t("tls.pending_restart")}</span>
+              <button className="btn-danger btn-sm" onClick={() => setConfirmRestart(true)}>{t("ops.restart_btn")}</button>
+            </div>
+          </div>
+        )}
+        {confirmRestart && (
+          <div className="modal-overlay" onClick={() => setConfirmRestart(false)}>
+            <div className="modal" onClick={(e) => e.stopPropagation()}>
+              <h3>{t("ops.restart_confirm_title")}</h3>
+              <p className="small">{t("ops.restart_confirm_body")}</p>
+              <div className="inline" style={{ justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
+                <button className="btn-secondary" onClick={() => setConfirmRestart(false)}>{t("action.cancel")}</button>
+                <button className="btn-danger" onClick={async () => { setConfirmRestart(false); await restart(); }}>{t("ops.restart_confirm_yes")}</button>
+              </div>
+            </div>
+          </div>
+        )}
+        {overlay}
       </div>
 
       {!enabled && <div className="banner" style={{ borderLeft: "4px solid var(--orange)" }}>{t("tls.infra_managed")}</div>}
@@ -453,6 +478,7 @@ const MODULE_TREE: { key: ModuleKey; features: string[] }[] = [
   { key: "review", features: ["weekly_report"] },
   { key: "squad_content", features: ["objectives", "roadmap", "kpis"] },
   { key: "committees", features: [] },
+  { key: "steerco", features: [] },
   { key: "notifications", features: ["inapp", "email"] },
   { key: "getting_started", features: [] },
   { key: "leaves", features: ["overlap_alert"] },
@@ -1132,7 +1158,7 @@ function SquadSelfCard({ squadId }: { squadId: number }) {
         {squad.members.length === 0 && <div className="small muted">{t("squad.no_members")}</div>}
         {squad.members.map((m) => (
           <div key={m.id} className="item-row">
-            <span className="grow">{m.full_name}{m.role_title ? <span className="muted small"> · {m.role_title}</span> : null}</span>
+            <span className="grow">{m.full_name}{m.role_title ? <span className="muted small">, {m.role_title}</span> : null}</span>
             <button className="btn-ghost btn-sm" aria-label={t("action.delete")} onClick={() => delMember(m.id)}>✕</button>
           </div>
         ))}
@@ -1300,6 +1326,101 @@ function ImportOrgAdmin() {
   );
 }
 
+type SteercoImportSummary = {
+  squad: string; period: string; months: number; kpis: number; services: number; events: number;
+  /** KPIs the squad already reported that the file did not cover: kept, not deleted. */
+  kept_kpis: string[];
+};
+
+/** Admin > Import: collect a squad's Steerco data (KPI/SLA/incidents/events over 12
+ *  months) in an Excel file, upload it here, and it is merged into the squad's monthly
+ *  snapshots (history + current month). Idempotent per (squad, period). Admin only.
+ *  Picking a squad before downloading yields a template pre-filled with its name and
+ *  with the KPI / SLA rows it actually reports, instead of the standard structure. */
+function ImportSteercoAdmin() {
+  const { t } = useI18n();
+  const steercoOn = useModule()("steerco");
+  const [squads, setSquads] = useState<{ id: number; name: string }[]>([]);
+  const [squadId, setSquadId] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<SteercoImportSummary | null>(null);
+  const { error, wrap } = useErr();
+
+  useEffect(() => {
+    if (!steercoOn) return;
+    api.get<{ id: number; name: string }[]>("/api/squads").then(setSquads).catch(() => {});
+  }, [steercoOn]);
+
+  if (!steercoOn) return null;
+
+  async function submit() {
+    if (!file) return;
+    setResult(null);
+    setBusy(true);
+    await wrap(async () => {
+      const form = new FormData();
+      form.append("file", file);
+      setResult(await api.postForm<SteercoImportSummary>("/api/admin/import-steerco", form));
+    });
+    setBusy(false);
+  }
+
+  return (
+    <div className="stack">
+      {error && <ErrorBanner message={error} />}
+      <div className="card stack" style={{ gap: 12 }}>
+        <div>
+          <h3 style={{ margin: 0 }}>{t("import.steerco.title")}</h3>
+          <div className="small muted" style={{ marginTop: 4 }}>{t("import.steerco.intro")}</div>
+        </div>
+        <ol className="stack" style={{ gap: 6, margin: 0, paddingLeft: 18 }}>
+          <li>
+            {t("import.steerco.step_pick")}{" "}
+            <select value={squadId} onChange={(e) => setSquadId(e.target.value)} style={{ minWidth: 190 }}>
+              <option value="">{t("import.steerco.generic_template")}</option>
+              {squads.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+            <a className="btn-secondary btn-sm" style={{ marginLeft: 8 }}
+               href={`/api/admin/import-steerco/template${squadId ? `?squad_id=${squadId}` : ""}`}>
+              {t("import.download")}
+            </a>
+            <div className="small muted" style={{ marginTop: 4 }}>{t("import.steerco.prefilled_hint")}</div>
+          </li>
+          <li>{t("import.steerco.step_fill")}</li>
+          <li>{t("import.step_upload")}</li>
+        </ol>
+        <div className="row" style={{ alignItems: "center", gap: 10 }}>
+          <input type="file" accept=".xlsx,.xlsm"
+                 onChange={(e) => { setFile(e.target.files?.[0] ?? null); setResult(null); }} />
+          <button onClick={submit} disabled={!file || busy}>
+            {busy ? t("import.importing") : t("import.import")}
+          </button>
+        </div>
+        <div className="small muted">{t("import.steerco.idempotent")}</div>
+      </div>
+
+      {result && (
+        <div className="card stack" style={{ gap: 6 }}>
+          <h3 style={{ margin: 0 }}>{t("import.done")}</h3>
+          <div>{t("import.steerco.result_squad")} <strong>{result.squad}</strong>, {result.period}</div>
+          <div className="small">
+            {t("import.steerco.result_counts", {
+              months: String(result.months), kpis: String(result.kpis),
+              services: String(result.services), events: String(result.events),
+            })}
+          </div>
+          {result.kept_kpis?.length > 0 && (
+            <div className="small" style={{ color: "var(--amber, #B54708)" }}>
+              {t("import.steerco.kept_kpis", { list: result.kept_kpis.join(", ") })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** Admin > Moderation: review every feed post (and replies) with delete + pin
  *  controls. Used to police the shared feed regardless of authorship. */
 function ModerationAdmin() {
@@ -1337,7 +1458,7 @@ function ModerationAdmin() {
             <div className="stack" style={{ marginTop: 8, gap: 6 }}>
               {p.replies.map((r: any) => (
                 <div key={r.id} className="feed-reply between">
-                  <span className="small"><span className="strong">{r.author?.display_name || "?"}</span> · {r.content}</span>
+                  <span className="small"><span className="strong">{r.author?.display_name || "?"}</span>, {r.content}</span>
                   <button className="btn-ghost btn-sm" aria-label={t("action.delete")} onClick={() => delReply(r.id)}>✕</button>
                 </div>
               ))}
@@ -1497,6 +1618,290 @@ function useErr() {
     }
   };
   return { error, wrap };
+}
+
+/** Shared self-restart action, used by the Ops panel and the TLS "restart pending"
+ *  banner. Triggers POST /api/admin/restart, then (when a supervisor will bring the
+ *  process back) polls the health probe until the app is down-then-up and reloads.
+ *  Exposes a `restarting` overlay so callers render a consistent waiting state. */
+function useAppRestart() {
+  const { t } = useI18n();
+  const [restarting, setRestarting] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  function waitForBack() {
+    const start = Date.now();
+    let sawDown = false;
+    const tick = async () => {
+      try {
+        const res = await fetch("/api/health", { cache: "no-store" });
+        if (res.ok && sawDown) { window.location.reload(); return; }
+        if (!res.ok) sawDown = true;
+      } catch { sawDown = true; }
+      if (Date.now() - start < 120000) setTimeout(tick, 1500);
+      else window.location.reload();
+    };
+    setTimeout(tick, 1500);
+  }
+
+  async function restart(): Promise<any> {
+    setErr(null);
+    try {
+      const r = await api.post<any>("/api/admin/restart", {});
+      if (r.scheduled !== false) {
+        setRestarting(true);
+        if (r.auto_restart) waitForBack();
+      }
+      return r;
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : "Erreur");
+      return null;
+    }
+  }
+
+  const overlay = restarting ? (
+    <div className="modal-overlay">
+      <div className="modal stack" style={{ alignItems: "center", gap: 12 }}>
+        <div className="spinner" />
+        <div className="strong">{t("ops.restarting")}</div>
+        <div className="small muted" style={{ textAlign: "center" }}>{t("ops.restarting_hint")}</div>
+      </div>
+    </div>
+  ) : null;
+
+  return { restart, restarting, overlay, err };
+}
+
+/** Admin > Ops: runtime diagnostics + a self-restart button. Config such as the
+ *  in-app TLS toggle binds at boot, so it only applies after a restart. In a
+ *  container/Kubernetes deployment the restart works by exiting the process so the
+ *  orchestrator recreates it with the new config; when no supervisor is present the
+ *  panel warns that the app would stay down. Admin only. */
+function OpsAdmin() {
+  const { t } = useI18n();
+  const [rt, setRt] = useState<any | null>(null);
+  const [confirm, setConfirm] = useState(false);
+  const { restart, overlay, err: restartErr } = useAppRestart();
+
+  const load = () => api.get<any>("/api/admin/runtime").then(setRt).catch(() => {});
+  useEffect(() => { load(); }, []);
+
+  function fmtUptime(s: number): string {
+    const m = Math.floor(s / 60), h = Math.floor(m / 60), d = Math.floor(h / 24);
+    if (d > 0) return `${d}j ${h % 24}h`;
+    if (h > 0) return `${h}h ${m % 60}min`;
+    if (m > 0) return `${m}min`;
+    return `${s}s`;
+  }
+
+  async function doRestart() {
+    const r = await restart();
+    setConfirm(false);
+    if (r && r.scheduled === false) await load();
+  }
+
+  if (!rt) return <div className="spinner">{t("common.loading")}</div>;
+
+  const servingMode = rt.tls_running ? t("ops.mode_https") : t("ops.mode_http");
+  const rows: Array<[string, any]> = [
+    [t("ops.field.version"), rt.git_sha ? `${rt.version} (${rt.git_sha})` : rt.version],
+    [t("ops.field.serving_mode"), servingMode],
+    [t("ops.field.orchestrator"), rt.orchestrator],
+    [t("ops.field.hostname"), rt.hostname],
+    [t("ops.field.uptime"), fmtUptime(rt.uptime_seconds)],
+    [t("ops.field.started_at"), new Date(rt.started_at).toLocaleString()],
+    [t("ops.field.pid"), rt.pid],
+    [t("ops.field.python"), rt.python],
+    [t("ops.field.platform"), rt.platform],
+  ];
+
+  return (
+    <div className="stack" style={{ maxWidth: 720, gap: 16 }}>
+      {restartErr && <ErrorBanner message={restartErr} />}
+      <div className="banner">{t("ops.intro")}</div>
+
+      {rt.restart_pending && (
+        <div className="banner" style={{ borderLeft: "4px solid var(--orange)" }}>
+          ⚠️ {t("ops.restart_pending")}
+        </div>
+      )}
+
+      <div className="card stack" style={{ gap: 4 }}>
+        <div className="between" style={{ marginBottom: 8 }}>
+          <h2 style={{ margin: 0 }}>{t("ops.runtime_title")}</h2>
+          <button className="btn-secondary btn-sm" onClick={load}>{t("ops.refresh")}</button>
+        </div>
+        {rows.map(([label, val]) => (
+          <div key={label} className="between" style={{ padding: "6px 0", borderBottom: "1px solid var(--line)" }}>
+            <span className="small muted">{label}</span>
+            <span className="small strong" style={{ fontFamily: "monospace" }}>{String(val)}</span>
+          </div>
+        ))}
+      </div>
+
+      <div className="card stack" style={{ gap: 10 }}>
+        <h2 style={{ margin: 0 }}>{t("ops.restart_title")}</h2>
+        <div className="small muted">{t("ops.restart_hint")}</div>
+        {!rt.auto_restart && (
+          <div className="banner" style={{ borderLeft: "4px solid var(--red)" }}>
+            ⚠️ {t("ops.no_supervisor_warn")}
+          </div>
+        )}
+        <div>
+          <button className="btn-danger" onClick={() => setConfirm(true)}>{t("ops.restart_btn")}</button>
+        </div>
+      </div>
+
+      <LogsPanel />
+
+      {confirm && (
+        <div className="modal-overlay" onClick={() => setConfirm(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h3>{t("ops.restart_confirm_title")}</h3>
+            <p className="small">{t("ops.restart_confirm_body")}</p>
+            <div className="inline" style={{ justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
+              <button className="btn-secondary" onClick={() => setConfirm(false)}>{t("action.cancel")}</button>
+              <button className="btn-danger" onClick={doRestart}>{t("ops.restart_confirm_yes")}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {overlay}
+    </div>
+  );
+}
+
+/** Colour per log level for the terminal-style viewer. */
+const LOG_LEVEL_COLOR: Record<string, string> = {
+  DEBUG: "#8A94A6",
+  INFO: "#3B82F6",
+  WARNING: "#F79009",
+  ERROR: "#F04438",
+  CRITICAL: "#D92D20",
+};
+
+type LogRecord = { time: string; level: string; logger: string; message: string };
+type LogsData = { level: string; levels: string[]; count: number; capacity: number; records: LogRecord[] };
+
+/** Admin > Ops > Logs: live application-log viewer with a runtime level switch and
+ *  text/JSON export. Reads the in-memory ring buffer, so it works the same in a
+ *  container/Kubernetes pod where the process logs to stdout. Admin only. */
+function LogsPanel() {
+  const { t } = useI18n();
+  const [data, setData] = useState<LogsData | null>(null);
+  const [filter, setFilter] = useState<string>("");
+  const [pendingLevel, setPendingLevel] = useState<string>("");
+  const [persist, setPersist] = useState(false);
+  const [autoRefresh, setAutoRefresh] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [lastAt, setLastAt] = useState<string>("");
+  const { error, wrap } = useErr();
+
+  const load = () => api.get<LogsData>(`/api/admin/logs?limit=1000${filter ? `&level=${filter}` : ""}`)
+    .then((d) => { setData(d); setPendingLevel((p) => p || d.level); setLastAt(new Date().toLocaleTimeString()); })
+    .catch(() => {});
+
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [filter]);
+  useEffect(() => {
+    if (!autoRefresh) return;
+    const id = setInterval(load, 3000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoRefresh, filter]);
+
+  async function applyLevel() {
+    await wrap(async () => {
+      setBusy(true);
+      try {
+        await api.post("/api/admin/log-level", { level: pendingLevel, persist });
+        await load();
+      } finally { setBusy(false); }
+    });
+  }
+  async function clearBuf() {
+    await wrap(async () => { await api.post("/api/admin/logs/clear", {}); await load(); });
+  }
+
+  if (!data) return <div className="card"><div className="spinner">{t("common.loading")}</div></div>;
+  const dl = (fmt: string) => `/api/admin/logs/download?fmt=${fmt}${filter ? `&level=${filter}` : ""}`;
+
+  return (
+    <div className="card stack" style={{ gap: 12 }}>
+      <div className="between" style={{ flexWrap: "wrap", gap: 8 }}>
+        <h2 style={{ margin: 0 }}>{t("ops.logs_title")}</h2>
+        <span className="small muted inline" style={{ gap: 10 }}>
+          {autoRefresh && <span style={{ color: "var(--green)" }}>● {t("ops.logs_live")}</span>}
+          {lastAt && <span>{t("ops.logs_updated_at", { time: lastAt })}</span>}
+          <span>{t("ops.logs_count", { n: data.count, total: data.capacity })}</span>
+        </span>
+      </div>
+      <div className="small muted">{t("ops.logs_hint")}</div>
+      {error && <ErrorBanner message={error} />}
+
+      {/* Runtime level control */}
+      <div className="row" style={{ gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
+        <div style={{ minWidth: 150 }}>
+          <label>{t("ops.log_level")}</label>
+          <select value={pendingLevel} onChange={(e) => setPendingLevel(e.target.value)}>
+            {data.levels.map((l) => <option key={l} value={l}>{l}</option>)}
+          </select>
+        </div>
+        <label className="switch" style={{ marginBottom: 6 }}>
+          <input type="checkbox" checked={persist} onChange={(e) => setPersist(e.target.checked)} />
+          <span className="track"><span className="knob" /></span>
+          <span className="small">{t("ops.log_persist")}</span>
+        </label>
+        <button className="btn-sm" disabled={busy || (pendingLevel === data.level && !persist)} onClick={applyLevel}>
+          {t("ops.log_apply")}
+        </button>
+        <span className="small muted">{t("ops.log_current")} : <span className="strong" style={{ color: LOG_LEVEL_COLOR[data.level] }}>{data.level}</span></span>
+      </div>
+
+      {/* Viewer toolbar */}
+      <div className="row" style={{ gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
+        <div style={{ minWidth: 150 }}>
+          <label>{t("ops.logs_filter")}</label>
+          <select value={filter} onChange={(e) => setFilter(e.target.value)}>
+            <option value="">{t("ops.logs_all")}</option>
+            {data.levels.map((l) => <option key={l} value={l}>{l}+</option>)}
+          </select>
+        </div>
+        <label className="switch" style={{ marginBottom: 6 }}>
+          <input type="checkbox" checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)} />
+          <span className="track"><span className="knob" /></span>
+          <span className="small">{t("ops.logs_auto")}</span>
+        </label>
+        <button className="btn-secondary btn-sm" onClick={load}>{t("ops.refresh")}</button>
+        <a className="btn-secondary btn-sm" href={dl("txt")}>{t("ops.logs_dl_txt")}</a>
+        <a className="btn-secondary btn-sm" href={dl("json")}>{t("ops.logs_dl_json")}</a>
+        <button className="btn-ghost btn-sm" onClick={clearBuf}>{t("ops.logs_clear")}</button>
+      </div>
+
+      {/* Terminal-style viewer */}
+      <div style={{
+        background: "#0B1020", color: "#E4E7EC", borderRadius: 8, padding: 12,
+        fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 12,
+        lineHeight: 1.5, maxHeight: 440, overflow: "auto", whiteSpace: "pre-wrap", wordBreak: "break-word",
+      }}>
+        {data.records.length === 0 ? (
+          <span style={{ color: "#8A94A6" }}>
+            {t("ops.logs_empty")}
+            {(data.count === 0 && data.level !== "DEBUG") && (
+              <><br />{t("ops.logs_empty_hint", { level: data.level })}</>
+            )}
+          </span>
+        ) : data.records.map((r, i) => (
+          <div key={i}>
+            <span style={{ color: "#667085" }}>{r.time.replace("T", " ").slice(0, 19)} </span>
+            <span style={{ color: LOG_LEVEL_COLOR[r.level] ?? "#E4E7EC", fontWeight: 600 }}>{r.level.padEnd(8)}</span>
+            <span style={{ color: "#98A2B3" }}>{r.logger}: </span>
+            <span>{r.message}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 // Tribe-leader / admin per-squad settings: KPIs on/off + annual objectives.

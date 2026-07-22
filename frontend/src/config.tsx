@@ -12,7 +12,7 @@ import { api } from "./api";
 import { useI18n } from "./i18n";
 import { ModuleKey, ModulesConfig, PublicConfig } from "./types";
 
-/** Default module map: everything on except committees and squad KPIs. Used
+/** Default module map: everything on except committees, steerco and squad KPIs. Used
  *  until the server config loads, and as the fallback when config is missing. */
 export const DEFAULT_MODULES: ModulesConfig = {
   dashboard: { enabled: true },
@@ -22,6 +22,7 @@ export const DEFAULT_MODULES: ModulesConfig = {
   review: { enabled: true, weekly_report: true },
   squad_content: { enabled: true, objectives: true, roadmap: true, kpis: false },
   committees: { enabled: false },
+  steerco: { enabled: false },
   notifications: { enabled: true, inapp: true, email: true },
   getting_started: { enabled: true },
   leaves: { enabled: true, overlap_alert: true },

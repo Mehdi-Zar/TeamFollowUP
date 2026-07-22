@@ -486,6 +486,7 @@ class SquadUpdate(BaseModel):
     leader_user_id: Optional[int] = None
     display_order: Optional[int] = None
     kpis_enabled: Optional[bool] = None
+    steerco_enabled: Optional[bool] = None
     budget_enabled: Optional[bool] = None
     tribe_id: Optional[int] = None
     squad_type: Optional[SquadType] = None
@@ -502,6 +503,7 @@ class SquadOut(ORMModel):
     leader_user_id: Optional[int] = None
     display_order: int
     kpis_enabled: bool
+    steerco_enabled: bool = False
     budget_enabled: bool = False
     squad_type: SquadType = "product"
     products: list[str] = []
