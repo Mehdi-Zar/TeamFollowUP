@@ -8,17 +8,19 @@
  * simply routes to /initiatives. Data comes from a single /api/dashboard call.
  */
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../api";
 import { useI18n } from "../i18n";
-import { useConfig } from "../config";
+import { useConfig, useModule } from "../config";
 import { useAuth } from "../auth";
 import { DashboardOut, SquadCard, Tribe } from "../types";
 import { Dot, FreshnessBadge, ProgressBar, Spinner, ErrorBanner, EmptyState } from "../components/ui";
 import ExportMenu from "../components/ExportMenu";
 import { ReportingButton } from "../components/ReportingModal";
 import AbsencesWidget from "../components/AbsencesWidget";
+import SteercoConsolidation from "../components/SteercoConsolidation";
 import { useSetPageChrome } from "../components/pageChrome";
+import { currentSteercoPeriod } from "../steerco";
 
 type SortKey = "risk" | "progress" | "name" | "fresh";
 type Health = "all" | "blocked" | "at_risk" | "on_track";
@@ -40,12 +42,23 @@ function healthOf(c: SquadCard): "blocked" | "at_risk" | "on_track" {
 export default function DashboardPage() {
   const { t, roadmap } = useI18n();
   const { default_year } = useConfig();
+  const moduleOn = useModule();
   const { effectiveRole } = useAuth();
   const isAdmin = effectiveRole === "admin";
   const navigate = useNavigate();
   // Dashboard + Initiatives are merged under one menu: everyone gets the Initiatives
   // tab (read-only list, editable by the tribe leader); the overview stays as-is.
   const showInitiatives = true;
+  // Steerco consolidation is a leadership view: shown as an in-page tab to admins and
+  // tribe leaders when the module is on (squad leaders fill the data from reporting).
+  const steercoTabOn = moduleOn("steerco") && (isAdmin || effectiveRole === "tribe_leader");
+  // The active sub-view is driven by ?tab= so the tab survives navigating to the
+  // Initiatives page and back (the Initiatives tab bar links back to /?tab=steerco).
+  const [params, setParams] = useSearchParams();
+  const tab: "overview" | "steerco" = params.get("tab") === "steerco" ? "steerco" : "overview";
+  // Steerco view filters, lifted here so the chrome ExportMenu can target them.
+  const [steercoPeriod, setSteercoPeriod] = useState<string>(currentSteercoPeriod());
+  const [steercoSquad, setSteercoSquad] = useState<string>("");   // "" = all squads
   const [data, setData] = useState<DashboardOut | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [year, setYear] = useState<number | null>(null);
@@ -96,12 +109,25 @@ export default function DashboardPage() {
   useSetPageChrome(
     data
       ? {
-          tabs: showInitiatives
-            ? [{ key: "overview", label: t("dash.tab_overview") }, { key: "initiatives", label: t("nav.initiatives") }]
-            : undefined,
-          activeTab: "overview",
-          onTab: (k) => { if (k === "initiatives") navigate("/initiatives"); },
-          actions: (
+          tabs: [
+            { key: "overview", label: t("dash.tab_overview") },
+            ...(steercoTabOn ? [{ key: "steerco", label: t("steerco.tab") }] : []),
+            ...(showInitiatives ? [{ key: "initiatives", label: t("nav.initiatives") }] : []),
+          ],
+          activeTab: tab,
+          onTab: (k) => {
+            if (k === "initiatives") navigate("/initiatives");
+            else if (k === "steerco") setParams({ tab: "steerco" });
+            else setParams({});
+          },
+          // Same toolbar model on every tab: subscribe button + export dropdown. On
+          // Steerco the export dropdown carries the one-pager document instead.
+          actions: tab === "steerco" ? (
+            <>
+              <ReportingButton />
+              <ExportMenu docs={["steerco", "report"]} steerco={{ period: steercoPeriod, squadId: steercoSquad }} />
+            </>
+          ) : (
             <>
               <div className="seg">
                 {[data.current_year - 1, data.current_year, data.current_year + 1].map((y) => (
@@ -114,11 +140,13 @@ export default function DashboardPage() {
           ),
         }
       : {},
-    [data?.year, showInitiatives, t]
+    [data?.year, showInitiatives, steercoTabOn, tab, steercoPeriod, steercoSquad, t]
   );
 
   if (error) return <ErrorBanner message={error} />;
   if (!data) return <Spinner />;
+  if (tab === "steerco" && steercoTabOn)
+    return <SteercoConsolidation period={steercoPeriod} setPeriod={setSteercoPeriod} squadId={steercoSquad} setSquadId={setSteercoSquad} />;
 
   const s = data.summary;
 
@@ -220,7 +248,7 @@ function Card({ card, showTribe }: { card: SquadCard; showTribe?: boolean }) {
           <div>
             <div className="strong sc-name" style={{ color: "var(--navy)" }}>{card.name}</div>
             <div className="muted small" style={{ marginTop: 2 }}>
-              {card.leader?.display_name || t("card.no_leader")} · {card.members_count} {t("card.members")}
+              {card.leader?.display_name || t("card.no_leader")}, {card.members_count} {t("card.members")}
             </div>
           </div>
         </div>

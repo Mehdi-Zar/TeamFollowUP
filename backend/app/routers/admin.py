@@ -657,6 +657,98 @@ def tls_download_active(db: Session = Depends(get_db), admin: User = Depends(req
     return PlainTextResponse(pem, headers={"Content-Disposition": 'attachment; filename="server-cert.pem"'})
 
 
+# ----- Ops / Maintenance (Admin -> Ops) --------------------------------------
+# Runtime diagnostics + a self-restart button. The listener (HTTP vs in-app TLS)
+# is bound at boot, so config like the TLS toggle needs a restart to take effect;
+# rather than shell in, an admin can trigger it here. See app/ops.py.
+
+@router.get("/runtime")
+def read_runtime(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    """GET /api/admin/runtime : read-only runtime diagnostics (version, host, uptime,
+    serving mode, whether a restart is pending). Admin only."""
+    from ..ops import runtime_status
+    return runtime_status(db)
+
+
+@router.post("/restart")
+def restart_app(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    """POST /api/admin/restart : gracefully restart the application.
+
+    Schedules a SIGTERM on our own process right after this response; uvicorn drains
+    in-flight requests and exits, and the orchestrator (Docker/Kubernetes) restarts
+    the container with the current configuration applied. Admin only. Audited.
+    Returns whether the restart was scheduled and whether a supervisor will bring the
+    process back (``auto_restart``)."""
+    from ..ops import request_restart
+    record_audit(db, admin.id, "ops.restart", entity="ops", detail={})
+    db.commit()
+    return request_restart()
+
+
+@router.get("/logs")
+def read_logs(limit: int = 500, level: str | None = None,
+              db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    """GET /api/admin/logs?limit=&level= : recent application log records from the
+    in-memory ring buffer (oldest first), plus the current level and buffer stats.
+    ``level`` filters to that severity and above. Admin only."""
+    from .. import logbuffer
+    st = logbuffer.stats()
+    return {
+        "level": logbuffer.current_level(),
+        "levels": logbuffer.LEVELS,
+        "count": st["count"],
+        "capacity": st["capacity"],
+        "records": logbuffer.records(limit=limit, min_level=level),
+    }
+
+
+@router.get("/logs/download")
+def download_logs(fmt: str = "txt", level: str | None = None,
+                  db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    """GET /api/admin/logs/download?fmt=txt|json&level= : download the buffered logs
+    as a text or NDJSON attachment. Admin only. Audited."""
+    from .. import logbuffer
+    items = logbuffer.records(limit=logbuffer.CAPACITY, min_level=level)
+    record_audit(db, admin.id, "ops.logs_download", entity="ops", detail={"fmt": fmt, "n": len(items)})
+    db.commit()
+    if fmt == "json":
+        body, media, ext = logbuffer.as_ndjson(items), "application/x-ndjson", "ndjson"
+    else:
+        body, media, ext = logbuffer.as_text(items), "text/plain; charset=utf-8", "log"
+    return PlainTextResponse(body, media_type=media,
+                             headers={"Content-Disposition": f'attachment; filename="app-logs.{ext}"'})
+
+
+@router.post("/log-level")
+def set_log_level(payload: dict = Body(...), db: Session = Depends(get_db),
+                  admin: User = Depends(require_admin)):
+    """POST /api/admin/log-level : set the live log level (root + uvicorn loggers).
+
+    Body: ``{"level": "DEBUG"|..., "persist": bool}``. When ``persist`` is true the
+    level is stored and re-applied on the next restart. Admin only. Audited."""
+    from .. import logbuffer
+    level = str((payload or {}).get("level", "")).upper()
+    persist = bool((payload or {}).get("persist"))
+    try:
+        applied = logbuffer.set_live_level(level)
+        if persist:
+            logbuffer.persist_level(db, level)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    record_audit(db, admin.id, "ops.set_log_level", entity="ops", detail={"level": applied, "persist": persist})
+    db.commit()
+    return {"level": applied, "persisted": persist}
+
+
+@router.post("/logs/clear")
+def clear_logs(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    """POST /api/admin/logs/clear : empty the in-memory log buffer. Admin only. Audited."""
+    from .. import logbuffer
+    logbuffer.clear()
+    record_audit(db, admin.id, "ops.logs_clear", entity="ops", detail={})
+    db.commit()
+    return {"ok": True}
+
 
 # ----- API keys (Admin -> API) ------------------------------------------------
 # A key is a service credential: created here, shown ONCE, then only ever
@@ -808,5 +900,62 @@ async def import_org_upload(
         db.rollback()
         raise HTTPException(status_code=400, detail=f"Import impossible : {exc}")
     record_audit(db, admin.id, "org.import", entity="tribe", detail=summary)
+    db.commit()
+    return summary
+
+
+# ----- Steerco import (Admin -> Import) ---------------------------------------
+# Collect a squad's Steerco data (KPI/SLA/incidents/events, 12 months) in an Excel
+# file and upload it here; parsed in memory and written to SteercoEntry rows.
+
+@router.get("/import-steerco/template")
+def download_steerco_template(squad_id: int | None = None, db: Session = Depends(get_db),
+                              admin: User = Depends(require_admin)):
+    """GET /api/admin/import-steerco/template?squad_id= : download the Steerco Excel
+    template (Infos / KPIs / SLA / Incidents / Evenements) to fill in. Admin only.
+
+    With ``squad_id`` the workbook is built *for that squad*: its name is pre-filled
+    and the KPI / SLA rows are the ones it actually reports, so the file matches the
+    app instead of proposing a canned list. Without it, the standard structure."""
+    from ..models import Squad
+    from ..steerco_import import structure_for_squad, template_bytes
+    kpis = services = None
+    name = ""
+    if squad_id is not None:
+        squad = db.get(Squad, squad_id)
+        if squad is None:
+            raise HTTPException(status_code=404, detail="Squad introuvable")
+        kpis, services = structure_for_squad(db, squad_id)
+        name = squad.name
+    slug = "".join(c if c.isalnum() else "-" for c in name).strip("-").lower() or "template"
+    return Response(
+        content=template_bytes(None, kpis, services, name),
+        media_type=_XLSX_MIME,
+        headers={"Content-Disposition": f'attachment; filename="steerco.{slug}.xlsx"'},
+    )
+
+
+@router.post("/import-steerco")
+async def import_steerco_upload(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    """POST /api/admin/import-steerco : upload a filled Steerco Excel and write the
+    squad's monthly snapshots (12-month history + full current month). Admin only.
+    Idempotent per (squad, period). 400 on wrong format / unknown squad. Audited."""
+    from ..steerco_import import import_steerco
+
+    content = await file.read()
+    try:
+        summary = import_steerco(db, content, user_id=admin.id)
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:  # malformed cells, etc.
+        db.rollback()
+        raise HTTPException(status_code=400, detail=f"Import impossible : {exc}")
+    record_audit(db, admin.id, "steerco.import", entity="squad",
+                 entity_id=summary.get("squad_id"), detail=summary)
     db.commit()
     return summary

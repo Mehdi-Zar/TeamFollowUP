@@ -295,6 +295,7 @@ export interface Squad {
   leader_user_id?: number | null;
   display_order: number;
   kpis_enabled: boolean;
+  steerco_enabled?: boolean;
   budget_enabled?: boolean;
   squad_type?: SquadType;
   products?: string[];
@@ -417,6 +418,7 @@ export interface ModulesConfig {
   review: { enabled: boolean; weekly_report: boolean };
   squad_content: { enabled: boolean; objectives: boolean; roadmap: boolean; kpis: boolean };
   committees: { enabled: boolean };
+  steerco: { enabled: boolean };
   notifications: { enabled: boolean; inapp: boolean; email: boolean };
   getting_started: { enabled: boolean };
   leaves: { enabled: boolean; overlap_alert: boolean };

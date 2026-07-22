@@ -818,3 +818,91 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); width
   .admin-nav-group + .admin-nav-group { border-top: 0; }
   .admin-nav-title { width: 100%; padding: 2px 4px; }
 }
+
+/* ---- Steerco reporting wizard ---- */
+.wiz-steps { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 14px; }
+.wiz-step { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 10px; color: var(--grey); font-size: 13px; }
+.wiz-step .wiz-dot { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700; background: var(--line); color: var(--grey); flex: 0 0 auto; }
+.wiz-step.active { color: var(--navy); font-weight: 600; }
+.wiz-step.active .wiz-dot { background: var(--navy); color: #fff; }
+.wiz-step.done { color: var(--green); cursor: pointer; }
+.wiz-step.done .wiz-dot { background: var(--green); color: #fff; }
+.wiz-ctx { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 12px; background: var(--ice-soft); border: 1px solid var(--ice-blue); margin-bottom: 16px; }
+.wiz-ctx .wiz-month { font-weight: 700; color: var(--navy); font-size: 15px; }
+.wiz-ctx .wiz-badge { margin-left: auto; font-size: 12px; padding: 3px 9px; border-radius: 999px; background: #fff; border: 1px solid var(--ice-blue); color: var(--navy); }
+.wiz-h { color: var(--navy); font-weight: 600; margin-bottom: 4px; }
+.wiz-help { color: var(--grey); font-size: 13px; margin-bottom: 12px; }
+.sc-hist { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; }
+/* Fixed layout + shared column widths so the KPI / SLA / Incidents tables line up
+   exactly (name + month columns + "this month" sit at the same x in every table). */
+.sc-hist table { border-collapse: collapse; width: 100%; font-size: 13px; table-layout: fixed; }
+.sc-hist col.c-name { width: 138px; }
+.sc-hist col.c-m { width: 46px; }
+.sc-hist col.c-cur { width: 78px; }
+.sc-hist col.c-delta { width: 104px; }
+.sc-hist col.c-del { width: 36px; }
+.sc-hist col.c-status { width: 112px; }
+.sc-hist th, .sc-hist td { padding: 7px 4px; text-align: center; white-space: nowrap; border-bottom: 1px solid var(--line); }
+.sc-hist tr:last-child td { border-bottom: 0; }
+.sc-hist th { background: var(--bg); color: var(--grey); font-weight: 600; font-size: 11.5px; }
+/* The 12-month window spans two calendar years: the year sits under the month name
+   so the columns stay narrow and no two "Aug" can be confused. */
+.sc-hist th .sc-yr { display: block; font-size: 9.5px; font-weight: 400; opacity: .65; }
+/* Name column stays visible if the 12-month table needs to scroll horizontally. */
+.sc-hist th.sc-name, .sc-hist td.sc-name { text-align: left; overflow: hidden; text-overflow: ellipsis; position: sticky; left: 0; z-index: 2; padding-left: 10px; background: #fff; }
+.sc-hist th.sc-name { background: var(--bg); }
+.sc-hist .sc-past { color: var(--grey); }
+.sc-hist th.sc-cur { color: var(--navy); background: var(--ice-soft); }
+.sc-hist td.sc-cur { background: var(--ice-soft); }
+.sc-hist input, .sc-hist select { width: 100%; text-align: center; padding: 5px 3px; }
+.sc-hist td.sc-name input { text-align: left; }
+.sc-hist tr.sc-sub td.sc-name { padding-left: 22px; color: var(--grey); font-style: italic; }
+/* Read-only computed columns: variation vs M-1 and SLA status (never editable). */
+.sc-hist td.sc-chg { font-weight: 700; font-size: 12.5px; }
+.sc-hist td.sc-chg.up { color: var(--green); }
+.sc-hist td.sc-chg.down { color: var(--red); }
+.sc-hist td.sc-chg.flat { color: var(--grey); }
+.sc-hist td.sc-rag { font-weight: 700; font-size: 12px; }
+.sc-hist td.sc-rag.ok { color: var(--green); }
+.sc-hist td.sc-rag.warn { color: #9C7212; }
+.sc-hist td.sc-rag.ko { color: var(--red); }
+.sc-hist td.sc-rag.none { color: var(--grey); font-weight: 400; }
+.wiz-recap { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+.wiz-recap .rc { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+.wiz-recap .rc .rc-n { font-size: 24px; font-weight: 700; color: var(--navy); }
+.wiz-recap .rc .rc-l { font-size: 12px; color: var(--grey); text-transform: uppercase; letter-spacing: .02em; }
+
+/* Events editor as a clean, structured table (Date / Type / Label / Severity). */
+.sc-ev { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.sc-ev table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 13px; }
+.sc-ev col.c-date { width: 100px; }
+.sc-ev col.c-type { width: 136px; }
+.sc-ev col.c-sev { width: 150px; }
+.sc-ev col.c-evdel { width: 50px; }
+.sc-ev th { background: var(--bg); color: var(--grey); font-weight: 600; font-size: 12px; text-align: left;
+  padding: 9px 12px; border-bottom: 1px solid var(--line); }
+.sc-ev td { padding: 4px 6px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.sc-ev tr:last-child td { border-bottom: 0; }
+.sc-ev input, .sc-ev select { width: 100%; border: 1px solid transparent; background: transparent;
+  border-radius: 8px; padding: 8px 8px; }
+.sc-ev input:hover, .sc-ev select:hover { background: #fff; border-color: var(--line); }
+.sc-ev input:focus, .sc-ev select:focus { background: #fff; border-color: var(--accent); outline: none; }
+.sc-ev .icon-del { width: 34px; height: 34px; min-width: 34px; margin: 0 auto; }
+.sc-ev-empty { text-align: center; color: var(--grey); padding: 18px; font-style: italic; }
+
+/* Clean square icon-delete button, sized to match an input so it lines up with
+   the fields on the events rows (and the KPI table) instead of floating small. */
+.icon-del { width: 38px; height: 38px; min-width: 38px; padding: 0; flex: 0 0 auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: #fff; color: var(--grey); border: 1px solid var(--line); border-radius: 10px;
+  font-size: 14px; font-weight: 400; }
+.icon-del:hover { background: #FEF3F2; color: var(--red); border-color: #FBD5D1; }
+.sc-hist .icon-del { width: 28px; height: 28px; min-width: 28px; margin: 0 auto; }
+
+/* ---- Steerco monthly status strip (reporting launcher) ---- */
+.sc-status { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line); background: #fff; }
+.sc-status.todo { background: var(--ice-soft); border-color: var(--ice-blue); }
+.sc-status.done { background: #ECFDF3; border-color: #A6F4C5; }
+.sc-status-ic { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; font-size: 15px; flex: 0 0 auto; }
+.sc-status.todo .sc-status-ic { background: var(--ice-blue); color: var(--navy); }
+.sc-status.done .sc-status-ic { background: var(--green); color: #fff; }

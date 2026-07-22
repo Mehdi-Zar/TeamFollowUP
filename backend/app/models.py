@@ -125,6 +125,11 @@ class Squad(Base):
     leader_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     display_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     kpis_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # Steerco (steering-committee) reporting is opt-in per squad and self-service:
+    # the squad leader flips it on when they want to prepare their steerco input for
+    # a period (recurring but at no fixed cadence, ~monthly). Off by default; when on,
+    # a Steerco section appears in the reporting screen and feeds the consolidated PPTX.
+    steerco_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     # Budget tracking is opt-in per squad: the tribe leader turns it on, then the
     # squad leader reports the figures. The amounts (SquadBudget) are visible only
     # to the squad leader, its tribe leader and admins.
@@ -658,3 +663,33 @@ class ApiKey(Base):
 
     tribe: Mapped["Tribe | None"] = relationship(foreign_keys=[tribe_id])
     created_by: Mapped["User | None"] = relationship(foreign_keys=[created_by_user_id])
+
+
+class SteercoEntry(Base):
+    """One squad's Steering-Committee (steerco) monthly snapshot.
+
+    A squad has at most one entry per month (unique constraint). The one-pager
+    (HTML / PPTX) is not stored: it is rebuilt on the fly from the last 12 of these
+    rows, so the charts and the "last 12 months" SLA row stay in sync by construction.
+
+    The snapshot fields live in the schemaless ``data`` JSON blob rather than in
+    columns, so the input shape can evolve without a migration per field. See
+    ``app/routers/steerco.py`` and ``frontend/src/steerco.ts`` for that shape.
+    """
+    __tablename__ = "steerco_entries"
+    __table_args__ = (UniqueConstraint("squad_id", "period", name="uq_steerco_squad_period"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    squad_id: Mapped[int] = mapped_column(ForeignKey("squads.id", ondelete="CASCADE"),
+                                          index=True, nullable=False)
+    # Reporting month, "YYYY-MM".
+    period: Mapped[str] = mapped_column(String(32), nullable=False)
+    # The month's snapshot: {"kpis": [...], "sla": {...}, "incidents": "13",
+    # "last_events": [...], "next_events": [...]}.
+    data: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),
+                                                 default=utcnow, onupdate=utcnow)
+    updated_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+
+    squad: Mapped["Squad"] = relationship(foreign_keys=[squad_id])
+    updated_by: Mapped["User | None"] = relationship(foreign_keys=[updated_by_user_id])

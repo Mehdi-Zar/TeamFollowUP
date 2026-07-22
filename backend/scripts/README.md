@@ -19,3 +19,9 @@ docker compose exec -T app python - < backend/scripts/prune_users.py
 
 Each prints what it deleted/created. Take a database backup first if the data
 matters.
+
+## Steerco data collection
+
+Done in-app (no script): **Admin > Import** has a *Steerco* card that downloads a
+blank Excel template and re-imports the filled file (see `app/steerco_import.py`,
+`/api/admin/import-steerco[/template]`). Idempotent per (squad, period).

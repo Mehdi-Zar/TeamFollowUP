@@ -7,6 +7,7 @@ import { useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { useI18n } from "../i18n";
 import { useAuth } from "../auth";
+import { useModule } from "../config";
 import { Initiative, Squad, Tribe } from "../types";
 import { Spinner, ErrorBanner, EmptyState, Modal } from "../components/ui";
 import { HtmlPreviewButton } from "../components/HtmlPreview";
@@ -37,6 +38,9 @@ export default function InitiativesPage() {
   const isAdmin = effectiveRole === "admin";
   const canEdit = isAdmin || effectiveRole === "tribe_leader";
   const navigate = useNavigate();
+  // Mirror the Dashboard's Steerco tab here so it doesn't vanish when you switch to
+  // Initiatives; selecting it returns to the dashboard with that sub-view active.
+  const steercoTabOn = useModule()("steerco") && canEdit;
 
   const [year, setYear] = useState<number>(CUR_YEAR);
   const [tribes, setTribes] = useState<Tribe[]>([]);
@@ -65,9 +69,16 @@ export default function InitiativesPage() {
 
   useSetPageChrome({
     title: t("nav.dashboard"),
-    tabs: [{ key: "overview", label: t("dash.tab_overview") }, { key: "initiatives", label: t("nav.initiatives") }],
+    tabs: [
+      { key: "overview", label: t("dash.tab_overview") },
+      ...(steercoTabOn ? [{ key: "steerco", label: t("steerco.tab") }] : []),
+      { key: "initiatives", label: t("nav.initiatives") },
+    ],
     activeTab: "initiatives",
-    onTab: (k) => { if (k === "overview") navigate("/"); },
+    onTab: (k) => {
+      if (k === "overview") navigate("/");
+      else if (k === "steerco") navigate("/?tab=steerco");
+    },
     actions: (
       <div className="inline" style={{ gap: 10, flexWrap: "wrap" }}>
         <div className="seg">
@@ -87,7 +98,7 @@ export default function InitiativesPage() {
         )}
       </div>
     ),
-  }, [isAdmin, tribes, tribeId, year, t, tribeForNew, canEdit]);
+  }, [isAdmin, tribes, tribeId, year, t, tribeForNew, canEdit, steercoTabOn]);
 
   if (error) return <ErrorBanner message={error} />;
   if (!items) return <Spinner />;

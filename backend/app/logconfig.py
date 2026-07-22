@@ -73,11 +73,15 @@ def configure_logging(fmt: str = "text", level: str | int = "INFO") -> None:
     handlers - including any left by ``logging.basicConfig`` in an imported
     module - are removed first so a single handler emits each line exactly once.
     """
+    from . import logbuffer
+
     root = logging.getLogger()
     root.setLevel(level)
     for h in list(root.handlers):
         root.removeHandler(h)
     root.addHandler(_build_handler(fmt))
+    # Keep recent records in memory for the Admin > Ops debug panel.
+    logbuffer.install()
 
 
 def uvicorn_log_config(fmt: str = "text", level: str = "INFO") -> dict:
@@ -91,17 +95,21 @@ def uvicorn_log_config(fmt: str = "text", level: str = "INFO") -> dict:
         if fmt == "json"
         else {"format": TEXT_FORMAT}
     )
+    # A second handler feeds uvicorn's own loggers (which don't propagate to root)
+    # into the in-memory ring buffer, so the Ops debug panel sees access/error lines
+    # too. dictConfig instantiates it via the factory, returning our singleton.
     return {
         "version": 1,
         "disable_existing_loggers": False,
         "formatters": {"default": formatter},
         "handlers": {
             "default": {"class": "logging.StreamHandler", "formatter": "default"},
+            "ringbuffer": {"()": "app.logbuffer.ring_handler"},
         },
         "loggers": {
-            "uvicorn": {"handlers": ["default"], "level": level, "propagate": False},
-            "uvicorn.error": {"handlers": ["default"], "level": level, "propagate": False},
-            "uvicorn.access": {"handlers": ["default"], "level": level, "propagate": False},
+            "uvicorn": {"handlers": ["default", "ringbuffer"], "level": level, "propagate": False},
+            "uvicorn.error": {"handlers": ["default", "ringbuffer"], "level": level, "propagate": False},
+            "uvicorn.access": {"handlers": ["default", "ringbuffer"], "level": level, "propagate": False},
         },
-        "root": {"handlers": ["default"], "level": level},
+        "root": {"handlers": ["default", "ringbuffer"], "level": level},
     }

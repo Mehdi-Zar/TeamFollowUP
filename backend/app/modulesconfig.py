@@ -31,6 +31,8 @@ def _defaults() -> dict:
         # Optional governance section ("comitologie"): squad leaders declare their
         # recurring committees, tribe leaders get oversight. Off by default.
         "committees": {"enabled": False},
+        # Steering-committee inputs (squad leaders) + consolidated document. Off by default.
+        "steerco": {"enabled": False},
         "notifications": {"enabled": True, "inapp": True, "email": True},
         "getting_started": {"enabled": True},
         "leaves": {"enabled": True, "overlap_alert": True},
