@@ -186,7 +186,7 @@ function CalendarView({ bump, onOpen }: { bump: number; onOpen: (l: Leave) => vo
                                (sameDay(day, parseISO(l.end_date)) && l.end_half);
                   return (
                     <button key={l.id} className="cal-chip" style={{ background: l.type_color }}
-                      title={`${l.user_name} · ${leaveLabel(l, lang)}${l.status === "pending" ? " (" + t("leaves.status.pending") + ")" : ""}`}
+                      title={`${l.user_name}, ${leaveLabel(l, lang)}${l.status === "pending" ? " (" + t("leaves.status.pending") + ")" : ""}`}
                       onClick={() => onOpen(l)}>
                       <span className="cal-chip-name">{l.user_name}</span>
                       {half && <span className="cal-chip-half">½</span>}
@@ -340,7 +340,7 @@ function MineView({ bump, onOpen, onNew }: { bump: number; onOpen: (l: Leave) =>
             <div key={r.id} className="between item-row" style={{ cursor: "pointer" }} onClick={() => onOpen(r)}>
               <span className="inline" style={{ gap: 8 }}>
                 <span className="dot" style={{ background: r.type_color }} />
-                <strong>{r.user_name}</strong> <span className="small muted">{leaveLabel(r, lang)} · {fmtShort(r.start_date)} → {fmtShort(r.end_date)} · {r.days} {t("leaves.days_short")}</span>
+                <strong>{r.user_name}</strong> <span className="small muted">{leaveLabel(r, lang)}, {fmtShort(r.start_date)} → {fmtShort(r.end_date)}, {r.days} {t("leaves.days_short")}</span>
               </span>
               <span className="small" style={{ color: "var(--accent)" }}>{t("leaves.review")} →</span>
             </div>
@@ -517,8 +517,8 @@ function LeaveDetail({ leave, onClose, onEdit, onChanged }: {
           <strong>{leaveLabel(leave, lang)}</strong>
           <span className={`badge ${STATUS_CLASS[leave.status]}`}>{t(`leaves.status.${leave.status}`)}</span>
         </div>
-        <div className="small">{fmtShort(leave.start_date)} → {fmtShort(leave.end_date)} · <strong>{leave.days} {t("leaves.days_short")}</strong>
-          {(leave.start_half || leave.end_half) && <span className="muted"> · {t("leaves.has_half")}</span>}</div>
+        <div className="small">{fmtShort(leave.start_date)} → {fmtShort(leave.end_date)}, <strong>{leave.days} {t("leaves.days_short")}</strong>
+          {(leave.start_half || leave.end_half) && <span className="muted">, {t("leaves.has_half")}</span>}</div>
         {leave.comment && <div><div className="field-label">{t("leaves.comment")}</div><div className="small">{leave.comment}</div></div>}
         {leave.decided_by_name && (
           <div className="small muted">{t("leaves.decided_by", { name: leave.decided_by_name })}
