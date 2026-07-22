@@ -226,7 +226,7 @@ function PostCard({ post, canPin, reactionsOn, repliesOn, canDelete, userId, onC
               {post.replies.map((r: any) => (
                 <div key={r.id} className="feed-reply">
                   <div className="between">
-                    <span className="small"><span className="strong">{r.author?.display_name || "?"}</span> · {r.content}</span>
+                    <span className="small"><span className="strong">{r.author?.display_name || "?"}</span>, {r.content}</span>
                     <span className="inline" style={{ gap: 6 }}>
                       <span className="small muted">{formatDateTime(r.created_at)}</span>
                       {(r.author?.id === userId) && <button className="btn-ghost btn-sm" aria-label={t("action.delete")} onClick={() => delReply(r.id)}>✕</button>}

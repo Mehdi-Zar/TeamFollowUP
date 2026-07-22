@@ -187,7 +187,7 @@ export function FreshnessBadge({ freshness }: { freshness: Freshness }) {
     return (
       <span className="badge badge-grey">
         <span className="dot dot-grey" aria-hidden />
-        {text} · {t("fresh.stale_suffix")}
+        {text}, {t("fresh.stale_suffix")}
       </span>
     );
   }

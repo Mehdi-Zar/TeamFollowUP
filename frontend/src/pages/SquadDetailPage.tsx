@@ -154,7 +154,7 @@ export default function SquadDetailPage() {
             </div>
             <span className="small muted">
               {rag(o.rag_status)}
-              {o.target_date ? ` · ${formatDate(o.target_date)}` : ""}
+              {o.target_date ? `, ${formatDate(o.target_date)}` : ""}
             </span>
           </div>
         ))}
@@ -213,7 +213,7 @@ export default function SquadDetailPage() {
               <Dot status={roadmapRag(d.status)} />
               <Link to={`/squads/${d.squad_id}${squad.year ? `?year=${squad.year}` : ""}`} className="grow">
                 <span className="strong small">{d.squad_name}</span>
-                <span className="small muted"> · Q{d.quarter} · {d.title}</span>
+                <span className="small muted">, Q{d.quarter}, {d.title}</span>
               </Link>
               <span className="badge badge-grey">{d.via === "tribe" ? t("dep.via_tribe") : t("dep.via_squad")}</span>
             </div>
@@ -381,13 +381,13 @@ const emptyCommittee = (order: number): Partial<Committee> => ({
   is_active: true, display_order: order,
 });
 
-// "Mardi · 09:30 · 60 min" - day / time / duration combined into one column.
+// "Mardi, 09:30, 60 min" - day / time / duration combined into one column.
 function whenDurationLabel(c: Committee, t: (k: string, v?: any) => string): string {
   const parts: string[] = [];
   if (c.day_of_week) parts.push(t(`committee.day.${c.day_of_week}`));
   if (c.time_of_day) parts.push(c.time_of_day);
   if (c.duration_minutes != null) parts.push(t("committee.duration_val", { n: c.duration_minutes }));
-  return parts.join(" · ") || "-";
+  return parts.join(", ") || "-";
 }
 
 /** Time picker constrained to 30-minute steps, with ± buttons for hour and
@@ -688,7 +688,7 @@ function BudgetPanel({ squad, canEdit, canToggle, onChange }:
             </label>
           ) : (
             <div className="between"><span className="small muted">{t("budget.total")}</span>
-              <span className="strong">{fmt(b?.total)} <span className="small muted">· {t("budget.total_locked")}</span></span>
+              <span className="strong">{fmt(b?.total)} <span className="small muted">, {t("budget.total_locked")}</span></span>
             </div>
           )}
           <label>{t("budget.spent")} <span className="small muted">({t("budget.spent_hint")})</span>

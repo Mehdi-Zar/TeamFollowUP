@@ -76,7 +76,7 @@ export function OtdPanel({ squad, canManage, onChange }:
             </div>
             <div className="small muted">
               {t("otd.committed")}: {fmtDate(o.committed_date)}
-              {" · "}{t("otd.counts", { total: o.counts.total, done: o.counts.done, blocked: o.counts.blocked, at_risk: o.counts.at_risk })}
+              {", "}{t("otd.counts", { total: o.counts.total, done: o.counts.done, blocked: o.counts.blocked, at_risk: o.counts.at_risk })}
             </div>
             {o.jalons.length > 0 && (
               <div className="stack" style={{ gap: 2 }}>

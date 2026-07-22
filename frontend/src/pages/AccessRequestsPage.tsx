@@ -104,7 +104,7 @@ function RequestRow({ req, opts, roleLabel, t, onApprove, onDeny }: {
       <div className="between" style={{ alignItems: "center", flexWrap: "wrap", gap: 8 }}>
         <div>
           <div className="strong">{req.display_name}</div>
-          <div className="small muted">{req.email}{req.auth_subject ? " · SSO" : ""}</div>
+          <div className="small muted">{req.email}{req.auth_subject ? ", SSO" : ""}</div>
         </div>
         <span className="badge">{t("access.proposed")}: {roleLabel(req.role)}</span>
       </div>

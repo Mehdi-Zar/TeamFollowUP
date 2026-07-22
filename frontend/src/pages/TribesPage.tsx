@@ -45,7 +45,7 @@ export default function TribesPage() {
           >
             <div className="strong sc-name" style={{ color: "var(--navy)" }}>{tr.tribe_name}</div>
             <div className="muted small" style={{ marginTop: 6 }}>
-              {tr.squads_count} {t("tribes.squads")} · {t("tribes.open_org")}
+              {tr.squads_count} {t("tribes.squads")}, {t("tribes.open_org")}
             </div>
           </button>
         ))}

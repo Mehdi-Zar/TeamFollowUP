@@ -56,7 +56,7 @@ export default function AbsencesWidget() {
           {rows.map((r) => (
             <Link key={r.id} to="/conges" className="badge"
               style={{ background: r.type_color, color: "#fff", textDecoration: "none" }}
-              title={`${leaveLabel(r, lang)} · ${fmtShort(r.start_date)} → ${fmtShort(r.end_date)}`}>
+              title={`${leaveLabel(r, lang)}, ${fmtShort(r.start_date)} → ${fmtShort(r.end_date)}`}>
               {r.user_name}
               {r.status === "pending" ? " •" : ""}
             </Link>
