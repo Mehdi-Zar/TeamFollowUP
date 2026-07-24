@@ -5,6 +5,7 @@ from fastapi.responses import HTMLResponse, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .. import pptxtpl
 from ..database import get_db
 from ..deps import get_current_user, require_capability, require_module
 from ..models import OrgNode, Tribe, User
@@ -85,6 +86,7 @@ def export_pptx(tribe_id: int | None = Query(default=None),
     tid = _resolve_tribe(user, tribe_id, db)
     roots, name = _tree_dicts(db, tid) if tid is not None else ([], "-")
     roots = _prune(roots, set(node_ids or []))
+    pptxtpl.use(pptxtpl.get(db))
     payload = render_org_pptx(roots, name, lang=lang or "fr")
     # Buffered artifact → plain Response so Content-Length is set (not chunked).
     return Response(

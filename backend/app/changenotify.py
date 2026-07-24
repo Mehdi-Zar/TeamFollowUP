@@ -46,6 +46,7 @@ def _run(squad_id: int, event: str, actor_name: str | None, year: int | None) ->
         from .mail import send_email
         from .models import Squad
         from .modulesconfig import get_modules, is_active
+        from . import pptxtpl
         from .report import build_report_data, render_html, render_pptx
         from .smtpconfig import get_smtp
 
@@ -95,6 +96,7 @@ def _run(squad_id: int, event: str, actor_name: str | None, year: int | None) ->
         attachment = None
         if cfg.get("attach_pptx"):
             try:
+                pptxtpl.use(pptxtpl.get(db))
                 pptx = render_pptx(data)
                 if pptx:
                     attachment = (f"{_slug(squad.name)}_{report_year}.pptx", pptx,

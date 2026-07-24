@@ -34,7 +34,7 @@ instantanes de l'**annee** du rapport. C'est ce qui garantit la coherence :
 | Ligne SLA "mois en cours" | l'instantane du mois demande |
 | Ligne SLA "moyenne annuelle" | moyenne des mois renseignes de l'annee |
 | Couleur d'une cellule SLA | calculee de la valeur : au-dessus de 90 % vert, de 80 a 90 % orange, en dessous de 80 % rouge |
-| Graphes KPI et incidents | serie de janvier a decembre de l'annee (KPI indexes base 100) |
+| Graphes KPI et incidents | serie de janvier a decembre de l'annee, en valeurs brutes (les memes chiffres que les cartes KPI) |
 | Evenements (derniers / prochains) | l'instantane du mois demande ; la gravite colore la pastille de type |
 
 > **Fenetre = annee civile.** Partout (graphes, grille de rattrapage, colonnes de

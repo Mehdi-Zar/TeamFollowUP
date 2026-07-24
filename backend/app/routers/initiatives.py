@@ -6,6 +6,7 @@ from fastapi.responses import HTMLResponse, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .. import pptxtpl
 from .. import status as st
 from ..database import get_db
 from ..deps import (assert_can_manage_tribe_reporting, get_current_user, record_audit,
@@ -146,6 +147,7 @@ def initiatives_pptx(tribe_id: int | None = Query(default=None), year: int | Non
     scope = _scope_tribe(user, tribe_id) if user.role == "admin" else visible_tribe_id(user)
     data = build_initiative_list(db, scope, year)
     try:
+        pptxtpl.use(pptxtpl.get(db))
         payload = render_initiatives_pptx(data, lang=lang or "fr")
     except ImportError:
         raise HTTPException(status_code=501, detail="Génération PPTX indisponible (python-pptx non installé)")

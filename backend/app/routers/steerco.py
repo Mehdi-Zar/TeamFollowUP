@@ -54,7 +54,7 @@ I18N = {
                    "August", "September", "October", "November", "December"],
         "key_figures": "KPI",
         "sla": "SLA", "sla_sub": "incidents &amp; SwF (by COTS)",
-        "kpi_chart": "KPI trend", "kpi_chart_sub": "{year}, base 100",
+        "kpi_chart": "KPI trend", "kpi_chart_sub": "{year}",
         "inc_chart": "Incidents", "inc_chart_sub": "{year}",
         "period": "Period", "current": "Current month", "trailing": "Annual average",
         "last_events": "Last events", "next_events": "Next events",
@@ -66,7 +66,7 @@ I18N = {
                    "août", "septembre", "octobre", "novembre", "décembre"],
         "key_figures": "KPI",
         "sla": "SLA", "sla_sub": "incidents &amp; SwF (par COTS)",
-        "kpi_chart": "Évolution KPI", "kpi_chart_sub": "{year}, base 100",
+        "kpi_chart": "Évolution KPI", "kpi_chart_sub": "{year}",
         "inc_chart": "Incidents", "inc_chart_sub": "{year}",
         "period": "Période", "current": "Mois en cours", "trailing": "Moyenne annuelle",
         "last_events": "Derniers évènements", "next_events": "Prochains évènements",
@@ -296,14 +296,6 @@ def _round_up(x: float) -> int:
     return int(math.ceil(x / mag) * mag)
 
 
-def _round_down(x: float) -> int:
-    x = max(x, 0.0)
-    if x < 1:
-        return 0
-    mag = 10 ** (len(str(int(x))) - 1)
-    return int(math.floor(x / mag) * mag)
-
-
 # --- Auto-computed indicators (never entered by the squad leader) -------------
 # SLA colour: above 90% green, 80 to 90% amber, below 80% red.
 SLA_GREEN, SLA_AMBER = 90.0, 80.0
@@ -398,17 +390,17 @@ def _aggregate(db: Session, squad_id: int, period: str, override: dict | None = 
     kpi_series = []
     for idx, k in enumerate(kpis):
         label = k.get("label")
-        # Same (case-insensitive) label matching as the vs-M-1 delta, so a KPI typed
-        # "K8aaS" one month and "K8AAS" the next stays one single series.
-        raw = [_num(_kpi_value(by_period.get(key, {}), label or "")) for key in keys]
-        # Index each KPI to base 100 at its first value, so metrics of very different
-        # magnitudes (Users ~250 vs Cluster K8s ~8) share the axis and read as trends.
-        base = next((v for v in raw if v not in (None, 0)), None)
-        data = [round(v / base * 100, 1) if (v is not None and base) else v for v in raw]
+        # Plot the RAW monthly values (case-insensitive label match, same as the vs-M-1
+        # delta so a KPI typed "K8aaS" then "K8AAS" stays one series). These are the exact
+        # figures shown on the KPI cards. We deliberately do NOT index to base 100: a metric
+        # ramping up from zero (e.g. DBaaS 1 -> 5) would explode to 100 -> 500 and dominate
+        # the shared axis, and each series would be indexed off a different first month, so
+        # the curves were not even comparable.
+        data = [_num(_kpi_value(by_period.get(key, {}), label or "")) for key in keys]
         kpi_series.append({"name": label, "color": SERIES_COLORS[idx % len(SERIES_COLORS)], "data": data})
-    all_idx = [v for s in kpi_series for v in s["data"] if v is not None]
-    kpi_ymax = _round_up(max(all_idx + [110]))
-    kpi_ymin = _round_down(min(all_idx + [90]))
+    all_vals = [v for s in kpi_series for v in s["data"] if v is not None]
+    kpi_ymax = _round_up(max(all_vals + [10]))
+    kpi_ymin = 0
 
     inc_data = [_num(by_period.get(k, {}).get("incidents")) for k in keys]
     inc_ymax = _round_up(max([v for v in inc_data if v is not None] + [10]))
@@ -416,7 +408,7 @@ def _aggregate(db: Session, squad_id: int, period: str, override: dict | None = 
     return {
         "kpis": kpis,
         "sla": sla,
-        "kpi_chart": {"labels": labels, "series": kpi_series, "y_max": kpi_ymax, "y_min": kpi_ymin, "indexed": True},
+        "kpi_chart": {"labels": labels, "series": kpi_series, "y_max": kpi_ymax, "y_min": kpi_ymin},
         "incidents_chart": {"labels": labels, "y_max": inc_ymax, "y_min": 0,
                             "series": [{"name": "Incidents", "color": "#D24545", "data": inc_data}]},
         "last_events": cur.get("last_events") or [],
@@ -663,8 +655,9 @@ def _document(title: str, body: str, lang: str) -> str:
 
 def _render_pptx(squads: list[dict], period: str, L: dict) -> bytes:
     """Native PPTX: one 16:9 slide per squad, same layout as the HTML (left KPIs+SLA,
-    right KPI chart over incidents chart, bottom events)."""
-    from pptx import Presentation
+    right KPI chart over incidents chart, bottom events). Built on the uploaded export
+    template when one is configured (Admin), so slides carry the org's branding."""
+    from .. import pptxtpl
     from pptx.chart.data import CategoryChartData
     from pptx.dml.color import RGBColor
     from pptx.enum.chart import XL_CHART_TYPE, XL_LEGEND_POSITION
@@ -840,10 +833,10 @@ def _render_pptx(squads: list[dict], period: str, L: dict) -> bytes:
             rt = pe.add_run(); rt.text = str(e.get("text", ""))
             rt.font.size = Pt(12); rt.font.color.rgb = rgb("#1B2A3D")
 
-    prs = Presentation()
+    prs = pptxtpl.new_presentation()
     prs.slide_width = Inches(13.333)
     prs.slide_height = Inches(7.5)
-    blank = prs.slide_layouts[6]
+    blank = pptxtpl.blank_layout(prs)
 
     # Symmetric grid geometry (inches): equal columns, equal gutters, aligned rows.
     LM = 0.45
@@ -968,8 +961,10 @@ def document_html(period: str = Query(...), lang: str | None = Query(None), db: 
 def document_pptx(period: str = Query(...), lang: str | None = Query(None), db: Session = Depends(get_db),
                   user: User = Depends(require_tribe_or_admin)):
     """Consolidated steerco as PPTX. 501 when python-pptx is unavailable."""
+    from .. import pptxtpl
     L = I18N[_lang(lang)]
     squads = [{"squad_name": s.name, "data": _aggregate(db, s.id, period)} for s in _enabled_squads(db, user)]
+    pptxtpl.use(pptxtpl.get(db))
     try:
         payload = _render_pptx(squads, period, L)
     except ModuleNotFoundError:

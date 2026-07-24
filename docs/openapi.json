@@ -4619,6 +4619,102 @@
         }
       }
     },
+    "/api/admin/pptx-template": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Pptx Template Status",
+        "description": "GET /api/admin/pptx-template : is a template configured, and its light metadata\n(filename, size, when, by whom). Never returns the file bytes. Admin only.",
+        "operationId": "pptx_template_status_api_admin_pptx_template_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Pptx Template Upload",
+        "description": "POST /api/admin/pptx-template : upload the .pptx used as the base for every PPTX\nexport. Replaces any previous one. 400 if the file is not a usable .pptx. Admin only.",
+        "operationId": "pptx_template_upload_api_admin_pptx_template_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_pptx_template_upload_api_admin_pptx_template_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Pptx Template Delete",
+        "description": "DELETE /api/admin/pptx-template : remove the template; exports fall back to the\ndefault deck. Admin only. Audited.",
+        "operationId": "pptx_template_delete_api_admin_pptx_template_delete",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/pptx-template/download": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Pptx Template Download",
+        "description": "GET /api/admin/pptx-template/download : download the current template. 404 if none.",
+        "operationId": "pptx_template_download_api_admin_pptx_template_download_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/audit-log": {
       "get": {
         "tags": [
@@ -8413,6 +8509,20 @@
           "file"
         ],
         "title": "Body_import_steerco_upload_api_admin_import_steerco_post"
+      },
+      "Body_pptx_template_upload_api_admin_pptx_template_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "format": "binary",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_pptx_template_upload_api_admin_pptx_template_post"
       },
       "Body_set_squad_enabled_api_steerco_squad__squad_id__enabled_put": {
         "properties": {

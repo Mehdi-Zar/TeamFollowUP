@@ -13,7 +13,7 @@
  * export / settings / audit oversight. Many share the small useErr() helper and
  * the "load -> edit local state -> PUT -> flash saved" pattern.
  */
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api, ApiError } from "../api";
 import { useI18n } from "../i18n";
@@ -119,6 +119,7 @@ export default function AdminPage() {
         {tab === "tribes" && <TribesAdmin />}
         {tab === "import" && <ImportOrgAdmin />}
         {tab === "import" && <ImportSteercoAdmin />}
+        {tab === "import" && <PptxTemplateAdmin />}
         {tab === "tribe" && <TribeSelfAdmin perms={perms} />}
         {tab === "squads" && <SquadsAdmin perms={perms} />}
         {tab === "users" && <UsersAdmin perms={perms} />}
@@ -2464,6 +2465,78 @@ function SettingsAdmin() {
       <div className="inline">
         <button onClick={save}>{t("action.save")}</button>
         {saved && <span style={{ color: "var(--green)" }}>{t("admin.saved")}</span>}
+      </div>
+    </div>
+  );
+}
+
+type PptxTemplateMeta = { present: boolean; filename?: string; size?: number; uploaded_at?: string; uploaded_by?: string };
+
+/** Admin > Import: upload a .pptx once; every PPTX export (reports, roadmap,
+ *  dependencies, org, initiatives, steerco) is then built on it, so decks carry the
+ *  organisation's master slides, theme and branding. Remove it to fall back to the
+ *  plain default deck. */
+function PptxTemplateAdmin() {
+  const { t, formatDateTime } = useI18n();
+  const [meta, setMeta] = useState<PptxTemplateMeta | null>(null);
+  const [busy, setBusy] = useState(false);
+  const { error, wrap } = useErr();
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const load = () => api.get<PptxTemplateMeta>("/api/admin/pptx-template").then(setMeta).catch(() => setMeta({ present: false }));
+  useEffect(() => { load(); }, []);
+
+  async function upload(file: File) {
+    setBusy(true);
+    await wrap(async () => {
+      const form = new FormData();
+      form.append("file", file);
+      setMeta(await api.postForm<PptxTemplateMeta>("/api/admin/pptx-template", form));
+    });
+    if (inputRef.current) inputRef.current.value = "";
+    setBusy(false);
+  }
+
+  async function remove() {
+    setBusy(true);
+    await wrap(async () => { setMeta(await api.del<PptxTemplateMeta>("/api/admin/pptx-template")); });
+    setBusy(false);
+  }
+
+  const kb = meta?.size ? Math.round(meta.size / 1024) : 0;
+
+  return (
+    <div className="card stack" style={{ gap: 10 }}>
+      <div>
+        <h3 style={{ margin: 0 }}>{t("set.pptx.title")}</h3>
+        <div className="small muted" style={{ marginTop: 4 }}>{t("set.pptx.hint")}</div>
+      </div>
+      {error && <ErrorBanner message={error} />}
+
+      {meta?.present ? (
+        <div className="sc-status done" style={{ alignItems: "center" }}>
+          <span className="sc-status-ic">✓</span>
+          <div className="stack" style={{ gap: 2 }}>
+            <div className="strong">{meta.filename}</div>
+            <div className="small muted">
+              {t("set.pptx.active", { kb: String(kb) })}
+              {meta.uploaded_at ? `, ${formatDateTime(meta.uploaded_at)}` : ""}
+              {meta.uploaded_by ? `, ${meta.uploaded_by}` : ""}
+            </div>
+          </div>
+          <div className="inline" style={{ gap: 8, marginLeft: "auto" }}>
+            <a className="btn-secondary btn-sm" href="/api/admin/pptx-template/download">{t("set.pptx.download")}</a>
+            <button className="btn-ghost btn-sm" disabled={busy} onClick={remove}>{t("set.pptx.remove")}</button>
+          </div>
+        </div>
+      ) : (
+        <div className="small muted">{t("set.pptx.none")}</div>
+      )}
+
+      <div className="inline" style={{ gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <input ref={inputRef} type="file" accept=".pptx"
+               onChange={(e) => { const f = e.target.files?.[0]; if (f) upload(f); }} />
+        {busy && <span className="small muted">{t("common.loading")}</span>}
       </div>
     </div>
   );

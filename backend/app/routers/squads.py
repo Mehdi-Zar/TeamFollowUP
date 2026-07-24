@@ -21,6 +21,7 @@ from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .. import pptxtpl
 from .. import status as st
 from ..database import get_db
 from ..deps import (
@@ -163,6 +164,7 @@ def export_squad_roadmap_pptx(squad_id: int, year: int | None = Query(default=No
     from ..report import render_roadmap_pptx
     data, year = _roadmap_data(db, user, squad_id, year, lang)
     try:
+        pptxtpl.use(pptxtpl.get(db))
         payload = render_roadmap_pptx(data)
     except ImportError:
         raise HTTPException(status_code=501, detail="Génération PPTX indisponible (python-pptx non installé)")

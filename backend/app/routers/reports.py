@@ -7,6 +7,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, Response
 from sqlalchemy.orm import Session
 
+from .. import pptxtpl
 from .. import status as st
 from ..database import get_db
 from ..deps import (caller, caller_has_scope, get_current_user, is_api_caller,
@@ -102,6 +103,7 @@ def weekly_pptx(request: Request, tribe_id: int | None = Query(default=None), ye
     """
     data = _data(request, db, user, tribe_id, year, since_days, squad_id, lang)
     try:
+        pptxtpl.use(pptxtpl.get(db))
         payload = render_pptx(data)
     except ImportError:
         raise HTTPException(status_code=501, detail="Génération PPTX indisponible (python-pptx non installé)")
@@ -137,6 +139,7 @@ def dashboard_pptx(request: Request, tribe_id: int | None = Query(default=None),
     """Dashboard view as a branded deck, optionally restricted to chosen squads."""
     data = _data(request, db, user, tribe_id, year, since_days, squad_id, lang, squad_ids)
     try:
+        pptxtpl.use(pptxtpl.get(db))
         payload = render_pptx(data)
     except ImportError:
         raise HTTPException(status_code=501, detail="Génération PPTX indisponible (python-pptx non installé)")
@@ -171,6 +174,7 @@ def roadmap_pptx(request: Request, tribe_id: int | None = Query(default=None), y
     """Roadmap deck scoped to the caller (optionally restricted to chosen squads)."""
     data = _data(request, db, user, tribe_id, year, since_days, squad_id, lang, squad_ids)
     try:
+        pptxtpl.use(pptxtpl.get(db))
         payload = render_roadmap_pptx(data)
     except ImportError:
         raise HTTPException(status_code=501, detail="Génération PPTX indisponible (python-pptx non installé)")
@@ -216,6 +220,7 @@ def dependencies_pptx(request: Request, tribe_id: int | None = Query(default=Non
     """Milestone-dependency deck (paginated table grouped by the entity waited on)."""
     data = _dep_data(request, db, user, tribe_id, year, squad_ids, lang, mode)
     try:
+        pptxtpl.use(pptxtpl.get(db))
         payload = render_dependencies_pptx(data)
     except ImportError:
         raise HTTPException(status_code=501, detail="Génération PPTX indisponible (python-pptx non installé)")
@@ -330,6 +335,7 @@ def weekly_email(request: Request, payload: dict = Body(default=None), db: Sessi
     html_body = render_html(data, standalone=True)
     attachment = None
     try:
+        pptxtpl.use(pptxtpl.get(db))
         pptx_bytes = render_pptx(data)
         attachment = (f"rapport_hebdo_{data['year']}.pptx", pptx_bytes,
                       "application", "vnd.openxmlformats-officedocument.presentationml.presentation")

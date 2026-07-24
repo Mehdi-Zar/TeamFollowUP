@@ -140,7 +140,10 @@ Imports: `GET /import-org/template`, `POST /import-org` ([14](14-import-organisa
 `GET /import-steerco/template`, `POST /import-steerco` ([15](15-steerco.md)) · API keys:
 `GET/POST /api-keys`, `POST /api-keys/{id}/revoke`, `DELETE /api-keys/{id}` ·
 Ops: `GET /runtime`, `POST /restart`, `GET /logs`,
-`GET /logs/download`, `POST /logs/clear`, `POST /log-level`
+`GET /logs/download`, `POST /logs/clear`, `POST /log-level` ·
+PPTX export template: `GET /pptx-template` (status), `POST /pptx-template` (upload a `.pptx`),
+`GET /pptx-template/download`, `DELETE /pptx-template` - when set, every PPTX export is built on it
+(masters/theme/branding); see `app/pptxtpl.py`
 
 ### audit (`/api/audit-log`) - admin
 `GET ""`

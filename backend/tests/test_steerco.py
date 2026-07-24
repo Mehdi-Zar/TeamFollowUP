@@ -44,7 +44,8 @@ def test_aggregate_builds_calendar_year_charts_and_annual_sla(db, seeded):
     assert users_series["data"][0] is None                       # January, no data yet
     assert users_series["data"][7] is None                       # August (future), empty
     seen = [v for v in users_series["data"] if v is not None]
-    assert seen[0] == 100 and seen[-1] > 100                     # indexed to base 100, growing
+    assert seen == [200, 210, 247]                               # RAW values, not a base-100 index
+    assert rd["kpi_chart"]["y_min"] == 0                         # counts, floor at 0
     assert rd["incidents_chart"]["series"][0]["data"][6] == 13   # incidents at July, not the last column
     rows = rd["sla"]["rows"]
     assert [r["period"] for r in rows] == ["__current__", "__trailing__"]         # current + annual avg
@@ -109,7 +110,7 @@ def test_onepager_layout_and_translation(db, seeded):
     assert "hdr" in html_en and "July 2026" in html_en          # header + spelled-out month
     # SLA rows are the current month + the annual average; the chart sub shows the year.
     assert "Current month" in html_en and "Annual average" in html_en and "KPI trend" in html_en
-    assert "2026, base 100" in html_en                          # chart sub-label carries the year
+    assert "base 100" not in html_en                            # chart plots raw values, not an index
     html_fr = _onepager("Squad A", "2026-07", rd, I18N["fr"])
     assert "Mois en cours" in html_fr and "Moyenne annuelle" in html_fr and "Évolution KPI" in html_fr
 
@@ -242,7 +243,7 @@ def test_excel_template_and_import(client, seeded, db):
     assert rd["kpis"][0]["value"] == "120"
     assert rd["sla"]["rows"][0]["cells"][0]["s"] == "ok"       # 99,2% -> green, computed
     seen = [v for v in rd["kpi_chart"]["series"][0]["data"] if v is not None]
-    assert seen[0] == 100 and len(seen) >= 2                # Jun + Jul indexed
+    assert seen == [118, 120]                               # RAW Jun + Jul values (Cloud Users)
     # The imported event's severity reaches the one-pager as a coloured chip.
     html = _onepager("Squad A", "2026-07", rd, I18N["fr"])
     assert "Incident majeur" in html and "#FBF0D9" in html   # "Attention" -> amber chip

@@ -13,6 +13,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
+from . import pptxtpl
 from . import status as st
 from .generalconfig import get_general
 from .models import Squad, Tribe, utcnow
@@ -1183,12 +1184,12 @@ def render_pptx(data: dict) -> bytes:
     B = {k: rgb(v) for k, v in _BRAND.items()}
     lang = data.get("lang", "fr")
 
-    prs = Presentation()
+    prs = pptxtpl.new_presentation()
     prs.slide_width = Inches(13.333)
     prs.slide_height = Inches(7.5)
 
     def new_slide():
-        return prs.slides.add_slide(prs.slide_layouts[6])
+        return prs.slides.add_slide(pptxtpl.blank_layout(prs))
 
     def textbox(s, left, top, width, height, text, size, *, bold=False, color=None,
                 align=PP_ALIGN.LEFT, anchor=MSO_ANCHOR.TOP):
@@ -1685,7 +1686,7 @@ def render_roadmap_pptx(data: dict) -> bytes:
     months = _MONTHS[lang]
 
     SLIDE_W, SLIDE_H = 13.333, 7.5
-    prs = Presentation()
+    prs = pptxtpl.new_presentation()
     prs.slide_width = Inches(SLIDE_W)
     prs.slide_height = Inches(SLIDE_H)
 
@@ -1827,7 +1828,7 @@ def render_roadmap_pptx(data: dict) -> bytes:
             for i, q in enumerate((1, 2, 3, 4)):
                 draw_card(s, col_x(i), by + 0.04, COL_W, band_h - 0.08, qmap.get(q, []), card_fs, line_h)
 
-    s = prs.slides.add_slide(prs.slide_layouts[6])  # single page, always
+    s = prs.slides.add_slide(pptxtpl.blank_layout(prs))  # single page, always
     draw_header(s)
     draw_swimlanes(s, squads)
 
@@ -1908,9 +1909,9 @@ def render_initiatives_pptx(data: dict, *, lang: str = "fr") -> bytes:
     B = {k: rgb(v) for k, v in _BRAND.items()}
     lang = _lang(lang)
     T = _INIT_T[lang]
-    prs = Presentation(); prs.slide_width = Inches(13.333); prs.slide_height = Inches(7.5)
+    prs = pptxtpl.new_presentation(); prs.slide_width = Inches(13.333); prs.slide_height = Inches(7.5)
     margin = Inches(0.5)
-    s = prs.slides.add_slide(prs.slide_layouts[6])
+    s = prs.slides.add_slide(pptxtpl.blank_layout(prs))
     head = s.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0), Inches(0), prs.slide_width, Inches(0.92))
     head.fill.solid(); head.fill.fore_color.rgb = B["navy"]; head.line.fill.background(); head.shadow.inherit = False
     tf = head.text_frame; tf.margin_left = Inches(0.5); tf.vertical_anchor = MSO_ANCHOR.MIDDLE
@@ -2325,7 +2326,7 @@ def render_dependencies_pptx(data: dict) -> bytes:
     lang = _lang(data.get("lang", "fr"))
     T = _DEP_T[lang]
 
-    prs = Presentation()
+    prs = pptxtpl.new_presentation()
     prs.slide_width = Inches(13.333)
     prs.slide_height = Inches(7.5)
     SW = prs.slide_width
@@ -2344,7 +2345,7 @@ def render_dependencies_pptx(data: dict) -> bytes:
     gen_str = gen.strftime("%d/%m/%Y %H:%M") if isinstance(gen, datetime) else str(gen)
 
     def new_slide():
-        return prs.slides.add_slide(prs.slide_layouts[6])
+        return prs.slides.add_slide(pptxtpl.blank_layout(prs))
 
     def textbox(s, left, top, width, height, text, size, *, bold=False, color=None,
                 align=PP_ALIGN.LEFT, anchor=MSO_ANCHOR.MIDDLE):

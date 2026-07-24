@@ -13,6 +13,8 @@ review (COPIL). It replaces scattered spreadsheets and slide decks with a live, 
 - **Low-friction reporting** for squad leaders (guided entry, auto-captured progress timeline).
 - **Decision support** for tribe leaders / management: dashboard, attention list, weekly review,
   COPIL presentation mode, and one-click HTML/PPTX exports (incl. a "Global Roadmap" swimlane deck).
+  An admin can upload a **PowerPoint template** (Admin → Settings) that every PPTX export is then built
+  on, so decks inherit the organisation's master slides, theme and branding.
 - **Configurable governance**: turn modules on/off, and control which persona can access which section.
 
 ## Personas

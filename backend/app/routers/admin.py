@@ -16,6 +16,7 @@ from fastapi.responses import PlainTextResponse, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .. import pptxtpl
 from ..authconfig import get_auth_config, set_auth_config
 from ..database import get_db
 from ..deps import ADMIN, get_current_user, record_audit, require_admin
@@ -328,6 +329,7 @@ def test_report_config(payload: dict = Body(default=None), db: Session = Depends
     html_body = render_html(data, standalone=True)
     attachment = None
     try:
+        pptxtpl.use(pptxtpl.get(db))
         pptx_bytes = render_pptx(data)
         attachment = (f"rapport_hebdo_{year}.pptx", pptx_bytes,
                       "application", "vnd.openxmlformats-officedocument.presentationml.presentation")
@@ -396,6 +398,7 @@ def test_change_notify_config(payload: dict = Body(default=None), db: Session = 
     html_body = render_html(data, standalone=True)
     attachment = None
     try:
+        pptxtpl.use(pptxtpl.get(db))
         pptx_bytes = render_pptx(data)
         attachment = (f"{squad.name}_{year}.pptx", pptx_bytes,
                       "application", "vnd.openxmlformats-officedocument.presentationml.presentation")
@@ -859,6 +862,7 @@ def delete_api_key(key_id: int, db: Session = Depends(get_db),
 # memory and imported idempotently (see app/import_org.py).
 
 _XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+_PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
 
 
 @router.get("/import-org/template")
@@ -959,3 +963,53 @@ async def import_steerco_upload(
                  entity_id=summary.get("squad_id"), detail=summary)
     db.commit()
     return summary
+
+
+# ----- PPTX export template (Admin -> Settings) -------------------------------
+# Upload a .pptx once; every PPTX export (reports, roadmap, dependencies, org,
+# initiatives, steerco) is then built on it, so decks carry the org's branding.
+# See app/pptxtpl.py. Off by default -> plain white deck.
+
+@router.get("/pptx-template")
+def pptx_template_status(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    """GET /api/admin/pptx-template : is a template configured, and its light metadata
+    (filename, size, when, by whom). Never returns the file bytes. Admin only."""
+    return pptxtpl.meta(db)
+
+
+@router.post("/pptx-template")
+async def pptx_template_upload(file: UploadFile = File(...), db: Session = Depends(get_db),
+                              admin: User = Depends(require_admin)):
+    """POST /api/admin/pptx-template : upload the .pptx used as the base for every PPTX
+    export. Replaces any previous one. 400 if the file is not a usable .pptx. Admin only."""
+    content = await file.read()
+    try:
+        info = pptxtpl.save(db, file.filename or "template.pptx", content, uploaded_by=admin.email)
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc))
+    record_audit(db, admin.id, "pptx_template.set", entity="settings",
+                 detail={"filename": info["filename"], "size": info["size"]})
+    db.commit()
+    return {"present": True, **info}
+
+
+@router.get("/pptx-template/download")
+def pptx_template_download(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    """GET /api/admin/pptx-template/download : download the current template. 404 if none."""
+    data = pptxtpl.get(db)
+    if data is None:
+        raise HTTPException(status_code=404, detail="Aucun template PPTX configuré.")
+    name = (pptxtpl.meta(db).get("filename") or "template.pptx")
+    return Response(content=data, media_type=_PPTX_MIME,
+                    headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
+@router.delete("/pptx-template")
+def pptx_template_delete(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    """DELETE /api/admin/pptx-template : remove the template; exports fall back to the
+    default deck. Admin only. Audited."""
+    pptxtpl.clear(db)
+    record_audit(db, admin.id, "pptx_template.clear", entity="settings", detail={})
+    db.commit()
+    return {"present": False}

@@ -88,6 +88,7 @@ erDiagram
 | `log_export` | `logexportconfig.py` | audit-log export configuration |
 | `change_notify` / `change_notify_state` | `changeconfig.py` | change-notification config + send state |
 | `log_level` | `logbuffer.py` | runtime log level set in Admin → Ops with "persist", re-applied at boot (single value, not JSON) |
+| `pptx_template` | `pptxtpl.py` | optional uploaded `.pptx` (base64 + filename/size/when/who); when set, every PPTX export is built on it so decks carry the org's master slides, theme and branding |
 | `staleness_threshold_days` | `deps.py` | legacy single-value key (also editable in Admin) |
 
 ## Data lifecycle notes
