@@ -653,6 +653,25 @@ def _document(title: str, body: str, lang: str) -> str:
             f"<title>{escape(title)}</title><style>{_PAGE_CSS}</style></head><body>{body}</body></html>")
 
 
+def _footer_reserve(prs) -> float:
+    """Inches to keep free at the bottom of each slide for the template's footer band
+    (logo, page number, legal line). Zero for the plain default deck. Read from the
+    master's own non-placeholder shapes that sit in the lower part of the slide, so the
+    dense Steerco one-pager does not paint over the uploaded template's branding."""
+    h = (prs.slide_height or 0) / 914400.0 or 7.5
+    reserve = 0.0
+    try:
+        for sh in prs.slide_masters[0].shapes:
+            if sh.is_placeholder:      # placeholders are not rendered on a blank layout
+                continue
+            top = (sh.top or 0) / 914400.0
+            if top > h * 0.6:          # a shape anchored in the bottom 40% = footer zone
+                reserve = max(reserve, h - top)
+    except Exception:                  # pragma: no cover - defensive
+        pass
+    return min(reserve, h * 0.2)       # cap so a pathological template can't eat the slide
+
+
 def _render_pptx(squads: list[dict], period: str, L: dict) -> bytes:
     """Native PPTX: one 16:9 slide per squad, same layout as the HTML (left KPIs+SLA,
     right KPI chart over incidents chart, bottom events). Built on the uploaded export
@@ -837,6 +856,9 @@ def _render_pptx(squads: list[dict], period: str, L: dict) -> bytes:
     prs.slide_width = Inches(13.333)
     prs.slide_height = Inches(7.5)
     blank = pptxtpl.blank_layout(prs)
+    # Leave the uploaded template's footer band (logo, page number) uncovered so it
+    # actually shows through the one-pager. 0 for the plain default deck (full slide).
+    foot = _footer_reserve(prs)
 
     # Symmetric grid geometry (inches): equal columns, equal gutters, aligned rows.
     LM = 0.45
@@ -855,8 +877,15 @@ def _render_pptx(squads: list[dict], period: str, L: dict) -> bytes:
         pp = pmeta.paragraphs[0]; pp.alignment = PP_ALIGN.RIGHT
         rp = pp.add_run(); rp.text = _period_long(period, L); rp.font.size = Pt(12); rp.font.bold = True; rp.font.color.rgb = rgb("#6B7C90")
 
-        # 2x2 grid: row 1 = KPIs | KPI chart, row 2 = SLA | incidents chart.
-        gy, gb, vg = 0.92, 5.9, 0.18
+        # 2x2 grid: row 1 = KPIs | KPI chart, row 2 = SLA | incidents chart. When a
+        # template reserves a footer, compress the grid + events to sit above it.
+        gy, vg = 0.92, 0.18
+        if foot:
+            eh = 1.15
+            ey = 7.5 - foot - 0.08 - eh
+            gb = ey - 0.16
+        else:
+            gb, ey, eh = 5.9, 6.06, 1.28
         row_h = (gb - gy - vg) / 2
         r1y, r2y = gy, gy + row_h + vg
 
@@ -886,8 +915,7 @@ def _render_pptx(squads: list[dict], period: str, L: dict) -> bytes:
         bx, by, bw, bh = titled_panel(slide, RX, r2y, COLW, row_h, L["inc_chart"], inc_sub)
         line_chart(slide, Inches(bx), Inches(by), Inches(bw), Inches(bh), d.get("incidents_chart") or {})
 
-        # Bottom: events row, same two columns.
-        ey, eh = gb + 0.16, 1.28
+        # Bottom: events row, same two columns (ey/eh set above with the footer reserve).
         bx, by, bw, bh = titled_panel(slide, LX, ey, COLW, eh, L["last_events"])
         events(slide, Inches(bx), Inches(by), Inches(bw), Inches(bh), d.get("last_events") or [])
         bx, by, bw, bh = titled_panel(slide, RX, ey, COLW, eh, L["next_events"])
