@@ -45,15 +45,12 @@ export function currentSteercoPeriod(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
-/** The last 12 month keys ("YYYY-MM"), oldest first, ending at the given period. */
-export function last12Months(period: string): string[] {
-  const [y, m] = period.split("-").map(Number);
-  const out: string[] = [];
-  for (let i = 11; i >= 0; i--) {
-    const d = new Date(y, (m - 1) - i, 1);
-    out.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
-  }
-  return out;
+/** The 12 month keys ("YYYY-MM") of the given period's calendar year, January to
+ *  December. This is the Steerco window everywhere (charts, wizard, backfill), so the
+ *  charts always start in January and the entered months match the charted months. */
+export function yearMonths(period: string): string[] {
+  const y = Number(period.split("-")[0]);
+  return Array.from({ length: 12 }, (_, i) => `${y}-${String(i + 1).padStart(2, "0")}`);
 }
 
 /** Short month label "YYYY-MM" -> "MM/YY". */

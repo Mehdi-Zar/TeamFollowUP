@@ -11,7 +11,7 @@ import { Modal, Spinner } from "./ui";
 import { BackfillGrid } from "./SteercoEditor";
 import {
   SteercoData, SteercoKpi, SlaCell, SteercoEvent,
-  EVENT_SEVS, SLA_ICON, TREND_ARROW, last12Months, monthLongLabel,
+  EVENT_SEVS, SLA_ICON, TREND_ARROW, yearMonths, monthLongLabel,
   clampPct, defaultSteercoData, ensureUsersKpi, kpiChange, prevPeriod, slaStatus,
 } from "../steerco";
 
@@ -55,22 +55,20 @@ export default function SteercoWizard({ squadId, squadName, initialPeriod, reado
     return () => { alive = false; };
   }, [squadId, period]);
 
-  // The 12 rolling months ending at the report month: exactly what /history returns
-  // and what the one-pager charts plot. The reported month is the LAST column,
-  // editable and highlighted, so filling it reads as "the next column of the table";
-  // the 11 before it are read-only context.
-  const months = useMemo(() => last12Months(period), [period]);
+  // The report year's 12 months, January to December: exactly what /history returns
+  // and what the one-pager charts plot. The reported month is highlighted and
+  // editable; the other months are read-only context.
+  const months = useMemo(() => yearMonths(period), [period]);
   const mAbbr = (m: string) => {
     const [y, mm] = m.split("-").map(Number);
     const s = new Date(y, mm - 1, 1).toLocaleDateString(lang === "fr" ? "fr-FR" : "en-US", { month: "short" });
     return s.replace(".", "");
   };
-  // Month header, shared by the KPI / SLA / incidents tables. The window spans two
-  // calendar years, so the year goes on a small second line to keep columns narrow.
+  // Month header, shared by the KPI / SLA / incidents tables. All 12 columns are the
+  // same calendar year (shown in the context line above), so the header is just the
+  // month; the report month is highlighted.
   const MonthTh = ({ m }: { m: string }) => (
-    <th className={m === period ? "sc-cur" : "sc-past"}>
-      {mAbbr(m)}<span className="sc-yr">{m.slice(2, 4)}</span>
-    </th>
+    <th className={m === period ? "sc-cur" : "sc-past"}>{mAbbr(m)}</th>
   );
 
   // Live one-pager preview of the (still unsaved) snapshot, built when the user

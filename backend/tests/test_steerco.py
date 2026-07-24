@@ -28,7 +28,7 @@ def test_svg_handles_gaps_and_empty():
 
 # ---- aggregation ---------------------------------------------------------------
 
-def test_aggregate_builds_12m_charts_and_rolling_sla(db, seeded):
+def test_aggregate_builds_calendar_year_charts_and_annual_sla(db, seeded):
     sid = seeded["squad_a"]
     for p, users, inc in [("2026-05", 200, 10), ("2026-06", 210, 15), ("2026-07", 247, 13)]:
         db.add(SteercoEntry(squad_id=sid, period=p, data={
@@ -37,13 +37,17 @@ def test_aggregate_builds_12m_charts_and_rolling_sla(db, seeded):
             "incidents": str(inc)}))
     db.commit()
     rd = _aggregate(db, sid, "2026-07")
+    # 12 columns = the calendar year, January to December: the chart always starts in
+    # January (empty until May here), and the report month July sits at index 6.
+    assert len(rd["kpi_chart"]["labels"]) == 12 and rd["kpi_chart"]["labels"][0] == "01/26"
     users_series = rd["kpi_chart"]["series"][0]
-    assert users_series["data"][0] is None                       # 12-month series, gaps
+    assert users_series["data"][0] is None                       # January, no data yet
+    assert users_series["data"][7] is None                       # August (future), empty
     seen = [v for v in users_series["data"] if v is not None]
     assert seen[0] == 100 and seen[-1] > 100                     # indexed to base 100, growing
-    assert rd["incidents_chart"]["series"][0]["data"][-1] == 13
+    assert rd["incidents_chart"]["series"][0]["data"][6] == 13   # incidents at July, not the last column
     rows = rd["sla"]["rows"]
-    assert [r["period"] for r in rows] == ["__current__", "__trailing__"]         # current + rolling
+    assert [r["period"] for r in rows] == ["__current__", "__trailing__"]         # current + annual avg
     assert rd["kpis"][0]["value"] == "247"                                        # cards = current month
 
 
@@ -103,9 +107,11 @@ def test_onepager_layout_and_translation(db, seeded):
     # left column (KPIs) comes before the SLA table; right column has the KPI chart
     assert html_en.index("kpi-row") < html_en.index(">SLA")   # KPI panel before the SLA panel
     assert "hdr" in html_en and "July 2026" in html_en          # header + spelled-out month
-    assert "Current month" in html_en and "Last 12 months" in html_en and "KPI trend" in html_en
+    # SLA rows are the current month + the annual average; the chart sub shows the year.
+    assert "Current month" in html_en and "Annual average" in html_en and "KPI trend" in html_en
+    assert "2026, base 100" in html_en                          # chart sub-label carries the year
     html_fr = _onepager("Squad A", "2026-07", rd, I18N["fr"])
-    assert "Mois en cours" in html_fr and "Évolution KPI" in html_fr
+    assert "Mois en cours" in html_fr and "Moyenne annuelle" in html_fr and "Évolution KPI" in html_fr
 
 
 # ---- API -----------------------------------------------------------------------
@@ -184,16 +190,20 @@ def test_preview_uses_unsaved_data_without_persisting(client, seeded):
 
 def test_template_columns_are_the_charted_window(seeded):
     """The workbook's 12 month columns must be exactly the window the one-pager charts
-    read (rolling, ending at the report month), else an imported file leaves gaps."""
+    read: the report year's calendar months, January to December, so the filled months
+    line up with the charted months and the charts start in January."""
     import io
     from openpyxl import load_workbook
     from app.steerco_import import _month_label, template_bytes
+    from app.routers.steerco import year_months
 
     wb = load_workbook(io.BytesIO(template_bytes("2026-07")))
     headers = [wb["KPIs"].cell(1, 2 + j).value for j in range(12)]
-    assert headers == [_month_label(k) for k in month_keys("2026-07", 12)[:-1]] + ["Juil 26*"]
-    assert headers[0] == "Août 25"                     # rolling, not January
-    assert headers[-1].endswith("*")                    # the report month is the last column
+    expected = [_month_label(k) for k in year_months("2026-07")]
+    expected[6] += "*"                                  # July is the report month
+    assert headers == expected
+    assert headers[0] == "Janv 26"                      # always January, not a rolling start
+    assert headers[6].endswith("*") and headers[-1] == "Déc 26"
 
 
 def test_excel_template_and_import(client, seeded, db):
@@ -209,13 +219,12 @@ def test_excel_template_and_import(client, seeded, db):
     assert r.status_code == 200 and r.content[:2] == b"PK"        # a real .xlsx (zip)
 
     # fill it: squad name + a couple of months of one KPI + current SLA + an event.
-    # Columns are the 12 rolling months ending at the report month: B = Aug 25 ...
-    # M = Jul 26 (the report month).
+    # Columns are the calendar year: B = Jan ... G = Jun, H = Jul (the report month).
     wb = load_workbook(io.BytesIO(template_bytes("2026-07")))
     wb["Infos"]["B2"] = "Squad A"; wb["Infos"]["B3"] = "2026-07"
-    wb["KPIs"]["L2"] = 118; wb["KPIs"]["M2"] = 120          # Cloud Users Jun, Jul (current)
-    wb["SLA"]["M2"] = 99.2                                   # Incidents, current month
-    wb["Incidents"]["M2"] = 4
+    wb["KPIs"]["G2"] = 118; wb["KPIs"]["H2"] = 120          # Cloud Users Jun, Jul (current)
+    wb["SLA"]["H2"] = 99.2                                   # Incidents, current month
+    wb["Incidents"]["H2"] = 4
     wb["Evenements passes"]["A2"] = "12/07"; wb["Evenements passes"]["C2"] = "Incident majeur"
     wb["Evenements passes"]["D2"] = "Attention"
     buf = io.BytesIO(); wb.save(buf); buf.seek(0)
@@ -277,11 +286,12 @@ def test_import_never_deletes_what_was_entered_in_the_app(client, db, seeded):
         "last_events": [{"date": "01/07", "text": "Saisi dans l'app"}]}))
     db.commit()
 
-    # the generic template knows nothing about Terraform, Vault or the event
+    # the generic template knows nothing about Terraform, Vault or the event.
+    # Calendar-year columns: July (the report month) is column 8 (H).
     wb = load_workbook(io.BytesIO(template_bytes("2026-07")))
     wb["Infos"]["B2"] = "Squad A"; wb["Infos"]["B3"] = "2026-07"
-    wb["KPIs"].cell(2, 13, 250)                      # updates Cloud Users only
-    wb["KPIs"]["A7"] = "Nouveau KPI"; wb["KPIs"].cell(7, 13, 5)     # a row added by hand
+    wb["KPIs"].cell(2, 8, 250)                       # updates Cloud Users only (July column)
+    wb["KPIs"]["A7"] = "Nouveau KPI"; wb["KPIs"].cell(7, 8, 5)      # a row added by hand
     buf = io.BytesIO(); wb.save(buf)
 
     login(client, "admin@test")

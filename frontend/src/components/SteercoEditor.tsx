@@ -1,20 +1,20 @@
-// Steerco 12-month backfill grid. The monthly input itself lives in SteercoWizard
-// (guided popup); this grid is the "first report" companion that seeds the past
-// months in one shot so the 12-month charts have data right away.
+// Steerco backfill grid (the report year, January to December). The monthly input
+// itself lives in SteercoWizard (guided popup); this grid is the "first report"
+// companion that seeds the year's months in one shot so the charts have data right away.
 // Only raw values are entered here: the KPI variation vs M-1 and the SLA colours are
 // computed from the numbers themselves when the one-pager is rendered.
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { useI18n } from "../i18n";
-import { clampPct, last12Months, monthShort } from "../steerco";
+import { clampPct, yearMonths, monthShort } from "../steerco";
 
-/** 12-month history grid: one row per month, columns = KPI counts + SLA values +
- *  incidents. Loads existing snapshots, supports paste-from-Excel (TSV), and saves
- *  all months in one shot so the charts have 12 months of data. */
+/** Year history grid: one row per month (January to December), columns = KPI counts +
+ *  SLA values + incidents. Loads existing snapshots, supports paste-from-Excel (TSV),
+ *  and saves all months in one shot so the charts have the year's data. */
 export function BackfillGrid({ squadId, period, services, kpiLabels }: { squadId: number; period: string; services: string[]; kpiLabels: string[] }) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
-  const months = last12Months(period);
+  const months = yearMonths(period);
   // grid[monthKey][colKey] = string value
   const cols = [
     ...kpiLabels.filter(Boolean).map((l) => ({ key: `kpi:${l}`, label: l })),

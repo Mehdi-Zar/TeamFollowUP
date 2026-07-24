@@ -2,9 +2,9 @@
 
 An admin downloads a blank workbook (:func:`template_bytes`), a squad fills it in,
 and the admin uploads it back (:func:`import_steerco`). The file is parsed in memory
-and written straight to ``SteercoEntry`` rows (12 monthly snapshots for the charts +
-the full current-month snapshot with its events). No image rebuild, idempotent:
-re-uploading replaces that squad's monthly data.
+and written straight to ``SteercoEntry`` rows (the year's monthly snapshots for the
+charts + the full current-month snapshot with its events). No image rebuild, and the
+import merges (see ``import_steerco``): it never deletes what the squad entered in-app.
 
 Only raw numbers are collected: the KPI variation vs M-1 and the SLA colours are
 computed from the values themselves when the one-pager is rendered (see
@@ -13,10 +13,10 @@ computed from the values themselves when the one-pager is rendered (see
 The workbook has 7 sheets: Instructions, Infos, KPIs, SLA, Incidents,
 Evenements passes, Evenements a venir. Keep the sheet names / header rows stable.
 
-The 12 monthly columns are the ROLLING 12 months ending at the report month (the
-report month is the last one, marked with a *), not a calendar year: that is exactly
-the window the one-pager charts read (``routers.steerco.month_keys``), so a filled
-workbook produces complete charts instead of leading gaps.
+The 12 monthly columns are the report year's calendar months, January to December
+(the report month is marked with a *): the exact window the one-pager charts read
+(``routers.steerco.year_months``), so the months you fill line up with the months
+you see charted, and the charts always start in January.
 """
 import io
 from datetime import date
@@ -24,9 +24,9 @@ from datetime import date
 from sqlalchemy.orm import Session
 
 from .models import SteercoEntry, Squad
-# Single source of truth for the 12-month window, shared with the renderer so the
+# Single source of truth for the calendar-year window, shared with the renderer so the
 # collected columns and the charted months can never drift apart.
-from .routers.steerco import month_keys
+from .routers.steerco import year_months
 
 # ---- structure -------------------------------------------------------------
 MONTHS_ABBR_FR = ["Janv", "Févr", "Mars", "Avr", "Mai", "Juin",
@@ -114,9 +114,10 @@ def build_template_workbook(period: str | None = None, kpi_labels: list[str] | N
     period = period or default_period()
     kpi_labels = list(kpi_labels or KPI_LABELS)
     sla_services = list(sla_services or SLA_SERVICES)
-    # Rolling window: the report month is the LAST of the 12 columns.
-    keys = month_keys(period, 12)
-    cur_idx = len(keys)
+    # Calendar year: the 12 columns are January to December; the report month is the
+    # one marked with a *.
+    keys = year_months(period)
+    cur_idx = int(period.split("-")[1])
 
     def hrow(ws, row, values, widths=None):
         for i, v in enumerate(values, start=1):
@@ -160,9 +161,10 @@ def build_template_workbook(period: str | None = None, kpi_labels: list[str] | N
         ("5) Onglets « Evenements passes / a venir » : Date, Type, Libellé, Gravité.", None), ("", None),
         ("Valeurs autorisées :", LBL),
         ("- Gravité : Critique / Attention / OK / Prévu", None), ("", None),
-        ("Les colonnes couvrent les 12 mois glissants qui se terminent au mois du rapport, "
+        ("Les colonnes couvrent l'année civile du rapport (janvier à décembre), "
          "soit exactement la fenêtre des graphiques du one-pager. Les mois vides sont ignorés.", MUTED),
-        ("Si vous changez le mois du rapport, retéléchargez le modèle : les colonnes se décalent.", MUTED),
+        ("Le mois du rapport est marqué d'une * ; changer de mois dans la même année ne "
+         "décale pas les colonnes, cela déplace seulement l'astérisque.", MUTED),
         ("Ne renommez pas les onglets ni les en-têtes : l'import s'appuie dessus.", MUTED),
     ]
     for r, (text, font) in enumerate(lines, start=1):
@@ -292,10 +294,10 @@ def parse_workbook(content: bytes) -> dict:
         period = f"{y:04d}-{m:02d}"
     except ValueError:
         raise ValueError(f"Mois du rapport invalide : « {period} ». Format attendu : AAAA-MM.")
-    # Same rolling window as the template and as the one-pager charts: the report
-    # month is the last of the 12 columns.
-    keys = month_keys(period, 12)
-    cur_col = 2 + (len(keys) - 1)
+    # Same calendar-year window as the template and the one-pager charts: 12 columns,
+    # January to December; the report month sits at its month index.
+    keys = year_months(period)
+    cur_col = 2 + (m - 1)
     months = {k: {} for k in keys}
 
     # KPIs

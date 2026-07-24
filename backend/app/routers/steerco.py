@@ -3,9 +3,10 @@
 A squad opts in (``Squad.steerco_enabled``, self-service) and each month reports a
 small **snapshot** for the current month (KPI counts, the month's SLA per COTS, the
 month's incident count, plus events). Snapshots accumulate one per (squad, period),
-so the 12-month charts and the "last 12 months" SLA row are **computed** from the
-last 12 snapshots - no need to re-enter history every time. For the first report a
-backfill endpoint seeds past months in one shot (grid / paste-from-Excel in the UI).
+so the charts (January to December of the report year) and the year-average SLA row
+are **computed** from the year's snapshots - no need to re-enter history every time.
+The charts therefore always start in January. For the first report a backfill
+endpoint seeds past months in one shot (grid / paste-from-Excel in the UI).
 
 Leadership reads/export a KPI one-pager per squad (HTML / PPTX), rendered in the
 requested language (default English). Gated by the optional ``steerco`` module.
@@ -53,9 +54,9 @@ I18N = {
                    "August", "September", "October", "November", "December"],
         "key_figures": "KPI",
         "sla": "SLA", "sla_sub": "incidents &amp; SwF (by COTS)",
-        "kpi_chart": "KPI trend", "kpi_chart_sub": "12 months (base 100)",
-        "inc_chart": "Incidents", "inc_chart_sub": "over 12 months",
-        "period": "Period", "current": "Current month", "trailing": "Last 12 months",
+        "kpi_chart": "KPI trend", "kpi_chart_sub": "{year}, base 100",
+        "inc_chart": "Incidents", "inc_chart_sub": "{year}",
+        "period": "Period", "current": "Current month", "trailing": "Annual average",
         "last_events": "Last events", "next_events": "Next events",
         "no_kpi": "No KPI yet.", "no_sla": "No SLA data.", "no_data": "No data.",
         "no_event": "No event.", "no_squads": "No Steerco-enabled squad in your scope.",
@@ -65,9 +66,9 @@ I18N = {
                    "août", "septembre", "octobre", "novembre", "décembre"],
         "key_figures": "KPI",
         "sla": "SLA", "sla_sub": "incidents &amp; SwF (par COTS)",
-        "kpi_chart": "Évolution KPI", "kpi_chart_sub": "12 mois (base 100)",
-        "inc_chart": "Incidents", "inc_chart_sub": "sur 12 mois",
-        "period": "Période", "current": "Mois en cours", "trailing": "12 derniers mois",
+        "kpi_chart": "Évolution KPI", "kpi_chart_sub": "{year}, base 100",
+        "inc_chart": "Incidents", "inc_chart_sub": "{year}",
+        "period": "Période", "current": "Mois en cours", "trailing": "Moyenne annuelle",
         "last_events": "Derniers évènements", "next_events": "Prochains évènements",
         "no_kpi": "Aucun KPI renseigné.", "no_sla": "Aucune donnée SLA.", "no_data": "Aucune donnée.",
         "no_event": "Aucun évènement.", "no_squads": "Aucune squad Steerco activée dans votre périmètre.",
@@ -198,7 +199,7 @@ def upsert_squad_entry(squad_id: int, period: str = Query(...),
 
 
 # --------------------------------------------------------------------------
-# 12-month history (backfill + read), for the auto-built charts
+# Calendar-year history (backfill + read), for the auto-built charts
 # --------------------------------------------------------------------------
 
 def month_keys(period: str, n: int = 12) -> list[str]:
@@ -212,6 +213,17 @@ def month_keys(period: str, n: int = 12) -> list[str]:
             yy -= 1
         keys.append(f"{yy:04d}-{mm:02d}")
     return keys
+
+
+def year_months(period: str) -> list[str]:
+    """The 12 month keys of ``period``'s calendar year, January to December.
+
+    This is the window the whole Steerco feature works on: the charts, the SLA
+    average, the backfill grid, the wizard columns and the Excel columns all cover
+    January to December of the report's year, so the one-pager charts always start in
+    January and the months you enter line up with the months you see charted."""
+    y = int(period.split("-")[0])
+    return [f"{y:04d}-{m:02d}" for m in range(1, 13)]
 
 
 def _month_short(key: str) -> str:
@@ -231,10 +243,10 @@ def _period_long(period: str, L: dict) -> str:
 @router.get("/squad/{squad_id}/history")
 def get_history(squad_id: int, period: str = Query(...), db: Session = Depends(get_db),
                 user: User = Depends(get_current_user)):
-    """The 12 monthly snapshots ending at ``period`` (for the backfill grid)."""
+    """The report year's 12 monthly snapshots, January to December (backfill grid)."""
     if db.get(Squad, squad_id) is None:
         raise HTTPException(status_code=404, detail="Squad introuvable")
-    keys = month_keys(period, 12)
+    keys = year_months(period)
     by_period = {e.period: (e.data or {}) for e in db.query(SteercoEntry)
                  .filter(SteercoEntry.squad_id == squad_id, SteercoEntry.period.in_(keys)).all()}
     return {"squad_id": squad_id, "period": period,
@@ -268,7 +280,7 @@ def upsert_history(squad_id: int, months: dict = Body(..., embed=True),
 
 
 # --------------------------------------------------------------------------
-# Aggregation: build the render-data (charts + rolling SLA) from 12 snapshots
+# Aggregation: build the render-data (charts + year-average SLA) from the year
 # --------------------------------------------------------------------------
 
 def _num(v) -> float | None:
@@ -331,19 +343,24 @@ def _kpi_value(snap: dict, label: str):
 
 
 def _aggregate(db: Session, squad_id: int, period: str, override: dict | None = None) -> dict:
-    """Assemble the one-pager render-data for a squad+month from the last 12 snapshots:
-    KPI cards + events from the current month; SLA table (current row + 12-month average
-    row); KPI and incident charts as the 12-month series.
+    """Assemble the one-pager render-data for a squad+month over the report's calendar
+    year (January to December): KPI cards + events from the current month; SLA table
+    (current row + year-average row); KPI and incident charts as the Jan-to-Dec series,
+    so the charts always start in January.
 
     ``override`` (optional) replaces the current month's snapshot in memory only (never
     persisted) so the wizard can preview unsaved edits before submitting."""
-    keys = month_keys(period, 12)
+    keys = year_months(period)
+    # The vs-M-1 delta needs the month right before the report month, which for a
+    # January report is December of the previous year (outside the calendar window).
+    prev_key = month_keys(period, 2)[0]
+    load = set(keys) | {prev_key, period}
     by_period = {e.period: (e.data or {}) for e in db.query(SteercoEntry)
-                 .filter(SteercoEntry.squad_id == squad_id, SteercoEntry.period.in_(keys)).all()}
+                 .filter(SteercoEntry.squad_id == squad_id, SteercoEntry.period.in_(load)).all()}
     if override is not None:
         by_period[period] = _sanitized(override)
     cur = by_period.get(period, {}) or {}
-    prev = by_period.get(keys[-2], {}) or {} if len(keys) > 1 else {}
+    prev = by_period.get(prev_key, {}) or {}
 
     # KPI change vs M-1: computed here from the two snapshots, so the squad leader
     # never types a variation and it can never go stale.
@@ -617,14 +634,18 @@ def _onepager(squad_name: str, period: str, data: dict, L: dict) -> str:
     KPI chart, row 2 = SLA | incidents chart) with identical panels/gutters, then the
     last/next events row - every column and row edge lines up."""
     d = data or {}
+    # The charts span the report's calendar year: their sub-labels show that year.
+    year = period.split("-")[0]
+    kpi_sub = L["kpi_chart_sub"].format(year=year)
+    inc_sub = L["inc_chart_sub"].format(year=year)
     return (
         '<div class="page">'
         f'<div class="hdr"><h1>{escape(squad_name)}</h1><div class="date">{escape(_period_long(period, L))}</div></div>'
         '<div class="grid">'
         + _panel(escape(L["key_figures"]), "", _kpi_cards(d.get("kpis") or [], L))
-        + _panel(escape(L["kpi_chart"]), escape(L["kpi_chart_sub"]), _chart_body(d.get("kpi_chart") or {}, L))
+        + _panel(escape(L["kpi_chart"]), escape(kpi_sub), _chart_body(d.get("kpi_chart") or {}, L))
         + _panel(L["sla"], "", _sla_table(d.get("sla") or {}, L))
-        + _panel(escape(L["inc_chart"]), escape(L["inc_chart_sub"]), _chart_body(d.get("incidents_chart") or {}, L))
+        + _panel(escape(L["inc_chart"]), escape(inc_sub), _chart_body(d.get("incidents_chart") or {}, L))
         + '</div>'
         '<div class="events-grid">'
         + _panel(escape(L["last_events"]), "", _events_list(d.get("last_events") or [], L))
@@ -829,6 +850,9 @@ def _render_pptx(squads: list[dict], period: str, L: dict) -> bytes:
     GUT = 0.22
     COLW = (13.333 - 2 * LM - GUT) / 2          # left/right column width
     LX, RX = LM, LM + COLW + GUT
+    year = period.split("-")[0]
+    kpi_sub = L["kpi_chart_sub"].format(year=year)
+    inc_sub = L["inc_chart_sub"].format(year=year)
     for s in squads:
         slide = prs.slides.add_slide(blank)
         d = s["data"] or {}
@@ -859,14 +883,14 @@ def _render_pptx(squads: list[dict], period: str, L: dict) -> bytes:
                 for i, k in enumerate(rest):
                     kpi_card(slide, Inches(bx + i * (cw + cg)), Inches(ry), Inches(cw), Inches(rh), k)
         # Row 1 right: KPI chart.
-        bx, by, bw, bh = titled_panel(slide, RX, r1y, COLW, row_h, L["kpi_chart"], L["kpi_chart_sub"])
+        bx, by, bw, bh = titled_panel(slide, RX, r1y, COLW, row_h, L["kpi_chart"], kpi_sub)
         line_chart(slide, Inches(bx), Inches(by), Inches(bw), Inches(bh), d.get("kpi_chart") or {})
 
         # Row 2 left: SLA table.
         bx, by, bw, bh = titled_panel(slide, LX, r2y, COLW, row_h, L["sla"])
         sla_table(slide, Inches(bx), Inches(by), Inches(bw), bh, d.get("sla") or {})
         # Row 2 right: incidents chart.
-        bx, by, bw, bh = titled_panel(slide, RX, r2y, COLW, row_h, L["inc_chart"], L["inc_chart_sub"])
+        bx, by, bw, bh = titled_panel(slide, RX, r2y, COLW, row_h, L["inc_chart"], inc_sub)
         line_chart(slide, Inches(bx), Inches(by), Inches(bw), Inches(bh), d.get("incidents_chart") or {})
 
         # Bottom: events row, same two columns.

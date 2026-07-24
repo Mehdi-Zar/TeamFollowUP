@@ -124,8 +124,10 @@ with `steerco_enabled`) · Snapshots: `GET /squad/{id}?period=` (fill status + w
 (renders the **unsaved** body, persists nothing, squad-leader accessible) · Documents
 (**`require_tribe_or_admin`**, tribe-scoped): `GET /entries?period=` · `GET /onepager.html?squad_id=&period=`
 · `GET /document.html?period=` · `GET /document.pptx?period=` (`501` without `python-pptx`).
-All documents accept `lang=fr|en` (default English). `period` is `YYYY-MM`; every 12-month window is
-the rolling one ending at `period`. See [15](15-steerco.md).
+All documents accept `lang=fr|en` (default English). `period` is `YYYY-MM`; every window (charts,
+history, SLA average) is the report's calendar year, January to December, so the charts always start
+in January. Admin Excel template/import (`/api/admin/import-steerco*`) use the same year window. See
+[15](15-steerco.md).
 
 ### admin (`/api/admin`) - `require_admin` (users also tribe_leader)
 Users: `GET/POST /users`, `PUT/DELETE /users/{id}` · Settings: `GET/PUT /settings` · Auth config:
