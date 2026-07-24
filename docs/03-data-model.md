@@ -60,7 +60,7 @@ erDiagram
 | **squad_budgets** | id, squad_id→squads, year, **total / spent / forecast** (Numeric), comment, updated_at · **uniq(squad,year)** | opt-in per squad (`budget_enabled`); visible to admin + tribe leader + own squad leader; on-track/overrun derived |
 | **key_messages** | id, squad_id→squads, year, **kind** (success/alert/risk), text, display_order, created_at, created_by_user_id→users | curated executive messages under the roadmap |
 | **committees** | id, squad_id→squads, name, objective, **frequency** (+frequency_other), day_of_week, time_of_day, duration_minutes, participants, is_active, display_order | recurring governance meetings ("comitologie"); standing, not year-scoped |
-| **steerco_entries** | id, squad_id→squads (ON DELETE CASCADE), **period** ("YYYY-MM"), **data (JSON)**, updated_at, updated_by_user_id→users · **uniq(squad,period)** | one monthly steering-committee snapshot (KPI counts, the month's SLA per COTS, incident count, events). Raw values only: variations, SLA colours and the 12-month charts are derived at render time. See [15](15-steerco.md) |
+| **steerco_entries** | id, squad_id→squads (ON DELETE CASCADE), **period** ("YYYY-MM"), **data (JSON)**, updated_at, updated_by_user_id→users · **uniq(squad,period)** | one monthly steering-committee snapshot (KPI counts, the month's SLA per COTS, incident count, events). Raw values only: variations, SLA colours and the calendar-year charts (January to December) are derived at render time. See [15](15-steerco.md) |
 | **report_baselines** | **scope_key (PK)** (global/tribe:id/sub:id), **signature (JSON)**, updated_at | last-emailed report state, diffed to compute "what changed" per recipient |
 | **api_keys** | id, name, **prefix** (uniq, public handle), **key_hash** (argon2), **scopes (JSON)**, tribe_id→tribes (NULL = all), created_by_user_id, created_at, expires_at, last_used_at, revoked_at | machine credentials for the read-only API (Admin → API); secret shown once |
 | **feed_posts** | id, tribe_id→tribes, author_user_id→users, content, kind (incident/info/success), squad_id→squads, is_pinned, created_at | |
@@ -95,9 +95,10 @@ erDiagram
 - **Snapshots** (`report_snapshots`) are write-once on cycle submission; never mutated → reliable history.
 - **Derived, not stored**: `objectives.rag_status` is overridden on read by `status.objective_status()`;
   OTD on-time status and budget on-track/overrun are likewise derived on read.
-- **Steerco one-pagers are never persisted**: the document is rebuilt from the last 12
-  `steerco_entries` on every render, so the cards, the rolling SLA row and the charts cannot drift
-  apart. Anything a client stores by hand in `data` (a trend, an SLA colour) is recomputed and ignored.
+- **Steerco one-pagers are never persisted**: the document is rebuilt from the report year's
+  `steerco_entries` on every render, so the cards, the annual SLA average and the charts (which always
+  start in January) cannot drift apart. Anything a client stores by hand in `data` (a trend, an SLA
+  colour) is recomputed and ignored.
 - **Cascade deletes**: a squad cascades to its objectives/roadmap/quarter_progress/kpis/members/
   snapshots/budgets/key_messages/committees (ORM `cascade="all, delete-orphan"`). Org nodes & feed posts
   referencing a deleted squad are detached (FK set null), not deleted. `steerco_entries` cascades at

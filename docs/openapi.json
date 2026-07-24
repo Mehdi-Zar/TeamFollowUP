@@ -7823,7 +7823,7 @@
           "steerco"
         ],
         "summary": "Get History",
-        "description": "The 12 monthly snapshots ending at ``period`` (for the backfill grid).",
+        "description": "The report year's 12 monthly snapshots, January to December (backfill grid).",
         "operationId": "get_history_api_steerco_squad__squad_id__history_get",
         "parameters": [
           {

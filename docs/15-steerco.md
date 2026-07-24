@@ -3,7 +3,7 @@
 Le module **Steerco** produit, pour le comite de pilotage, un **one-pager KPI par
 squad** (HTML / PPTX) construit automatiquement a partir d'instantanes mensuels.
 Chaque squad saisit des **valeurs brutes** ; tout le reste (variation vs M-1,
-couleurs SLA, graphiques 12 mois) est **calcule au rendu**, jamais tape a la main.
+couleurs SLA, graphiques de l'annee) est **calcule au rendu**, jamais tape a la main.
 
 Module optionnel, **desactive par defaut** : Administration -> Modules -> `steerco`.
 
@@ -25,22 +25,24 @@ Un instantane contient uniquement les chiffres du mois :
 ```
 
 Le one-pager **n'est pas stocke** : il est reconstruit a la demande a partir des
-**12 derniers instantanes**. C'est ce qui garantit la coherence :
+instantanes de l'**annee** du rapport. C'est ce qui garantit la coherence :
 
 | Element du one-pager | Origine |
 |---|---|
 | Cartes KPI (valeur) | l'instantane du mois demande |
-| Variation vs M-1 (fleche + delta) | calculee entre le mois et M-1 |
+| Variation vs M-1 (fleche + delta) | calculee entre le mois et M-1 (janvier se compare a decembre de l'annee precedente) |
 | Ligne SLA "mois en cours" | l'instantane du mois demande |
-| Ligne SLA "12 derniers mois" | moyenne des 12 instantanes |
+| Ligne SLA "moyenne annuelle" | moyenne des mois renseignes de l'annee |
 | Couleur d'une cellule SLA | calculee de la valeur : au-dessus de 90 % vert, de 80 a 90 % orange, en dessous de 80 % rouge |
-| Graphes KPI et incidents | serie des 12 instantanes (KPI indexes base 100) |
+| Graphes KPI et incidents | serie de janvier a decembre de l'annee (KPI indexes base 100) |
 | Evenements (derniers / prochains) | l'instantane du mois demande ; la gravite colore la pastille de type |
 
-> **Fenetre de 12 mois glissants.** Partout (graphes, grille de rattrapage,
-> colonnes de l'assistant, colonnes du fichier Excel) la fenetre est la meme :
-> les 12 mois **glissants** qui se terminent au mois du rapport. La definition
-> unique est `month_keys()` dans `backend/app/routers/steerco.py`.
+> **Fenetre = annee civile.** Partout (graphes, grille de rattrapage, colonnes de
+> l'assistant, colonnes du fichier Excel) la fenetre est la meme : les 12 mois de
+> l'annee du rapport, de **janvier a decembre**. Les graphiques commencent donc
+> toujours en janvier, et les mois qu'on saisit sont exactement ceux qu'on voit
+> tracer. La definition unique est `year_months()` dans
+> `backend/app/routers/steerco.py`.
 
 ## 2. Saisir (squad leader)
 
@@ -50,13 +52,13 @@ rempli, quand et par qui.
 
 Le bouton ouvre un **assistant en 5 etapes** : le mois, les KPI, SLA et incidents,
 les evenements, puis un recapitulatif avec **apercu en direct du one-pager** (rien
-n'est enregistre avant l'envoi). Dans les tableaux, les 11 mois precedents sont
-affiches en lecture seule a gauche et la colonne du mois a remplir est la derniere,
-surlignee.
+n'est enregistre avant l'envoi). Les tableaux affichent les 12 mois de l'annee
+(janvier a decembre) en lecture seule, la colonne du mois en cours etant surlignee
+et modifiable.
 
-A la premiere utilisation, le repli **"Importer l'historique 12 mois"** ouvre une
-grille qui accepte un **coller depuis Excel** (une ligne par mois, du plus ancien
-au plus recent) pour amorcer les graphes en une fois.
+A la premiere utilisation, le repli **"Importer l'historique de l'annee"** ouvre une
+grille qui accepte un **coller depuis Excel** (une ligne par mois, de janvier a
+decembre) pour amorcer les graphes en une fois.
 
 ## 3. Consulter et exporter (leadership)
 
@@ -82,8 +84,8 @@ Evenements passes, Evenements a venir.
 
 - **Infos** : nom **exact** de la squad dans l'application (pre-rempli), mois du
   rapport (`AAAA-MM`), et les 3 sous-metriques Software Factory du mois en cours.
-- **KPIs / SLA / Incidents** : 12 colonnes = les 12 mois glissants qui se terminent
-  au mois du rapport. Le mois du rapport est la **derniere** colonne, marquee `*`.
+- **KPIs / SLA / Incidents** : 12 colonnes = les mois de l'annee, de janvier a
+  decembre. Le mois du rapport est marque d'une `*`.
 - **Evenements** : Date, Type, Libelle, Gravite (Critique / Attention / OK / Prevu).
 
 Rien a saisir pour les variations ni les couleurs : elles sont recalculees au rendu.
@@ -112,8 +114,8 @@ doublon. Il **active** le Steerco sur la squad. Il echoue en `400` si la squad e
 introuvable, si plusieurs squads portent ce nom, ou si le mois du rapport n'est pas
 au format `AAAA-MM`.
 
-> Si vous changez le mois du rapport, **retelechargez le modele** : les colonnes se
-> decalent d'autant.
+> Les colonnes sont l'annee civile : changer le mois du rapport dans la meme annee
+> ne decale pas les colonnes, cela deplace seulement l'asterisque du mois en cours.
 
 ### API directe (curl / CI)
 
@@ -141,7 +143,7 @@ Toute ecriture est **auditee** (`steerco.enabled`, `steerco.upsert`,
 
 | Role | Fichier |
 |---|---|
-| API, agregation 12 mois, rendu HTML et PPTX | `backend/app/routers/steerco.py` |
+| API, agregation annuelle, rendu HTML et PPTX | `backend/app/routers/steerco.py` |
 | Modele et gabarit Excel, parsing, import | `backend/app/steerco_import.py` |
 | Table `steerco_entries` + `squads.steerco_enabled` | `backend/alembic/versions/0027_steerco_entries.py` |
 | Types et calculs partages (front) | `frontend/src/steerco.ts` |
