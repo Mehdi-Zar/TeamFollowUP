@@ -1,6 +1,6 @@
 # 12 - Deployment Guide (VMware · GCP · S3NS · AWS · Azure)
 
-This guide explains how to deploy **Tribe Run Tracker** to production on the main
+This guide explains how to deploy **TeamFollowUP** to production on the main
 target platforms. The application ships as **one container image** plus a
 **PostgreSQL** database - nothing else is required.
 
@@ -62,7 +62,7 @@ untouched. That update procedure has its own document: **`13-maintenance-and-upd
 
 ```
             ┌───────────────────┐     ┌──────────────────────────────┐
-  users ───▶│  API Gateway      │────▶│  Tribe Run Tracker (1 image) │───▶  PostgreSQL 16
+  users ───▶│  API Gateway      │────▶│  TeamFollowUP (1 image)      │───▶  PostgreSQL 16
   HTTPS 443 │  Gateway+HTTPRoute│HTTPS│  FastAPI + built React SPA   │      (managed or self-hosted)
             │  = internal ALB   │:8443│  HTTPS :8443 (single port)   │
             │  self-signed cert │     └──────────────────────────────┘
@@ -130,11 +130,11 @@ from the platform's secret manager, never from a committed file.
 
 ```bash
 # Build
-docker build -t tribe-run-tracker:1.0 .
+docker build -t teamfollowup:1.0 .
 
 # Tag & push to your registry (examples)
-docker tag tribe-run-tracker:1.0 REGISTRY/tribe-run-tracker:1.0
-docker push REGISTRY/tribe-run-tracker:1.0
+docker tag teamfollowup:1.0 REGISTRY/teamfollowup:1.0
+docker push REGISTRY/teamfollowup:1.0
 ```
 
 Registry per platform: **GCP** → Artifact Registry (`REGION-docker.pkg.dev/PROJECT/REPO`),
@@ -190,8 +190,8 @@ Serverless, scales to zero, managed Postgres.
 2. **Image**: push to **Artifact Registry**.
 3. **Service**: deploy to **Cloud Run**, attaching the Cloud SQL instance:
    ```bash
-   gcloud run deploy tribe-run-tracker \
-     --image REGION-docker.pkg.dev/PROJECT/REPO/tribe-run-tracker:1.0 \
+   gcloud run deploy teamfollowup \
+     --image REGION-docker.pkg.dev/PROJECT/REPO/teamfollowup:1.0 \
      --region REGION --port 8080 --allow-unauthenticated \
      --add-cloudsql-instances PROJECT:REGION:INSTANCE \
      --set-env-vars POSTGRES_HOST=/cloudsql/PROJECT:REGION:INSTANCE,POSTGRES_DB=tribe,POSTGRES_USER=tribe,COOKIE_SECURE=true,SEED_DEMO=false \
@@ -329,7 +329,7 @@ A "repository" is just a folder for your images inside S3NS.
 # Create a Docker repository named "tribe" in the only region
 gcloud artifacts repositories create tribe \
   --repository-format=docker --location=u-france-east1 \
-  --project=PROJECT --description="Tribe Run Tracker images"
+  --project=PROJECT --description="TeamFollowUP images"
 
 # Let docker authenticate to the S3NS registry host (note: s3nsregistry.fr, NOT pkg.dev)
 gcloud auth configure-docker u-france-east1-docker.s3nsregistry.fr
@@ -369,7 +369,7 @@ cd TeamFollowUP
 **Step 2 - Build the application image** (this is the only build; it downloads
 `node` + `python` and bakes the React frontend + FastAPI backend into one image):
 ```bash
-docker build -t tribe-run-tracker:1.0 .
+docker build -t teamfollowup:1.0 .
 ```
 
 **Step 3 - Also fetch the database image, if you need one** (see §6.7):
@@ -382,7 +382,7 @@ docker build -t tribe-run-tracker:1.0 .
 
 **Step 4 - Save the images to files** (so you can carry them):
 ```bash
-docker save tribe-run-tracker:1.0 -o app.tar
+docker save teamfollowup:1.0 -o app.tar
 docker save postgres:16-alpine    -o postgres.tar     # option A only
 ```
 
@@ -404,9 +404,9 @@ gcloud auth configure-docker u-france-east1-docker.s3nsregistry.fr
 **Step 8 - Re-tag the images for YOUR S3NS registry, then push**
 ```bash
 # App image
-docker tag tribe-run-tracker:1.0 \
-  u-france-east1-docker.s3nsregistry.fr/PROJECT/tribe/tribe-run-tracker:1.0
-docker push u-france-east1-docker.s3nsregistry.fr/PROJECT/tribe/tribe-run-tracker:1.0
+docker tag teamfollowup:1.0 \
+  u-france-east1-docker.s3nsregistry.fr/PROJECT/tribe/teamfollowup:1.0
+docker push u-france-east1-docker.s3nsregistry.fr/PROJECT/tribe/teamfollowup:1.0
 
 # Postgres - option A only (in-cluster DB)
 docker tag postgres:16-alpine \
@@ -424,7 +424,7 @@ docker push u-france-east1-docker.s3nsregistry.fr/PROJECT/tribe/postgres:16-alpi
 gcloud artifacts docker images list \
   u-france-east1-docker.s3nsregistry.fr/PROJECT/tribe
 ```
-You should see `tribe-run-tracker` (and `postgres`, if you chose option A). The images
+You should see `teamfollowup` (and `postgres`, if you chose option A). The images
 now live in S3NS; GKE pulls them with **no internet**. For every new version, repeat
 steps 2 → 9 with a new tag (`:1.1`, …) - see §6.12.
 
@@ -514,11 +514,12 @@ set `POSTGRES_HOST` to that private IP.
 
 ### 6.8 Deploy the application on GKE
 
-**Secrets** (`tribe-secrets.yaml` - never commit real values):
+**Secrets** (`teamfollowup-secrets.yaml` - never commit real values):
 ```yaml
 apiVersion: v1
 kind: Secret
-metadata: { name: tribe-secrets }
+metadata:
+  name: teamfollowup-secrets
 type: Opaque
 stringData:
   SECRET_KEY: "<32+ random chars>"
@@ -531,33 +532,57 @@ you pushed in 6.1):
 ```yaml
 apiVersion: apps/v1
 kind: StatefulSet
-metadata: { name: postgres }
+metadata:
+  name: postgres
 spec:
   serviceName: postgres
   replicas: 1
-  selector: { matchLabels: { app: postgres } }
+  selector:
+    matchLabels:
+      app: postgres
   template:
-    metadata: { labels: { app: postgres } }
+    metadata:
+      labels:
+        app: postgres
     spec:
       containers:
         - name: postgres
           image: u-france-east1-docker.s3nsregistry.fr/PROJECT/tribe/postgres:16-alpine
           env:
-            - { name: POSTGRES_DB, value: tribe }
-            - { name: POSTGRES_USER, value: tribe }
-            - { name: POSTGRES_PASSWORD, valueFrom: { secretKeyRef: { name: tribe-secrets, key: POSTGRES_PASSWORD } } }
-          ports: [{ containerPort: 5432 }]
-          volumeMounts: [{ name: data, mountPath: /var/lib/postgresql/data }]
+            - name: POSTGRES_DB
+              value: tribe
+            - name: POSTGRES_USER
+              value: tribe
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: teamfollowup-secrets
+                  key: POSTGRES_PASSWORD
+          ports:
+            - containerPort: 5432
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
   volumeClaimTemplates:
-    - metadata: { name: data }
-      spec: { accessModes: [ReadWriteOnce], resources: { requests: { storage: 10Gi } } }
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 10Gi
 ---
 apiVersion: v1
 kind: Service
-metadata: { name: postgres }
+metadata:
+  name: postgres
 spec:
-  selector: { app: postgres }
-  ports: [{ port: 5432, targetPort: 5432 }]
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
 ```
 *(Option B - Cloud SQL: **skip this StatefulSet entirely**, the database already exists.
 You created it in §6.7.1.)*
@@ -575,52 +600,87 @@ the **Gateway** (§6.9.2), never in the pod.
 ```yaml
 apiVersion: apps/v1
 kind: Deployment
-metadata: { name: tribe-app }
+metadata:
+  name: teamfollowup-app
 spec:
   replicas: 1                      # keep 1 for the first rollout (migrations); scale up after
-  selector: { matchLabels: { app: tribe-app } }
+  selector:
+    matchLabels:
+      app: teamfollowup-app
   template:
-    metadata: { labels: { app: tribe-app } }
+    metadata:
+      labels:
+        app: teamfollowup-app
     spec:
       containers:
         - name: app
-          image: u-france-east1-docker.s3nsregistry.fr/PROJECT/tribe/tribe-run-tracker:1.0
+          image: u-france-east1-docker.s3nsregistry.fr/PROJECT/tribe/teamfollowup:1.0
           ports:
-            - { containerPort: 8443, name: https }   # the app's ONLY port
+            - containerPort: 8443   # the app's ONLY port
+              name: https
           env:
-            - { name: POSTGRES_HOST, value: postgres }   # option A: the Service name
-            #  option B (Cloud SQL):  value: "10.42.0.3"  ← the private IP from §6.7.1
-            - { name: POSTGRES_PORT, value: "5432" }
-            - { name: POSTGRES_DB, value: tribe }
-            - { name: POSTGRES_USER, value: tribe }
-            - { name: SEED_DEMO, value: "false" }
-            - { name: COOKIE_SECURE, value: "true" }
-            - { name: BREAKGLASS_EMAIL, value: admin@local }
-            - { name: SECRET_KEY, valueFrom: { secretKeyRef: { name: tribe-secrets, key: SECRET_KEY } } }
-            - { name: POSTGRES_PASSWORD, valueFrom: { secretKeyRef: { name: tribe-secrets, key: POSTGRES_PASSWORD } } }
-            - { name: BREAKGLASS_PASSWORD, valueFrom: { secretKeyRef: { name: tribe-secrets, key: BREAKGLASS_PASSWORD } } }
+            - name: POSTGRES_HOST
+              value: postgres           # option A: the Service name
+            #  option B (Cloud SQL): value: "10.42.0.3"  ← the private IP from §6.7.1
+            - name: POSTGRES_PORT
+              value: "5432"
+            - name: POSTGRES_DB
+              value: tribe
+            - name: POSTGRES_USER
+              value: tribe
+            - name: SEED_DEMO
+              value: "false"
+            - name: COOKIE_SECURE
+              value: "true"
+            - name: BREAKGLASS_EMAIL
+              value: admin@local
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: teamfollowup-secrets
+                  key: SECRET_KEY
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: teamfollowup-secrets
+                  key: POSTGRES_PASSWORD
+            - name: BREAKGLASS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: teamfollowup-secrets
+                  key: BREAKGLASS_PASSWORD
           readinessProbe:
-            httpGet: { path: /api/health, port: 8443, scheme: HTTPS }   # HTTPS: self-signed cert is fine, kubelet doesn't verify it
+            httpGet:                    # HTTPS: self-signed cert is fine, kubelet doesn't verify it
+              path: /api/health
+              port: 8443
+              scheme: HTTPS
             initialDelaySeconds: 20
             periodSeconds: 10
-          resources:                                   # Autopilot requires explicit requests
-            requests: { cpu: "500m", memory: "1Gi" }
+          resources:                    # Autopilot requires explicit requests
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: tribe-app
+  name: teamfollowup-app
   annotations:
     cloud.google.com/app-protocols: '{"https":"HTTPS"}'   # legacy signal (Ingress-style)
 spec:
-  type: ClusterIP                                         # exposure is the Gateway's job (§6.9)
-  selector: { app: tribe-app }
+  type: ClusterIP                       # exposure is the Gateway's job (§6.9)
+  selector:
+    app: teamfollowup-app
   # appProtocol: HTTPS is the Gateway-API-native signal that the pod speaks TLS on
   # 8443. WITHOUT it the ALB data path defaults to cleartext HTTP against the
   # TLS-only port and EVERY request is reset with
   #   "reset reason: connection termination"
   # even though the HTTPS HealthCheckPolicy keeps the backend marked HEALTHY.
-  ports: [{ name: https, port: 443, targetPort: 8443, appProtocol: HTTPS }]
+  ports:
+    - name: https
+      port: 443
+      targetPort: 8443
+      appProtocol: HTTPS
 ```
 
 > #### 6.8.a Recommended: let the infrastructure terminate TLS (`TLS_ENABLED=false`)
@@ -634,26 +694,40 @@ spec:
 > ```yaml
 > # Deployment: container
 >   ports:
->     - { containerPort: 8000, name: http }
+>     - containerPort: 8000
+>       name: http
 >   env:
->     - { name: TLS_ENABLED, value: "false" }   # serve plain HTTP; infra does TLS
->     - { name: HTTP_PORT,   value: "8000" }
->     - { name: LOG_FORMAT,  value: "json" }    # GCP Cloud Logging structured logs
->     - { name: COOKIE_SECURE, value: "true" }  # clients still reach the ALB over HTTPS
+>     - name: TLS_ENABLED           # serve plain HTTP; infra does TLS
+>       value: "false"
+>     - name: HTTP_PORT
+>       value: "8000"
+>     - name: LOG_FORMAT            # GCP Cloud Logging structured logs
+>       value: "json"
+>     - name: COOKIE_SECURE         # clients still reach the ALB over HTTPS
+>       value: "true"
 >     # ... (the other env vars are unchanged)
 >   readinessProbe:
->     httpGet: { path: /api/health, port: 8000, scheme: HTTP }   # plain HTTP now
+>     httpGet:                      # plain HTTP now
+>       path: /api/health
+>       port: 8000
+>       scheme: HTTP
 >     initialDelaySeconds: 20
 >     periodSeconds: 10
 > ---
 > # Service: plain HTTP backend - no app-protocols HTTPS annotation, appProtocol: HTTP
 > apiVersion: v1
 > kind: Service
-> metadata: { name: tribe-app }
+> metadata:
+>   name: teamfollowup-app
 > spec:
 >   type: ClusterIP
->   selector: { app: tribe-app }
->   ports: [{ name: http, port: 80, targetPort: 8000, appProtocol: HTTP }]
+>   selector:
+>     app: teamfollowup-app
+>   ports:
+>     - name: http
+>       port: 80
+>       targetPort: 8000
+>       appProtocol: HTTP
 > ```
 >
 > With this model the **`HealthCheckPolicy` (§6.9.2) is no longer needed** - the ALB's
@@ -665,22 +739,22 @@ spec:
 **Apply, then check:**
 ```bash
 # Option A (in-cluster Postgres):
-kubectl apply -f tribe-secrets.yaml -f postgres.yaml -f app.yaml
+kubectl apply -f teamfollowup-secrets.yaml -f postgres.yaml -f app.yaml
 # Option B (Cloud SQL - no postgres.yaml, the database already exists):
-kubectl apply -f tribe-secrets.yaml -f app.yaml
+kubectl apply -f teamfollowup-secrets.yaml -f app.yaml
 
-kubectl rollout status deployment/tribe-app
-kubectl logs deploy/tribe-app | grep -i "migration\|secours"   # migrations + break-glass
+kubectl rollout status deployment/teamfollowup-app
+kubectl logs deploy/teamfollowup-app | grep -i "migration\|secours"   # migrations + break-glass
 ```
 The container entrypoint waits for the database (60 × 2 s), runs `alembic upgrade head`,
 then starts the server - so the first pod migrates the DB. Once healthy, scale with
-`kubectl scale deployment/tribe-app --replicas=3` (the in-process scheduler is
+`kubectl scale deployment/teamfollowup-app --replicas=3` (the in-process scheduler is
 multi-replica safe via a Postgres advisory lock).
 
 > **At this point the app runs but nobody can reach it** - the `Service` is a
 > `ClusterIP` on purpose. Publishing it is §6.9's job (API Gateway + HTTP routes → ALB).
 > To sanity-check the pod before then, port-forward to it:
-> `kubectl port-forward deploy/tribe-app 8443:8443` then
+> `kubectl port-forward deploy/teamfollowup-app 8443:8443` then
 > `curl -k https://localhost:8443/api/health`.
 
 ### 6.9 Expose the app - API Gateway (Gateway API) + HTTPRoute → internal ALB
@@ -696,14 +770,14 @@ multi-replica safe via a Postgres advisory lock).
 backend); GKE provisions the ALB for you and keeps it in sync:
 
 ```
-   user ──HTTPS 443──▶  Gateway (gke-l7-rilb)  ──▶  HTTPRoute  ──▶  Service tribe-app (ClusterIP)
+   user ──HTTPS 443──▶  Gateway (gke-l7-rilb)  ──▶  HTTPRoute  ──▶  Service teamfollowup-app (ClusterIP)
                         = internal ALB              path rules        │  app-protocols: HTTPS
                         cert: self-signed                             ▼
                         first, PKI later                         pod :8443 (HTTPS)
 ```
 
 Two certificates are in play, and that is normal: the **ALB** presents the certificate in
-the `tribe-tls` secret to users, and the **pod** presents its own self-signed one on the
+the `teamfollowup-tls` secret to users, and the **pod** presents its own self-signed one on the
 internal ALB→pod hop, which never leaves the VPC.
 
 #### 6.9.1 One-time prerequisites
@@ -724,7 +798,7 @@ them once with `gcloud container clusters update tribe-cluster --gateway-api=sta
 
 #### 6.9.1.a The gateway certificate - start self-signed, switch to PKI later
 
-The Gateway's HTTPS listener needs a certificate in a secret named **`tribe-tls`**.
+The Gateway's HTTPS listener needs a certificate in a secret named **`teamfollowup-tls`**.
 Getting one issued by your PKI takes days; you do **not** have to wait for it to bring
 the platform up. Both paths below produce the **same secret name**, so **the manifests in
 §6.9.2 never change** - you swap the content when the real certificate arrives.
@@ -737,10 +811,10 @@ validation and demos. Users will see a browser warning, which is expected.
 # The SAN is what browsers check - the CN alone is ignored by modern browsers.
 openssl req -x509 -newkey rsa:2048 -nodes -days 365 \
   -keyout tls.key -out tls.crt \
-  -subj "/CN=tribe.internal.example/O=Tribe Run Tracker" \
+  -subj "/CN=tribe.internal.example/O=TeamFollowUP" \
   -addext "subjectAltName=DNS:tribe.internal.example"
 
-kubectl create secret tls tribe-tls --cert=tls.crt --key=tls.key
+kubectl create secret tls teamfollowup-tls --cert=tls.crt --key=tls.key
 ```
 
 > **What this does and does not give you.** Traffic is **encrypted** exactly as with a
@@ -754,11 +828,11 @@ kubectl create secret tls tribe-tls --cert=tls.crt --key=tls.key
 recreation. Replace the secret's content and the ALB picks it up within a minute:
 
 ```bash
-kubectl create secret tls tribe-tls \
+kubectl create secret tls teamfollowup-tls \
   --cert=server.crt --key=server.key \
   --dry-run=client -o yaml | kubectl apply -f -   # overwrite in place
 
-kubectl get gateway tribe-gateway -o jsonpath='{.status.conditions}'   # still Programmed=True
+kubectl get gateway teamfollowup-gateway -o jsonpath='{.status.conditions}'   # still Programmed=True
 ```
 
 *(`server.crt` must be the **full chain** - your server certificate followed by any
@@ -771,7 +845,7 @@ accepts it.)*
 apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway
 metadata:
-  name: tribe-gateway
+  name: teamfollowup-gateway
 spec:
   gatewayClassName: gke-l7-rilb          # regional INTERNAL Application Load Balancer
   listeners:
@@ -781,7 +855,8 @@ spec:
       hostname: tribe.internal.example
       tls:
         mode: Terminate                  # the ALB terminates TLS with YOUR cert
-        certificateRefs: [{ name: tribe-tls }]
+        certificateRefs:
+          - name: teamfollowup-tls
     - name: http
       protocol: HTTP
       port: 80                           # only exists to bounce users to HTTPS (see below)
@@ -791,38 +866,51 @@ spec:
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
-  name: tribe-app-route
+  name: teamfollowup-app-route
 spec:
-  parentRefs: [{ name: tribe-gateway, sectionName: https }]
-  hostnames: ["tribe.internal.example"]
+  parentRefs:
+    - name: teamfollowup-gateway
+      sectionName: https
+  hostnames:
+    - tribe.internal.example
   rules:
-    - matches: [{ path: { type: PathPrefix, value: / } }]
-      backendRefs: [{ name: tribe-app, port: 443 }]   # → Service tribe-app → pod :8443 (HTTPS)
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: teamfollowup-app               # → Service teamfollowup-app → pod :8443 (HTTPS)
+          port: 443
 ---
 # Plain HTTP never reaches the app: the Gateway itself 301s it to HTTPS.
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
-  name: tribe-https-redirect
+  name: teamfollowup-https-redirect
 spec:
-  parentRefs: [{ name: tribe-gateway, sectionName: http }]
-  hostnames: ["tribe.internal.example"]
+  parentRefs:
+    - name: teamfollowup-gateway
+      sectionName: http
+  hostnames:
+    - tribe.internal.example
   rules:
     - filters:
         - type: RequestRedirect
-          requestRedirect: { scheme: https, statusCode: 301 }
+          requestRedirect:
+            scheme: https
+            statusCode: 301
 ---
 # The ALB health-checks the backend over HTTPS on the app's own port.
 # Without this it defaults to HTTP and every backend is marked UNHEALTHY.
 apiVersion: networking.gke.io/v1
 kind: HealthCheckPolicy
 metadata:
-  name: tribe-app-hc
+  name: teamfollowup-app-hc
 spec:
   targetRef:
     group: ""
     kind: Service
-    name: tribe-app
+    name: teamfollowup-app
   default:
     config:
       type: HTTPS
@@ -832,15 +920,26 @@ spec:
 ```
 
 Want to expose only part of the API, or split traffic? That is what **HTTP routes** are
-for - add `rules` to `tribe-app-route`. For example, keeping the admin surface off the
+for - add `rules` to `teamfollowup-app-route`. For example, keeping the admin surface off the
 gateway:
 
 ```yaml
   rules:
-    - matches: [{ path: { type: PathPrefix, value: /api/admin } }]
-      filters: [{ type: RequestRedirect, requestRedirect: { statusCode: 404 } }]
-    - matches: [{ path: { type: PathPrefix, value: / } }]
-      backendRefs: [{ name: tribe-app, port: 443 }]
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api/admin
+      filters:
+        - type: RequestRedirect
+          requestRedirect:
+            statusCode: 404
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: teamfollowup-app
+          port: 443
 ```
 
 #### 6.9.3 Apply and wire DNS
@@ -849,8 +948,8 @@ gateway:
 kubectl apply -f gateway.yaml
 
 # Wait until the Gateway is programmed, then read the ALB address
-kubectl wait --for=condition=Programmed gateway/tribe-gateway --timeout=10m
-kubectl get gateway tribe-gateway -o jsonpath='{.status.addresses[0].value}'   # e.g. 10.128.0.30
+kubectl wait --for=condition=Programmed gateway/teamfollowup-gateway --timeout=10m
+kubectl get gateway teamfollowup-gateway -o jsonpath='{.status.addresses[0].value}'   # e.g. 10.128.0.30
 ```
 
 Point your internal **DNS** record (`tribe.internal.example`) at that address, and keep
@@ -860,10 +959,10 @@ with `proxy_headers=True`).
 ### 6.10 Verify it works
 
 ```bash
-kubectl get pods                       # tribe-app Running (+ postgres, with option A)
-kubectl logs deploy/tribe-app | grep -i "migration\|secours"   # migrations + break-glass pwd
+kubectl get pods                       # teamfollowup-app Running (+ postgres, with option A)
+kubectl logs deploy/teamfollowup-app | grep -i "migration\|secours"   # migrations + break-glass pwd
 
-kubectl get gateway tribe-gateway      # PROGRAMMED=True + an ADDRESS
+kubectl get gateway teamfollowup-gateway      # PROGRAMMED=True + an ADDRESS
 kubectl get httproute                  # both routes Accepted, attached to the gateway
 
 curl -k https://tribe.internal.example/api/health       # {"status":"ok"} - via the ALB
@@ -898,7 +997,7 @@ gcloud projects add-iam-policy-binding PROJECT \
   --role="roles/storage.objectCreator"
 
 # 3) Let the pod's KSA impersonate that GSA (Workload Identity binding).
-#    KSA = the ServiceAccount the tribe-app pod runs as (default: "default" in its namespace).
+#    KSA = the ServiceAccount the teamfollowup-app pod runs as (default: "default" in its namespace).
 gcloud iam service-accounts add-iam-policy-binding \
   tribe-logs@PROJECT.iam.gserviceaccount.com \
   --role="roles/iam.workloadIdentityUser" \
@@ -923,7 +1022,7 @@ file) or, only if nothing else is possible, the **`key`** method.
 | `docker push` denied | docker not authenticated to S3NS | Re-run `gcloud auth configure-docker u-france-east1-docker.s3nsregistry.fr` (§6.4). |
 | App pod crashes, logs show DB connection refused | wrong `POSTGRES_HOST` / DB not up | **A**: `kubectl get pods` - is `postgres` Running? Host must be the Service name `postgres`. **B**: host must be the instance's **private IP** (§6.7.1), *not* a hostname and *not* `127.0.0.1`. |
 | App pod hangs on `[entrypoint] DB indisponible` then dies after 60 tries | the pod cannot route to the Cloud SQL private IP | The instance needs **private services access** on the VPC, and the cluster must sit on that **same VPC** (§6.6 `--network`). Check from inside the cluster: `kubectl run -it --rm pg --image=… -- psql -h 10.42.0.3 -U tribe`. |
-| App logs: `password authentication failed for user "tribe"` | `POSTGRES_PASSWORD` mismatch | The value in `tribe-secrets` must equal the password set by `gcloud sql users create` (§6.7.1). |
+| App logs: `password authentication failed for user "tribe"` | `POSTGRES_PASSWORD` mismatch | The value in `teamfollowup-secrets` must equal the password set by `gcloud sql users create` (§6.7.1). |
 | App logs: `no pg_hba.conf entry … SSL off` | the instance enforces TLS (`--require-ssl`) | Either drop the requirement, or keep it and configure the client TLS material - the app connects with plain psycopg2 settings. |
 | Readiness probe never passes, `curl` to :8000 or :8080 refused | probe/Service pointing at the wrong port | The app listens on **8443 (HTTPS) only** - never 8000, and there is no :8080 listener. Probe must use `port: 8443, scheme: HTTPS`, and the Service `targetPort: 8443`. |
 | `Gateway` stuck, `Programmed=False`, never gets an address | the **proxy-only subnet** is missing | Create it once per VPC + region - §6.9.1 (`--purpose=REGIONAL_MANAGED_PROXY`). This is by far the most common Gateway failure. |
@@ -931,7 +1030,7 @@ file) or, only if nothing else is possible, the **`key`** method.
 | Backend is **healthy** yet requests intermittently fail with `upstream connect error or disconnect/reset before headers. reset reason: connection termination` | the app's HTTP keep-alive timeout is **shorter** than the ALB's backend idle timeout, so the LB reuses a connection uvicorn just closed | The server sets `timeout_keep_alive=620s` (> the Google ALB default of 600s) - see `app/server.py` (`KEEPALIVE_TIMEOUT`). If your LB uses a longer idle timeout, raise it via the `KEEPALIVE_TIMEOUT` env var so it stays above the LB's. |
 | `HTTPRoute` shows `Accepted=False` / `NotAllowedByListeners` | hostname or `sectionName` mismatch | The route's `hostnames` must match the listener's `hostname`, and `parentRefs.sectionName` must name an existing listener (`https` / `http`). |
 | Browser: "your connection is not private" / `NET::ERR_CERT_AUTHORITY_INVALID` | the gateway is still on the **self-signed** certificate | Expected - click through, or swap in your PKI cert (§6.9.1.a step 2). Not a misconfiguration. |
-| `Gateway` listener `Programmed=False`, `Invalid certificate` | the `tribe-tls` secret is missing, or key and cert don't match | `kubectl get secret tribe-tls`; recreate it (§6.9.1.a). The **ALB** serves this certificate - the pod's own self-signed one is never shown to users. |
+| `Gateway` listener `Programmed=False`, `Invalid certificate` | the `teamfollowup-tls` secret is missing, or key and cert don't match | `kubectl get secret teamfollowup-tls`; recreate it (§6.9.1.a). The **ALB** serves this certificate - the pod's own self-signed one is never shown to users. |
 | Browser accepts the cert but a CLI client rejects it | the secret holds the leaf certificate without its **intermediate CA chain** | Rebuild `server.crt` as the full chain (leaf + intermediates) and re-apply the secret (§6.9.1.a). |
 | `kubectl get gatewayclass` returns nothing | Gateway API not enabled (Standard cluster) | `gcloud container clusters update tribe-cluster --gateway-api=standard --region u-france-east1`. Autopilot has it on by default. |
 | Two pods race the migration on first deploy | scaled out too early | First rollout with **1 replica** (the manifest already does); scale up only after it's healthy. |
@@ -941,14 +1040,14 @@ file) or, only if nothing else is possible, the **`key`** method.
 You do **not** redo all of the above. The data stays in the database. Just:
 ```bash
 # OUTSIDE (internet): build the new tag and save it
-docker build -t tribe-run-tracker:1.1 . && docker save tribe-run-tracker:1.1 -o app-1.1.tar
+docker build -t teamfollowup:1.1 . && docker save teamfollowup:1.1 -o app-1.1.tar
 # …transfer app-1.1.tar across the gap…
 # INSIDE: load, tag, push, then roll the deployment
 docker load -i app-1.1.tar
-docker tag tribe-run-tracker:1.1 u-france-east1-docker.s3nsregistry.fr/PROJECT/tribe/tribe-run-tracker:1.1
-docker push u-france-east1-docker.s3nsregistry.fr/PROJECT/tribe/tribe-run-tracker:1.1
-kubectl set image deployment/tribe-app app=u-france-east1-docker.s3nsregistry.fr/PROJECT/tribe/tribe-run-tracker:1.1
-kubectl rollout status deployment/tribe-app
+docker tag teamfollowup:1.1 u-france-east1-docker.s3nsregistry.fr/PROJECT/tribe/teamfollowup:1.1
+docker push u-france-east1-docker.s3nsregistry.fr/PROJECT/tribe/teamfollowup:1.1
+kubectl set image deployment/teamfollowup-app app=u-france-east1-docker.s3nsregistry.fr/PROJECT/tribe/teamfollowup:1.1
+kubectl rollout status deployment/teamfollowup-app
 ```
 The new pod runs `alembic upgrade head` automatically. **Back up the database first**
 (§10). Full upgrade/rollback playbook: `13-maintenance-and-updates.md`.
@@ -1007,8 +1106,8 @@ The new pod runs `alembic upgrade head` automatically. **Back up the database fi
 2. **Image**: push to **Azure Container Registry (ACR)**.
 3. **App**: **Azure Container Apps**:
    ```bash
-   az containerapp create -n tribe-run-tracker -g RG --environment ENV \
-     --image REGISTRY.azurecr.io/tribe-run-tracker:1.0 \
+   az containerapp create -n teamfollowup -g RG --environment ENV \
+     --image REGISTRY.azurecr.io/teamfollowup:1.0 \
      --target-port 8443 --ingress external \
      --min-replicas 1 --max-replicas 4 \
      --env-vars POSTGRES_HOST=SERVER.postgres.database.azure.com POSTGRES_DB=tribe POSTGRES_USER=tribe COOKIE_SECURE=true SEED_DEMO=false \
