@@ -126,12 +126,40 @@ def new_presentation():
     return prs
 
 
+def _shows_master(layout) -> bool:
+    """False when the layout hides the master's own shapes (``showMasterSp="0"``). Many
+    templates set this on their "blank" layout, which then suppresses the master footer
+    band and logo - exactly the branding an export is supposed to show."""
+    return layout.element.get("showMasterSp") != "0"
+
+
 def blank_layout(prs):
-    """The emptiest slide layout of the deck: fewest placeholders, a ``blank``-named one
-    preferred. Renderers draw their own shapes on top, so a layout that still carries
-    placeholder prompts (a plain template's ``slide_layouts[6]`` may) must be avoided."""
+    """The best slide layout to draw a full custom deck on: one that still **shows the
+    master's shapes** (so the template's footer band and logo appear), then a
+    ``blank``-named one, then the fewest own decorations and placeholders. Picking the
+    absolute emptiest layout is wrong when that layout is the one with ``showMasterSp=0``
+    (it would hide all the branding). Placeholders are stripped per-slide in
+    :func:`add_slide`, so they barely weigh here."""
     layouts = list(prs.slide_layouts)
     if not layouts:  # pragma: no cover - every real deck has layouts
         return prs.slide_masters[0].slide_layouts[0]
-    return min(layouts, key=lambda lay: (len(list(lay.placeholders)),
-                                         0 if "blank" in (lay.name or "").lower() else 1))
+    branding = any(not sh.is_placeholder for sh in prs.slide_masters[0].shapes)
+
+    def score(lay):
+        hides_branding = 1 if (branding and not _shows_master(lay)) else 0
+        not_blank = 0 if "blank" in (lay.name or "").lower() else 1
+        own_decorations = sum(1 for sh in lay.shapes if not sh.is_placeholder)
+        return (hides_branding, not_blank, own_decorations, len(list(lay.placeholders)))
+
+    return min(layouts, key=score)
+
+
+def add_slide(prs):
+    """Add a slide on :func:`blank_layout` and remove the layout's inherited placeholders
+    so no "click to add" prompts show. The template master's own branding (footer, logo)
+    keeps rendering - it comes from the master, not from these placeholders."""
+    slide = prs.slides.add_slide(blank_layout(prs))
+    for ph in list(slide.placeholders):
+        el = ph._element
+        el.getparent().remove(el)
+    return slide

@@ -44,6 +44,38 @@ def test_blank_layout_avoids_placeholder_prompts():
     assert lay.name == "Blank"                # same choice the renderers made historically
 
 
+def _add_master_branding(prs):
+    """Give the master a non-placeholder shape (a logo/footer stand-in) by cloning a
+    master placeholder and stripping its <p:ph>, so blank_layout treats the deck as
+    branded."""
+    from copy import deepcopy
+    from pptx.oxml.ns import qn
+    spTree = prs.slide_masters[0].element.find(qn("p:cSld")).find(qn("p:spTree"))
+    clone = deepcopy(spTree.find(qn("p:sp")))
+    nvPr = clone.find(qn("p:nvSpPr")).find(qn("p:nvPr"))
+    ph = nvPr.find(qn("p:ph"))
+    if ph is not None:
+        nvPr.remove(ph)
+    spTree.append(clone)
+
+
+def test_blank_layout_never_hides_the_template_master_branding():
+    """Regression: a template's 'blank' layout often sets showMasterSp="0", which hides
+    the master's footer/logo. When the master carries branding, blank_layout must pick a
+    layout that SHOWS the master, not the emptiest one that hides it."""
+    from app import pptxtpl
+    from pptx import Presentation
+
+    prs = Presentation()
+    _add_master_branding(prs)                 # the master now has a logo/footer to show
+    hidden = next(l for l in prs.slide_layouts if (l.name or "").lower() == "blank")
+    hidden.element.set("showMasterSp", "0")   # exactly the real-world '1_Blank' trap
+
+    chosen = pptxtpl.blank_layout(prs)
+    assert pptxtpl._shows_master(chosen)      # must not be the branding-hiding layout
+    assert chosen is not hidden
+
+
 # ---- admin CRUD --------------------------------------------------------------
 
 def test_admin_pptx_template_crud(client, seeded):

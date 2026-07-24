@@ -855,7 +855,6 @@ def _render_pptx(squads: list[dict], period: str, L: dict) -> bytes:
     prs = pptxtpl.new_presentation()
     prs.slide_width = Inches(13.333)
     prs.slide_height = Inches(7.5)
-    blank = pptxtpl.blank_layout(prs)
     # Leave the uploaded template's footer band (logo, page number) uncovered so it
     # actually shows through the one-pager. 0 for the plain default deck (full slide).
     foot = _footer_reserve(prs)
@@ -869,7 +868,7 @@ def _render_pptx(squads: list[dict], period: str, L: dict) -> bytes:
     kpi_sub = L["kpi_chart_sub"].format(year=year)
     inc_sub = L["inc_chart_sub"].format(year=year)
     for s in squads:
-        slide = prs.slides.add_slide(blank)
+        slide = pptxtpl.add_slide(prs)
         d = s["data"] or {}
         # Compact, discreet header: navy name (left) + muted period (right).
         add_text(slide, Inches(LM), Inches(0.26), Inches(9), Inches(0.4), s["squad_name"], size=19, bold=True, color=NAVY)
@@ -922,7 +921,7 @@ def _render_pptx(squads: list[dict], period: str, L: dict) -> bytes:
         events(slide, Inches(bx), Inches(by), Inches(bw), Inches(bh), d.get("next_events") or [])
 
     if not squads:
-        slide = prs.slides.add_slide(blank)
+        slide = pptxtpl.add_slide(prs)
         add_text(slide, Inches(0.5), Inches(0.5), Inches(9), Inches(0.6), f"Steerco {period}", size=24, bold=True, color=NAVY)
         add_text(slide, Inches(0.5), Inches(1.3), Inches(9), Inches(0.5), L["no_squads"], size=12, color="#6B7C90")
 

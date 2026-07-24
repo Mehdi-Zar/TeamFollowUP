@@ -153,7 +153,7 @@ def render_org_pptx(roots: list[dict], scope_name: str, *, lang: str = "fr") -> 
     prs = pptxtpl.new_presentation()
     prs.slide_width = Inches(SLIDE_W)
     prs.slide_height = Inches(SLIDE_H)
-    s = prs.slides.add_slide(pptxtpl.blank_layout(prs))
+    s = pptxtpl.add_slide(prs)
 
     # Header band
     head = s.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0), Inches(0), Inches(SLIDE_W), Inches(0.9))
