@@ -1,6 +1,6 @@
 """Test fixture seed: the Cloud Platform tribe filled with rich FAKE data.
 
-Keeps the real squad names but generates fake users, members, objectives,
+Keeps the example squad names but generates fake users, members, objectives,
 milestones (jalons), KPIs, quarter progress, snapshots (varied freshness), an
 org chart, a live feed and a multi-week progress-review timeline - so the app
 can be exercised end to end.

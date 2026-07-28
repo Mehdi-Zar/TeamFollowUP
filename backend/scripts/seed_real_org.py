@@ -2,6 +2,9 @@
 (squads + products + hardware). Login accounts (users), settings
 and audit log are preserved.
 
+To load *your* organisation instead, fill `data/org.yaml` (see
+`data/org.example.yaml`) and run `python -m app.import_org`.
+
 Run inside the app container (cwd /app):
     docker compose exec -T app python - < backend/scripts/seed_real_org.py
 """
@@ -23,7 +26,8 @@ from app.models import (
 SQUADS = [
     ("Portal", "product", ["Service Desk", "Custom Dev", "Backstage"], []),
     ("Managed Services", "product",
-     ["SW/Sys/HW factories", "Kubernetes - Databases", "Vault - Observability"], ["Hyperconverged nodes"]),
+     ["SW/Sys/HW factories", "Kubernetes - Databases", "Vault - Observability"],
+     ["Hyperconverged nodes"]),
     ("Azure", "product", ["Azure"], []),
     ("GCP / S3NS", "product", ["GCP", "S3NS"], []),
     ("AWS", "product", ["AWS"], []),

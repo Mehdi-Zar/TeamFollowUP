@@ -5,7 +5,7 @@ One-shot operational scripts. They act on the **live database** and are
 
 | Script | What it does |
 |---|---|
-| `seed_real_org.py` | Wipes org content (tribes, squads, objectives, roadmap, KPIs, budgets, key messages, feed, snapshots, members…) **keeping user accounts**, then creates the example *Cloud Platform Tribe* + its squads with products/hardware. |
+| `seed_real_org.py` | Wipes org content (tribes, squads, objectives, roadmap, KPIs, budgets, key messages, feed, snapshots, members…) **keeping user accounts**, then creates the example *Cloud Platform Tribe* + its squads with products/hardware. To load your own organisation instead, use `data/org.yaml` + `python -m app.import_org`. |
 | `prune_users.py` | Keeps the admin + exactly one impersonation account per role (tribe_leader, squad_leader, member), scopes them to the real tribe, and makes the squad leader lead one squad. Deletes all other users. |
 
 ## Run

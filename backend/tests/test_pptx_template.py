@@ -69,7 +69,7 @@ def test_blank_layout_never_hides_the_template_master_branding():
     prs = Presentation()
     _add_master_branding(prs)                 # the master now has a logo/footer to show
     hidden = next(l for l in prs.slide_layouts if (l.name or "").lower() == "blank")
-    hidden.element.set("showMasterSp", "0")   # exactly the real-world '1_Blank' trap
+    hidden.element.set("showMasterSp", "0")   # the real-world '1_Blank' trap
 
     chosen = pptxtpl.blank_layout(prs)
     assert pptxtpl._shows_master(chosen)      # must not be the branding-hiding layout

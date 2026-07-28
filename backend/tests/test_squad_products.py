@@ -6,7 +6,8 @@ def test_create_squad_with_products_and_hardware(seeded, client):
     login(client, seeded["tribe"])
     r = client.post("/api/squads", json={
         "name": "Edge Computing", "tribe_id": seeded["t1"],
-        "products": ["Cloud Broker", "Edge Gateway", "Data Platform"], "hardware": ["Hyperconverged nodes"]})
+        "products": ["Cloud Broker", "Edge Gateway", "Data Platform"],
+        "hardware": ["Hyperconverged nodes"]})
     assert r.status_code == 201, r.text
     sid = r.json()["id"]
     d = client.get(f"/api/squads/{sid}").json()
