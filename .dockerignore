@@ -9,3 +9,11 @@
 .env
 frontend/node_modules
 backend/.venv
+backend/.venv-test
+# Build output of a local `npm run build`, copied there by a dev run. The image
+# gets the SPA from the frontend stage (Dockerfile line 32); without this, the
+# `COPY backend/ ./` above would drag stale chunks in and the later COPY merges
+# on top without removing them, shipping months-old assets in the image.
+backend/app/static
+.sim-gke
+.k8s-test

@@ -13,13 +13,46 @@ Session = Starlette `SessionMiddleware` (itsdangerous-signed cookie), `same_site
 `max_age = session_max_age_seconds` (12h). Impersonation ("view as") is admin-only and stamps the
 session with `impersonator_id`.
 
-## Transport security (native HTTPS / TLS)
+## Public URL and SSO callback URLs
 
-The application **terminates TLS itself** - no external reverse proxy is required
-to get HTTPS (though you may still put one in front). The launcher `app/server.py`
-serves HTTPS on a **single port, 8443**. There is **no HTTP listener**: HTTP→HTTPS
-redirection is an infrastructure concern (e.g. the GKE Gateway API redirect route),
-never the app's.
+Everything an IdP needs to know about this app is `<public base URL> + <fixed path>`:
+
+| What the IdP asks for | Value |
+|-----------------------|-------|
+| OIDC redirect URI | `<public base URL>/api/auth/oidc/callback` |
+| SAML SP entity ID | `<public base URL>/api/auth/saml/metadata` |
+| SAML ACS URL | `<public base URL>/api/auth/saml/acs` |
+
+So only the base URL is ever configured (`authconfig.derive_sso_urls`). It is the
+address a **browser** uses, not the port the container listens on: behind a Gateway
+the pod speaks HTTP on `:8000` while the public URL is HTTPS on `:443`. Sources, most
+specific first: the `public_base_url` saved in **Admin → Authentication**, then the
+`PUBLIC_BASE_URL` environment variable, then the incoming request (uvicorn runs with
+`proxy_headers=True`, so `X-Forwarded-Proto` / `-Host` are honoured), which is correct
+for local dev and any single-hostname deployment.
+
+Each URL can still be pinned individually when an IdP registration mandates a specific
+value; a "pin" that merely restates the derivation is collapsed back to empty on save,
+so it keeps following the base URL rather than freezing a hostname that will change.
+
+The same effective base URL is fed to `python3-saml` when rebuilding the request
+(`saml._prepare_request`), because strict mode validates the assertion's `Destination`
+against it: the internal pod URL would fail that check behind a TLS-terminating proxy.
+
+## Transport security (TLS termination)
+
+Two supported models, selected by `TLS_ENABLED`:
+
+- **`false` (default, recommended)** - the app serves **plain HTTP on `:8000`** and
+  the infrastructure terminates TLS (GKE Gateway API, ALB, reverse proxy). This is
+  the deployment model documented in `docs/12`.
+- **`true`** - the app **terminates TLS itself** on a single port, **8443**, with no
+  external reverse proxy required.
+
+In both cases there is **no HTTP→HTTPS redirect listener**: redirection is an
+infrastructure concern (e.g. the GKE Gateway API redirect route), never the app's.
+
+With `TLS_ENABLED=true` (`app/server.py` + `app/tls.py`):
 
 - **Out of the box:** if no certificate is configured, a **self-signed** cert is
   generated on first boot (`tls.generate_self_signed`, CN `localhost` + SANs), so
@@ -37,8 +70,10 @@ never the app's.
   certificate takes effect **without restarting the container**. The private key
   is never returned by the API; uploads are audited (`tls_config.*`).
 
-Because the site is HTTPS by default, set **`COOKIE_SECURE=true`** (the compose
-default) so session cookies are `Secure`. Endpoints: `GET /api/admin/tls-config`,
+Set **`COOKIE_SECURE=true`** as soon as the site is reachable over HTTPS, whichever
+model terminates it, so session cookies are `Secure`. It must stay `false` for a
+plain-HTTP local run (the compose default): a browser will not send a `Secure` cookie
+over `http://localhost`, and login would silently fail. Endpoints: `GET /api/admin/tls-config`,
 `POST /api/admin/tls-config/{self-signed,import-pem,import-pfx,ca}`,
 `DELETE /api/admin/tls-config/ca/{id}`.
 
@@ -65,9 +100,46 @@ IdP login is necessary but not sufficient - identity ≠ access.
   (member). The *visibility* of the pending queue is broad (a new account has no
   tribe yet) but the *grant* is strictly scoped - and **deny** (disable) is reserved
   to admin / tribe leaders. Every decision is audited (`access.approve|deny`).
+- **Decision history** (`GET /api/access-requests/history`, `access.decision_history`):
+  the review screen shows what has already been handled, not only what is queued.
+  It is read from the **audit trail**, the only place that records *who decided*:
+  once validated, an account is indistinguishable from any other. Entries cover the
+  SSO arrivals (`user.provisioned.oidc|saml`) and the decisions taken on them
+  (`access.approve|deny`), newest first. Scope mirrors the delegation model:
+  gatekeepers (admin, tribe leader) see every decision, a squad leader sees the ones
+  they took themselves.
 - Reviewers are notified (in-app + best-effort email) of new requests; the user is
   notified on approval. *(SCIM auto-deprovisioning is a future enhancement; the
   disable flow covers manual revocation.)*
+
+## Checking an IdP before rolling it out
+
+**Administration → Authentification** carries a *Tester la connexion à l'IdP* button
+per protocol (`POST /api/admin/auth-config/test`, `app/ssotest.py`). It answers the
+question an administrator has before enabling SSO, without asking a real user to
+attempt a login, and returns an ordered list of checks so a failure names the field
+to fix instead of reporting "connection error".
+
+- It probes **what is on screen**, saved or not, so a change can be validated before
+  it is committed. It is read-only and signs nobody in.
+- **OIDC**: discovery document reachable, announced issuer consistent with the
+  configured one, authorization/token/JWKS endpoints present, signing keys
+  retrieved, PKCE S256 advertised (a warning, not a failure, since some IdPs support
+  it silently), and the client credentials. The credential probe is an
+  `authorization_code` request carrying a bogus code: client authentication is
+  evaluated *before* the grant, so `invalid_client` means wrong id/secret while
+  `invalid_grant` means the credentials were accepted. A `client_credentials` probe
+  cannot be used, as Keycloak checks whether the grant is enabled first and answers
+  `unauthorized_client` even for a wrong secret.
+- **SAML**: native stack present, metadata source reachable and parsed, IdP entity ID
+  and SSO endpoint, signing-certificate expiry (a classic silent breakage), and
+  finally the **SP settings assembled and validated by python3-saml** exactly as the
+  login path would. That last step turns a settings defect into a red line on a
+  button instead of a 500 during someone's first login.
+
+Outbound calls go to URLs the administrator supplied, which is the trust level the
+login path already has (only an admin sets an issuer or a metadata URL, and the app
+fetches both during a real login). Timeouts are short so a wrong host fails fast.
 
 ## Authorization (defense in depth)
 

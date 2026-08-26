@@ -37,12 +37,27 @@ qui satisfait la spec ».
   supprime une couche de configuration et garantit que l'origine est identique
   pour le front et l'API (cookies de session sans CORS). Le compose comporte donc
   deux services : `app` et `db`. Critère « mono-commande » pleinement respecté.
-- **Port unique : HTTPS 8443.** L'app sert le TLS nativement en 8443 (certificat
-  auto-signé par défaut, remplaçable via l'admin) et n'a **aucun listener HTTP** :
-  la redirection HTTP→HTTPS est déléguée à l'infrastructure (ex. route de
-  redirection du Gateway API sur GKE) - exposée sur `https://localhost:8443`.
-  *(Historique : v1 = hôte 8080 → conteneur 8000 en HTTP simple ; v2 = 8443 HTTPS
-  + 8080 redirigeant en 301, listener retiré depuis.)*
+- **Port unique, protocole selon `TLS_ENABLED`.** Le conteneur n'ouvre jamais qu'un
+  seul port : **HTTP 8000** par défaut, le TLS étant terminé par l'infrastructure
+  (Gateway API sur GKE, ALB, reverse proxy) - c'est le modèle recommandé ; ou
+  **HTTPS 8443** avec `TLS_ENABLED=true`, l'app terminant le TLS elle-même
+  (certificat auto-signé par défaut, remplaçable via l'admin) pour un déploiement
+  autonome. Dans les deux cas la redirection HTTP→HTTPS est déléguée à
+  l'infrastructure : l'app n'a pas de listener dédié.
+  *(Historique : v1 = hôte 8080 → conteneur 8000 ; v2 = 8443 HTTPS + 8080 redirigeant
+  en 301, listener retiré ; v3 = les deux modes ci-dessus, HTTP simple par défaut.)*
+- **Une seule URL publique, les URL SSO en dérivent.** Le port d'écoute ne dit rien
+  de l'adresse vue par le navigateur : derrière une Gateway, le pod écoute en HTTP
+  8000 alors que les utilisateurs tapent `https://…` sur 443. Plutôt que de faire
+  saisir trois URL absolues (redirection OIDC, entity ID et ACS SAML) qu'il faudrait
+  maintenir cohérentes à la main, on ne configure que l'**URL publique**
+  (`PUBLIC_BASE_URL`, ou le champ dédié dans Administration → Authentification) et
+  les trois sont construites par concaténation d'un chemin fixe. Laissée vide, elle
+  est déduite de la requête (`X-Forwarded-Proto` / `-Host`), ce qui rend le
+  développement local et tout déploiement mono-hôte configuration-free. Un forçage
+  par URL reste possible pour les enregistrements IdP existants, mais un forçage qui
+  ne fait que répéter la valeur dérivée est ramené à vide à l'enregistrement, pour
+  qu'il continue de suivre l'URL publique au lieu de figer un hôte périmé.
 - **La base de données n'est pas exposée sur l'hôte.** Elle reste sur le réseau
   interne du compose (sécurité + évite les collisions de port 5432). Accès DB
   uniquement via le service `app`.

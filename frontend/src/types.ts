@@ -161,6 +161,20 @@ export interface AccessRequest {
   last_login_at?: string | null;
 }
 
+/** One line of the access history: an SSO arrival, or the decision taken on it.
+ *  Read from the audit trail, which is the only place that records who decided. */
+export interface AccessHistoryEntry {
+  id: number;
+  action: "access.approve" | "access.deny" | "user.provisioned.oidc" | "user.provisioned.saml";
+  at: string;
+  actor?: string | null;
+  email?: string | null;
+  role?: Role | null;
+  tribe?: string | null;
+  squad?: string | null;
+  status?: string | null;
+}
+
 /** Data backing the access-review screen: pending requests plus the choices
  *  (roles, squads, tribes) available to the reviewer within their scope. */
 export interface AccessOptions {

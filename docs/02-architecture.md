@@ -34,18 +34,24 @@ flowchart TB
 flowchart LR
   subgraph docker-compose
     direction LR
-    APP["app container\n(python:3.12-slim)\nUvicorn HTTPS :8443 (single port)\nserves /api + built SPA"]
+    APP["app container\n(python:3.12-slim)\nUvicorn HTTP :8000 (single port)\nserves /api + built SPA"]
     DB[("db container\npostgres:16-alpine\nvolume db_data")]
   end
   APP -->|psycopg2| DB
-  Browser -->|HTTPS :8443| APP
+  Browser -->|HTTPS| PROXY["Gateway / ALB / reverse proxy\nterminates TLS"]
+  PROXY -->|HTTP :8000\nX-Forwarded-Proto/Host| APP
 ```
 
 - A single **app** image is built in two stages (Dockerfile): stage 1 `npm run build` produces the
   SPA into `frontend/dist`, copied into `app/static`; stage 2 is the Python runtime.
 - `docker-entrypoint.sh`: waits for DB → `alembic upgrade head` → `python -m app.init_db` (break-glass
-  admin + demo seed) → `python -m app.server` (HTTPS :8443 - the app's only port;
-  HTTP→HTTPS redirection is the infrastructure's job, e.g. the GKE Gateway API).
+  admin + demo seed) → `python -m app.server`, which binds **one** port: plain HTTP
+  `:8000` by default (`TLS_ENABLED=false`, TLS terminated upstream), or HTTPS `:8443`
+  when the app terminates TLS itself. HTTP→HTTPS redirection is the infrastructure's
+  job either way, e.g. the GKE Gateway API.
+- The public URL the browser uses is independent of that listen port. It is
+  `PUBLIC_BASE_URL` (or deduced from `X-Forwarded-Proto` / `-Host`), and every SSO
+  callback URL is derived from it - see `docs/05` and `docs/12` §2.1.
 - The API serves the SPA: `/assets` via `StaticFiles`, every other non-`/api` path falls back to
   `index.html` (client-side routing). See [ADR-0001](adr/0001-monolith-serves-spa.md).
 

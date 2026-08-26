@@ -41,6 +41,18 @@ class Settings(BaseSettings):
     tls_enabled: bool = True
     http_port: int = 8000
 
+    # --- Public URL ---
+    # The URL users type in their browser to reach the app, scheme + host (+ port
+    # if non-standard), no trailing slash. Example: https://teamfollowup.example.com
+    # It is NOT the port the container listens on: behind a Gateway/ALB the pod
+    # speaks HTTP on :8000 while the public URL is https://... on :443.
+    # Every SSO callback URL (OIDC redirect URI, SAML entity ID / ACS) is derived
+    # from it, so it is the single value to set when deploying.
+    # Left empty (the default), the app derives it from each incoming request
+    # (X-Forwarded-Proto / X-Forwarded-Host are honoured), which is correct for
+    # local dev and for any single-hostname deployment.
+    public_base_url: str = ""
+
     # --- Logging ---
     # "text" = human-readable lines (local dev). "json" = GCP Cloud Logging
     # structured entries (severity/message/time) that the GKE logging agent parses
@@ -71,19 +83,24 @@ class Settings(BaseSettings):
     breakglass_password: str = ""  # empty -> random generated & logged at first boot
 
     # --- OIDC ---
+    # oidc_redirect_uri is left empty on purpose: it is derived from
+    # public_base_url (see authconfig.derive_sso_urls). Set it only to override
+    # the derivation, e.g. when the IdP registration uses a legacy URL.
     oidc_enabled: bool = False
     oidc_issuer_url: str = ""
     oidc_client_id: str = ""
     oidc_client_secret: str = ""
-    oidc_redirect_uri: str = "https://localhost:8443/api/auth/oidc/callback"
+    oidc_redirect_uri: str = ""
     oidc_scopes: str = "openid email profile"
 
     # --- SAML ---
+    # Same rule: entity ID and ACS URL are derived from public_base_url unless
+    # explicitly set here (an entity ID already registered at the IdP, typically).
     saml_enabled: bool = False
     saml_idp_metadata_url: str = ""
     saml_idp_metadata_path: str = ""
-    saml_sp_entity_id: str = "https://localhost:8443/api/auth/saml/metadata"
-    saml_acs_url: str = "https://localhost:8443/api/auth/saml/acs"
+    saml_sp_entity_id: str = ""
+    saml_acs_url: str = ""
     saml_sp_cert: str = ""
     saml_sp_key: str = ""
 

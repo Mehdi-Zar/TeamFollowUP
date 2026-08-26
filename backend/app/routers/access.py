@@ -51,6 +51,16 @@ def list_requests(db: Session = Depends(get_db), user: User = Depends(_require_r
     }
 
 
+@router.get("/history")
+def list_history(limit: int = 60, db: Session = Depends(get_db), user: User = Depends(_require_reviewer)):
+    """Decisions already taken (and the SSO arrivals that led to them), newest first.
+
+    Scope is applied in ``acc.decision_history``: gatekeepers see everything, a
+    squad leader sees their own decisions.
+    """
+    return {"entries": acc.decision_history(db, user, limit=min(max(limit, 1), 200))}
+
+
 def _target(db: Session, user_id: int) -> User:
     """Load the pending account being acted on, or 404 if it does not exist."""
     target = db.get(User, user_id)

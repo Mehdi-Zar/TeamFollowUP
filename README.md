@@ -39,12 +39,19 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-Puis ouvrez **https://localhost:8443** (le site est servi en **HTTPS** sur ce
-**port unique**, avec un certificat **auto-signé** par défaut - votre navigateur
-affichera un avertissement, c'est normal ; acceptez-le). L'app ne gère pas de
-redirection HTTP→HTTPS : c'est le rôle de l'infrastructure en amont (ex. Gateway
-API sur GKE). Vous pouvez importer votre propre certificat (PEM/PFX)
-et gérer les CA racines/intermédiaires depuis **Administration → HTTPS / Certificats**.
+Puis ouvrez **http://localhost:8000**. L'app sert l'UI et l'API sur ce **port
+unique**, en **HTTP simple**, et laisse le **TLS à l'infrastructure** en amont
+(Gateway API sur GKE, ALB, reverse proxy) : c'est le modèle recommandé et le
+défaut. Pour un déploiement autonome sans infrastructure de terminaison TLS,
+`TLS_ENABLED=true` fait terminer le TLS par l'app elle-même sur le port **8443**
+(certificat auto-signé au premier démarrage, remplaçable depuis
+**Administration → HTTPS / Certificats**). Dans les deux cas la redirection
+HTTP→HTTPS n'est pas gérée par l'app.
+
+> **Une seule URL à connaître.** Dès que l'application est déployée derrière une
+> vraie adresse, renseignez `PUBLIC_BASE_URL` (ou le champ **URL publique** dans
+> Administration → Authentification) : toutes les URL de rappel OIDC et SAML en
+> sont dérivées. Voir « Brancher OIDC » plus bas.
 
 Au premier démarrage, le conteneur `app` attend PostgreSQL, applique les migrations
 Alembic, crée le **compte de secours** (breaking-glass) et applique le **seed de
@@ -110,11 +117,11 @@ Tous les comptes de démonstration utilisent le mot de passe `demo`.
   activation des KPIs).
 - **Exports** : rapport imprimable / PDF (dashboard et par squad, format unifié, via
   l'impression du navigateur) et export CSV.
-- **HTTPS natif** : le site est servi en **HTTPS** (certificat **auto-signé** par
-  défaut). Depuis **Administration → HTTPS / Certificats** : import d'un certificat
-  **PEM + clé** ou **PFX/PKCS#12**, gestion des **CA racines et intermédiaires**,
-  régénération auto-signée (CN/SAN). Application **à chaud**, sans redémarrage.
-- **API REST documentée** : Swagger sur **https://localhost:8443/docs**.
+- **HTTPS optionnel dans l'app** (`TLS_ENABLED=true`, pour un déploiement sans
+  infrastructure de terminaison TLS) : depuis **Administration → HTTPS / Certificats**,
+  import d'un certificat **PEM + clé** ou **PFX/PKCS#12**, gestion des **CA racines et
+  intermédiaires**, régénération auto-signée (CN/SAN).
+- **API REST documentée** : Swagger sur **/docs** (`http://localhost:8000/docs` en local).
 
 ## Statut d'une squad (calculé côté serveur)
 
@@ -142,8 +149,10 @@ Toutes les variables ont un défaut fonctionnel (voir `.env.example`).
 
 | Variable | Défaut | Rôle |
 |----------|--------|------|
-| `APP_HTTPS_PORT` | `8443` | Port hôte HTTPS (port unique de l'app). |
-| `COOKIE_SECURE` | `true` | Cookies de session en `Secure` (HTTPS actif par défaut). |
+| `APP_HTTP_PORT` | `8000` | Port hôte (port unique de l'app, HTTP simple). |
+| `TLS_ENABLED` | `false` *(valeur du `.env` livré)* | `true` = l'app termine le TLS elle-même sur `8443` (exposez alors `APP_HTTPS_PORT`). Non renseignée, l'app retombe sur `true`, d'où l'intérêt de la fixer explicitement. |
+| `PUBLIC_BASE_URL` | *(vide → déduit de la requête)* | URL publique de l'app (`https://teamfollowup.exemple.com`). Base de toutes les URL de rappel SSO. |
+| `COOKIE_SECURE` | `false` | Passez à `true` dès que l'app est publiée en HTTPS (y compris si le TLS est terminé en amont). |
 | `POSTGRES_DB` / `POSTGRES_USER` / `POSTGRES_PASSWORD` | `tribe` | Base PostgreSQL (interne). |
 | `SECRET_KEY` | *(à changer)* | Clé de signature des sessions. |
 | `STALENESS_THRESHOLD_DAYS` | `7` | Seuil de péremption (jours). |
@@ -153,25 +162,56 @@ Toutes les variables ont un défaut fonctionnel (voir `.env.example`).
 | `OIDC_ENABLED` + `OIDC_*` | `false` | Login OIDC (Authorization Code + PKCE). |
 | `SAML_ENABLED` + `SAML_*` | `false` | Login SAML 2.0 (cible PingFederate). |
 
+## L'URL publique, base de toute la configuration SSO
+
+Les trois URL qu'un fournisseur d'identité réclame ne sont jamais à écrire à la
+main : ce sont toujours l'**URL publique de l'application** suivie d'un chemin fixe.
+
+| Ce que l'IdP demande | Valeur |
+|----------------------|--------|
+| URL de redirection OIDC | `<URL publique>/api/auth/oidc/callback` |
+| Entity ID SAML (SP) | `<URL publique>/api/auth/saml/metadata` |
+| ACS URL SAML | `<URL publique>/api/auth/saml/acs` |
+
+L'URL publique est **l'adresse que vos utilisateurs saisissent dans leur navigateur**,
+et non le port d'écoute du conteneur : derrière une Gateway, le pod parle HTTP sur
+`:8000` alors que l'URL publique est `https://teamfollowup.exemple.com` sur le port 443.
+
+Elle se définit à deux endroits, au choix :
+
+- **Administration → Authentification**, champ « URL publique » (à chaud, sans
+  redémarrage). L'écran affiche ensuite les trois URL ci-dessus **prêtes à copier**
+  chez l'IdP, avec un bouton de copie.
+- la variable `PUBLIC_BASE_URL` dans `.env` (utile pour un déploiement scripté).
+
+Laissée **vide**, l'app déduit l'URL de chaque requête reçue, en tenant compte de
+`X-Forwarded-Proto` / `X-Forwarded-Host` : c'est déjà correct en local et pour tout
+déploiement joignable par une seule adresse. Renseignez-la dès que ce n'est plus le cas.
+
 ## Brancher OIDC
 
-1. Déclarez une application cliente chez votre fournisseur d'identité.
-2. URL de redirection : `https://localhost:8443/api/auth/oidc/callback` (adaptez
-   host/port à votre exposition réelle).
+1. Renseignez l'**URL publique** (voir ci-dessus).
+2. Déclarez une application cliente chez votre fournisseur d'identité, en y copiant
+   l'URL de redirection affichée dans Administration → Authentification. Elle doit
+   correspondre **à l'identique** : le moindre écart de host, de port ou de slash
+   final fait échouer la connexion.
 3. Dans `.env` : `OIDC_ENABLED=true`, `OIDC_ISSUER_URL`, `OIDC_CLIENT_ID`,
-   `OIDC_CLIENT_SECRET`, `OIDC_REDIRECT_URI`, `OIDC_SCOPES`.
-4. `docker compose up -d`. Un bouton « Se connecter via OIDC » apparaît ; provisioning
-   à la volée (rôle `viewer`), promu par un admin.
+   `OIDC_CLIENT_SECRET`, `OIDC_SCOPES` (ou les mêmes champs dans l'écran d'administration).
+   `OIDC_REDIRECT_URI` reste **vide** : il est dérivé de l'URL publique. Ne le
+   renseignez que pour forcer une URL imposée par un enregistrement IdP existant.
+4. `docker compose up -d`. Un bouton « Se connecter via OIDC » apparaît ; le compte
+   est créé à la volée **en attente**, puis validé depuis le menu « Accès ».
 
 ## Brancher SAML / PingFederate
 
-1. Côté PingFederate, créez une connexion SP :
-   - **Entity ID (SP)** : `https://localhost:8443/api/auth/saml/metadata`
-   - **ACS URL** : `https://localhost:8443/api/auth/saml/acs` (HTTP-POST)
-   - **NameID** : e-mail ; **attributs** : `email`, `displayName`.
-2. Dans `.env` : `SAML_ENABLED=true`, `SAML_IDP_METADATA_URL` (ou `_PATH`),
-   `SAML_SP_ENTITY_ID`, `SAML_ACS_URL`, et `SAML_SP_CERT`/`SAML_SP_KEY` si signature requise.
-3. Métadonnées SP exposées sur `https://localhost:8443/api/auth/saml/metadata`.
+1. Renseignez l'**URL publique** (voir ci-dessus).
+2. Côté PingFederate, créez une connexion SP avec l'**Entity ID** et l'**ACS URL**
+   (binding HTTP-POST) affichés dans Administration → Authentification, ou importez
+   directement les métadonnées SP publiées sur `<URL publique>/api/auth/saml/metadata`.
+   **NameID** : e-mail ; **attributs** : `email`, `displayName`.
+3. Dans `.env` : `SAML_ENABLED=true`, `SAML_IDP_METADATA_URL` (ou `_PATH`), et
+   `SAML_SP_CERT` / `SAML_SP_KEY` si la signature est requise. `SAML_SP_ENTITY_ID`
+   et `SAML_ACS_URL` restent **vides** (dérivés de l'URL publique).
 
 Avec OIDC et SAML à `false`, l'application reste pleinement fonctionnelle via le compte de secours.
 

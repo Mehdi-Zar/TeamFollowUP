@@ -100,7 +100,7 @@ docker build -t teamfollowup:1.1.0 .
 
 # 2. Smoke-test it locally against a throwaway DB before you ever ship it
 docker compose up -d --build      # uses the local compose Postgres
-#   → open https://localhost:8443 (self-signed cert warning is expected), log in, click around
+#   → open http://localhost:8000, log in, click around
 docker compose down               # (WITHOUT -v: keeps the volume)
 ```
 
@@ -142,13 +142,18 @@ Artifact Registry + GKE wiring.
 Now you're on the prod side. The app is still serving users on **1.0.0**. The data
 is in PostgreSQL. Here is the safe sequence - **the order matters.**
 
-> ⚠️ **Upgrading from an image that still had the :8080 listener?** Since the
-> single-port change (see `CHANGELOG.md` → Breaking changes), the container serves
-> **HTTPS :8443 only** - the :8080 HTTP→HTTPS redirect listener is gone. Before
-> rolling the new image, remove anything that targets :8080: port mappings,
-> monitoring probes, bookmarks/links, K8s `containerPort: 8080`, and the
-> `APP_HTTP_PORT` / `HTTP_PORT` / `PUBLIC_HTTPS_PORT` variables. The HTTP→HTTPS
-> redirect is now the Gateway's job (deployment guide §6.9.2).
+> ⚠️ **Check which port the new image binds.** The container has always served a
+> **single** port, but which one depends on `TLS_ENABLED`: `false` (the current
+> default) = plain **HTTP :8000**, TLS terminated by the Gateway/ALB; `true` =
+> **HTTPS :8443**, the app terminating TLS itself. There has never been a `:8080`
+> listener nor an in-app HTTP→HTTPS redirect (that is the Gateway's job, deployment
+> guide §6.9.2). Before rolling the image, make port mappings, monitoring probes and
+> K8s `containerPort` / probe `scheme` match the mode you are running.
+>
+> ⚠️ **SSO after a hostname change.** Callback URLs are derived from the public URL,
+> so a new hostname changes them. Update `PUBLIC_BASE_URL` (or the **URL publique**
+> field in Administration → Authentification), then re-register the displayed
+> redirect / ACS URLs at the IdP. Deployment guide §2.1.
 
 ### Step 1 - Back up the database (non-negotiable)
 

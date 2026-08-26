@@ -33,17 +33,22 @@ services:
       SEED_DEMO: ${SEED_DEMO:-false}
       BREAKGLASS_EMAIL: ${BREAKGLASS_EMAIL:-admin@local}
       BREAKGLASS_PASSWORD: ${BREAKGLASS_PASSWORD:-}
+      # Public URL of the app (what users type). Every OIDC/SAML callback URL is
+      # derived from it. Empty = derived per-request from X-Forwarded-Proto/-Host,
+      # which is what you want locally and behind a single-hostname Gateway.
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
       OIDC_ENABLED: ${OIDC_ENABLED:-false}
       OIDC_ISSUER_URL: ${OIDC_ISSUER_URL:-}
       OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
       OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
-      OIDC_REDIRECT_URI: ${OIDC_REDIRECT_URI:-http://localhost:8000/api/auth/oidc/callback}
+      # Empty -> derived from PUBLIC_BASE_URL. Set only to pin a different URL.
+      OIDC_REDIRECT_URI: ${OIDC_REDIRECT_URI:-}
       OIDC_SCOPES: ${OIDC_SCOPES:-openid email profile}
       SAML_ENABLED: ${SAML_ENABLED:-false}
       SAML_IDP_METADATA_URL: ${SAML_IDP_METADATA_URL:-}
       SAML_IDP_METADATA_PATH: ${SAML_IDP_METADATA_PATH:-}
-      SAML_SP_ENTITY_ID: ${SAML_SP_ENTITY_ID:-http://localhost:8000/api/auth/saml/metadata}
-      SAML_ACS_URL: ${SAML_ACS_URL:-http://localhost:8000/api/auth/saml/acs}
+      SAML_SP_ENTITY_ID: ${SAML_SP_ENTITY_ID:-}
+      SAML_ACS_URL: ${SAML_ACS_URL:-}
       SAML_SP_CERT: ${SAML_SP_CERT:-}
       SAML_SP_KEY: ${SAML_SP_KEY:-}
       # Local serves plain HTTP (no in-app TLS), so Secure cookies must be OFF -

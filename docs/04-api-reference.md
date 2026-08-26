@@ -131,7 +131,10 @@ in January. Admin Excel template/import (`/api/admin/import-steerco*`) use the s
 
 ### admin (`/api/admin`) - `require_admin` (users also tribe_leader)
 Users: `GET/POST /users`, `PUT/DELETE /users/{id}` · Settings: `GET/PUT /settings` · Auth config:
-`GET/PUT /auth-config` · Modules: `GET/PUT /modules-config` · **Personas: `GET/PUT /personas`** ·
+`GET/PUT /auth-config`, `POST /auth-config/test` (probe the IdP: body `{provider: "oidc"|"saml",
+config?: {...}}`; `config` layers unsaved form values over the stored ones so a change can be checked
+before it is committed, returns `{ok, checks[], hint}`, read-only) ·
+Modules: `GET/PUT /modules-config` · **Personas: `GET/PUT /personas`** ·
 SMTP: `GET/PUT /smtp-config`, `POST /smtp-config/test` · Report: `GET/PUT /report-config`,
 `POST /report-config/test` · Log export: `GET/PUT /log-export-config`,
 `POST /log-export-config/test`, `POST /log-export-config/flush` (syslog / GCS / BigQuery; GCP auth is
@@ -151,7 +154,8 @@ PPTX export template: `GET /pptx-template` (status), `POST /pptx-template` (uplo
 ## Generate a static OpenAPI file
 
 ```bash
-curl -sk https://localhost:8443/openapi.json > docs/openapi.json   # snapshot the live contract (-k: self-signed cert)
+curl -s http://localhost:8000/openapi.json > docs/openapi.json   # snapshot the live contract
+# with TLS_ENABLED=true: curl -sk https://localhost:8443/openapi.json  (-k: self-signed cert)
 ```
 
 > Recommendation (industrialization): commit `openapi.json` in CI and diff it to detect breaking

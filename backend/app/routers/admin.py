@@ -11,7 +11,7 @@ is the exception — it is opened to tribe leaders as well, but strictly scoped 
 their own tribe (see ``_require_user_manager`` / ``users_scope_tribe``). Every
 mutating endpoint writes an audit entry via ``record_audit`` before committing.
 """
-from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import PlainTextResponse, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -183,20 +183,53 @@ def update_settings_endpoint(payload: dict = Body(...), db: Session = Depends(ge
 
 
 @router.get("/auth-config")
-def read_auth_config(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
-    """GET /api/admin/auth-config — read the OIDC/SAML auth config. Admin only."""
-    return get_auth_config(db)
+def read_auth_config(request: Request, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    """GET /api/admin/auth-config — read the OIDC/SAML auth config. Admin only.
+
+    ``request`` lets the SSO URLs be derived from the URL the admin is actually
+    browsing when no public base URL is configured (see authconfig)."""
+    return get_auth_config(db, request)
 
 
 @router.put("/auth-config")
-def update_auth_config(payload: dict = Body(...), db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+def update_auth_config(request: Request, payload: dict = Body(...), db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     """PUT /api/admin/auth-config — update the OIDC/SAML auth config. Admin only;
     audits which providers are enabled."""
-    cfg = set_auth_config(db, payload)
+    cfg = set_auth_config(db, payload, request)
     record_audit(db, admin.id, "auth_config.update", entity="auth_config",
                  detail={"oidc_enabled": cfg["oidc_enabled"], "saml_enabled": cfg["saml_enabled"]})
     db.commit()
     return cfg
+
+
+@router.post("/auth-config/test")
+def test_auth_config(request: Request, payload: dict = Body(...), db: Session = Depends(get_db),
+                     admin: User = Depends(require_admin)):
+    """POST /api/admin/auth-config/test — probe the configured IdP. Admin only.
+
+    Tests what is currently on screen, not only what is saved: any field sent in
+    the body is layered over the stored config, so an administrator can check a
+    change before committing it. Read-only; nothing is persisted.
+    """
+    from ..ssotest import test_oidc, test_saml
+
+    provider = (payload.get("provider") or "").lower()
+    cfg = get_auth_config(db, request)
+    # Draft values from the form win, but only for keys we actually manage.
+    for key, value in (payload.get("config") or {}).items():
+        if key in cfg:
+            cfg[key] = value
+    # A blank SSO URL in the draft still means "derive it", so re-resolve.
+    from ..authconfig import derive_sso_urls
+    for key, derived in derive_sso_urls(cfg.get("base_url_effective") or "").items():
+        if not (cfg.get(key) or "").strip():
+            cfg[key] = derived
+
+    if provider == "oidc":
+        return test_oidc(cfg)
+    if provider == "saml":
+        return test_saml(cfg)
+    raise HTTPException(status_code=400, detail="Fournisseur inconnu (attendu : oidc ou saml)")
 
 
 @router.get("/smtp-config")

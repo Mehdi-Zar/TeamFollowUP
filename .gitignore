@@ -28,3 +28,8 @@ backups/
 # Real org import data (keep private; only org.example.yaml is tracked)
 backend/data/org.yaml
 backend/data/org.xlsx
+.sim-gke/
+# Local end-to-end benches (minikube + Keycloak). They generate a throwaway PKI,
+# private keys included, which must never reach the repository. The tutorial
+# regenerates everything from scratch.
+.k8s-test/

@@ -57,6 +57,53 @@ def pending_count(db: Session, reviewer: User) -> int:
     return int(db.scalar(select(func.count()).select_from(User).where(User.status == "pending")) or 0)
 
 
+#: Audit actions that make up the access story: an account appearing through SSO,
+#: then the decision taken on it. Ordered newest first when read back.
+HISTORY_ACTIONS = ("access.approve", "access.deny",
+                   "user.provisioned.oidc", "user.provisioned.saml")
+
+
+def decision_history(db: Session, actor: User, limit: int = 60) -> list[dict]:
+    """What has already been done on access requests, newest first.
+
+    Reads the audit trail rather than the users table, because the question is
+    "who decided what, and when", which only the trail answers: a validated
+    account looks like any other account afterwards.
+
+    Scope follows the delegation model: gatekeepers (admin, tribe leader) see every
+    decision, a squad leader sees the ones they took themselves.
+    """
+    from .models import AuditLog
+
+    stmt = select(AuditLog).where(AuditLog.action.in_(HISTORY_ACTIONS))
+    if actor.role not in (ADMIN, TRIBE):
+        stmt = stmt.where(AuditLog.user_id == actor.id)
+    rows = list(db.scalars(stmt.order_by(AuditLog.timestamp.desc()).limit(limit)).all())
+
+    # Resolve the names in one pass rather than per row.
+    actor_ids = {r.user_id for r in rows if r.user_id}
+    actors = {u.id: u.display_name for u in db.scalars(select(User).where(User.id.in_(actor_ids)))} if actor_ids else {}
+    squads = {s.id: s.name for s in db.scalars(select(Squad))}
+    from .models import Tribe
+    tribes = {t.id: t.name for t in db.scalars(select(Tribe))}
+
+    out = []
+    for r in rows:
+        detail = r.detail or {}
+        out.append({
+            "id": r.id,
+            "action": r.action,
+            "at": r.timestamp,
+            "actor": actors.get(r.user_id) if r.user_id else None,
+            "email": detail.get("email"),
+            "role": detail.get("role"),
+            "tribe": tribes.get(detail.get("tribe_id")),
+            "squad": squads.get(detail.get("squad_id")),
+            "status": detail.get("status"),
+        })
+    return out
+
+
 def led_squads(db: Session, actor: User) -> list[Squad]:
     """Squads an actor may validate someone into."""
     if actor.role == ADMIN:

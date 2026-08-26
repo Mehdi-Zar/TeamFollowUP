@@ -7,7 +7,7 @@ import { useNavigate } from "react-router-dom";
 import { api, ApiError } from "../api";
 import { useI18n } from "../i18n";
 import { useAuth } from "../auth";
-import { AccessOptions, AccessRequest, Role } from "../types";
+import { AccessHistoryEntry, AccessOptions, AccessRequest, Role } from "../types";
 import { Spinner, ErrorBanner, EmptyState } from "../components/ui";
 import { useSetPageChrome } from "../components/pageChrome";
 
@@ -26,17 +26,24 @@ import { useSetPageChrome } from "../components/pageChrome";
  * Access: reviewers only (managers / leaders with the access-review capability).
  */
 export default function AccessRequestsPage() {
-  const { t, role: roleLabel } = useI18n();
+  const { t, role: roleLabel, formatDateTime } = useI18n();
   const { canReviewAccess, refresh } = useAuth();
   const navigate = useNavigate();
   const [data, setData] = useState<AccessOptions | null>(null);
+  // What has already been decided. Kept beside the queue so the screen answers
+  // "what happened here", not only "what is left to do".
+  const [history, setHistory] = useState<AccessHistoryEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
 
   useSetPageChrome({ title: t("access.title") }, [t]);
 
   async function load() {
-    try { setData(await api.get<AccessOptions>("/api/access-requests")); }
+    try {
+      setData(await api.get<AccessOptions>("/api/access-requests"));
+      const h = await api.get<{ entries: AccessHistoryEntry[] }>("/api/access-requests/history");
+      setHistory(h.entries);
+    }
     catch (e) { setError(e instanceof ApiError ? e.message : "Erreur"); }
   }
   useEffect(() => { if (canReviewAccess) load(); }, [canReviewAccess]);
@@ -68,7 +75,50 @@ export default function AccessRequestsPage() {
           ))}
         </div>
       )}
+      <div className="card stack" style={{ gap: 10 }}>
+        <h3 style={{ margin: 0 }}>{t("access.history_title")}</h3>
+        <div className="small muted">{t("access.history_hint")}</div>
+        {history === null ? <Spinner /> : history.length === 0 ? (
+          <div className="small muted">{t("access.history_none")}</div>
+        ) : (
+          <div className="stack" style={{ gap: 6 }}>
+            {history.map((h) => <HistoryRow key={h.id} h={h} t={t} roleLabel={roleLabel} formatDateTime={formatDateTime} />)}
+          </div>
+        )}
+      </div>
+
       <button className="btn-ghost btn-sm" style={{ alignSelf: "flex-start" }} onClick={() => navigate("/")}>← {t("action.close")}</button>
+    </div>
+  );
+}
+
+/**
+ * One line of the access history. The action decides the wording and the colour,
+ * so approvals, refusals and plain SSO arrivals are told apart at a glance rather
+ * than read one by one.
+ */
+function HistoryRow({ h, t, roleLabel, formatDateTime }: {
+  h: AccessHistoryEntry;
+  t: (k: string, v?: Record<string, string | number>) => string;
+  roleLabel: (r: string) => string;
+  formatDateTime: (iso?: string | null) => string;
+}) {
+  const arrived = h.action.startsWith("user.provisioned.");
+  const kind = arrived ? "arrived" : h.action === "access.approve" ? "approved" : "denied";
+  const tone = { approved: "var(--ok, #1c7a6e)", denied: "var(--danger, #b03a3a)", arrived: "var(--muted, #5d696d)" }[kind];
+
+  // Where the person was placed, shown only when there is something to show.
+  const placement = [h.tribe, h.squad].filter(Boolean).join(", ");
+
+  return (
+    <div className="item-row" style={{ alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+      <span className="small strong" style={{ color: tone, minWidth: 84 }}>{t(`access.history_${kind}`)}</span>
+      <span className="strong">{h.email || "?"}</span>
+      {!arrived && h.role && <span className="pill-cat">{roleLabel(h.role)}</span>}
+      {placement && <span className="small muted">{placement}</span>}
+      {arrived && <span className="small muted">{t(`access.history_via_${h.action.endsWith("oidc") ? "oidc" : "saml"}`)}</span>}
+      {h.actor && !arrived && <span className="small muted">{t("access.history_by", { name: h.actor })}</span>}
+      <span className="small muted" style={{ marginLeft: "auto" }}>{formatDateTime(h.at)}</span>
     </div>
   );
 }

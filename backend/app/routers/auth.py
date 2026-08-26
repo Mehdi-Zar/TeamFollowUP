@@ -83,9 +83,9 @@ def _check_login_rate(ip: str) -> None:
 
 
 @router.get("/config", response_model=AuthConfig)
-def auth_config(db: Session = Depends(get_db)):
+def auth_config(request: Request, db: Session = Depends(get_db)):
     """Public login-screen config: which SSO buttons (OIDC/SAML) to show."""
-    cfg = get_auth_config(db)
+    cfg = get_auth_config(db, request)
     return AuthConfig(oidc_enabled=bool(cfg["oidc_enabled"]), saml_enabled=bool(cfg["saml_enabled"]))
 
 
@@ -279,7 +279,7 @@ async def oidc_login(request: Request, db: Session = Depends(get_db)):
     indistinguishable from a non-existent one. Authlib stashes the state/PKCE
     verifier in the server-side session for the callback to consume.
     """
-    cfg = get_auth_config(db)
+    cfg = get_auth_config(db, request)
     if not cfg["oidc_enabled"] or not cfg["oidc_issuer_url"] or not cfg["oidc_client_id"]:
         raise HTTPException(status_code=404, detail="OIDC désactivé ou mal configuré")
     from ..oidc import get_oauth
@@ -297,7 +297,7 @@ async def oidc_callback(request: Request, db: Session = Depends(get_db)):
     the groups claim being configurable), require at least one usable identifier,
     JIT-provision via ``_provision``, and redirect into the SPA with a session.
     """
-    cfg = get_auth_config(db)
+    cfg = get_auth_config(db, request)
     if not cfg["oidc_enabled"]:
         raise HTTPException(status_code=404, detail="OIDC désactivé")
     from ..oidc import get_oauth
@@ -319,13 +319,13 @@ async def oidc_callback(request: Request, db: Session = Depends(get_db)):
 
 # ---------------- SAML ----------------
 @router.get("/saml/metadata")
-async def saml_metadata(db: Session = Depends(get_db)):
+async def saml_metadata(request: Request, db: Session = Depends(get_db)):
     """Serve this SP's SAML metadata XML (for registering the app at the IdP).
 
     Validates the generated metadata and 500s on any error rather than publishing
     a malformed descriptor.
     """
-    cfg = get_auth_config(db)
+    cfg = get_auth_config(db, request)
     if not cfg["saml_enabled"]:
         raise HTTPException(status_code=404, detail="SAML désactivé")
     from ..saml import build_settings
@@ -341,7 +341,7 @@ async def saml_metadata(db: Session = Depends(get_db)):
 @router.get("/saml/login")
 async def saml_login(request: Request, db: Session = Depends(get_db)):
     """Start the SP-initiated SAML flow: redirect to the IdP's SSO endpoint."""
-    cfg = get_auth_config(db)
+    cfg = get_auth_config(db, request)
     if not cfg["saml_enabled"]:
         raise HTTPException(status_code=404, detail="SAML désactivé")
     from ..saml import make_auth
@@ -358,7 +358,7 @@ async def saml_acs(request: Request, db: Session = Depends(get_db)):
     read from attributes with the NameID as email fallback, then JIT-provisioned.
     Uses a 303 redirect so the browser switches the POST callback to a GET of "/".
     """
-    cfg = get_auth_config(db)
+    cfg = get_auth_config(db, request)
     if not cfg["saml_enabled"]:
         raise HTTPException(status_code=404, detail="SAML désactivé")
     from ..saml import make_auth

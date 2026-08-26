@@ -56,7 +56,8 @@ curl -sk -b cookies.txt https://<host>/api/admin/import-org/template -o org.xlsx
 curl -sk -b cookies.txt -F "file=@org.xlsx" https://<host>/api/admin/import-org
 ```
 
-En local, `<host>` = `localhost:8443`. En prod S3NS, l'hote de votre gateway.
+En local, `<host>` = `localhost:8000` en HTTP simple (le defaut compose). En prod,
+l'hote de votre gateway. Le `-k` de curl ne sert qu'avec un certificat auto-signe.
 
 ## 5. Alternative : CLI (hors ligne)
 

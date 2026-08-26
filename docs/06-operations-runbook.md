@@ -15,6 +15,13 @@ The mode is read from the DB toggle (**Admin → TLS**) and falls back to the `T
 It is **bound at boot**: flipping the toggle needs a restart to take effect (see *Admin → Ops* below).
 HTTP→HTTPS redirection is never done by the app.
 
+**Listen port ≠ public URL.** The table above is what the container binds. The address
+users type is `PUBLIC_BASE_URL` (or the **URL publique** field in Admin →
+Authentification), and every OIDC/SAML callback URL is derived from it: with the
+recommended model the pod listens on plain `:8000` while the public URL is
+`https://…` on 443. Left empty, it is deduced per request from `X-Forwarded-Proto` /
+`X-Forwarded-Host`. Changing it takes effect immediately, no restart. See `docs/12` §2.1.
+
 ## Deploy / upgrade
 
 ```bash

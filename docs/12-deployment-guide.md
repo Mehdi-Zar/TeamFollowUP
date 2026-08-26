@@ -28,7 +28,9 @@ is. That's it. Everything below is detail around those two moves.
 3. **Prepare the settings (environment variables).** Copy `.env.example` and fill
    in: the 5 database values above, a long random `SECRET_KEY`, and a
    `BREAKGLASS_EMAIL` (the emergency admin login). In production also set
-   `COOKIE_SECURE=true` and `SEED_DEMO=false`. → §2.
+   `COOKIE_SECURE=true`, `SEED_DEMO=false`, and `PUBLIC_BASE_URL` = the address
+   users will type in their browser (this is what every SSO callback URL is built
+   from). → §2, §2.1.
 4. **Get the program (the image).** Either build it from the source
    (`docker build`) or pull a pre-built image. If your servers have **no internet**,
    you build it on a connected machine, save it to a file, carry the file over, and
@@ -108,9 +110,12 @@ All config is via environment variables (see `.env.example`). The essentials:
 | `POSTGRES_HOST` | **yes** | Hostname/IP of PostgreSQL (managed instance, proxy, or `db` in compose). |
 | `POSTGRES_PORT` | | Default `5432`. |
 | `POSTGRES_DB` / `POSTGRES_USER` / `POSTGRES_PASSWORD` | **yes** | DB name / user / password. |
-| `COOKIE_SECURE` | **prod** | `true` (default) - cookies sent only over HTTPS, which the app serves natively. |
-| `APP_HTTPS_PORT` | | Host port mapped to the container's single port `:8443` (HTTPS). Default `8443`. |
-| `CERT_DIR` | | Where TLS material is written (`/app/certs`). |
+| `PUBLIC_BASE_URL` | **prod (SSO)** | The app's public URL, e.g. `https://teamfollowup.example.com`. Base of every OIDC/SAML callback URL. Empty = derived per request from `X-Forwarded-Proto` / `-Host`. |
+| `COOKIE_SECURE` | **prod** | `true` as soon as the app is reached over HTTPS, including when TLS terminates upstream. Must be `false` for a plain-HTTP local run. |
+| `TLS_ENABLED` | | `false` = plain HTTP on `HTTP_PORT`, infra terminates TLS (**recommended**, and what compose / the manifests set). `true` = the app terminates TLS itself on `:8443`, and is the fallback when the variable is unset and no Admin → TLS toggle is stored. Set it explicitly. |
+| `HTTP_PORT` | | Container listen port when `TLS_ENABLED=false`. Default `8000`. |
+| `APP_HTTP_PORT` / `APP_HTTPS_PORT` | | Host-side compose mappings only (read by `docker-compose.yml`, not by the app). Default `8000` / `8443`. |
+| `CERT_DIR` | | Where TLS material is written (`/app/certs`), `TLS_ENABLED=true` only. |
 | `COOKIE_SAMESITE` | | `lax` (default) or `strict`. |
 | `SEED_DEMO` | | `false` in production (no demo data). |
 | `BREAKGLASS_EMAIL` / `BREAKGLASS_PASSWORD` | **yes** | Emergency admin. If password is empty, a random one is printed in the logs on first boot. |
@@ -121,6 +126,45 @@ All config is via environment variables (see `.env.example`). The essentials:
 > The app builds its DB URL from the discrete `POSTGRES_*` vars (not a single
 > `DATABASE_URL`). When pointing at a managed database, set `POSTGRES_HOST` to the
 > instance host (or the local socket/proxy address - see GCP/AWS/Azure below).
+
+### 2.1 The one URL that matters: `PUBLIC_BASE_URL`
+
+Every URL an identity provider needs is the public base URL plus a fixed path:
+
+| What the IdP asks for | Value |
+|---|---|
+| OIDC redirect URI | `<PUBLIC_BASE_URL>/api/auth/oidc/callback` |
+| SAML SP entity ID | `<PUBLIC_BASE_URL>/api/auth/saml/metadata` |
+| SAML ACS URL | `<PUBLIC_BASE_URL>/api/auth/saml/acs` |
+
+Set the base URL and the three follow. **It is the browser-facing address, not the
+container's listen port**: with the recommended model the pod serves HTTP on `:8000`
+while `PUBLIC_BASE_URL` is `https://teamfollowup.example.com` (port 443, TLS handled
+by the Gateway/ALB). Getting this backwards is the usual cause of an SSO login that
+loops or is rejected by the IdP for a redirect-URI mismatch.
+
+Leaving it empty is fine when the app answers on a single hostname, **including behind
+a Google ALB**. Worth knowing, because it is not obvious: Google Cloud load balancers
+(Gateway API `gke-l7-rilb` / `gke-l7-global-external-managed`, and the classic
+ingress ALBs) **do not send `X-Forwarded-Host`**. They append `X-Forwarded-For`, set
+`X-Forwarded-Proto`, and forward the client's `Host` header **unchanged**. The app
+handles both conventions (`authconfig.base_url_from_request`): it prefers
+`X-Forwarded-Host` when a proxy rewrites `Host` (common with nginx), and otherwise
+combines `X-Forwarded-Proto` with the received `Host`. On GKE that second path is the
+one that runs, and it yields `https://<your Gateway hostname>` even though the pod
+itself only ever spoke plain HTTP on `:8000`.
+
+Set it explicitly anyway in production, as the manifests in §6.9/§6.10 do. Three
+reasons: the app may be reachable through several hostnames (the Gateway hostname, a
+`kubectl port-forward`, an internal probe); a request that arrives by IP rather than
+by name would derive an IP-based URL no IdP will accept; and a configured value is not
+influenced by request headers at all. A configured `PUBLIC_BASE_URL` wins over
+everything, so it makes the SSO URLs deterministic regardless of who calls what.
+
+The same values are shown ready to copy, with the effective base URL, in
+**Administration → Authentification**, where they can also be changed at runtime
+without redeploying. `OIDC_REDIRECT_URI`, `SAML_SP_ENTITY_ID` and `SAML_ACS_URL`
+exist only to pin a URL an existing IdP registration mandates; leave them empty.
 
 **Secrets** (`SECRET_KEY`, `POSTGRES_PASSWORD`, OIDC/SAML secrets) should come
 from the platform's secret manager, never from a committed file.
@@ -158,13 +202,16 @@ Simplest, fully self-hosted. Ideal for on-prem / sovereign-by-default.
    ```bash
    cp .env.example .env
    # edit .env: set SECRET_KEY, POSTGRES_PASSWORD, BREAKGLASS_PASSWORD,
-   #            SEED_DEMO=false, COOKIE_SECURE=true (if TLS terminates upstream)
+   #            SEED_DEMO=false, COOKIE_SECURE=true (if TLS terminates upstream),
+   #            PUBLIC_BASE_URL=<the URL users will type>  (§2.1)
    docker compose up -d --build       # or: pull the prebuilt image and `up -d`
    ```
 4. **Exposure.** This compose setup has no API Gateway, so it is a **development /
    evaluation** target only - the supported production exposure is the Gateway API +
    HTTP routes → internal ALB path (§1, §6.9/§6.10), which requires GKE. For a local trial,
-   reach the app directly on `https://VM:8443` (it serves TLS itself).
+   reach the app directly on `http://VM:8000` (the compose default), or set
+   `TLS_ENABLED=true` + `APP_HTTPS_PORT=8443` to have it serve TLS itself on
+   `https://VM:8443`.
 5. **Backups**: the compose file ships an optional `pg_dump` sidecar - enable it
    with `docker compose --profile backup up -d`, or snapshot the VM/volume.
 
@@ -193,7 +240,7 @@ Serverless, scales to zero, managed Postgres.
      --image REGION-docker.pkg.dev/PROJECT/REPO/teamfollowup:1.0 \
      --region REGION --port 8080 --allow-unauthenticated \
      --add-cloudsql-instances PROJECT:REGION:INSTANCE \
-     --set-env-vars TLS_ENABLED=false,HTTP_PORT=8080,POSTGRES_HOST=/cloudsql/PROJECT:REGION:INSTANCE,POSTGRES_DB=tribe,POSTGRES_USER=tribe,COOKIE_SECURE=true,SEED_DEMO=false \
+     --set-env-vars TLS_ENABLED=false,HTTP_PORT=8080,POSTGRES_HOST=/cloudsql/PROJECT:REGION:INSTANCE,POSTGRES_DB=tribe,POSTGRES_USER=tribe,COOKIE_SECURE=true,SEED_DEMO=false,PUBLIC_BASE_URL=https://teamfollowup.example.com \
      --set-secrets SECRET_KEY=tribe-secret:latest,POSTGRES_PASSWORD=tribe-db-pw:latest,BREAKGLASS_PASSWORD=tribe-admin:latest \
      --min-instances 1 --max-instances 4
    ```
@@ -727,6 +774,8 @@ spec:
               value: "false"
             - name: COOKIE_SECURE        # clients still reach the ALB over HTTPS
               value: "true"
+            - name: PUBLIC_BASE_URL      # public address, NOT the container port (§2.1)
+              value: "https://tribe.internal.example"     # <- the Gateway listener hostname below
             - name: BREAKGLASS_EMAIL
               value: admin@local
             - name: SECRET_KEY
@@ -935,6 +984,8 @@ spec:
               value: "false"
             - name: COOKIE_SECURE
               value: "true"
+            - name: PUBLIC_BASE_URL      # public address, NOT the container port (§2.1)
+              value: "https://tribe.internal.example"     # <- the Gateway listener hostname below
             - name: BREAKGLASS_EMAIL
               value: admin@local
             - name: SECRET_KEY
@@ -1225,15 +1276,17 @@ The new pod runs `alembic upgrade head` automatically. **Back up the database fi
 1. **Database**: create **RDS for PostgreSQL 16** (Multi-AZ for HA), a DB and user.
 2. **Image**: push to **ECR**.
 3. **Service**: an **ECS Fargate** service behind an **Application Load Balancer**:
-   - Task container port **8443**; ALB target group with protocol **HTTPS** → 8443,
-     health check `GET /api/health` (the app terminates TLS itself; the ALB does not
-     verify the pod's self-signed certificate on that internal hop). The ALB listener
-     on 443 uses your **ACM** certificate.
+   - `TLS_ENABLED=false`, task container port **8000**; ALB target group with
+     protocol **HTTP** → 8000, health check `GET /api/health`. The ALB listener on
+     443 uses your **ACM** certificate and terminates TLS. (The `TLS_ENABLED=true`
+     variant works too: container port 8443, target group protocol HTTPS, the ALB
+     not verifying the pod's self-signed certificate on that internal hop.)
    - Env from the task definition; secrets from **Secrets Manager / SSM** mapped to
      `SECRET_KEY`, `POSTGRES_PASSWORD`, etc.
    - `POSTGRES_HOST` = the RDS endpoint; open the security group from the ECS tasks
      to RDS:5432.
-   - Set `COOKIE_SECURE=true`, `SEED_DEMO=false`.
+   - Set `COOKIE_SECURE=true`, `SEED_DEMO=false`, and `PUBLIC_BASE_URL` to the ALB's
+     public hostname (§2.1).
    - Run the service in private subnets; the ALB (public subnets) terminates TLS
      (ACM cert) and forwards `X-Forwarded-*`.
 4. **First rollout**: deploy `desiredCount=1` (migrations), then scale out. Or run
@@ -1263,7 +1316,7 @@ The new pod runs `alembic upgrade head` automatically. **Back up the database fi
      --image REGISTRY.azurecr.io/teamfollowup:1.0 \
      --target-port 8000 --ingress external \
      --min-replicas 1 --max-replicas 4 \
-     --env-vars TLS_ENABLED=false HTTP_PORT=8000 POSTGRES_HOST=SERVER.postgres.database.azure.com POSTGRES_DB=tribe POSTGRES_USER=tribe COOKIE_SECURE=true SEED_DEMO=false \
+     --env-vars TLS_ENABLED=false HTTP_PORT=8000 POSTGRES_HOST=SERVER.postgres.database.azure.com POSTGRES_DB=tribe POSTGRES_USER=tribe COOKIE_SECURE=true SEED_DEMO=false PUBLIC_BASE_URL=https://teamfollowup.example.com \
      --secrets tribe-secret=... db-pw=... admin-pw=... \
      --env-vars SECRET_KEY=secretref:tribe-secret POSTGRES_PASSWORD=secretref:db-pw BREAKGLASS_PASSWORD=secretref:admin-pw
    ```
@@ -1288,8 +1341,9 @@ The new pod runs `alembic upgrade head` automatically. **Back up the database fi
       secret manager.
 - [ ] `COOKIE_SECURE=true` and the app is only reachable over HTTPS.
 - [ ] `SEED_DEMO=false` (no demo tribes/squads in production).
-- [ ] SSO configured if used (`OIDC_*` or `SAML_*`); redirect/ACS URLs point at the
-      real public hostname.
+- [ ] `PUBLIC_BASE_URL` set to the real public URL (or the proxy forwards
+      `X-Forwarded-Proto` / `-Host`); **Administration → Authentification** shows the
+      expected redirect/ACS URLs, and they match what the IdP has registered (§2.1).
 - [ ] Database backups scheduled (managed automated backups, or the `pg_dump`
       sidecar on VMware).
 - [ ] Migrations ran (`alembic upgrade head`) - check the startup logs.

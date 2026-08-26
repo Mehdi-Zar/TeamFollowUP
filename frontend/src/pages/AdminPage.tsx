@@ -1471,18 +1471,61 @@ function ModerationAdmin() {
   );
 }
 
+/** Fixed API paths behind each SSO callback URL. Mirrors SSO_URL_PATHS in the
+ *  backend (app/authconfig.py): the IdP-facing URLs are always the public base
+ *  URL plus one of these, so only the base URL is ever configured. */
+const SSO_URL_PATHS: Record<string, string> = {
+  oidc_redirect_uri: "/api/auth/oidc/callback",
+  saml_sp_entity_id: "/api/auth/saml/metadata",
+  saml_acs_url: "/api/auth/saml/acs",
+};
+
+/** Reduce a typed URL to scheme://host[:port] (same rule as the backend's
+ *  normalize_base_url), so the previewed callback URLs stay valid while typing. */
+function normalizeBaseUrl(value: string): string {
+  let v = (value || "").trim();
+  if (!v) return "";
+  if (!v.includes("://")) v = "https://" + v;
+  const [scheme, rest] = v.split("://", 2);
+  return `${scheme.toLowerCase()}://${(rest || "").split("/")[0]}`.replace(/\/$/, "");
+}
+
+function deriveSsoUrls(baseUrl: string): Record<string, string> {
+  const base = normalizeBaseUrl(baseUrl);
+  const out: Record<string, string> = {};
+  for (const [k, path] of Object.entries(SSO_URL_PATHS)) out[k] = base ? base + path : "";
+  return out;
+}
+
 /** Admin > Auth: SSO configuration - OIDC and/or SAML (PingFederate) settings,
  *  group->role mappings, and self-service access rules (approval requirement +
- *  allowed email domains). Admin only. */
+ *  allowed email domains). Admin only.
+ *
+ *  The IdP-facing URLs are never typed by hand: the admin sets the app's public
+ *  URL once and the redirect URI / entity ID / ACS URL are shown ready to copy
+ *  into the IdP. The per-URL overrides live under "Advanced" for the rare IdP
+ *  registration that mandates a specific value. */
 function AuthAdmin() {
   const { t, role: roleLabel } = useI18n();
   const [cfg, setCfg] = useState<any | null>(null);
   const [saved, setSaved] = useState(false);
+  const [copied, setCopied] = useState<string | null>(null);
+  // Per-provider connectivity test: "running" while in flight, then the report.
+  const [tests, setTests] = useState<Record<string, any>>({});
   const { error, wrap } = useErr();
   const roles = ["admin", "tribe_leader", "squad_leader", "member"];
+  const origin = typeof window !== "undefined" ? window.location.origin : "";
 
   useEffect(() => {
-    api.get<any>("/api/admin/auth-config").then(setCfg);
+    api.get<any>("/api/admin/auth-config").then((c) => {
+      // The API returns the SSO URLs already resolved. Blank the ones that merely
+      // restate the derivation so the "Advanced" fields mean what they say: empty
+      // = follow the public URL, filled = a deliberate override.
+      const next = { ...c };
+      const derived = deriveSsoUrls(c.base_url_effective || "");
+      for (const k of Object.keys(SSO_URL_PATHS)) if ((next[k] || "") === derived[k]) next[k] = "";
+      setCfg(next);
+    });
   }, []);
   if (!cfg) return <div className="spinner">{t("common.loading")}</div>;
 
@@ -1491,6 +1534,94 @@ function AuthAdmin() {
     <div style={{ flex: 1, minWidth: 220 }}>
       <label>{label}</label>
       <input type={type} value={cfg[key] ?? ""} onChange={(e) => set(key, e.target.value)} />
+    </div>
+  );
+
+  // Live preview: what the IdP must be given, based on what is typed right now.
+  const baseUrl = normalizeBaseUrl(cfg.public_base_url) || cfg.base_url_effective || origin;
+  const derived = deriveSsoUrls(baseUrl);
+  const effectiveUrl = (key: string) => (cfg[key] || "").trim() || derived[key];
+
+  const copy = (value: string) => {
+    navigator.clipboard?.writeText(value);
+    setCopied(value);
+    setTimeout(() => setCopied((c) => (c === value ? null : c)), 1800);
+  };
+
+  /** A read-only URL to hand over to the IdP, with a one-click copy. */
+  const urlBox = (label: string, key: string) => {
+    const value = effectiveUrl(key);
+    return (
+      <div>
+        <label>{label}</label>
+        <div className="inline" style={{ gap: 6 }}>
+          <input className="grow" readOnly value={value} onFocus={(e) => e.currentTarget.select()} style={{ fontFamily: "ui-monospace, monospace" }} />
+          <button type="button" className="btn-secondary btn-sm" onClick={() => copy(value)}>
+            {copied === value ? t("auth.copied") : t("auth.copy")}
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  /** Probe the IdP with what is currently on screen, saved or not, so a change can
+   *  be checked before it is committed. */
+  async function runTest(provider: "oidc" | "saml") {
+    setTests((prev) => ({ ...prev, [provider]: { running: true } }));
+    try {
+      const out = await api.post<any>("/api/admin/auth-config/test", { provider, config: cfg });
+      setTests((prev) => ({ ...prev, [provider]: out }));
+    } catch (e: any) {
+      const failed = { ok: false, checks: [{ label: t("auth.test_failed"), ok: false, level: "error", detail: e?.message || "" }] };
+      setTests((prev) => ({ ...prev, [provider]: failed }));
+    }
+  }
+
+  /** The test button plus its report. Each line names the step that was checked,
+   *  so a failure points at the field to fix rather than at "connection error". */
+  const testPanel = (provider: "oidc" | "saml") => {
+    const res = tests[provider];
+    return (
+      <div className="stack" style={{ gap: 8, marginTop: 12 }}>
+        <div className="inline" style={{ gap: 10, flexWrap: "wrap" }}>
+          <button type="button" className="btn-secondary btn-sm" disabled={!!res?.running}
+            onClick={() => runTest(provider)}>
+            {res?.running ? t("auth.testing") : t("auth.test_button")}
+          </button>
+          {res && !res.running && (
+            <span className="strong" style={{ color: res.ok ? "var(--ok, #1c7a6e)" : "var(--danger, #b03a3a)" }}>
+              {res.ok ? t("auth.test_ok") : t("auth.test_ko")}
+            </span>
+          )}
+        </div>
+        <div className="small muted">{t("auth.test_hint")}</div>
+        {res?.checks && (
+          <div className="stack" style={{ gap: 4, marginTop: 4 }}>
+            {res.checks.map((c: any, i: number) => (
+              <div key={i} className="inline" style={{ gap: 8, alignItems: "baseline" }}>
+                <span className="small strong" style={{
+                  minWidth: 58, textAlign: "center",
+                  color: c.level === "error" ? "var(--danger, #b03a3a)" : c.level === "warn" ? "var(--warn, #b06a1a)" : "var(--ok, #1c7a6e)",
+                }}>
+                  {c.level === "error" ? t("auth.check_ko") : c.level === "warn" ? t("auth.check_info") : t("auth.check_ok")}
+                </span>
+                <span className="small">
+                  {c.label}
+                  {c.detail && <span className="muted" style={{ marginLeft: 6, wordBreak: "break-all" }}>{c.detail}</span>}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  /** Optional per-URL override, empty meaning "keep following the public URL". */
+  const overrideFld = (label: string, key: string) => (
+    <div style={{ flex: 1, minWidth: 260 }}>
+      <label>{label}</label>
+      <input value={cfg[key] ?? ""} placeholder={derived[key]} onChange={(e) => set(key, e.target.value)} />
     </div>
   );
 
@@ -1503,7 +1634,12 @@ function AuthAdmin() {
   async function save() {
     await wrap(async () => {
       const out = await api.put<any>("/api/admin/auth-config", cfg);
-      setCfg(out);
+      // Same normalisation as on load: keep the override fields empty unless they
+      // really override something (see the useEffect above).
+      const next = { ...out };
+      const fresh = deriveSsoUrls(out.base_url_effective || "");
+      for (const k of Object.keys(SSO_URL_PATHS)) if ((next[k] || "") === fresh[k]) next[k] = "";
+      setCfg(next);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     });
@@ -1513,6 +1649,26 @@ function AuthAdmin() {
     <div className="stack">
       {error && <ErrorBanner message={error} />}
       <div className="banner">{t("auth.intro")}</div>
+
+      <div className="card stack" style={{ gap: 10 }}>
+        <h3>{t("auth.base_url_title")}</h3>
+        <div className="small muted">{t("auth.base_url_hint")}</div>
+        <div className="row" style={{ alignItems: "flex-end" }}>
+          <div style={{ flex: 1, minWidth: 260 }}>
+            <label>{t("auth.base_url_label")}</label>
+            <input value={cfg.public_base_url ?? ""} placeholder={origin || "https://teamfollowup.exemple.com"}
+              onChange={(e) => set("public_base_url", e.target.value)} />
+          </div>
+          <button type="button" className="btn-secondary btn-sm" onClick={() => set("public_base_url", origin)}>
+            {t("auth.base_url_use_current")}
+          </button>
+        </div>
+        <div className="small muted">
+          {normalizeBaseUrl(cfg.public_base_url)
+            ? t("auth.base_url_set", { url: normalizeBaseUrl(cfg.public_base_url) })
+            : t("auth.base_url_auto", { url: baseUrl || origin })}
+        </div>
+      </div>
 
       <div className="card">
         <label className="switch" style={{ marginBottom: 10 }}>
@@ -1526,12 +1682,24 @@ function AuthAdmin() {
         </div>
         <div className="row">
           {fld("Client secret", "oidc_client_secret", "password")}
-          {fld("Redirect URI", "oidc_redirect_uri")}
+          {fld("Scopes", "oidc_scopes")}
         </div>
         <div className="row">
-          {fld("Scopes", "oidc_scopes")}
           {fld("Groups claim", "oidc_groups_claim")}
         </div>
+        <div className="banner stack" style={{ gap: 8, marginTop: 12 }}>
+          <div className="strong">{t("auth.idp_side_title")}</div>
+          <div className="small">{t("auth.idp_side_oidc")}</div>
+          {urlBox(t("auth.oidc_redirect_label"), "oidc_redirect_uri")}
+        </div>
+        {testPanel("oidc")}
+        <details style={{ marginTop: 10 }}>
+          <summary className="small muted">{t("auth.advanced")}</summary>
+          <div className="row" style={{ marginTop: 8 }}>
+            {overrideFld(t("auth.oidc_redirect_label"), "oidc_redirect_uri")}
+          </div>
+          <div className="small muted" style={{ marginTop: 6 }}>{t("auth.override_hint")}</div>
+        </details>
       </div>
 
       <div className="card">
@@ -1542,15 +1710,26 @@ function AuthAdmin() {
         </label>
         <div className="row">
           {fld("IdP metadata URL", "saml_idp_metadata_url")}
-          {fld("SP entity ID", "saml_sp_entity_id")}
-        </div>
-        <div className="row">
-          {fld("ACS URL", "saml_acs_url")}
           {fld("Groups attribute", "saml_groups_attr")}
         </div>
-        <div className="small muted" style={{ marginTop: 6 }}>
-          {t("auth.test")} : <a href="/api/auth/saml/metadata" target="_blank">/api/auth/saml/metadata</a>
+        <div className="banner stack" style={{ gap: 8, marginTop: 12 }}>
+          <div className="strong">{t("auth.idp_side_title")}</div>
+          <div className="small">{t("auth.idp_side_saml")}</div>
+          {urlBox(t("auth.saml_entity_label"), "saml_sp_entity_id")}
+          {urlBox(t("auth.saml_acs_label"), "saml_acs_url")}
+          <div className="small">
+            {t("auth.test")} : <a href="/api/auth/saml/metadata" target="_blank">/api/auth/saml/metadata</a>
+          </div>
         </div>
+        {testPanel("saml")}
+        <details style={{ marginTop: 10 }}>
+          <summary className="small muted">{t("auth.advanced")}</summary>
+          <div className="row" style={{ marginTop: 8 }}>
+            {overrideFld(t("auth.saml_entity_label"), "saml_sp_entity_id")}
+            {overrideFld(t("auth.saml_acs_label"), "saml_acs_url")}
+          </div>
+          <div className="small muted" style={{ marginTop: 6 }}>{t("auth.override_hint")}</div>
+        </details>
       </div>
 
       <div className="card">

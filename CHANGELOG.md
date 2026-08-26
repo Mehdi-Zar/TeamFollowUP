@@ -2,6 +2,71 @@
 
 ## Unreleased
 
+### Added
+- **"Test the connection to the IdP" button**, one per protocol, in Administration →
+  Authentification (`POST /api/admin/auth-config/test`, `app/ssotest.py`). Returns an
+  ordered list of checks so a failure names the field to fix rather than reporting a
+  bare connection error: OIDC discovery, issuer consistency, endpoints, signing keys,
+  PKCE, and the client credentials; for SAML, metadata retrieval, IdP entity ID and
+  SSO endpoint, signing-certificate expiry, and the SP settings assembled and
+  validated by python3-saml exactly as the login path does. It probes what is on
+  screen, saved or not, so a change can be checked before it is committed, and it
+  signs nobody in. Verified against a live Keycloak, including the failure paths
+  (wrong secret, wrong client id, unreachable issuer, unreadable metadata).
+- **Access history.** The review screen now shows what has already been handled, not
+  only the pending queue (`GET /api/access-requests/history`): SSO arrivals and the
+  approve/deny decisions taken on them, newest first, with who decided and where the
+  person was placed. Read from the audit trail, the only place recording the author
+  of a decision. Gatekeepers see everything; a squad leader sees their own decisions.
+
+### Fixed
+- **Saving the auth page froze `PUBLIC_BASE_URL` into the database.** Every save
+  of Admin → Authentication persisted the whole config, environment-derived values
+  included, so the deployment's `PUBLIC_BASE_URL` became a stored override. After
+  any single save, changing it in the manifest or `.env` had no effect and every
+  SSO callback URL kept pointing at the previous hostname. The value is now
+  persisted only when it actually differs from the environment, so the env var
+  stays authoritative until an administrator really types something else. Found
+  by moving a running Kubernetes bench from one hostname to another; regression
+  tests in `tests/test_authconfig_urls.py`.
+- **SAML login was impossible against any IdP that advertises a NameIDFormat**
+  (Keycloak, PingFederate). `OneLogin_Saml2_IdPMetadataParser` returns an `sp`
+  hint and a `security` block alongside `idp`, and `saml.build_settings` merged
+  the whole thing with a flat `dict.update`, replacing our SP section with the
+  one-key hint. python3-saml then rejected the settings with
+  `sp_entityId_not_found,sp_acs_not_found` and every SAML endpoint answered 500.
+  The merge now preserves the values we set and treats the parsed ones as
+  suggestions. An IdP asking for signed AuthnRequests is honoured only when an SP
+  key pair is configured, instead of making the settings unbuildable. Found by
+  driving a real Keycloak from a Kubernetes bench; regression tests in
+  `tests/test_saml_settings.py`.
+
+### Changed
+- **SSO configuration is now driven by one public URL.** The OIDC redirect URI and
+  the SAML SP entity ID / ACS URL are no longer three absolute URLs to keep in sync
+  by hand: they are derived from the app's **public base URL** plus a fixed path
+  (`authconfig.derive_sso_urls`). The base URL comes from the new **URL publique**
+  field in Administration → Authentification, else `PUBLIC_BASE_URL`, else the
+  incoming request (`X-Forwarded-Proto` / `X-Forwarded-Host` are honoured), so a
+  local run and any single-hostname deployment need no SSO URL configuration at all.
+  Administration → Authentification displays the three resolved URLs ready to copy
+  into the IdP; per-URL pinning moved under "Avancé". A pinned URL that merely
+  restates the derivation is stored empty, so it keeps following the public URL
+  instead of freezing a hostname. `OIDC_REDIRECT_URI`, `SAML_SP_ENTITY_ID` and
+  `SAML_ACS_URL` now default to empty (they were `https://localhost:8443/…`, which
+  leaked into every fresh install and every `.env` copied from the example).
+- **SAML strict-mode validation uses the public URL.** `saml._prepare_request` now
+  rebuilds the request from the effective base URL, so the assertion `Destination`
+  check compares against the address the browser used and not the pod's internal
+  one when a proxy terminates TLS.
+- **Documentation and samples realigned on the plain-HTTP model.** `README`, `docs/02`,
+  `docs/04`, `docs/06`, `docs/07`, `docs/12`, `docs/13`, `docs/14`, both `.env.example`
+  files and `e2e_test.py` referred to `https://localhost:8443` as *the* address; they
+  now describe the compose default (plain HTTP `:8000`, TLS terminated upstream) with
+  `TLS_ENABLED=true` documented as the standalone alternative. The shipped `.env` also
+  had `COOKIE_SECURE=true` against a plain-HTTP listener, which prevents the session
+  cookie from being sent at all.
+
 ### Security
 - **OTD owner assignment is validated against the tribe (cross-tribe disclosure fix).**
   `POST/PUT /api/otds` accepted an arbitrary `owner_user_id`; a tribe leader could
@@ -20,13 +85,17 @@
   `GOOGLE_EXTERNAL_ACCOUNT_ALLOW_EXECUTABLES=1` - no lower-privilege attack path.
 
 ### Breaking changes
-- **Single-port container: HTTPS :8443 only.** The plain-HTTP listener on :8080
-  (301 → HTTPS) is removed, along with its admin toggle ("Rediriger HTTP vers
-  HTTPS"), the `PUT /api/admin/tls-config` endpoint, and the `HTTP_PORT` /
-  `PUBLIC_HTTPS_PORT` / `APP_HTTP_PORT` variables. HTTP→HTTPS redirection is now
-  exclusively an infrastructure concern (e.g. the GKE Gateway API redirect route,
-  `docs/12` §6.9.2). K8s manifests need `containerPort: 8443` only; nothing may
+- **Single-port container, no HTTP→HTTPS redirect listener.** The plain-HTTP :8080
+  listener (301 → HTTPS) is removed, along with its admin toggle ("Rediriger HTTP
+  vers HTTPS"), the `PUT /api/admin/tls-config` endpoint and the
+  `PUBLIC_HTTPS_PORT` variable. Redirection is now exclusively an infrastructure
+  concern (e.g. the GKE Gateway API redirect route, `docs/12` §6.9.2); nothing may
   target :8080 anymore.
+  The container binds exactly one port, chosen by `TLS_ENABLED`: plain **HTTP
+  :8000** (`false`, the recommended model, what compose and the manifests set,
+  variables `HTTP_PORT` / `APP_HTTP_PORT`) or **HTTPS :8443** (`true`, the app
+  terminating TLS itself, variable `APP_HTTPS_PORT`). Match K8s `containerPort`,
+  probe `scheme` and Service `targetPort` to the mode you run (`docs/12` §6.9/§6.10).
 
 ### Security
 - **Keyless GCP authentication for audit-log export (GCS / BigQuery).** The export

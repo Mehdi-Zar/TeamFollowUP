@@ -6,9 +6,10 @@ import urllib.request
 import urllib.error
 import http.cookiejar
 
-# The app serves HTTPS on :8443, its only port (self-signed cert by default).
-# Override with E2E_BASE_URL to target another host/port mapping.
-BASE = os.environ.get("E2E_BASE_URL", "https://localhost:8443")
+# The compose default: plain HTTP on :8000, the app's only port (TLS is the
+# infrastructure's job). Override with E2E_BASE_URL to target another host/port,
+# e.g. https://localhost:8443 when running with TLS_ENABLED=true.
+BASE = os.environ.get("E2E_BASE_URL", "http://localhost:8000")
 results = []
 
 # Accept the self-signed dev cert (public-API equivalent of an unverified context).
@@ -219,9 +220,12 @@ s, audit = req(admin, "GET", "/api/audit-log")
 check("audit log not empty", s == 200 and len(audit) > 0, len(audit) if s == 200 else s)
 
 # ---- SAML metadata generation (enable, fetch, disable) ----
-req(admin, "PUT", "/api/admin/auth-config", {"saml_enabled": True, "saml_sp_entity_id": "https://localhost:8443/api/auth/saml/metadata", "saml_acs_url": "https://localhost:8443/api/auth/saml/acs"})
+# No entity ID / ACS URL passed on purpose: they must be derived from the public
+# base URL, itself deduced from the request when PUBLIC_BASE_URL is unset.
+req(admin, "PUT", "/api/admin/auth-config", {"saml_enabled": True})
 s, md = req(admin, "GET", "/api/auth/saml/metadata")
 check("SAML SP metadata generated", s == 200 and "EntityDescriptor" in str(md), s)
+check("SAML URLs derived from the public base URL", s == 200 and f"{BASE}/api/auth/saml/acs" in str(md), s)
 req(admin, "PUT", "/api/admin/auth-config", {"saml_enabled": False})
 
 # ---- exports (HTML/PPTX under /api/reports) ----

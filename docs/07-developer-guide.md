@@ -8,26 +8,36 @@ Docker + Docker Compose. For local frontend dev: Node 22+. For local backend tes
 ## Run the whole app (recommended)
 
 ```bash
-docker compose up -d --build      # https://localhost:8443 (single port, self-signed cert)
+docker compose up -d --build      # http://localhost:8000 (single port, plain HTTP)
 ```
 Demo data is seeded on first boot (`SEED_DEMO=true`). Break-glass admin: `admin@local` (password from
 `BREAKGLASS_PASSWORD`, or the random one printed in the app logs at first boot).
+
+Compose serves plain HTTP and leaves TLS to the infrastructure (`TLS_ENABLED=false`,
+the recommended model, see `docs/06` §Topology). Set `TLS_ENABLED=true` +
+`APP_HTTPS_PORT=8443` to have the app terminate TLS itself on `https://localhost:8443`.
 
 ## Frontend dev (hot reload)
 
 ```bash
 cd frontend
 npm install
-npm run dev        # http://localhost:5173, proxies /api to the compose backend (https://localhost:8443)
+npm run dev        # http://localhost:5173, proxies /api to the compose backend (http://localhost:8000)
 npm run build      # production build (also the CI gate)
 npx tsc --noEmit   # type-check
 ```
 
-> **Login fails on http://localhost:5173?** The compose backend marks the session
-> cookie `Secure` (`COOKIE_SECURE=true` by default). Chrome/Firefox accept Secure
-> cookies on `localhost`, but some browsers (e.g. Safari) drop them on a plain-HTTP
-> origin. Fix: set `COOKIE_SECURE=false` in `.env` for local dev, or use the
-> compose app directly at `https://localhost:8443`.
+> **Login fails on http://localhost:5173?** Check `COOKIE_SECURE` in `.env`: a browser
+> will not send a `Secure` cookie over a plain-HTTP origin, so it must be `false` for
+> local dev (the shipped default) and `true` once the app is published over HTTPS.
+
+## SSO URLs while developing
+
+Nothing to configure: with `PUBLIC_BASE_URL` empty the app derives the OIDC redirect
+URI and the SAML entity ID / ACS URL from the request it receives, so they follow
+whatever host you browse (`http://localhost:8000/api/auth/oidc/callback`, and so on).
+**Administration → Authentification** shows the resolved values. See `docs/05` for the
+derivation rules and `docs/12` §2.1 for what to set when deploying.
 
 ## Backend tests
 
