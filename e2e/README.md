@@ -34,6 +34,7 @@ npm run report          # le rapport HTML du dernier run
 |---|---|
 | `tests/login.spec.ts` | l'écran de connexion, le refus des mauvais identifiants sans divulguer lequel est faux, la connexion du compte de secours, la déconnexion qui invalide vraiment la session, le garde de route sur une URL tapée à la main |
 | `tests/admin-org.spec.ts` | créer une tribu, la voir dans l'écran, la supprimer ; le journal d'audit qui enregistre l'action et la retrouve par filtre ; la pagination qui ne répète pas de ligne |
+| `tests/admin-sections.spec.ts` | les dix-huit sections de l'administration s'affichent chacune sans erreur ; c'est le filet de sécurité pour refactoriser cet écran |
 | `tests/roles.spec.ts` | un membre ne se voit pas proposer l'administration, ne peut pas y accéder par l'URL, et l'API le refuse aussi ; l'administrateur, lui, voit les sections ; le tableau de bord s'affiche |
 
 ## Ce qu'il faut savoir avant d'écrire un test ici

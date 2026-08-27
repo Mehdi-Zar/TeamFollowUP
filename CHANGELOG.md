@@ -133,6 +133,16 @@
   untouched, and clicking a label still does not focus its field, which needs `htmlFor`/`id`.
 
 ### Changed
+- **`AdminPage.tsx` split: 3085 lines down to a 152-line shell.** It was one file holding the
+  navigation, the permission logic and twenty-five panels covering everything from TLS
+  certificates to leave types. The panels now live in `src/pages/admin/`, one module per
+  navigation group (`organisation`, `imports`, `configuration`, `authentication`, `oversight`,
+  plus `shared` for the two hooks more than one panel needs), and `AdminPage.tsx` keeps only
+  what it is: the shell that resolves which tabs a role may open and mounts the active one.
+  The refactor was done **after** building the net that catches it, not before: a new
+  end-to-end test opens all eighteen sections and asserts each renders without an error banner,
+  an empty panel or a console error. It was green before the move and green after, which is the
+  only reason a mechanical 3000-line move is defensible. That test stays.
 - **Every pending dependency update applied and verified**, closing the thirteen Dependabot
   pull requests that had piled up. Backend: authlib 1.4 to 1.7.2, google-auth 2.38 to 2.56.3,
   PyJWT 2.10.1 to 2.13.0, argon2-cffi 23.1 to 25.1, psycopg2-binary 2.9.12. Frontend: React 18

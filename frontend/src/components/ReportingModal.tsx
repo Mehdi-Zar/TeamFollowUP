@@ -8,7 +8,7 @@ import { useI18n } from "../i18n";
 import { useAuth } from "../auth";
 import { useConfig, useModule } from "../config";
 import { Modal, Spinner } from "./ui";
-import { ReportingAdmin } from "../pages/AdminPage";
+import { ReportingAdmin } from "../pages/admin/configuration";
 
 // Shape of a user's report subscription. `weekdays` are 0=Mon..6=Sun; an empty
 // list (or interval_days 0) means the subscription is off.

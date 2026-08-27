@@ -62,6 +62,16 @@ flowchart LR
   single port, `/metrics` must be kept off the public route or behind `METRICS_TOKEN` -
   see [17](17-observabilite.md).
 
+### Frontend layout
+
+`src/pages/` holds one file per route. The exception is Administration, which is a
+single route hosting twenty-odd independent panels: `AdminPage.tsx` is the shell
+(permissions, tab resolution, `?section=` deep link, navigation) and the panels
+live in `src/pages/admin/`, one module per navigation group - `organisation`,
+`imports`, `configuration`, `authentication`, `oversight`, plus `shared` for the
+two hooks more than one panel needs. The split is held in place by an end-to-end
+test that opens every section and asserts it renders ([18](18-tests-e2e.md)).
+
 ## Backend module map
 
 ```mermaid

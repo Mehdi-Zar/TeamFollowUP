@@ -129,6 +129,7 @@ ou recouvert par autre chose.
 |---|---|
 | `tests/login.spec.ts` | l'écran de connexion est servi et ses champs sont atteignables par leur libellé ; de mauvais identifiants sont refusés **sans dire lequel des deux est faux** (pas d'énumération de comptes) ; le compte de secours entre ; la déconnexion invalide vraiment la session côté serveur ; une URL interne tapée par un visiteur non connecté ramène à la connexion |
 | `tests/admin-org.spec.ts` | créer une tribu, la voir apparaître dans l'écran, la supprimer ; le journal d'audit enregistre l'action, la retrouve par filtre et affiche **le nom** de l'auteur et non son identifiant ; un filtre qui ne correspond à rien le dit au lieu de tout montrer ; la pagination avance et recule sans répéter de ligne |
+| `tests/admin-sections.spec.ts` | les **dix-huit sections** de l'administration : chacune s'affiche, sans bandeau d'erreur, sans panneau vide et sans erreur JavaScript en console. C'est le filet qui a rendu défendable le découpage d'`AdminPage.tsx` : vert avant, vert après |
 | `tests/roles.spec.ts` | un membre ne se voit pas proposer l'administration, ne l'obtient pas en tapant l'URL, et l'API la lui refuse aussi ; l'administrateur voit bien les sections ; le tableau de bord s'affiche sans bandeau d'erreur |
 
 ---
