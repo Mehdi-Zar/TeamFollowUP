@@ -32,37 +32,14 @@
   approve/deny decisions taken on them, newest first, with who decided and where the
   person was placed. Read from the audit trail, the only place recording the author
   of a decision. Gatekeepers see everything; a squad leader sees their own decisions.
-
-### Fixed
-- **`e2e_test.py` asserted the shipped application name.** The check read
-  `app_name == "Tribe Cockpit"`, so it broke on the rename and, more importantly, on any
-  instance whose administrator had renamed the app, which the setting exists for. It now
-  asserts the public config serves a name at all.
-- **`LOG_FORMAT` and `LOG_LEVEL` were undocumented**, in neither `.env.example` nor the
-  deployment guide's variable table, although `LOG_FORMAT=json` is what makes the logs
-  parseable by GCP Cloud Logging and the manifests already set it. Both are now in the two
-  `.env.example` files and in the guide's variable table, and `LOG_LEVEL` is passed through
-  `docker-compose.yml` like every other knob (only `LOG_FORMAT` was).
-- **Saving the auth page froze `PUBLIC_BASE_URL` into the database.** Every save
-  of Admin → Authentication persisted the whole config, environment-derived values
-  included, so the deployment's `PUBLIC_BASE_URL` became a stored override. After
-  any single save, changing it in the manifest or `.env` had no effect and every
-  SSO callback URL kept pointing at the previous hostname. The value is now
-  persisted only when it actually differs from the environment, so the env var
-  stays authoritative until an administrator really types something else. Found
-  by moving a running Kubernetes bench from one hostname to another; regression
-  tests in `tests/test_authconfig_urls.py`.
-- **SAML login was impossible against any IdP that advertises a NameIDFormat**
-  (Keycloak, PingFederate). `OneLogin_Saml2_IdPMetadataParser` returns an `sp`
-  hint and a `security` block alongside `idp`, and `saml.build_settings` merged
-  the whole thing with a flat `dict.update`, replacing our SP section with the
-  one-key hint. python3-saml then rejected the settings with
-  `sp_entityId_not_found,sp_acs_not_found` and every SAML endpoint answered 500.
-  The merge now preserves the values we set and treats the parsed ones as
-  suggestions. An IdP asking for signed AuthnRequests is honoured only when an SP
-  key pair is configured, instead of making the settings unbuildable. Found by
-  driving a real Keycloak from a Kubernetes bench; regression tests in
-  `tests/test_saml_settings.py`.
+- **Milestone-dependency deck (PPTX/HTML).** New export listing every jalon that
+  depends on another team, grouped by the entity it waits on. Each line shows the
+  jalon, its source squad·tribe, the quarter, the owner and the status. By default
+  it keeps only **cross-tribe** dependencies (`mode=cross_tribe`, the real
+  coordination points); `mode=all` includes same-tribe and free-text actors. The
+  table paginates across slides so no dependency is ever dropped. Available from
+  the Export menu ("Dépendances") and via `GET /api/reports/dependencies.pptx`
+  (and `.html`), scoped like the other exports (`tribe_id` / `squad_ids` / `year`).
 
 ### Changed
 - **Version 2.0.0, and the first tagged release.** The project documented its own release
@@ -109,6 +86,51 @@
   had `COOKIE_SECURE=true` against a plain-HTTP listener, which prevents the session
   cookie from being sent at all.
 
+### Fixed
+- **`e2e_test.py` asserted the shipped application name.** The check read
+  `app_name == "Tribe Cockpit"`, so it broke on the rename and, more importantly, on any
+  instance whose administrator had renamed the app, which the setting exists for. It now
+  asserts the public config serves a name at all.
+- **`LOG_FORMAT` and `LOG_LEVEL` were undocumented**, in neither `.env.example` nor the
+  deployment guide's variable table, although `LOG_FORMAT=json` is what makes the logs
+  parseable by GCP Cloud Logging and the manifests already set it. Both are now in the two
+  `.env.example` files and in the guide's variable table, and `LOG_LEVEL` is passed through
+  `docker-compose.yml` like every other knob (only `LOG_FORMAT` was).
+- **Saving the auth page froze `PUBLIC_BASE_URL` into the database.** Every save
+  of Admin → Authentication persisted the whole config, environment-derived values
+  included, so the deployment's `PUBLIC_BASE_URL` became a stored override. After
+  any single save, changing it in the manifest or `.env` had no effect and every
+  SSO callback URL kept pointing at the previous hostname. The value is now
+  persisted only when it actually differs from the environment, so the env var
+  stays authoritative until an administrator really types something else. Found
+  by moving a running Kubernetes bench from one hostname to another; regression
+  tests in `tests/test_authconfig_urls.py`.
+- **SAML login was impossible against any IdP that advertises a NameIDFormat**
+  (Keycloak, PingFederate). `OneLogin_Saml2_IdPMetadataParser` returns an `sp`
+  hint and a `security` block alongside `idp`, and `saml.build_settings` merged
+  the whole thing with a flat `dict.update`, replacing our SP section with the
+  one-key hint. python3-saml then rejected the settings with
+  `sp_entityId_not_found,sp_acs_not_found` and every SAML endpoint answered 500.
+  The merge now preserves the values we set and treats the parsed ones as
+  suggestions. An IdP asking for signed AuthnRequests is honoured only when an SP
+  key pair is configured, instead of making the settings unbuildable. Found by
+  driving a real Keycloak from a Kubernetes bench; regression tests in
+  `tests/test_saml_settings.py`.
+- **Dead setting removed: `PROGRESS_RETENTION_DAYS`.** It referred to the
+  `progress_updates` table dropped in migration 0017 and had no effect; removed
+  from `config.py`, compose and the `.env` examples. Docs (02/03/07/08/10/11)
+  no longer reference `progress.py` / `progress_updates`, and the data-model
+  reference now covers all 27 tables (initiatives, OTD, budgets, key messages,
+  committees, report baselines, API keys).
+- **Dashboard PPTX export no longer silently drops squads.** Multi-squad decks
+  were capped at 40 detail slides, so a large selection (e.g. a full org of 130+
+  squads) lost every squad past the 40th - the deck came back missing squads like
+  "Catalog 12" with no error. The cap is raised well above any realistic squad
+  count, and if it is ever exceeded the deck ends with a visible "+N autres
+  squads" notice instead of dropping them without a trace. Covered by new
+  regression tests plus a randomized loop-mode fuzz harness
+  (`backend/tests/fuzz_export_loop.py`).
+
 ### Security
 - **OTD owner assignment is validated against the tribe (cross-tribe disclosure fix).**
   `POST/PUT /api/otds` accepted an arbitrary `owner_user_id`; a tribe leader could
@@ -125,21 +147,6 @@
   endpoint is `require_admin` (same trust level that already controls
   `universe_domain`/`syslog_host`), and executable sources stay disabled unless
   `GOOGLE_EXTERNAL_ACCOUNT_ALLOW_EXECUTABLES=1` - no lower-privilege attack path.
-
-### Breaking changes
-- **Single-port container, no HTTP→HTTPS redirect listener.** The plain-HTTP :8080
-  listener (301 → HTTPS) is removed, along with its admin toggle ("Rediriger HTTP
-  vers HTTPS"), the `PUT /api/admin/tls-config` endpoint and the
-  `PUBLIC_HTTPS_PORT` variable. Redirection is now exclusively an infrastructure
-  concern (e.g. the GKE Gateway API redirect route, `docs/12` §6.9.2); nothing may
-  target :8080 anymore.
-  The container binds exactly one port, chosen by `TLS_ENABLED`: plain **HTTP
-  :8000** (`false`, the recommended model, what compose and the manifests set,
-  variables `HTTP_PORT` / `APP_HTTP_PORT`) or **HTTPS :8443** (`true`, the app
-  terminating TLS itself, variable `APP_HTTPS_PORT`). Match K8s `containerPort`,
-  probe `scheme` and Service `targetPort` to the mode you run (`docs/12` §6.9/§6.10).
-
-### Security
 - **Keyless GCP authentication for audit-log export (GCS / BigQuery).** The export
   no longer assumes a service-account **JSON key** (a long-lived secret Google
   ranks last and recommends disabling org-wide). A new **auth method** selector in
@@ -155,31 +162,19 @@
   [ADR-0012](docs/adr/0012-gcp-auth-keyless.md); infra binding in the deployment
   guide §6.10.a.
 
-### Features
-- **Milestone-dependency deck (PPTX/HTML).** New export listing every jalon that
-  depends on another team, grouped by the entity it waits on. Each line shows the
-  jalon, its source squad·tribe, the quarter, the owner and the status. By default
-  it keeps only **cross-tribe** dependencies (`mode=cross_tribe`, the real
-  coordination points); `mode=all` includes same-tribe and free-text actors. The
-  table paginates across slides so no dependency is ever dropped. Available from
-  the Export menu ("Dépendances") and via `GET /api/reports/dependencies.pptx`
-  (and `.html`), scoped like the other exports (`tribe_id` / `squad_ids` / `year`).
+### Breaking changes
+- **Single-port container, no HTTP→HTTPS redirect listener.** The plain-HTTP :8080
+  listener (301 → HTTPS) is removed, along with its admin toggle ("Rediriger HTTP
+  vers HTTPS"), the `PUT /api/admin/tls-config` endpoint and the
+  `PUBLIC_HTTPS_PORT` variable. Redirection is now exclusively an infrastructure
+  concern (e.g. the GKE Gateway API redirect route, `docs/12` §6.9.2); nothing may
+  target :8080 anymore.
 
-### Fixes
-- **Dead setting removed: `PROGRESS_RETENTION_DAYS`.** It referred to the
-  `progress_updates` table dropped in migration 0017 and had no effect; removed
-  from `config.py`, compose and the `.env` examples. Docs (02/03/07/08/10/11)
-  no longer reference `progress.py` / `progress_updates`, and the data-model
-  reference now covers all 27 tables (initiatives, OTD, budgets, key messages,
-  committees, report baselines, API keys).
-- **Dashboard PPTX export no longer silently drops squads.** Multi-squad decks
-  were capped at 40 detail slides, so a large selection (e.g. a full org of 130+
-  squads) lost every squad past the 40th - the deck came back missing squads like
-  "Catalog 12" with no error. The cap is raised well above any realistic squad
-  count, and if it is ever exceeded the deck ends with a visible "+N autres
-  squads" notice instead of dropping them without a trace. Covered by new
-  regression tests plus a randomized loop-mode fuzz harness
-  (`backend/tests/fuzz_export_loop.py`).
+  The container binds exactly one port, chosen by `TLS_ENABLED`: plain **HTTP
+  :8000** (`false`, the recommended model, what compose and the manifests set,
+  variables `HTTP_PORT` / `APP_HTTP_PORT`) or **HTTPS :8443** (`true`, the app
+  terminating TLS itself, variable `APP_HTTPS_PORT`). Match K8s `containerPort`,
+  probe `scheme` and Service `targetPort` to the mode you run (`docs/12` §6.9/§6.10).
 
 ## 1.0 - V1 (production-ready)
 
