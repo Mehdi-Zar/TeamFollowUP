@@ -133,6 +133,17 @@
   untouched, and clicking a label still does not focus its field, which needs `htmlFor`/`id`.
 
 ### Changed
+- **`report.py` split: 2440 lines down to 1400.** The four PowerPoint decks moved to
+  `reportpptx.py` (890 lines of python-pptx machinery that reads nothing like the HTML
+  templating beside it), and the eleven declarations both formats share moved to
+  `reportcommon.py`. The dependency runs one way only, `reportpptx` importing `reportcommon`
+  and never `report`, and `report` re-exports the deck renderers so no caller had to change.
+  Same discipline as below: a seventeen-test surface smoke test was written and run green
+  first, and it earned its place immediately by catching two things the plan had missed - the
+  roadmap HTML also uses the month labels, and two tests patch the slide cap, which now has to
+  be patched on the module that reads it rather than on a re-exported name. Verified further by
+  fetching all eight export endpoints from the running container and checking each returns a
+  real document.
 - **`AdminPage.tsx` split: 3085 lines down to a 152-line shell.** It was one file holding the
   navigation, the permission logic and twenty-five panels covering everything from TLS
   certificates to leave types. The panels now live in `src/pages/admin/`, one module per

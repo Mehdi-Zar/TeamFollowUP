@@ -141,9 +141,12 @@ def test_dashboard_pptx_marks_omitted_squads_when_cap_hit(db, seeded, monkeypatc
     a visible notice slide - never dropped without a trace."""
     pptx = pytest.importorskip("pptx")
     import io
-    import app.report as report_mod
+    # The cap lives with the renderer that enforces it (app/reportpptx.py), so it
+    # has to be patched there: patching app.report would rebind a re-exported
+    # name the renderer never reads.
+    import app.reportpptx as pptx_mod
     from app.models import Squad
-    monkeypatch.setattr(report_mod, "_MAX_DETAIL_SLIDES", 4)
+    monkeypatch.setattr(pptx_mod, "_MAX_DETAIL_SLIDES", 4)
     for i in range(10):
         db.add(Squad(name=f"Over {i:02d}", tribe_id=seeded["t1"], display_order=200 + i))
     db.commit()

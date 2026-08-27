@@ -40,6 +40,7 @@ Base.metadata.create_all(bind=engine)
 
 from app import status as st
 import app.report as report
+import app.reportpptx as reportpptx
 from app.report import build_report_data, render_pptx, render_roadmap_pptx, render_html
 from app.security import hash_password
 
@@ -115,7 +116,7 @@ def check_multi(db, admin, rng):
     lang = rng.choice(["fr", "en"])
     viewer = rng.choice([admin, None])
     cap = rng.randint(2, 25)
-    report._MAX_DETAIL_SLIDES = cap
+    reportpptx._MAX_DETAIL_SLIDES = cap
     try:
         data = build_report_data(db, None, YEAR, 7, lang=lang, viewer=viewer)
         flat = [r for blk in data["tribes"] for r in blk["squads"]]
@@ -138,7 +139,7 @@ def check_multi(db, admin, rng):
             assert str(n - cap) in nt, f"notice missing count {n-cap}: {nt!r}"
         return n, cap
     finally:
-        report._MAX_DETAIL_SLIDES = 300
+        reportpptx._MAX_DETAIL_SLIDES = 300
 
 
 def check_single(db, admin, rng):

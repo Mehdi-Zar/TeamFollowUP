@@ -72,6 +72,15 @@ live in `src/pages/admin/`, one module per navigation group - `organisation`,
 two hooks more than one panel needs. The split is held in place by an end-to-end
 test that opens every section and asserts it renders ([18](18-tests-e2e.md)).
 
+### Reporting modules
+
+`report.py` builds the payloads and renders the HTML; `reportpptx.py` renders the
+four PowerPoint decks; `reportcommon.py` holds the eleven declarations both
+formats share (the translation table, the status labels and colours, the month
+labels, `group_by_theme`). The dependency runs one way only - `reportpptx` imports
+`reportcommon` and never `report` - and `report` re-exports the deck renderers, so
+`from .report import render_pptx` keeps working for every caller.
+
 ## Backend module map
 
 ```mermaid

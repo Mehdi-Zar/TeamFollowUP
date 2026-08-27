@@ -21,7 +21,7 @@ Legend: ✅ done · ◑ partial · ⬜ open.
 | TD-DATA-1 | Data | `users.role` free string, personas in app_settings (no FK) | P2 | ⬜ admin PUT reassigns orphans; consider personas table |
 | TD-DATA-2 | Data | `objectives.rag_status` retained but unauthoritative | P2 | ◑ documented |
 | TD-DATA-3 | Data | No retention/rotation for audit_log | P2 | ✅ opt-in purge for the audit log **and the feed** (`maintenance.py`); what is stored, for how long, and how to answer an access or erasure request: [20](20-donnees-personnelles-et-retention.md) |
-| TD-CODE-1 | Code | `AdminPage.tsx`, `report.py` large | P2 | ◑ `AdminPage.tsx` split 3085 → **152 lines** (shell) + `pages/admin/*` per navigation group, verified by an 18-section smoke test; `report.py` (2.4k) still open |
+| TD-CODE-1 | Code | `AdminPage.tsx`, `report.py` large | P2 | ✅ `AdminPage.tsx` 3085 → **152** (shell) + `pages/admin/*`; `report.py` 2440 → **1400** + `reportpptx` (the four decks) + `reportcommon` (the eleven names both formats share). Both moves were made behind a smoke test written first |
 | TD-UI-1 | UI | Spacing/typography not tokenized | P2 | ⬜ introduce CSS tokens |
 | TD-A11Y-1 | A11y | Form controls without an accessible name | P2 | ◑ **every control in `AdminPage.tsx` now has one** (visible `<label>` mirrored into `aria-label`, `aria-label` on inline table editors). Remaining: the other pages, and `htmlFor`/`id` pairing so clicking a label focuses its field |
 | TD-API-1 | API | OpenAPI not snapshotted/diffed | P2 | ✅ `docs/openapi.json` committed + CI check (`dump_openapi.py --check`) |
