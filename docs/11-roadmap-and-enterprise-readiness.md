@@ -12,7 +12,7 @@
 | Testing | 🟢 High | Backend 344 (76% covered, gated) + frontend Vitest 11 + **Playwright 12 against the real stack** + K8s/SSO bench (18 checks) |
 | DevOps/CI-CD | 🟢 High | Reproducible build + **CI (tests/typecheck/build/i18n/audit)** + Dependabot; no CD/envs yet |
 | Observability | 🟢 High | Structured logs + audit + **Prometheus metrics, 7 alert rules, ready-to-run Grafana stack**; external uptime probe still to add |
-| Data/BCP | 🟡 Medium | **Backup sidecar (pg_dump + rotation)**; DR drills/PITR still to formalize |
+| Data/BCP | 🟢 High | Backup sidecar with **verified dumps**, a **tested** restore procedure and a drill protocol ([19](19-plan-de-reprise.md)); off-host copies, encryption and PITR still to arrange |
 | Compliance/Governance | 🟡 Medium | Audit log + access control; no formal retention/DPA |
 | Multi-tenancy/SaaS | 🔴 Low | Tribe scoping only; not isolated for external tenants |
 | FinOps | 🔴 Low | Single small footprint; no cost controls/metrics |
@@ -42,7 +42,7 @@ needs the P1 track before scale or external/SaaS use.
 
 ### Strategic investments (quarter)
 - [ ] Environment promotion (dev → staging → prod) + CD with migrations gating
-- [ ] Backups → full DR runbook (RPO/RTO targets) + restore drills
+- [x] Backups → **DR runbook with stated RPO/RTO and a restore procedure that was actually executed** ([19](19-plan-de-reprise.md)); off-host copies and alerting on failed backups still open
 - [ ] Design tokens + component-library extraction; split large components
 - [ ] Data retention/archival policy (audit_log, report_snapshots) + GDPR/DPA posture
 

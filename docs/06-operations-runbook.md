@@ -115,6 +115,7 @@ audited (`ops.*`).
 | Symptom | First checks | Action |
 |---------|--------------|--------|
 | App unhealthy / 502 | `docker compose logs app`; DB healthy? | restart `app`; verify `alembic upgrade` succeeded |
+| Database lost or corrupted | the last valid backup, then [19](19-plan-de-reprise.md) | take a dump of the broken state FIRST, verify the backup in a side database, then restore |
 | Everything is slow | `teamfollowup_db_pool_overflow` > 0? then the pool is exhausted; else the p95 per route ([17](17-observabilite.md) §4) | widen the pool, or fix the query holding connections |
 | Weekly reports not sent | `teamfollowup_scheduler_last_success_timestamp_seconds`; logs for `weekly scheduler error` | check the Postgres advisory lock is not held by a dead replica |
 | Migrations failed on boot | entrypoint logs (alembic) | fix migration, `docker compose up -d --build app`; if partial, `alembic current` + manual repair |

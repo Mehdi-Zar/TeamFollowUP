@@ -29,6 +29,15 @@
   and to GKE (`PodMonitoring`).
 
 ### Added
+- **[19 - Plan de reprise](docs/19-plan-de-reprise.md): the restore procedure, as executed.**
+  The roadmap has wanted a DR runbook since the first audit. This one states the RPO and RTO
+  the shipped configuration actually gives (24 h and about 15 minutes) and what to change to
+  move them, and its procedure was **run** rather than imagined: a witness record created,
+  backed up, deleted from the live database, and found again in a database restored from that
+  backup. It also gives the drill that verifies a backup **without touching production** - the
+  restore goes into a throwaway database beside the real one - and states the residual
+  weaknesses plainly: the backups live on the same host as the database, they are not
+  encrypted, and nothing alerts when several fail in a row.
 - **`app/import_org.py` went from 0% to 83% covered** (`tests/test_import_org.py`, 30 tests).
   It was the largest hole the new coverage measurement named, and it is the module that parses
   a file an administrator uploads: columns read **by position**, booleans written as words in
@@ -66,6 +75,19 @@
   Dependabot had not opened a pull request for this one.
 
 ### Fixed
+- **The backup sidecar was leaving zero-byte files that counted as backups.** It wrote
+  `pg_dump` straight into the final filename, so a failed dump left an empty
+  `tribe_AAAAMMJJ_HHMMSS.sql` behind: indistinguishable from a real backup, counted by the
+  rotation, and therefore **pushing genuine backups out of the retention window**. Five of them
+  were sitting in a running instance. The dump now goes to a temporary file and is published
+  only once `pg_dump` has exited 0, the file is non-empty, and it ends with the marker
+  PostgreSQL writes at the end of a complete dump; rotation runs only after a success, and only
+  over files that really are backups. The success line reports the size, so a glance at the log
+  says whether the backup is real.
+- **A failed dump skipped the whole day.** The loop slept the full interval after a failure, so
+  the usual cause - the database still coming up after a restart, which fixes itself in
+  seconds - cost 24 hours of backups, silently. It now retries after `BACKUP_RETRY_SECONDS`
+  (5 minutes) and prints the `pg_dump` error.
 - **A blank "Annee" cell silently discarded the whole tribe.** The Excel reader dropped any row
   whose **first** cell was empty, which is right for the sheets where the first column is the
   name, and wrong for the `Tribu` sheet where the first column is the year. An administrator

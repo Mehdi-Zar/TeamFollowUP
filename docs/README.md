@@ -28,6 +28,7 @@ understand, run, operate and extend the product **without further explanation**.
 | 16 | [Banc Kubernetes de bout en bout (OIDC + SAML)](16-banc-kubernetes-sso.md) | Ops / Engineers |
 | 17 | [Observabilité (métriques, tableaux de bord, alertes)](17-observabilite.md) | Ops / SRE |
 | 18 | [Tests de bout en bout (Playwright)](18-tests-e2e.md) | QA / Engineers |
+| 19 | [Plan de reprise (sauvegardes, restauration, exercices)](19-plan-de-reprise.md) | Ops / SRE |
 | - | [Architecture Decision Records (ADR)](adr/README.md) | Engineers / Architects |
 
 ## At a glance

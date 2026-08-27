@@ -91,17 +91,39 @@ services:
       PGPASSWORD: ${POSTGRES_PASSWORD:-tribe}
       BACKUP_KEEP: ${BACKUP_KEEP:-14}
       BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-86400}
+      # Retry delay after a failed dump. Short on purpose: the usual cause is the
+      # database still coming up, which fixes itself in seconds.
+      BACKUP_RETRY_SECONDS: ${BACKUP_RETRY_SECONDS:-300}
     volumes:
       - ./backups:/backups
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
+        # Dump to a temporary file and only publish it once pg_dump has SUCCEEDED
+        # and produced something. Writing straight to the final name left a
+        # zero-byte file behind on every failure - indistinguishable from a real
+        # backup, counted by the rotation below, and pushing genuine backups out
+        # of the retention window. Several of those were found in a running
+        # instance before this was fixed.
         echo "[backup] sidecar started";
         while true; do
           ts=$$(date +%Y%m%d_%H%M%S);
-          if pg_dump > /backups/tribe_$$ts.sql; then echo "[backup] tribe_$$ts.sql ok"; else echo "[backup] FAILED"; fi;
-          ls -1t /backups/*.sql 2>/dev/null | tail -n +$$((BACKUP_KEEP+1)) | xargs -r rm -f;
-          sleep $$BACKUP_INTERVAL_SECONDS;
+          tmp=/backups/.tribe_$$ts.sql.part;
+          if pg_dump > "$$tmp" 2>/tmp/pg_dump.err && [ -s "$$tmp" ] && grep -q "PostgreSQL database dump complete" "$$tmp"; then
+            mv "$$tmp" /backups/tribe_$$ts.sql;
+            echo "[backup] tribe_$$ts.sql ok ($$(wc -c < /backups/tribe_$$ts.sql) bytes)";
+            # Rotate only now, and only over files that really are backups.
+            ls -1t /backups/tribe_*.sql 2>/dev/null | tail -n +$$((BACKUP_KEEP+1)) | xargs -r rm -f;
+            sleep $$BACKUP_INTERVAL_SECONDS;
+          else
+            rm -f "$$tmp";
+            echo "[backup] FAILED, retrying in $$BACKUP_RETRY_SECONDS s:";
+            cat /tmp/pg_dump.err 2>/dev/null;
+            # A short retry, not a full interval. The usual cause is the database
+            # still coming up after a restart, which fixes itself in seconds; the
+            # old behaviour was to skip the whole day over it, silently.
+            sleep $$BACKUP_RETRY_SECONDS;
+          fi;
         done
 
 volumes:
