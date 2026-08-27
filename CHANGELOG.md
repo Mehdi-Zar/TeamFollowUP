@@ -40,7 +40,9 @@
   asserts the public config serves a name at all.
 - **`LOG_FORMAT` and `LOG_LEVEL` were undocumented**, in neither `.env.example` nor the
   deployment guide's variable table, although `LOG_FORMAT=json` is what makes the logs
-  parseable by GCP Cloud Logging and the manifests already set it. Both are documented now.
+  parseable by GCP Cloud Logging and the manifests already set it. Both are now in the two
+  `.env.example` files and in the guide's variable table, and `LOG_LEVEL` is passed through
+  `docker-compose.yml` like every other knob (only `LOG_FORMAT` was).
 - **Saving the auth page froze `PUBLIC_BASE_URL` into the database.** Every save
   of Admin → Authentication persisted the whole config, environment-derived values
   included, so the deployment's `PUBLIC_BASE_URL` became a stored override. After

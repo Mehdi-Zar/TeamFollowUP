@@ -62,6 +62,7 @@ services:
       TLS_ENABLED: ${TLS_ENABLED:-false}
       HTTP_PORT: ${HTTP_PORT:-8000}
       LOG_FORMAT: ${LOG_FORMAT:-json}   # GCP Cloud Logging structured logs
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}    # boot level; changeable live in Admin > Ops
     ports:
       # Plain HTTP: the app no longer terminates TLS (that's the infra's job).
       - "${APP_HTTP_PORT:-8000}:8000"
