@@ -125,6 +125,8 @@ All config is via environment variables (see `.env.example`). The essentials:
 | `SEED_DEMO` | | `false` in production (no demo data). |
 | `BREAKGLASS_EMAIL` / `BREAKGLASS_PASSWORD` | **yes** | Emergency admin. If password is empty, a random one is printed in the logs on first boot. |
 | `STALENESS_THRESHOLD_DAYS` | | Default `7`. Also editable in the admin UI. |
+| `LOG_FORMAT` | | `json` emits one JSON object per line, the shape GCP Cloud Logging parses natively. Anything else keeps human-readable lines. |
+| `LOG_LEVEL` | | Boot level (`DEBUG`..`CRITICAL`, default `INFO`). Changeable live, and persistable, in Admin → Ops. |
 | `OIDC_*` | optional | SSO via OpenID Connect (Authorization Code + PKCE). |
 | `SAML_*` | optional | SSO via SAML 2.0 (xmlsec is bundled in the image). |
 

@@ -34,6 +34,13 @@
   of a decision. Gatekeepers see everything; a squad leader sees their own decisions.
 
 ### Fixed
+- **`e2e_test.py` asserted the shipped application name.** The check read
+  `app_name == "Tribe Cockpit"`, so it broke on the rename and, more importantly, on any
+  instance whose administrator had renamed the app, which the setting exists for. It now
+  asserts the public config serves a name at all.
+- **`LOG_FORMAT` and `LOG_LEVEL` were undocumented**, in neither `.env.example` nor the
+  deployment guide's variable table, although `LOG_FORMAT=json` is what makes the logs
+  parseable by GCP Cloud Logging and the manifests already set it. Both are documented now.
 - **Saving the auth page froze `PUBLIC_BASE_URL` into the database.** Every save
   of Admin → Authentication persisted the whole config, environment-derived values
   included, so the deployment's `PUBLIC_BASE_URL` became a stored override. After
