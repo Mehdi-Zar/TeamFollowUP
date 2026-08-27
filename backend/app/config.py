@@ -60,6 +60,16 @@ class Settings(BaseSettings):
     log_format: str = "text"  # text | json
     log_level: str = "INFO"
 
+    # --- Metrics (Prometheus) ---
+    # /metrics exposes latency, error rate and saturation. It is enabled by
+    # default because an app nobody can graph is an app nobody can operate, but
+    # it describes the traffic (which routes exist, how often, how many 5xx), so
+    # it must not be reachable from outside. Two ways to keep it private, and you
+    # want at least one: do not route /metrics on the public gateway (see
+    # docs/17), or set metrics_token and give the scraper a bearer token.
+    metrics_enabled: bool = True
+    metrics_token: str = ""
+
     # --- Hardening / retention ---
     login_max_attempts: int = 10        # per IP per window (0 = disabled)
     login_window_seconds: int = 300     # 5 min

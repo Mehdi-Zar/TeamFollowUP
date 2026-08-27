@@ -1,5 +1,46 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- **Observability: the app finally measures itself.** The only operational signals were the
+  logs and the audit trail, which say what happened but never whether it is happening more
+  than usual. New `/metrics` endpoint in the Prometheus format (`app/metrics.py`), fed by a
+  pure-ASGI middleware placed outside everything else, so the latency it records is the one
+  the client experienced. Exposed: traffic, error rate and latency **per route template**,
+  in-flight requests, connection-pool saturation, weekly-scheduler health, login outcomes
+  (success, failure, throttled) and the deployed version.
+  The route label carries the template (`/api/squads/{squad_id}`) and never the real path;
+  two tests lock that property down, because a mislabelled counter is the easiest way to
+  take the monitoring down, weeks later and with no visible link to the offending commit.
+  A scrape queries no database. The endpoint can be protected with `METRICS_TOKEN` (bearer)
+  and switched off with `METRICS_ENABLED=false`; the app warns at boot when it is left open
+  while `PUBLIC_BASE_URL` is set, that is, when this is clearly not somebody's laptop.
+  New dependency: `prometheus-client`.
+- **A ready-to-run observability stack** in [`ops/`](ops): the scrape config, **seven alert
+  rules** each commented one by one (down, error rate, latency excluding exports, exports too
+  slow, pool exhausted, scheduler wedged, login-failure spike), a pre-declared Grafana
+  datasource, and a `docker-compose.observability.yml` kept separate from the product's own.
+  One command and you have graphs.
+- **[17 - Observabilité](docs/17-observabilite.md)**: what each metric measures, the
+  cardinality rule and why it is not negotiable, the six PromQL queries worth knowing taken
+  apart piece by piece, how to build the dashboard, what each alert means and what to do when
+  it fires, how to protect `/metrics`, and the transposition to Kubernetes (`ServiceMonitor`)
+  and to GKE (`PodMonitoring`).
+
+### Changed
+- **Doc 16 now teaches the bench instead of listing it.** It assumed minikube, kubectl,
+  OpenSSL and Docker were already installed, the scripts already understood, and the purpose
+  of each command guessable. Rewritten so nothing is magic: why the bench exists at all (in
+  production the app never speaks TLS, so testing SSO on `localhost:8000` proves nothing),
+  installation of all five tools per operating system with the command that proves it worked,
+  an inventory of the folder before any command is run, `make-pki.sh` explained flag by flag
+  so it can be replayed by hand, what `run-tests.py` actually does in seven steps (it was not
+  obvious at all that the driver configures the SSO itself through the admin API and resets it
+  afterwards), the non-obvious parts of the manifests with the reason each is there, and a
+  diagnosis section. The negative control is now three clicks in the admin screen instead of
+  an opaque script.
+
 ## 2.0 - SSO driven by one public URL, single-port container (2026-08-27)
 
 ### Added

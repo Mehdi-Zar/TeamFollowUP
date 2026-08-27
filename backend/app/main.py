@@ -9,8 +9,8 @@ built single-page app with client-side-routing fallback. This is the module
 import logging
 import os
 
-from fastapi import Depends, FastAPI, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi import Depends, FastAPI, Header, Request
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -58,6 +58,14 @@ app = FastAPI(
 app.add_middleware(SessionMiddleware, secret_key=settings.secret_key,
                    same_site=settings.cookie_samesite, https_only=settings.cookie_secure)
 
+# Metrics wrap everything, including the session middleware, so the latency they
+# record is the latency the client experienced. Added last = outermost, since
+# Starlette applies middleware in reverse order of registration.
+if settings.metrics_enabled:
+    from .metrics import MetricsMiddleware, init_metrics
+    init_metrics()
+    app.add_middleware(MetricsMiddleware)
+
 for r in (auth, tribes, squads, dashboard, org, orgexport, objectives, roadmap, roadmapview, kpis,
           members, snapshots, feed, notifications, admin, audit, reports,
           actions, initiatives, otds, access, leaves, committees, steerco):
@@ -101,6 +109,11 @@ async def _warn_on_insecure_defaults():
         log.warning("SECURITY: default SECRET_KEY in use - set a strong SECRET_KEY in production.")
     if settings.postgres_password == "tribe":
         log.warning("SECURITY: default POSTGRES_PASSWORD in use - override it in production.")
+    # A configured public base URL means this is not somebody's laptop. An open
+    # /metrics there is reachable by whoever can reach the app.
+    if settings.metrics_enabled and not settings.metrics_token and settings.public_base_url:
+        log.warning("SECURITY: /metrics is enabled without METRICS_TOKEN while PUBLIC_BASE_URL is set - "
+                    "keep /metrics off the public route, or set METRICS_TOKEN (docs/17).")
 
 
 @app.on_event("startup")
@@ -123,6 +136,20 @@ async def _start_weekly_progress_scheduler():
     from .report import send_due_weekly_reports, send_personal_subscriptions
 
     _LOCK_KEY = 911001  # advisory-lock id: only one replica runs the tick
+
+    def _tick_metric(outcome: str) -> None:
+        """Count a scheduler tick. Never let telemetry break the scheduler."""
+        try:
+            if not settings.metrics_enabled:
+                return
+            import time as _time
+
+            from .metrics import scheduler_last_success_timestamp, scheduler_runs_total
+            scheduler_runs_total.labels(outcome=outcome).inc()
+            if outcome == "ok":
+                scheduler_last_success_timestamp.set(_time.time())
+        except Exception:
+            pass
 
     async def loop():
         # Small initial delay so startup (migrations/seed) settles first.
@@ -156,8 +183,13 @@ async def _start_weekly_progress_scheduler():
                             if subs:
                                 logging.getLogger("trt.report").info("Personal report subscriptions emailed: %s", subs)
                             purge_old_records(db)
+                            _tick_metric("ok")
                         finally:
                             db.close()
+                    else:
+                        # Another replica is doing the work. Counted separately so a
+                        # silent scheduler can be told apart from a losing replica.
+                        _tick_metric("skipped_not_leader")
                 finally:
                     if lock_conn is not None:
                         try:
@@ -169,6 +201,7 @@ async def _start_weekly_progress_scheduler():
                             lock_conn.close()
             except Exception as exc:  # never crash the loop
                 logging.getLogger("trt.progress").warning("weekly scheduler error: %s", exc)
+                _tick_metric("error")
             # ALWAYS wait a full hour before the next attempt - even when another
             # replica held the lock (no tight busy-loop on the non-leader replicas).
             await asyncio.sleep(3600)
@@ -180,6 +213,26 @@ async def _start_weekly_progress_scheduler():
 def health():
     """Liveness probe: cheap, unauthenticated, no DB access."""
     return {"status": "ok", "app": settings.app_name}
+
+
+@app.get("/metrics", include_in_schema=False)
+def metrics(authorization: str | None = Header(default=None)):
+    """Prometheus exposition endpoint. See app/metrics.py and docs/17.
+
+    Kept out of the OpenAPI schema: it is an operational endpoint, not part of
+    the product's API contract, and listing it in the public schema would
+    advertise it to every reader of /docs.
+    """
+    from .metrics import metrics_authorized, render
+    if not settings.metrics_enabled:
+        return PlainTextResponse("metrics disabled", status_code=404)
+    if not metrics_authorized(authorization):
+        # 401 + the challenge header, so a misconfigured scraper reports
+        # "unauthorized" rather than a bare parse failure on an HTML error page.
+        return PlainTextResponse("unauthorized", status_code=401,
+                                 headers={"WWW-Authenticate": "Bearer"})
+    payload, content_type = render()
+    return Response(content=payload, media_type=content_type)
 
 
 @app.get("/api/config", tags=["meta"])

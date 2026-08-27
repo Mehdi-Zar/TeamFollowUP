@@ -9,7 +9,7 @@ Legend: ✅ done · ◑ partial · ⬜ open.
 | ID | Area | Item | Sev | Status / action |
 |----|------|------|-----|------------------|
 | TD-OPS-1 | Ops | No automated DB backup | P0 | ✅ `pg_dump` backup sidecar + rotation (compose `backup` profile) |
-| TD-OPS-2 | Ops | No monitoring/metrics/alerting | P1 | ⬜ Prometheus/OTel + uptime + error alerting |
+| TD-OPS-2 | Ops | No monitoring/metrics/alerting | P1 | ✅ `/metrics` (Prometheus) + 7 alert rules + local Grafana stack ([17](17-observabilite.md)); external uptime probe still open |
 | TD-OPS-3 | Ops | Single-replica scheduler in-process | P1 | ✅ Postgres advisory lock → multi-replica safe (`main.py`) |
 | TD-SEC-1 | Security | Default secrets / cookie not https_only | P0 | ◑ startup warning + **env-driven** `COOKIE_SECURE`/`SameSite` (set in prod) |
 | TD-SEC-2 | Security | No login rate-limiting/lockout | P1 | ✅ per-IP throttle on `/api/auth/login` |
@@ -37,7 +37,7 @@ Legend: ✅ done · ◑ partial · ⬜ open.
 | R-5 | Unknown CVE in dependency | Med | High | P1 | Security | TD-SEC-3 |
 | R-6 | Undetected regression (no FE/E2E tests) | Med | Med | P1 | QA | TD-TEST-1 |
 | R-7 | Slow dashboard/report at large scale | Low | Med | P2 | Eng | TD-PERF-1 |
-| R-8 | Operational blind spots (no monitoring) | Med | Med | P1 | SRE | TD-OPS-2 |
+| R-8 | Operational blind spots (no monitoring) | Low | Med | P2 | SRE | TD-OPS-2 (metrics + alerts shipped) |
 
 ## Already remediated (recent loops) - for context
 Capability gating coherence (feed/org write paths), silent-error blank screens, a11y (modal/keyboard/

@@ -11,7 +11,7 @@
 | Security | 🟢 High | RBAC + **env-driven cookie hardening + login throttle + default-secret guard** |
 | Testing | 🟡 Medium | Strong backend (289) + **frontend Vitest (11)** + **K8s/SSO bench (18 checks)**; Playwright E2E still to add |
 | DevOps/CI-CD | 🟢 High | Reproducible build + **CI (tests/typecheck/build/i18n/audit)** + Dependabot; no CD/envs yet |
-| Observability | 🔴 Low | Logs + audit only; no metrics/alerting |
+| Observability | 🟢 High | Structured logs + audit + **Prometheus metrics, 7 alert rules, ready-to-run Grafana stack**; external uptime probe still to add |
 | Data/BCP | 🟡 Medium | **Backup sidecar (pg_dump + rotation)**; DR drills/PITR still to formalize |
 | Compliance/Governance | 🟡 Medium | Audit log + access control; no formal retention/DPA |
 | Multi-tenancy/SaaS | 🔴 Low | Tribe scoping only; not isolated for external tenants |
@@ -32,7 +32,7 @@ needs the P1 track before scale or external/SaaS use.
 - [x] Commit `openapi.json` snapshot **+ CI staleness check** (`backend/scripts/dump_openapi.py --check`)
 
 ### High impact (weeks)
-- [ ] Observability: structured logs + Prometheus/OTel metrics + alerting + uptime probe
+- [x] Observability: structured logs (`LOG_FORMAT=json`) + **Prometheus metrics + alert rules + Grafana stack** (`ops/`, [17](17-observabilite.md)); external uptime probe still to add
 - [x] Login rate-limiting (per-IP throttle, env-configurable) - `auth.py`
 - [x] Frontend tests (Vitest, 11 tests) wired into CI; **E2E (Playwright)** still to add
 - [x] Externalize the scheduler via **Postgres advisory lock** (multi-replica safe) - `main.py`

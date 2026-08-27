@@ -18,3 +18,4 @@ backend/app/static
 .sim-gke
 .k8s-test
 bench
+ops

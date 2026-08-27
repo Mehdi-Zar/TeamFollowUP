@@ -10,6 +10,7 @@
 | Migrations | Alembic 1.14 |
 | Auth | Starlette SessionMiddleware (itsdangerous), Argon2 (argon2-cffi), Authlib (OIDC), python3-saml (SAML), PyJWT |
 | Reporting | python-pptx (PPTX), hand-rendered HTML |
+| Observability | prometheus-client (`/metrics`), structured JSON logs, in-app log ring buffer |
 | Packaging | Multi-stage Docker (node build → python runtime serving the SPA) |
 
 ## C4 - System context
@@ -54,6 +55,12 @@ flowchart LR
   callback URL is derived from it - see `docs/05` and `docs/12` §2.1.
 - The API serves the SPA: `/assets` via `StaticFiles`, every other non-`/api` path falls back to
   `index.html` (client-side routing). See [ADR-0001](adr/0001-monolith-serves-spa.md).
+- **Observability rides the same port.** A pure-ASGI middleware (`app/metrics.py`) times every
+  request and `/metrics` exposes the counters in the Prometheus format. It sits outermost, so
+  the latency it records is the one the client experienced, and it labels by **route template**
+  (never the raw path) to keep the number of time series bounded. Because it shares the app's
+  single port, `/metrics` must be kept off the public route or behind `METRICS_TOKEN` -
+  see [17](17-observabilite.md).
 
 ## Backend module map
 

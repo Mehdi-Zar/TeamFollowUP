@@ -26,6 +26,7 @@ understand, run, operate and extend the product **without further explanation**.
 | 14 | [Import de l'organisation (Excel)](14-import-organisation.md) | Ops / Admins |
 | 15 | [Steerco (saisie mensuelle & one-pager)](15-steerco.md) | PM / Admins / Engineers |
 | 16 | [Banc Kubernetes de bout en bout (OIDC + SAML)](16-banc-kubernetes-sso.md) | Ops / Engineers |
+| 17 | [Observabilité (métriques, tableaux de bord, alertes)](17-observabilite.md) | Ops / SRE |
 | - | [Architecture Decision Records (ADR)](adr/README.md) | Engineers / Architects |
 
 ## At a glance

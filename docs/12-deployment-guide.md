@@ -127,6 +127,8 @@ All config is via environment variables (see `.env.example`). The essentials:
 | `STALENESS_THRESHOLD_DAYS` | | Default `7`. Also editable in the admin UI. |
 | `LOG_FORMAT` | | `json` emits one JSON object per line, the shape GCP Cloud Logging parses natively. Anything else keeps human-readable lines. |
 | `LOG_LEVEL` | | Boot level (`DEBUG`..`CRITICAL`, default `INFO`). Changeable live, and persistable, in Admin → Ops. |
+| `METRICS_ENABLED` | | `true` (default) exposes Prometheus metrics on `/metrics`. `false` disables the middleware and answers 404. See [17](17-observabilite.md). |
+| `METRICS_TOKEN` | **prod** | Empty = `/metrics` is open to whoever can reach the app. Either set a token (the scraper presents it as a bearer) **or** keep `/metrics` off the public route. The app warns at boot when neither is done. |
 | `OIDC_*` | optional | SSO via OpenID Connect (Authorization Code + PKCE). |
 | `SAML_*` | optional | SSO via SAML 2.0 (xmlsec is bundled in the image). |
 

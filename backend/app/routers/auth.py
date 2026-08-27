@@ -54,6 +54,20 @@ def _set_session(response: Response, user_id: int, impersonator_id: int | None =
 _login_failures: dict[str, deque] = defaultdict(deque)
 
 
+def _count_login(outcome: str) -> None:
+    """Record a login outcome for Prometheus, without ever breaking the login.
+
+    Metrics are optional (METRICS_ENABLED=false) and must never be the reason an
+    authentication request fails, hence the guard and the bare except.
+    """
+    try:
+        if settings.metrics_enabled:
+            from ..metrics import logins_total
+            logins_total.labels(outcome=outcome).inc()
+    except Exception:
+        pass
+
+
 def _client_ip(request: Request) -> str:
     """Best-effort client IP for throttling.
 
@@ -79,6 +93,7 @@ def _check_login_rate(ip: str) -> None:
     while q and now - q[0] > settings.login_window_seconds:
         q.popleft()
     if len(q) >= settings.login_max_attempts:
+        _count_login("throttled")
         raise HTTPException(status_code=429, detail="Trop de tentatives de connexion. Réessayez plus tard.")
 
 
@@ -107,10 +122,12 @@ def login(payload: LoginIn, request: Request, response: Response, db: Session = 
     if user is None or not user.password_hash or not verify_password(payload.password, user.password_hash):
         # Uniform failure path — do not reveal which of the three conditions failed.
         _login_failures[ip].append(time.time())
+        _count_login("failure")
         raise HTTPException(status_code=401, detail="Identifiants invalides")
     if user.status == "disabled":
         raise HTTPException(status_code=403, detail="Votre accès à cette application a été révoqué.")
     _login_failures.pop(ip, None)  # reset throttle on success
+    _count_login("success")
     user.last_login_at = utcnow()
     record_audit(db, user.id, "login.breakglass" if user.is_break_glass else "login.local",
                  entity="user", entity_id=user.id, detail={"email": user.email})

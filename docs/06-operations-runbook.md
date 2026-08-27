@@ -92,19 +92,31 @@ audited (`ops.*`).
 > The ring buffer is **in memory and per process**: it is emptied by a restart and is not a
 > substitute for log shipping. Use it to diagnose live, not to retain.
 
-## Monitoring & logging (current state + gaps)
+## Monitoring & logging
 
-- **Logs**: stdout (Uvicorn + `logging`), captured by Docker. Structured per-line. The last 2000
-  records are also readable/downloadable in-app (Admin → Ops, above).
-- **Audit**: `audit_log` table (admin-visible at `/api/admin → Audit`).
-- **Gaps**: no metrics (Prometheus), no centralized log shipping, no alerting, no uptime probe beyond
-  the container healthcheck. Tracked in [10](10-tech-debt-and-risk-register.md) / roadmap.
+- **Metrics**: Prometheus exposition on `/metrics` - traffic, error rate, latency histogram,
+  in-flight requests, DB pool saturation, scheduler health, login outcomes. Ready-to-run
+  scrape config, seven alert rules and a local Prometheus + Grafana stack live in
+  [`ops/`](../ops). Full walkthrough, PromQL included: **[17](17-observabilite.md)**.
+  Protect the endpoint in production (`METRICS_TOKEN`, or keep `/metrics` off the public
+  route) - the app warns at boot if neither is done.
+- **Logs**: stdout (Uvicorn + `logging`), captured by Docker. `LOG_FORMAT=json` emits the
+  structured entries GCP Cloud Logging parses natively. The last 2000 records are also
+  readable/downloadable in-app (Admin → Ops, above).
+- **Audit**: `audit_log` table (admin-visible at `/api/admin → Audit`), shippable to
+  syslog / GCS / BigQuery from Admin → Logs.
+- **Remaining gap**: no probe from *outside* the platform. Every metric above is produced by
+  the app itself, so a dead app produces none - which is what `TeamFollowUPDown` alerts on,
+  but an external uptime check (Cloud Monitoring, Uptime Kuma) still adds the DNS and
+  certificate path. Tracked in [10](10-tech-debt-and-risk-register.md).
 
 ## Incident playbooks
 
 | Symptom | First checks | Action |
 |---------|--------------|--------|
 | App unhealthy / 502 | `docker compose logs app`; DB healthy? | restart `app`; verify `alembic upgrade` succeeded |
+| Everything is slow | `teamfollowup_db_pool_overflow` > 0? then the pool is exhausted; else the p95 per route ([17](17-observabilite.md) §4) | widen the pool, or fix the query holding connections |
+| Weekly reports not sent | `teamfollowup_scheduler_last_success_timestamp_seconds`; logs for `weekly scheduler error` | check the Postgres advisory lock is not held by a dead replica |
 | Migrations failed on boot | entrypoint logs (alembic) | fix migration, `docker compose up -d --build app`; if partial, `alembic current` + manual repair |
 | Login broken (all users) | check `SECRET_KEY` changed? (invalidates sessions) | if rotated intentionally, users re-login; else restore previous secret |
 | Locked out of admin | break-glass admin (`admin@local`) | reset its password via DB or `BREAKGLASS_PASSWORD` + restart |
