@@ -9,7 +9,7 @@
 | Code quality | 🟢 High | Layered, typed, tested (backend), low dead code |
 | Architecture | 🟡 Medium | Clean monolith; single-replica assumptions; no HA |
 | Security | 🟢 High | RBAC + **env-driven cookie hardening + login throttle + default-secret guard** |
-| Testing | 🟢 High | Backend 314 (74% covered, gated) + frontend Vitest 11 + **Playwright 12 against the real stack** + K8s/SSO bench (18 checks) |
+| Testing | 🟢 High | Backend 344 (76% covered, gated) + frontend Vitest 11 + **Playwright 12 against the real stack** + K8s/SSO bench (18 checks) |
 | DevOps/CI-CD | 🟢 High | Reproducible build + **CI (tests/typecheck/build/i18n/audit)** + Dependabot; no CD/envs yet |
 | Observability | 🟢 High | Structured logs + audit + **Prometheus metrics, 7 alert rules, ready-to-run Grafana stack**; external uptime probe still to add |
 | Data/BCP | 🟡 Medium | **Backup sidecar (pg_dump + rotation)**; DR drills/PITR still to formalize |

@@ -24,7 +24,7 @@ show_missing = True
 skip_covered = True
 # Raise this as the suite improves. Never lower it to make a build pass: if a
 # change drops coverage, the change is what needs tests.
-fail_under = 74
+fail_under = 76
 exclude_lines =
     pragma: no cover
     if TYPE_CHECKING:

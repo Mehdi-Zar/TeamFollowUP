@@ -4,12 +4,12 @@
 
 | Layer | Tooling | Coverage |
 |-------|---------|----------|
-| Backend unit/integration | pytest + FastAPI `TestClient` + SQLite in-memory | **Good** - 289 tests / 32 modules |
+| Backend unit/integration | pytest + FastAPI `TestClient` + SQLite in-memory | **Good** - 344 tests / 35 modules |
 | Frontend unit/component | **Vitest + Testing Library + jsdom** | **Present** - 11 tests (labels, perms, i18n parity), wired into CI |
 | End-to-end (browser) | **Playwright** against the real Docker stack ([18](18-tests-e2e.md)) | **12 tests in CI** - login, route guards, RBAC, the write path, the audit screen |
 | End-to-end (API script) | `e2e_test.py` (script at repo root) | Ad-hoc, not in CI - superseded for the journeys Playwright now covers |
 | End-to-end (deployment + SSO) | [Kubernetes + Keycloak bench](16-banc-kubernetes-sso.md), `bench/k8s-sso/run-tests.py` | **Manual**, reproducible - 18 checks against a real IdP (OIDC and SAML) |
-| Coverage | `pytest-cov`, floor in `backend/.coveragerc` | Enforced in CI - **74%** on `app/` (entry points and seed scripts excluded) |
+| Coverage | `pytest-cov`, floor in `backend/.coveragerc` | Enforced in CI - **76%** on `app/` (entry points and seed scripts excluded) |
 | Type safety | `tsc --noEmit` (FE), Pydantic (BE) | Enforced |
 | i18n parity | Vitest (`i18n.parity.test.ts`) | Enforced (FR/EN 1132/1132) |
 
@@ -47,8 +47,9 @@ tests. Entry points and one-shot data loaders (`server.py`, `init_db.py`,
 running the app, and counting them would let real gaps hide behind a comfortable
 percentage.
 
-The largest genuine hole today is **`app/import_org.py`** (188 statements, 0%),
-which parses an administrator-supplied Excel file. It is worth tests.
+`app/import_org.py` was the largest hole (188 statements, 0%) and is now at 83%. Writing
+those tests found a real bug: see the note on the `Tribu` sheet in
+[14](14-import-organisation.md). That is the argument for the whole exercise.
 
 There is no frontend coverage gate. With eleven unit tests the floor would sit at a
 number so low it would protect nothing; the real gap on that side is end-to-end

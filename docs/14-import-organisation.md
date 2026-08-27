@@ -31,6 +31,10 @@ Les 4 onglets, colonnes lues **par position** (l'ordre compte, pas le libelle) ;
 les lignes vides sont ignorees :
 
 - **Tribu** : Annee, Nom de la tribu, Description, Tribe leader (nom + email).
+  Une seule ligne. C'est le **nom de la tribu** qui identifie la ligne, pas
+  l'annee : laisser l'annee vide est permis (l'annee en cours est prise), et cela
+  n'escamote plus la ligne. Le nom, lui, est obligatoire ; sans lui l'import
+  s'arrete avec un message qui le dit.
 - **Squads** : Nom, Type (`product` | `transverse`), Squad leader (nom + email),
   Produits, Materiel, KPIs (oui/non), Budget (oui/non). Une ligne par squad.
 - **Initiatives** : Titre, Squad concernee, Owner, Echeance (AAAA-MM-JJ), Description.

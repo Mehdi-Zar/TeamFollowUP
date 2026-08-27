@@ -110,7 +110,13 @@ def import_org(db: Session, data: dict) -> dict:
     created = {"users": 0, "squads": 0, "initiatives": 0, "otds": 0}
 
     # --- Tribe (matched by name) + its tribe leader ---
-    tribe_def = data["tribe"]
+    # Fail with a sentence somebody can act on. Without this the missing name
+    # reaches the database and comes back as an IntegrityError on tribes.name,
+    # which tells the administrator nothing about the file they just uploaded.
+    tribe_def = data.get("tribe") or {}
+    if not (tribe_def.get("name") or "").strip():
+        raise ValueError("La tribu n'a pas de nom : renseignez la colonne "
+                         "\"Tribu\" de l'onglet Tribu.")
     tribe = db.scalar(select(Tribe).where(Tribe.name == tribe_def["name"]))
     if tribe is None:
         tribe = Tribe(name=tribe_def["name"], description=tribe_def.get("description"), display_order=1)
@@ -225,13 +231,21 @@ def _read_xlsx(path: str) -> dict:
 
     wb = load_workbook(path, data_only=True)
 
-    def rows(sheet: str):
+    def rows(sheet: str, key_col: int = 0):
+        """Data rows of a sheet, minus the header and the empty ones.
+
+        ``key_col`` is the column that identifies a row. It is the first one on
+        every sheet except Tribu, where the first column is the YEAR and the
+        identity is the tribe name. Keying Tribu on column 0 silently dropped the
+        whole tribe row whenever the year cell was left blank, and the import then
+        failed with "no tribe" on a file that plainly had one.
+        """
         if sheet not in wb.sheetnames:
             return []
-        # Skip the header row; drop rows whose first cell is empty.
-        return [r for r in wb[sheet].iter_rows(min_row=2, values_only=True) if r and r[0] not in (None, "")]
+        return [r for r in wb[sheet].iter_rows(min_row=2, values_only=True)
+                if r and len(r) > key_col and r[key_col] not in (None, "")]
 
-    tribe_rows = rows("Tribu")
+    tribe_rows = rows("Tribu", key_col=1)
     r = (list(tribe_rows[0]) + [None] * 5)[:5] if tribe_rows else [None] * 5
     data: dict = {
         "year": r[0],

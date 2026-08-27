@@ -29,6 +29,14 @@
   and to GKE (`PodMonitoring`).
 
 ### Added
+- **`app/import_org.py` went from 0% to 83% covered** (`tests/test_import_org.py`, 30 tests).
+  It was the largest hole the new coverage measurement named, and it is the module that parses
+  a file an administrator uploads: columns read **by position**, booleans written as words in
+  two languages, an import that promises to be safe to re-run against a populated environment.
+  Every one of those is a promise the code made and nothing was checking. The tests now hold it
+  to all of them, including the round trip nobody had tied together: the blank template the app
+  hands out must be readable by the parser that receives it back. They immediately found the
+  `Tribu` bug above.
 - **End-to-end tests, in a browser, against the real deployment** (`e2e/`, twelve tests,
   [18](docs/18-tests-e2e.md)). They drive the Docker image serving the built SPA and its API in
   front of a real PostgreSQL, not `vite dev` with a stubbed backend, because the bugs that
@@ -58,6 +66,14 @@
   Dependabot had not opened a pull request for this one.
 
 ### Fixed
+- **A blank "Annee" cell silently discarded the whole tribe.** The Excel reader dropped any row
+  whose **first** cell was empty, which is right for the sheets where the first column is the
+  name, and wrong for the `Tribu` sheet where the first column is the year. An administrator
+  who left the year blank, a cell the importer is documented to default, got
+  `400 : le fichier ne contient pas de tribu` about a file that plainly contained one. The
+  `Tribu` sheet is now keyed on the tribe name. And a missing name raises a sentence naming the
+  column to fill instead of reaching the database and coming back as an `IntegrityError` on
+  `tribes.name`. Found by writing the tests below, which is the whole argument for writing them.
 - **The SMTP admin panel was French-only.** Six labels (host, port, username, password, sender
   address, sender name) were hard-coded French strings, so an administrator running the app in
   English read them in French. The CI parity check cannot catch this: it compares the FR and EN
