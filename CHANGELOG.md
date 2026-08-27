@@ -39,6 +39,20 @@
   v7. `npm audit` now reports **0 vulnerabilities**, production and development alike.
   Dependabot had not opened a pull request for this one.
 
+### Fixed
+- **The SMTP admin panel was French-only.** Six labels (host, port, username, password, sender
+  address, sender name) were hard-coded French strings, so an administrator running the app in
+  English read them in French. The CI parity check cannot catch this: it compares the FR and EN
+  key sets, and a string that never became a key is in neither. Now translated. A scan of the
+  whole frontend found no other case.
+- **Every form control in Administration has an accessible name.** Screen-reader users heard
+  nothing on most of them: the visible `<label>` was a sibling of its field, never associated
+  with it, and the inline editors in the tables have no visible label at all (the column header
+  plays that role, which a screen reader reading a single cell never sees). All of them now
+  carry the label, taken from the same i18n key so the two can never drift apart. Partial fix,
+  and recorded as such in [10](docs/10-tech-debt-and-risk-register.md): the other pages are
+  untouched, and clicking a label still does not focus its field, which needs `htmlFor`/`id`.
+
 ### Changed
 - **Every pending dependency update applied and verified**, closing the thirteen Dependabot
   pull requests that had piled up. Backend: authlib 1.4 to 1.7.2, google-auth 2.38 to 2.56.3,

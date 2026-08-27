@@ -23,7 +23,7 @@ Legend: ✅ done · ◑ partial · ⬜ open.
 | TD-DATA-3 | Data | No retention/rotation for audit_log | P2 | ✅ opt-in purge (`maintenance.py`, `AUDIT_RETENTION_DAYS`) |
 | TD-CODE-1 | Code | `AdminPage.tsx` (~1.3k lines), `report.py` large | P2 | ⬜ split into sub-modules |
 | TD-UI-1 | UI | Spacing/typography not tokenized | P2 | ⬜ introduce CSS tokens |
-| TD-A11Y-1 | A11y | Admin form inputs lack `htmlFor`/`id` | P2 | ◑ user-creation form associated (+ password now masked); finish remaining forms |
+| TD-A11Y-1 | A11y | Form controls without an accessible name | P2 | ◑ **every control in `AdminPage.tsx` now has one** (visible `<label>` mirrored into `aria-label`, `aria-label` on inline table editors). Remaining: the other pages, and `htmlFor`/`id` pairing so clicking a label focuses its field |
 | TD-API-1 | API | OpenAPI not snapshotted/diffed | P2 | ✅ `docs/openapi.json` committed + CI check (`dump_openapi.py --check`) |
 
 ## Risk register

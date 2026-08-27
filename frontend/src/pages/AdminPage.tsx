@@ -158,7 +158,7 @@ function SmtpAdmin() {
   const fld = (label: string, key: string, type = "text") => (
     <div style={{ flex: 1, minWidth: 200 }}>
       <label>{label}</label>
-      <input type={type} value={cfg[key] ?? ""} onChange={(e) => set(key, e.target.value)} />
+      <input aria-label={label} type={type} value={cfg[key] ?? ""} onChange={(e) => set(key, e.target.value)} />
     </div>
   );
 
@@ -191,16 +191,16 @@ function SmtpAdmin() {
           <span className="strong">{t("smtp.enabled")}</span>
         </label>
         <div className="row">
-          {fld("Hôte SMTP", "host")}
-          <div style={{ width: 110 }}><label>Port</label><input type="number" value={cfg.port ?? 587} onChange={(e) => set("port", Number(e.target.value))} /></div>
+          {fld(t("smtp.host"), "host")}
+          <div style={{ width: 110 }}><label>{t("smtp.port")}</label><input aria-label={t("smtp.port")} type="number" value={cfg.port ?? 587} onChange={(e) => set("port", Number(e.target.value))} /></div>
         </div>
         <div className="row">
-          {fld("Utilisateur", "username")}
-          {fld("Mot de passe", "password", "password")}
+          {fld(t("smtp.username"), "username")}
+          {fld(t("smtp.password"), "password", "password")}
         </div>
         <div className="row">
-          {fld("Adresse d'expéditeur", "from_addr")}
-          {fld("Nom d'expéditeur", "from_name")}
+          {fld(t("smtp.from_addr"), "from_addr")}
+          {fld(t("smtp.from_name"), "from_name")}
         </div>
         <div className="inline" style={{ gap: 18 }}>
           <label className="switch"><input type="checkbox" checked={!!cfg.use_tls} onChange={(e) => set("use_tls", e.target.checked)} /><span className="track"><span className="knob" /></span><span className="small">STARTTLS</span></label>
@@ -397,9 +397,9 @@ function TlsAdmin() {
         <div className="small muted">{t("tls.self_signed_hint")}</div>
         <div className="row">
           <div style={{ flex: 1, minWidth: 180 }}><label>{t("tls.cn")}</label>
-            <input value={cn} onChange={(e) => setCn(e.target.value)} /></div>
+            <input aria-label={t("tls.cn")} value={cn} onChange={(e) => setCn(e.target.value)} /></div>
           <div style={{ flex: 2, minWidth: 220 }}><label>{t("tls.sans")}</label>
-            <input value={sans} onChange={(e) => setSans(e.target.value)} placeholder="host.example.com, 10.0.0.5" /></div>
+            <input aria-label={t("tls.sans")} value={sans} onChange={(e) => setSans(e.target.value)} placeholder="host.example.com, 10.0.0.5" /></div>
         </div>
         <div><button className="btn-secondary" onClick={regen} disabled={inactive}>{t("tls.generate")}</button></div>
       </div>
@@ -411,18 +411,18 @@ function TlsAdmin() {
         <div className="row">
           <div style={{ flex: 1, minWidth: 220 }}>
             <label>{t("tls.cert_file")}</label>
-            <input type="file" accept=".pem,.crt,.cer" onChange={(e) => setCertFile(e.target.files?.[0] ?? null)} />
+            <input aria-label={t("tls.cert_file")} type="file" accept=".pem,.crt,.cer" onChange={(e) => setCertFile(e.target.files?.[0] ?? null)} />
           </div>
           <div style={{ flex: 1, minWidth: 220 }}>
             <label>{t("tls.key_file")}</label>
-            <input type="file" accept=".pem,.key" onChange={(e) => setKeyFile(e.target.files?.[0] ?? null)} />
+            <input type="file" accept=".pem,.key" aria-label={t("a11y.choose_file")} onChange={(e) => setKeyFile(e.target.files?.[0] ?? null)} />
           </div>
         </div>
-        {!certFile && <textarea rows={4} placeholder={t("tls.cert_paste")} value={certText} onChange={(e) => setCertText(e.target.value)} style={{ fontFamily: "monospace", fontSize: 12 }} />}
-        {!keyFile && <textarea rows={4} placeholder={t("tls.key_paste")} value={keyText} onChange={(e) => setKeyText(e.target.value)} style={{ fontFamily: "monospace", fontSize: 12 }} />}
+        {!certFile && <textarea rows={4} aria-label={t("tls.cert_paste")} placeholder={t("tls.cert_paste")} value={certText} onChange={(e) => setCertText(e.target.value)} style={{ fontFamily: "monospace", fontSize: 12 }} />}
+        {!keyFile && <textarea rows={4} aria-label={t("tls.key_paste")} placeholder={t("tls.key_paste")} value={keyText} onChange={(e) => setKeyText(e.target.value)} style={{ fontFamily: "monospace", fontSize: 12 }} />}
         <div className="row">
           <div style={{ width: 260 }}><label>{t("tls.key_passphrase")}</label>
-            <input type="password" value={pemPass} onChange={(e) => setPemPass(e.target.value)} /></div>
+            <input aria-label={t("tls.key_passphrase")} type="password" value={pemPass} onChange={(e) => setPemPass(e.target.value)} /></div>
         </div>
         <div><button onClick={importPem} disabled={inactive}>{t("tls.install")}</button></div>
       </div>
@@ -434,10 +434,10 @@ function TlsAdmin() {
         <div className="row">
           <div style={{ flex: 1, minWidth: 220 }}>
             <label>{t("tls.pfx_file")}</label>
-            <input type="file" accept=".pfx,.p12" onChange={(e) => setPfxFile(e.target.files?.[0] ?? null)} />
+            <input aria-label={t("tls.pfx_file")} type="file" accept=".pfx,.p12" onChange={(e) => setPfxFile(e.target.files?.[0] ?? null)} />
           </div>
           <div style={{ width: 260 }}><label>{t("tls.pfx_password")}</label>
-            <input type="password" value={pfxPass} onChange={(e) => setPfxPass(e.target.value)} /></div>
+            <input aria-label={t("tls.pfx_password")} type="password" value={pfxPass} onChange={(e) => setPfxPass(e.target.value)} /></div>
         </div>
         <div><button onClick={importPfx} disabled={inactive}>{t("tls.install")}</button></div>
       </div>
@@ -455,11 +455,11 @@ function TlsAdmin() {
         <div className="row" style={{ alignItems: "flex-end" }}>
           <div style={{ flex: 1, minWidth: 220 }}>
             <label>{t("tls.ca_file")}</label>
-            <input type="file" accept=".pem,.crt,.cer" onChange={(e) => setCaFile(e.target.files?.[0] ?? null)} />
+            <input aria-label={t("tls.ca_file")} type="file" accept=".pem,.crt,.cer" onChange={(e) => setCaFile(e.target.files?.[0] ?? null)} />
           </div>
           <div style={{ flex: 1, minWidth: 180 }}>
             <label>{t("tls.ca_name")}</label>
-            <input value={caName} onChange={(e) => setCaName(e.target.value)} />
+            <input aria-label={t("tls.ca_name")} value={caName} onChange={(e) => setCaName(e.target.value)} />
           </div>
           <button className="btn-secondary" onClick={addCa} disabled={inactive}>{t("tls.add_ca")}</button>
         </div>
@@ -605,7 +605,7 @@ function LeaveSettingsAdmin({ isAdmin }: { isAdmin: boolean }) {
       {isAdmin && (
         <div style={{ maxWidth: 300 }}>
           <label className="field-label">{t("leaves.tribe_pick")}</label>
-          <select value={tribeId} onChange={(e) => setTribeId(Number(e.target.value))}>
+          <select aria-label={t("leaves.tribe_pick")} value={tribeId} onChange={(e) => setTribeId(Number(e.target.value))}>
             {tribes.map((tr) => <option key={tr.id} value={tr.id}>{tr.name}</option>)}
           </select>
         </div>
@@ -620,7 +620,7 @@ function LeaveSettingsAdmin({ isAdmin }: { isAdmin: boolean }) {
           </label>
           <div style={{ maxWidth: 300 }}>
             <label className="field-label">{t("leaves.overlap_threshold")}</label>
-            <input type="number" min={1} max={99} value={cfg.overlap_threshold}
+            <input aria-label={t("leaves.overlap_threshold")} type="number" min={1} max={99} value={cfg.overlap_threshold}
                    onChange={(e) => setCfg({ ...cfg, overlap_threshold: Number(e.target.value) })} />
           </div>
           <div className="inline">
@@ -675,7 +675,7 @@ function LeaveTypesAdmin() {
           <div key={tp.id} className="inline" style={{ gap: 8, opacity: tp.is_active ? 1 : 0.6 }}>
             <input type="color" value={tp.color} onChange={(e) => upd(tp.id, { color: e.target.value })}
                    style={{ width: 44, height: 38, padding: 2 }} aria-label={t("leaves.type_color")} />
-            <input value={tp.label} onChange={(e) => upd(tp.id, { label: e.target.value })} style={{ flex: 1 }} />
+            <input aria-label={t("a11y.leave_type_label")} value={tp.label} onChange={(e) => upd(tp.id, { label: e.target.value })} style={{ flex: 1 }} />
             <label className="inline small" style={{ gap: 6 }}>
               <input type="checkbox" checked={tp.is_active} onChange={(e) => upd(tp.id, { is_active: e.target.checked })} />
               {t("leaves.type_active")}
@@ -776,7 +776,7 @@ export function ReportingAdmin() {
         {/* Shared recipients */}
         <div>
           <label>{t("changenotify.recipients")}</label>
-          <textarea rows={2} value={recipients} placeholder="dir@exemple.com&#10;copil@exemple.com"
+          <textarea aria-label={t("changenotify.recipients")} rows={2} value={recipients} placeholder="dir@exemple.com&#10;copil@exemple.com"
                     onChange={(e) => setRecipients(e.target.value)} />
           <div className="small muted">{t("reporting.recipients_hint")}</div>
         </div>
@@ -800,9 +800,9 @@ export function ReportingAdmin() {
               </div>
               <div className="row" style={{ gap: 12 }}>
                 <div style={{ width: 120 }}><label>{t("report.hour")}</label>
-                  <input type="number" min={0} max={23} value={rep.hour ?? 8} onChange={(e) => setR("hour", Number(e.target.value))} /></div>
+                  <input aria-label={t("report.hour")} type="number" min={0} max={23} value={rep.hour ?? 8} onChange={(e) => setR("hour", Number(e.target.value))} /></div>
                 <div style={{ width: 150 }}><label>{t("report.since_days")}</label>
-                  <input type="number" min={1} max={120} value={rep.since_days ?? 7} onChange={(e) => setR("since_days", Number(e.target.value))} /></div>
+                  <input aria-label={t("report.since_days")} type="number" min={1} max={120} value={rep.since_days ?? 7} onChange={(e) => setR("since_days", Number(e.target.value))} /></div>
               </div>
               <label className="switch">
                 <input type="checkbox" checked={!!rep.tribe_leader_digest} onChange={(e) => setR("tribe_leader_digest", e.target.checked)} />
@@ -841,7 +841,7 @@ export function ReportingAdmin() {
               </div>
               <div className="row" style={{ gap: 12 }}>
                 <div style={{ width: 180 }}><label>{t("changenotify.interval")}</label>
-                  <input type="number" min={0} max={1440} value={chg.min_interval_minutes ?? 0} onChange={(e) => setC("min_interval_minutes", Number(e.target.value))} /></div>
+                  <input aria-label={t("changenotify.interval")} type="number" min={0} max={1440} value={chg.min_interval_minutes ?? 0} onChange={(e) => setC("min_interval_minutes", Number(e.target.value))} /></div>
                 <label className="inline small" style={{ gap: 6, alignSelf: "flex-end" }}>
                   <input type="checkbox" checked={chg.current_year_only !== false} onChange={(e) => setC("current_year_only", e.target.checked)} />{t("changenotify.current_year_only")}</label>
               </div>
@@ -897,7 +897,7 @@ function LogExportAdmin() {
   const fld = (label: string, key: string, type = "text", placeholder = "") => (
     <div style={{ flex: 1, minWidth: 200 }}>
       <label>{label}</label>
-      <input type={type} value={cfg[key] ?? ""} placeholder={placeholder} onChange={(e) => set(key, e.target.value)} />
+      <input aria-label={label} type={type} value={cfg[key] ?? ""} placeholder={placeholder} onChange={(e) => set(key, e.target.value)} />
     </div>
   );
 
@@ -932,7 +932,7 @@ function LogExportAdmin() {
 
         <div style={{ maxWidth: 280 }}>
           <label>{t("logs.destination")}</label>
-          <select value={dest} onChange={(e) => set("destination", e.target.value)}>
+          <select aria-label={t("logs.destination")} value={dest} onChange={(e) => set("destination", e.target.value)}>
             <option value="syslog">{t("logs.dest.syslog")}</option>
             <option value="gcs">{t("logs.dest.gcs")}</option>
             <option value="bigquery">{t("logs.dest.bigquery")}</option>
@@ -945,13 +945,13 @@ function LogExportAdmin() {
               {fld(t("logs.syslog_host"), "syslog_host", "text", "logs.example.com")}
               <div style={{ width: 110 }}>
                 <label>{t("logs.port")}</label>
-                <input type="number" value={cfg.syslog_port ?? 514} onChange={(e) => set("syslog_port", Number(e.target.value))} />
+                <input aria-label={t("logs.port")} type="number" value={cfg.syslog_port ?? 514} onChange={(e) => set("syslog_port", Number(e.target.value))} />
               </div>
             </div>
             <div className="row">
               <div style={{ width: 160 }}>
                 <label>{t("logs.protocol")}</label>
-                <select value={cfg.syslog_protocol} onChange={(e) => set("syslog_protocol", e.target.value)}>
+                <select aria-label={t("logs.protocol")} value={cfg.syslog_protocol} onChange={(e) => set("syslog_protocol", e.target.value)}>
                   <option value="udp">UDP</option>
                   <option value="tcp">TCP</option>
                 </select>
@@ -985,7 +985,7 @@ function LogExportAdmin() {
 
             <div style={{ maxWidth: 420 }}>
               <label>{t("logs.auth_method")}</label>
-              <select value={cfg.auth_method ?? "adc"} onChange={(e) => set("auth_method", e.target.value)}>
+              <select aria-label={t("logs.auth_method")} value={cfg.auth_method ?? "adc"} onChange={(e) => set("auth_method", e.target.value)}>
                 <option value="adc">{t("logs.auth.adc")}</option>
                 <option value="wif">{t("logs.auth.wif")}</option>
                 <option value="impersonation">{t("logs.auth.impersonation")}</option>
@@ -1001,7 +1001,7 @@ function LogExportAdmin() {
               <div>
                 <div className="small muted" style={{ marginBottom: 4 }}>{t("logs.auth_wif_hint")}</div>
                 <label>{t("logs.wif_config")}</label>
-                <textarea
+                <textarea aria-label={t("logs.wif_config")}
                   rows={4}
                   placeholder={t("logs.wif_config_ph")}
                   value={cfg.wif_config_json ?? ""}
@@ -1029,6 +1029,7 @@ function LogExportAdmin() {
                   </label>
                   <textarea
                     rows={4}
+                    aria-label={t("logs.gcp_creds")}
                     placeholder={t("logs.gcp_creds_ph")}
                     value={cfg.gcp_credentials_json ?? ""}
                     onChange={(e) => set("gcp_credentials_json", e.target.value)}
@@ -1088,9 +1089,9 @@ function TribeSelfAdmin({ perms }: { perms: Permissions }) {
       <div className="banner">{t("admin.my_tribe_intro")}</div>
       <div className="card stack" style={{ gap: 12 }}>
         <div><label>{t("admin.name")}</label>
-          <input defaultValue={tribe.name} onBlur={(e) => e.target.value !== tribe.name && save({ name: e.target.value })} /></div>
+          <input aria-label={t("admin.name")} defaultValue={tribe.name} onBlur={(e) => e.target.value !== tribe.name && save({ name: e.target.value })} /></div>
         <div><label>{t("admin.tribe_desc")}</label>
-          <input defaultValue={tribe.description ?? ""} onBlur={(e) => e.target.value !== (tribe.description ?? "") && save({ description: e.target.value })} /></div>
+          <input aria-label={t("admin.tribe_desc")} defaultValue={tribe.description ?? ""} onBlur={(e) => e.target.value !== (tribe.description ?? "") && save({ description: e.target.value })} /></div>
       </div>
       {saved && <div className="small" style={{ color: "var(--green)" }}>{t("admin.saved")}</div>}
     </div>
@@ -1150,7 +1151,7 @@ function SquadSelfCard({ squadId }: { squadId: number }) {
       <div className="row" style={{ alignItems: "flex-end" }}>
         <div style={{ flex: 1, minWidth: 200 }}>
           <label>{t("admin.squad")}</label>
-          <input defaultValue={squad.name} onBlur={(e) => e.target.value !== squad.name && patchSquad({ name: e.target.value })} />
+          <input aria-label={t("admin.squad")} defaultValue={squad.name} onBlur={(e) => e.target.value !== squad.name && patchSquad({ name: e.target.value })} />
         </div>
       </div>
 
@@ -1165,9 +1166,9 @@ function SquadSelfCard({ squadId }: { squadId: number }) {
         ))}
         <div className="row" style={{ alignItems: "flex-end", marginTop: 8 }}>
           <div style={{ flex: 1, minWidth: 160 }}><label>{t("admin.member_name")}</label>
-            <input value={newMember.full_name} onChange={(e) => setNewMember({ ...newMember, full_name: e.target.value })} /></div>
+            <input aria-label={t("admin.member_name")} value={newMember.full_name} onChange={(e) => setNewMember({ ...newMember, full_name: e.target.value })} /></div>
           <div style={{ flex: 1, minWidth: 140 }}><label>{t("admin.member_role")}</label>
-            <input value={newMember.role_title} onChange={(e) => setNewMember({ ...newMember, role_title: e.target.value })} /></div>
+            <input aria-label={t("admin.member_role")} value={newMember.role_title} onChange={(e) => setNewMember({ ...newMember, role_title: e.target.value })} /></div>
           <button className="btn-sm" onClick={addMember} disabled={!newMember.full_name.trim()}>{t("admin.add")}</button>
         </div>
       </div>
@@ -1216,8 +1217,8 @@ function TribesAdmin() {
           <tbody>
             {tribes.map((tr) => (
               <tr key={tr.id}>
-                <td><input defaultValue={tr.name} onBlur={(e) => e.target.value !== tr.name && update(tr, { name: e.target.value })} /></td>
-                <td><input defaultValue={tr.description ?? ""} onBlur={(e) => e.target.value !== (tr.description ?? "") && update(tr, { description: e.target.value })} /></td>
+                <td><input aria-label={t("admin.tribe")} defaultValue={tr.name} onBlur={(e) => e.target.value !== tr.name && update(tr, { name: e.target.value })} /></td>
+                <td><input aria-label={t("admin.tribe_desc")} defaultValue={tr.description ?? ""} onBlur={(e) => e.target.value !== (tr.description ?? "") && update(tr, { description: e.target.value })} /></td>
                 <td style={{ textAlign: "right" }}><button className="btn-danger btn-sm" onClick={() => remove(tr)}>{t("action.delete")}</button></td>
               </tr>
             ))}
@@ -1227,11 +1228,11 @@ function TribesAdmin() {
       <div className="card">
         <h3>{t("admin.new_tribe")}</h3>
         <div className="row" style={{ alignItems: "flex-end" }}>
-          <div style={{ width: 220 }}><label>{t("admin.name")}</label><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
-          <div className="col"><label>{t("admin.tribe_desc")}</label><input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
+          <div style={{ width: 220 }}><label>{t("admin.name")}</label><input aria-label={t("admin.name")} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
+          <div className="col"><label>{t("admin.tribe_desc")}</label><input aria-label={t("admin.tribe_desc")} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
           <div style={{ width: 200 }}>
             <label>{t("admin.tribe_leader")}</label>
-            <select value={form.leader_user_id} onChange={(e) => setForm({ ...form, leader_user_id: e.target.value })}>
+            <select aria-label={t("admin.tribe_leader")} value={form.leader_user_id} onChange={(e) => setForm({ ...form, leader_user_id: e.target.value })}>
               <option value="">{t("admin.tribe_leader_none")}</option>
               {users.filter((u) => !u.is_break_glass).map((u) => (
                 <option key={u.id} value={u.id}>{u.display_name}</option>
@@ -1293,7 +1294,7 @@ function ImportOrgAdmin() {
           <li>{t("import.step_upload")}</li>
         </ol>
         <div className="row" style={{ alignItems: "center", gap: 10 }}>
-          <input type="file" accept=".xlsx,.xlsm,.yaml,.yml"
+          <input type="file" accept=".xlsx,.xlsm,.yaml,.yml" aria-label={t("a11y.choose_file")}
                  onChange={(e) => { setFile(e.target.files?.[0] ?? null); setResult(null); }} />
           <button onClick={submit} disabled={!file || busy}>
             {busy ? t("import.importing") : t("import.import")}
@@ -1378,7 +1379,7 @@ function ImportSteercoAdmin() {
         <ol className="stack" style={{ gap: 6, margin: 0, paddingLeft: 18 }}>
           <li>
             {t("import.steerco.step_pick")}{" "}
-            <select value={squadId} onChange={(e) => setSquadId(e.target.value)} style={{ minWidth: 190 }}>
+            <select aria-label={t("a11y.template_squad")} value={squadId} onChange={(e) => setSquadId(e.target.value)} style={{ minWidth: 190 }}>
               <option value="">{t("import.steerco.generic_template")}</option>
               {squads.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
@@ -1392,7 +1393,7 @@ function ImportSteercoAdmin() {
           <li>{t("import.step_upload")}</li>
         </ol>
         <div className="row" style={{ alignItems: "center", gap: 10 }}>
-          <input type="file" accept=".xlsx,.xlsm"
+          <input type="file" accept=".xlsx,.xlsm" aria-label={t("a11y.choose_file")}
                  onChange={(e) => { setFile(e.target.files?.[0] ?? null); setResult(null); }} />
           <button onClick={submit} disabled={!file || busy}>
             {busy ? t("import.importing") : t("import.import")}
@@ -1533,7 +1534,7 @@ function AuthAdmin() {
   const fld = (label: string, key: string, type = "text") => (
     <div style={{ flex: 1, minWidth: 220 }}>
       <label>{label}</label>
-      <input type={type} value={cfg[key] ?? ""} onChange={(e) => set(key, e.target.value)} />
+      <input aria-label={label} type={type} value={cfg[key] ?? ""} onChange={(e) => set(key, e.target.value)} />
     </div>
   );
 
@@ -1555,7 +1556,7 @@ function AuthAdmin() {
       <div>
         <label>{label}</label>
         <div className="inline" style={{ gap: 6 }}>
-          <input className="grow" readOnly value={value} onFocus={(e) => e.currentTarget.select()} style={{ fontFamily: "ui-monospace, monospace" }} />
+          <input className="grow" aria-label={label} readOnly value={value} onFocus={(e) => e.currentTarget.select()} style={{ fontFamily: "ui-monospace, monospace" }} />
           <button type="button" className="btn-secondary btn-sm" onClick={() => copy(value)}>
             {copied === value ? t("auth.copied") : t("auth.copy")}
           </button>
@@ -1621,7 +1622,7 @@ function AuthAdmin() {
   const overrideFld = (label: string, key: string) => (
     <div style={{ flex: 1, minWidth: 260 }}>
       <label>{label}</label>
-      <input value={cfg[key] ?? ""} placeholder={derived[key]} onChange={(e) => set(key, e.target.value)} />
+      <input aria-label={label} value={cfg[key] ?? ""} placeholder={derived[key]} onChange={(e) => set(key, e.target.value)} />
     </div>
   );
 
@@ -1656,7 +1657,7 @@ function AuthAdmin() {
         <div className="row" style={{ alignItems: "flex-end" }}>
           <div style={{ flex: 1, minWidth: 260 }}>
             <label>{t("auth.base_url_label")}</label>
-            <input value={cfg.public_base_url ?? ""} placeholder={origin || "https://teamfollowup.exemple.com"}
+            <input aria-label={t("auth.base_url_label")} value={cfg.public_base_url ?? ""} placeholder={origin || "https://teamfollowup.exemple.com"}
               onChange={(e) => set("public_base_url", e.target.value)} />
           </div>
           <button type="button" className="btn-secondary btn-sm" onClick={() => set("public_base_url", origin)}>
@@ -1737,8 +1738,8 @@ function AuthAdmin() {
         <div className="small muted" style={{ marginBottom: 10 }}>{t("auth.mappings_hint")}</div>
         {mappings.map((m, i) => (
           <div key={i} className="item-row">
-            <input className="grow" placeholder={t("auth.group")} value={m.group} onChange={(e) => setMapping(i, { group: e.target.value })} />
-            <select className="w-auto" value={m.role} onChange={(e) => setMapping(i, { role: e.target.value })}>
+            <input className="grow" aria-label={t("auth.group")} placeholder={t("auth.group")} value={m.group} onChange={(e) => setMapping(i, { group: e.target.value })} />
+            <select className="w-auto" aria-label={t("admin.role")} value={m.role} onChange={(e) => setMapping(i, { role: e.target.value })}>
               {roles.map((r) => (<option key={r} value={r}>{roleLabel(r)}</option>))}
             </select>
             <button className="btn-danger btn-sm" aria-label={t("action.delete")} onClick={() => set("group_role_mappings", mappings.filter((_, j) => j !== i))}>✕</button>
@@ -1768,7 +1769,7 @@ function AuthAdmin() {
         </label>
         <div>
           <label>{t("auth.allowed_domains")}</label>
-          <textarea rows={2} placeholder="exemple.com&#10;groupe.fr"
+          <textarea aria-label={t("auth.allowed_domains")} rows={2} placeholder="exemple.com&#10;groupe.fr"
             value={(cfg.allowed_email_domains || []).join("\n")}
             onChange={(e) => set("allowed_email_domains", e.target.value.split(/[\s,;]+/).filter(Boolean))} />
           <div className="small muted">{t("auth.allowed_domains_hint")}</div>
@@ -2023,7 +2024,7 @@ function LogsPanel() {
       <div className="row" style={{ gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
         <div style={{ minWidth: 150 }}>
           <label>{t("ops.log_level")}</label>
-          <select value={pendingLevel} onChange={(e) => setPendingLevel(e.target.value)}>
+          <select aria-label={t("ops.log_level")} value={pendingLevel} onChange={(e) => setPendingLevel(e.target.value)}>
             {data.levels.map((l) => <option key={l} value={l}>{l}</option>)}
           </select>
         </div>
@@ -2042,7 +2043,7 @@ function LogsPanel() {
       <div className="row" style={{ gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
         <div style={{ minWidth: 150 }}>
           <label>{t("ops.logs_filter")}</label>
-          <select value={filter} onChange={(e) => setFilter(e.target.value)}>
+          <select aria-label={t("ops.logs_filter")} value={filter} onChange={(e) => setFilter(e.target.value)}>
             <option value="">{t("ops.logs_all")}</option>
             {data.levels.map((l) => <option key={l} value={l}>{l}+</option>)}
           </select>
@@ -2131,9 +2132,9 @@ function SquadParamsPanel({ squadId }: { squadId: number }) {
         {squad.objectives.map((o) => (
           <div key={o.id} className="item-row" style={{ gap: 8 }}>
             <Dot status={o.rag_status} />
-            <input style={{ flex: 1 }} defaultValue={o.title} onBlur={(e) => e.target.value !== o.title && updObj(o.id, { title: e.target.value })} />
+            <input style={{ flex: 1 }} aria-label={t("a11y.objective_title")} defaultValue={o.title} onBlur={(e) => e.target.value !== o.title && updObj(o.id, { title: e.target.value })} />
             <span className="small muted" style={{ minWidth: 56 }}>{rag(o.rag_status)}</span>
-            <input type="date" className="w-auto" style={{ maxWidth: 150 }} title={t("obj.deadline")}
+            <input type="date" className="w-auto" style={{ maxWidth: 150 }} title={t("obj.deadline")} aria-label={t("obj.deadline")}
                    value={o.target_date ? o.target_date.slice(0, 10) : ""}
                    onChange={(e) => updObj(o.id, { target_date: e.target.value || null })} />
             <button className="btn-ghost btn-sm" aria-label={t("action.delete")} onClick={() => delObj(o.id)}>✕</button>
@@ -2143,7 +2144,7 @@ function SquadParamsPanel({ squadId }: { squadId: number }) {
         <div className="row" style={{ alignItems: "flex-end", marginTop: 8 }}>
           <div style={{ flex: 1, minWidth: 200 }}>
             <label>{t("admin.new_objective")}</label>
-            <input value={newObj} onChange={(e) => setNewObj(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addObj()} />
+            <input aria-label={t("admin.new_objective")} value={newObj} onChange={(e) => setNewObj(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addObj()} />
           </div>
           <button className="btn-sm" onClick={addObj} disabled={!newObj.trim()}>{t("admin.add")}</button>
         </div>
@@ -2222,11 +2223,11 @@ function SquadsAdmin({ perms }: { perms: Permissions }) {
               <Fragment key={s.id}>
               <tr>
                 <td className="strong">
-                  <input defaultValue={s.name} onBlur={(e) => e.target.value !== s.name && update(s, { name: e.target.value })} />
+                  <input aria-label={t("admin.squad")} defaultValue={s.name} onBlur={(e) => e.target.value !== s.name && update(s, { name: e.target.value })} />
                 </td>
                 <td>
                   {isAdmin ? (
-                    <select className="w-auto" value={s.tribe_id} onChange={(e) => update(s, { tribe_id: Number(e.target.value) } as any)}>
+                    <select className="w-auto" aria-label={t("admin.tribe")} value={s.tribe_id} onChange={(e) => update(s, { tribe_id: Number(e.target.value) } as any)}>
                       {tribes.map((tr) => (<option key={tr.id} value={tr.id}>{tr.name}</option>))}
                     </select>
                   ) : (
@@ -2234,7 +2235,7 @@ function SquadsAdmin({ perms }: { perms: Permissions }) {
                   )}
                 </td>
                 <td>
-                  <select className="w-auto" value={s.leader_user_id ?? ""} onChange={(e) => update(s, { leader_user_id: e.target.value ? Number(e.target.value) : null })}>
+                  <select className="w-auto" aria-label={t("admin.responsible")} value={s.leader_user_id ?? ""} onChange={(e) => update(s, { leader_user_id: e.target.value ? Number(e.target.value) : null })}>
                     <option value="">-</option>
                     {leaders.map((u) => (
                       <option key={u.id} value={u.id}>
@@ -2244,7 +2245,7 @@ function SquadsAdmin({ perms }: { perms: Permissions }) {
                   </select>
                 </td>
                 <td style={{ width: 90 }}>
-                  <input type="number" defaultValue={s.display_order} onBlur={(e) => Number(e.target.value) !== s.display_order && update(s, { display_order: Number(e.target.value) })} />
+                  <input type="number" aria-label={t("admin.order")} defaultValue={s.display_order} onBlur={(e) => Number(e.target.value) !== s.display_order && update(s, { display_order: Number(e.target.value) })} />
                 </td>
                 <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                   <button className="btn-secondary btn-sm" style={{ marginRight: 6 }}
@@ -2274,12 +2275,12 @@ function SquadsAdmin({ perms }: { perms: Permissions }) {
         <div className="row" style={{ alignItems: "flex-end" }}>
           <div style={{ width: 200 }}>
             <label>{t("admin.name")}</label>
-            <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+            <input aria-label={t("admin.name")} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
           </div>
           {isAdmin && (
             <div style={{ width: 200 }}>
               <label>{t("admin.tribe")}</label>
-              <select value={form.tribe_id} onChange={(e) => setForm({ ...form, tribe_id: e.target.value })}>
+              <select aria-label={t("admin.tribe")} value={form.tribe_id} onChange={(e) => setForm({ ...form, tribe_id: e.target.value })}>
                 <option value="">-</option>
                 {tribes.map((tr) => (<option key={tr.id} value={tr.id}>{tr.name}</option>))}
               </select>
@@ -2287,7 +2288,7 @@ function SquadsAdmin({ perms }: { perms: Permissions }) {
           )}
           <div style={{ width: 200 }}>
             <label>{t("admin.responsible")}</label>
-            <select value={form.leader_user_id} onChange={(e) => setForm({ ...form, leader_user_id: e.target.value })}>
+            <select aria-label={t("admin.responsible")} value={form.leader_user_id} onChange={(e) => setForm({ ...form, leader_user_id: e.target.value })}>
               <option value="">-</option>
               {leaders.map((u) => (
                 <option key={u.id} value={u.id}>
@@ -2395,7 +2396,7 @@ function UsersAdmin({ perms }: { perms: Permissions }) {
                 </td>
                 <td>{u.email}</td>
                 <td>
-                  <select className="w-auto" value={u.role} disabled={!canManage(u)} onChange={(e) => update(u, { role: e.target.value as Role })}>
+                  <select className="w-auto" aria-label={t("admin.role")} value={u.role} disabled={!canManage(u)} onChange={(e) => update(u, { role: e.target.value as Role })}>
                     {(isAdmin ? roleOptions : Array.from(new Set([u.role, ...roleOptions]))).map((r) => (
                       <option key={r} value={r}>
                         {labelFor(r)}
@@ -2405,7 +2406,7 @@ function UsersAdmin({ perms }: { perms: Permissions }) {
                 </td>
                 <td>
                   {isAdmin ? (
-                    <select className="w-auto" value={u.tribe_id ?? ""} onChange={(e) => update(u, { tribe_id: e.target.value ? Number(e.target.value) : null })}>
+                    <select className="w-auto" aria-label={t("admin.tribe")} value={u.tribe_id ?? ""} onChange={(e) => update(u, { tribe_id: e.target.value ? Number(e.target.value) : null })}>
                       <option value="">{t("admin.no_tribe")}</option>
                       {tribes.map((tr) => (<option key={tr.id} value={tr.id}>{tr.name}</option>))}
                     </select>
@@ -2534,7 +2535,7 @@ function PersonasAdmin() {
                   <td style={{ textAlign: "left" }}>
                     {p.builtin
                       ? <span className="strong">{roleLabel(p.key)}</span>
-                      : <input style={{ width: 150 }} value={p.label} onChange={(e) => setLabel(p.key, e.target.value)} />}
+                      : <input style={{ width: 150 }} aria-label={t("a11y.persona_label")} value={p.label} onChange={(e) => setLabel(p.key, e.target.value)} />}
                   </td>
                   {caps.map((c) => (
                     <td key={c} style={{ textAlign: "center" }}>
@@ -2555,7 +2556,7 @@ function PersonasAdmin() {
         </table>
       </div>
       <div className="inline" style={{ gap: 8 }}>
-        <input placeholder={t("personas.new_ph")} value={newLabel}
+        <input aria-label={t("personas.new_ph")} placeholder={t("personas.new_ph")} value={newLabel}
                onChange={(e) => setNewLabel(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addPersona()} />
         <button className="btn-secondary btn-sm" onClick={addPersona} disabled={!newLabel.trim()}>{t("personas.add")}</button>
       </div>
@@ -2597,20 +2598,20 @@ function SettingsAdmin() {
       <div className="card">
         <h3>{t("set.section.brand")}</h3>
         <div className="row">
-          <div className="col"><label>{t("set.app_name")}</label><input value={cfg.app_name ?? ""} onChange={(e) => set("app_name", e.target.value)} /></div>
-          <div className="col"><label>{t("set.app_subtitle")}</label><input value={cfg.app_subtitle ?? ""} onChange={(e) => set("app_subtitle", e.target.value)} /></div>
+          <div className="col"><label>{t("set.app_name")}</label><input aria-label={t("set.app_name")} value={cfg.app_name ?? ""} onChange={(e) => set("app_name", e.target.value)} /></div>
+          <div className="col"><label>{t("set.app_subtitle")}</label><input aria-label={t("set.app_subtitle")} value={cfg.app_subtitle ?? ""} onChange={(e) => set("app_subtitle", e.target.value)} /></div>
         </div>
         <div className="row" style={{ marginTop: 8 }}>
           <div style={{ width: 200 }}>
             <label>{t("set.lang")}</label>
-            <select value={cfg.default_lang} onChange={(e) => set("default_lang", e.target.value)}>
+            <select aria-label={t("set.lang")} value={cfg.default_lang} onChange={(e) => set("default_lang", e.target.value)}>
               <option value="fr">Français</option>
               <option value="en">English</option>
             </select>
           </div>
           <div style={{ width: 160 }}>
             <label>{t("set.year")}</label>
-            <input type="number" value={cfg.default_year ?? ""} onChange={(e) => set("default_year", Number(e.target.value))} />
+            <input aria-label={t("set.year")} type="number" value={cfg.default_year ?? ""} onChange={(e) => set("default_year", Number(e.target.value))} />
           </div>
         </div>
       </div>
@@ -2620,7 +2621,7 @@ function SettingsAdmin() {
         <div className="small muted" style={{ marginBottom: 8 }}>{t("admin.threshold_hint")}</div>
         <div style={{ width: 160 }}>
           <label>{t("admin.days")}</label>
-          <input type="number" min={1} max={365} value={cfg.staleness_threshold_days ?? ""} onChange={(e) => set("staleness_threshold_days", Number(e.target.value))} />
+          <input aria-label={t("admin.days")} type="number" min={1} max={365} value={cfg.staleness_threshold_days ?? ""} onChange={(e) => set("staleness_threshold_days", Number(e.target.value))} />
         </div>
       </div>
 
@@ -2629,14 +2630,14 @@ function SettingsAdmin() {
         <div className="row">
           <div style={{ width: 240 }}>
             <label>{t("set.feed_scope")}</label>
-            <select value={cfg.feed_post_scope} onChange={(e) => set("feed_post_scope", e.target.value)}>
+            <select aria-label={t("set.feed_scope")} value={cfg.feed_post_scope} onChange={(e) => set("feed_post_scope", e.target.value)}>
               <option value="leaders">{t("set.feed_scope.leaders")}</option>
               <option value="everyone">{t("set.feed_scope.everyone")}</option>
             </select>
           </div>
           <div style={{ width: 240 }}>
             <label>{t("set.feed_retention")}</label>
-            <input type="number" min={0} value={cfg.feed_retention_days ?? 0} onChange={(e) => set("feed_retention_days", Number(e.target.value))} />
+            <input aria-label={t("set.feed_retention")} type="number" min={0} value={cfg.feed_retention_days ?? 0} onChange={(e) => set("feed_retention_days", Number(e.target.value))} />
           </div>
         </div>
       </div>
@@ -2713,7 +2714,7 @@ function PptxTemplateAdmin() {
       )}
 
       <div className="inline" style={{ gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-        <input ref={inputRef} type="file" accept=".pptx"
+        <input ref={inputRef} type="file" accept=".pptx" aria-label={t("a11y.choose_file")}
                onChange={(e) => { const f = e.target.files?.[0]; if (f) upload(f); }} />
         {busy && <span className="small muted">{t("common.loading")}</span>}
       </div>
@@ -2992,18 +2993,18 @@ function ApiAdmin() {
           <div className="row" style={{ gap: 12, flexWrap: "wrap" }}>
             <div style={{ flex: 1, minWidth: 220 }}>
               <label>{t("api.name")}</label>
-              <input value={name} onChange={(e) => setName(e.target.value)} placeholder={t("api.name_ph")} />
+              <input aria-label={t("api.name")} value={name} onChange={(e) => setName(e.target.value)} placeholder={t("api.name_ph")} />
             </div>
             <div style={{ minWidth: 200 }}>
               <label>{t("api.tribe")}</label>
-              <select value={tribeId} onChange={(e) => setTribeId(e.target.value)}>
+              <select aria-label={t("api.tribe")} value={tribeId} onChange={(e) => setTribeId(e.target.value)}>
                 <option value="">{t("api.tribe_all")}</option>
                 {tribes.map((tr) => <option key={tr.id} value={tr.id}>{tr.name}</option>)}
               </select>
             </div>
             <div style={{ minWidth: 160 }}>
               <label>{t("api.expires")}</label>
-              <input type="number" min={1} value={expires} onChange={(e) => setExpires(e.target.value)} />
+              <input aria-label={t("api.expires")} type="number" min={1} value={expires} onChange={(e) => setExpires(e.target.value)} />
             </div>
           </div>
 
