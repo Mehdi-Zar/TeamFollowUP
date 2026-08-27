@@ -1,0 +1,69 @@
+# Namespace + database + secrets for the Kubernetes test bench.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tfu
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: teamfollowup-secrets
+  namespace: tfu
+type: Opaque
+stringData:
+  SECRET_KEY: "bench-only-secret-key-32-chars-minimum-value"
+  POSTGRES_PASSWORD: "bench-db-password"
+  BREAKGLASS_PASSWORD: "bench-admin-pw"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: tfu
+spec:
+  selector: { app: postgres }
+  ports:
+    - port: 5432
+      targetPort: 5432
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: tfu
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: postgres }
+  template:
+    metadata:
+      labels: { app: postgres }
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: tribe
+            - name: POSTGRES_USER
+              value: tribe
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: teamfollowup-secrets, key: POSTGRES_PASSWORD }
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          readinessProbe:
+            exec: { command: ["pg_isready", "-U", "tribe", "-d", "tribe"] }
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            requests: { cpu: "100m", memory: "256Mi" }
+      volumes:
+        - name: data
+          emptyDir: {}

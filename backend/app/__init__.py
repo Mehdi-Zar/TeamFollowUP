@@ -1,4 +1,4 @@
-"""Application package for the Tribe Cockpit backend.
+"""Application package for the TeamFollowUP backend.
 
 This marks ``backend/app`` as an importable Python package. It intentionally
 stays empty (no import side effects) so that submodules such as ``config``,

@@ -24,7 +24,7 @@ def _defaults() -> dict:
         "username": "",
         "password": "",
         "from_addr": "tribe-cockpit@local",
-        "from_name": "Tribe Cockpit",
+        "from_name": "TeamFollowUP",
         "use_tls": True,
         "use_ssl": False,
     }

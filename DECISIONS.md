@@ -5,7 +5,7 @@ qui satisfait la spec ».
 
 ## Refonte v2 (squads + roadmap trimestrielle) - voir REFONTE_SPEC.md
 
-- **Charte graphique reprise de RunAssessment** : abandon de Tailwind au profit d'un
+- **Charte graphique maison** : abandon de Tailwind au profit d'un
   `theme.css` à tokens (navy `#1E2761`, accent `#175CD3`, Calibri), en-tête dégradé
   navy, cartes/badges/pills identiques. i18n laissée de côté (FR uniquement) pour ne
   pas alourdir le périmètre.

@@ -43,11 +43,16 @@ is. That's it. Everything below is detail around those two moves.
    (`HTTPRoute`), and GKE provisions an **internal Application Load Balancer (ALB)**
    in front of it. The ALB terminates TLS - with a **self-signed certificate** to get
    you running on day one, swapped for **your PKI certificate** later without touching
-   a manifest - and forwards to the pod, which itself serves **HTTPS on :8443, its only
-   port**. The HTTP→HTTPS redirect is done **by the Gateway**, not by the app. This is
-   the **only** supported exposure path - no `Service: LoadBalancer`, no `Ingress`. → §6.9/§6.10.
+   a manifest - and forwards to the pod. The pod binds **exactly one port**, chosen by
+   `TLS_ENABLED`: plain **HTTP :8000** (`false`, the recommended model, §6.9) or
+   **HTTPS :8443** (`true`, the app terminating TLS itself, §6.10). The HTTP→HTTPS
+   redirect is done **by the Gateway**, not by the app. This is the **only** supported
+   exposure path - no `Service: LoadBalancer`, no `Ingress`. → §6.9/§6.10.
 7. **Check it works.** Open the site, log in with the break-glass admin, and click
    around. Then configure SSO, SMTP (for emails), backups, etc. from the admin UI. → §10.
+   To rehearse the whole chain (gateway TLS, forwarded headers, OIDC **and** SAML
+   against a real IdP) on your own machine before touching the platform, follow
+   **[16 - Banc Kubernetes de bout en bout](16-banc-kubernetes-sso.md)**.
 
 **When a new version comes out later**, you do **not** redo all this. You only
 swap the image for the newer one and restart - the data stays in the database

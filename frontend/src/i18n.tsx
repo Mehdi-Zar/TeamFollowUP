@@ -15,7 +15,7 @@ export type Lang = "fr" | "en";
 
 const DICT: Record<Lang, Record<string, string>> = {
   fr: {
-    "brand": "Tribe Cockpit",
+    "brand": "TeamFollowUP",
     "nav.dashboard": "Tableau de bord",
     "nav.roadmap": "Roadmap",
     "nav.otd": "OTD (On-Time Delivery)",
@@ -139,7 +139,7 @@ const DICT: Record<Lang, Record<string, string>> = {
     "nav.gettingstarted": "Prise en main",
     "gs.title": "Prise en main",
     "gs.hello": "Bienvenue {name}",
-    "gs.welcome_title": "Bienvenue sur Tribe Cockpit",
+    "gs.welcome_title": "Bienvenue sur TeamFollowUP",
     "gs.welcome_body": "On vous a préparé un guide de prise en main adapté à votre rôle, avec les étapes clés pour démarrer.",
     "gs.later": "Plus tard",
     "gs.discover": "Découvrir",
@@ -1149,7 +1149,7 @@ const DICT: Record<Lang, Record<string, string>> = {
     "export.jpg_fail": "Échec de la génération JPG.",
   },
   en: {
-    "brand": "Tribe Cockpit",
+    "brand": "TeamFollowUP",
     "nav.dashboard": "Dashboard",
     "nav.roadmap": "Roadmap",
     "nav.otd": "OTD (On-Time Delivery)",
@@ -1301,7 +1301,7 @@ const DICT: Record<Lang, Record<string, string>> = {
     "gs.card.admin.desc": "Users, personas, modules, email, security - as your rights allow.",
     "gs.card.tribes.title": "Tribes",
     "gs.card.tribes.desc": "Create and organise the organisation's tribes.",
-    "gs.welcome_title": "Welcome to Tribe Cockpit",
+    "gs.welcome_title": "Welcome to TeamFollowUP",
     "gs.welcome_body": "We've prepared a getting-started guide tailored to your role, with the key steps to begin.",
     "gs.later": "Later",
     "gs.discover": "Discover",

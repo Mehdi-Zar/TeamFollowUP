@@ -30,7 +30,7 @@ export const DEFAULT_MODULES: ModulesConfig = {
 
 /** Full default config used as the initial context value before /api/config loads. */
 const DEFAULTS: PublicConfig = {
-  app_name: "Tribe Cockpit",
+  app_name: "TeamFollowUP",
   app_subtitle: "Pilotage de la tribe",
   default_lang: "fr",
   default_year: new Date().getFullYear(),

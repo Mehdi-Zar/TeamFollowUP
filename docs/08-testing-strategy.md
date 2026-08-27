@@ -4,23 +4,24 @@
 
 | Layer | Tooling | Coverage |
 |-------|---------|----------|
-| Backend unit/integration | pytest + FastAPI `TestClient` + SQLite in-memory | **Good** - 131 tests / 13 modules |
+| Backend unit/integration | pytest + FastAPI `TestClient` + SQLite in-memory | **Good** - 289 tests / 32 modules |
 | Frontend unit/component | **Vitest + Testing Library + jsdom** | **Present** - 11 tests (labels, perms, i18n parity), wired into CI |
-| End-to-end | `e2e_test.py` (script at repo root) | **Ad-hoc**, not in CI - Playwright still to add |
+| End-to-end (functional) | `e2e_test.py` (script at repo root) | **Ad-hoc**, not in CI - Playwright still to add |
+| End-to-end (deployment + SSO) | [Kubernetes + Keycloak bench](16-banc-kubernetes-sso.md), `bench/k8s-sso/run-tests.py` | **Manual**, reproducible - 18 checks against a real IdP (OIDC and SAML) |
 | Type safety | `tsc --noEmit` (FE), Pydantic (BE) | Enforced |
-| i18n parity | custom script | Enforced (FR/EN 540/540) |
+| i18n parity | Vitest (`i18n.parity.test.ts`) | Enforced (FR/EN 1132/1132) |
 
 ### Backend test modules
-`test_status`, `test_freshness`, `test_modules`, `test_rbac`, `test_rbac_admin`, `test_personas`,
-`test_review_access`, `test_report`, `test_roadmap_deps`, `test_snapshot`, `test_actions`,
-`test_notifications`. They cover RBAC/persona capabilities, derived objective status, roadmap
-dependency + EA/GA, report/roadmap rendering (incl. single-page guarantee), snapshots, freshness.
+`test_access`, `test_access_history`, `test_actions`, `test_api_keys`, `test_authconfig_urls`, `test_budget`, `test_changenotify`, `test_committees`, `test_freshness`, `test_hardening`, `test_initiatives_otd`, `test_leaves`, `test_logconfig`, `test_logexport`, `test_modules`, `test_notifications`, `test_ops`, `test_otds`, `test_personas`, `test_pptx_template`, `test_rbac`, `test_rbac_admin`, `test_report`, `test_review_access`, `test_roadmap_deps`, `test_saml_settings`, `test_snapshot`, `test_squad_products`, `test_ssotest`, `test_status`, `test_steerco`, `test_tls`.
+
+They cover RBAC/persona capabilities, derived objective status, roadmap dependency + EA/GA,
+report/roadmap rendering (incl. the single-page guarantee), snapshots, freshness, the SSO URL
+derivation and SAML settings assembly, TLS material handling, log export and the Steerco module.
 
 ## Gaps (prioritized)
 
 | Gap | Priority |
 |-----|----------|
-| No frontend component tests (Vitest + React Testing Library) | P1 |
 | No real E2E (Playwright) for the core journeys | P1 |
 | No coverage reporting / threshold gate | P2 |
 | No load/performance test (dashboard & report at scale) | P2 |

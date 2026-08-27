@@ -154,10 +154,11 @@ PPTX export template: `GET /pptx-template` (status), `POST /pptx-template` (uplo
 ## Generate a static OpenAPI file
 
 ```bash
-curl -s http://localhost:8000/openapi.json > docs/openapi.json   # snapshot the live contract
-# with TLS_ENABLED=true: curl -sk https://localhost:8443/openapi.json  (-k: self-signed cert)
+python backend/scripts/dump_openapi.py            # rewrite docs/openapi.json (no server needed)
+python backend/scripts/dump_openapi.py --check    # fail if the snapshot is stale (what CI runs)
 ```
 
-> Recommendation (industrialization): commit `openapi.json` in CI and diff it to detect breaking
-> API changes. Tracked as a quick win in [11](11-roadmap-and-enterprise-readiness.md).
+> The snapshot is checked on every push: the **Backend** CI job runs `dump_openapi.py --check`
+> and fails when the committed file no longer matches the routes, so an unintended
+> contract change shows up in the pull request instead of reaching a client.
 </content>

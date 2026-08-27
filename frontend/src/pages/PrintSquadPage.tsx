@@ -18,7 +18,7 @@ export function ReportHeader({ title }: { title: string }) {
   return (
     <div style={{ borderBottom: "2px solid var(--navy)", paddingBottom: 8, marginBottom: 16 }}>
       <div className="small muted" style={{ textTransform: "uppercase", letterSpacing: ".04em" }}>
-        Tribe Cockpit
+        TeamFollowUP
       </div>
       <h1 style={{ margin: "2px 0 0" }}>{title}</h1>
       <div className="no-print" style={{ marginTop: 10 }}>

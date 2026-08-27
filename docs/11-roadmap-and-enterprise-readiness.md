@@ -9,7 +9,7 @@
 | Code quality | 🟢 High | Layered, typed, tested (backend), low dead code |
 | Architecture | 🟡 Medium | Clean monolith; single-replica assumptions; no HA |
 | Security | 🟢 High | RBAC + **env-driven cookie hardening + login throttle + default-secret guard** |
-| Testing | 🟡 Medium | Strong backend (131) + **frontend Vitest (11)**; E2E still to add |
+| Testing | 🟡 Medium | Strong backend (289) + **frontend Vitest (11)** + **K8s/SSO bench (18 checks)**; Playwright E2E still to add |
 | DevOps/CI-CD | 🟢 High | Reproducible build + **CI (tests/typecheck/build/i18n/audit)** + Dependabot; no CD/envs yet |
 | Observability | 🔴 Low | Logs + audit only; no metrics/alerting |
 | Data/BCP | 🟡 Medium | **Backup sidecar (pg_dump + rotation)**; DR drills/PITR still to formalize |
@@ -29,7 +29,7 @@ needs the P1 track before scale or external/SaaS use.
 - [x] `https_only` / `SameSite` session cookie now **env-driven** (`COOKIE_SECURE`, `COOKIE_SAMESITE`)
 - [x] Scheduled `pg_dump` backup sidecar with rotation (`docker compose --profile backup up -d`)
 - [x] `pip-audit` + `npm audit` (non-blocking CI job) + Dependabot (`.github/dependabot.yml`)
-- [x] Commit `openapi.json` snapshot (diff job is a follow-up)
+- [x] Commit `openapi.json` snapshot **+ CI staleness check** (`backend/scripts/dump_openapi.py --check`)
 
 ### High impact (weeks)
 - [ ] Observability: structured logs + Prometheus/OTel metrics + alerting + uptime probe

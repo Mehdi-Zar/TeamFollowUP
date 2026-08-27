@@ -102,7 +102,7 @@ def sample_entry() -> dict:
         "action": "log_export.test",
         "entity": "log_export",
         "entity_id": None,
-        "detail": {"message": "Tribe Cockpit log export test event"},
+        "detail": {"message": "TeamFollowUP log export test event"},
     }
 
 

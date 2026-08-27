@@ -1,4 +1,4 @@
-"""SQLAlchemy ORM models - the database schema of the Tribe Cockpit.
+"""SQLAlchemy ORM models - the database schema of the TeamFollowUP.
 
 Every persisted entity lives here as a declarative model mapped onto a table.
 The domain is a multi-tenant reporting tool organised around a hierarchy:

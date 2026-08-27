@@ -1,4 +1,4 @@
-# Tribe Run Tracker
+# TeamFollowUP
 
 Outil interne de pilotage d'une tribe organisée en **squads** (un cloud provider,
 un service, un domaine data…). Chaque squad a un **responsable (leader)** qui saisit
@@ -7,7 +7,7 @@ annuels**. L'outil consolide tout dans un **dashboard de cartes** conçu pour fa
 remonter ce qui dérape (le pire en haut), avec **historisation** et **suivi de la
 fraîcheur** des données.
 
-Charte graphique alignée sur l'application RunAssessment (thème navy `#1E2761`).
+Charte graphique maison : `theme.css` à tokens (thème navy `#1E2761`, accent `#175CD3`).
 
 ## Documentation complète
 
@@ -18,13 +18,15 @@ architecture (diagrammes Mermaid), [modèle de données + ERD](docs/03-data-mode
 [stratégie de tests](docs/08-testing-strategy.md), [rapport d'audit](docs/09-audit-report.md),
 [dette & risques](docs/10-tech-debt-and-risk-register.md),
 [roadmap & enterprise-readiness](docs/11-roadmap-and-enterprise-readiness.md),
-le **[guide de déploiement (VMware · GCP · S3NS · AWS · Azure)](docs/12-deployment-guide.md)** et les
-[ADR](docs/adr/README.md).
+le **[guide de déploiement (VMware, GCP, S3NS, AWS, Azure)](docs/12-deployment-guide.md)**, le
+[banc Kubernetes de bout en bout avec Keycloak (OIDC et SAML)](docs/16-banc-kubernetes-sso.md)
+et les [ADR](docs/adr/README.md).
 
 > **Déploiement en production** (cloud ou on-prem) : voir le
 > **[guide de déploiement](docs/12-deployment-guide.md)**. En prod, mettez
-> `SEED_DEMO=false`, `COOKIE_SECURE=true`, et un `SECRET_KEY` / mot de passe DB
-> issus d'un coffre de secrets.
+> `SEED_DEMO=false`, `COOKIE_SECURE=true`, `PUBLIC_BASE_URL` = l'adresse que les
+> utilisateurs tapent (elle sert de base à toutes les URL de rappel SSO), et un
+> `SECRET_KEY` / mot de passe DB issus d'un coffre de secrets.
 
 > Note : certaines sections ci-dessous décrivent le produit initial ; en cas de divergence,
 > **`docs/` fait référence** (ex. le statut RAG des objectifs est désormais *dérivé de l'avancement*,
@@ -110,8 +112,8 @@ Tous les comptes de démonstration utilisent le mot de passe `demo`.
 - **Organigramme global** : arbre éditable de la tribe (un nœud peut être relié à une squad
   pour afficher son statut), **modifiable par le tribe leader** ; clic sur un nœud relié → détail.
 - **Aperçu persona** : l'admin peut voir l'app « en tant que » chaque rôle (lecture seule).
-- **Administration** (admin) : **navigation latérale groupée** (Organisation · Configuration ·
-  Authentification & Email · Modération & Journaux) ; CRUD squads (nom, responsable, ordre,
+- **Administration** (admin) : **navigation latérale groupée** (Organisation, Configuration,
+  Authentification & Email, Modération & Journaux) ; CRUD squads (nom, responsable, ordre,
   **produits & hardware**), CRUD utilisateurs & rôles, modules, personas, réglages, journal
   d'audit. Gestion des squads aussi via **« Manage my squads »** (produits/hardware, budget,
   activation des KPIs).

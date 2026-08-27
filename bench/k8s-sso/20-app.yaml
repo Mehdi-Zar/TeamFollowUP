@@ -1,0 +1,106 @@
+# The application, deployed the way docs/12 section 6.9 prescribes:
+# TLS_ENABLED=false, one plain-HTTP port :8000, TLS terminated by the gateway.
+#
+# Two additions specific to this bench, both flagged:
+#   * hostAliases, so the pod resolves the two public hostnames to the in-cluster
+#     gateway. On GKE this is what split-horizon DNS does for you.
+#   * a command wrapper that appends the internal CA to the trust store, because
+#     the OIDC discovery call is made by the app itself over TLS. Without it,
+#     httpx would reject our privately-issued certificate.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: teamfollowup-app
+  namespace: tfu
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: teamfollowup-app }
+  template:
+    metadata:
+      labels: { app: teamfollowup-app }
+    spec:
+      hostAliases:
+        - ip: "10.96.200.200"           # the gateway Service's fixed ClusterIP
+          hostnames:
+            - app.localtest.me
+            - idp.localtest.me
+      containers:
+        - name: app
+          image: teamfollowup-app:bench-v6
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              # Trust the bench's internal CA, then hand over to the real entrypoint.
+              cat /etc/internal-ca/ca.crt >> "$(python -c 'import certifi; print(certifi.where())')"
+              exec ./docker-entrypoint.sh
+          ports:
+            - containerPort: 8000
+              name: http
+          env:
+            - name: TLS_ENABLED          # infra terminates TLS; the pod serves plain HTTP
+              value: "false"
+            - name: HTTP_PORT
+              value: "8000"
+            - name: PUBLIC_BASE_URL      # public address, NOT the container port
+              value: "https://app.localtest.me"
+            - name: LOG_FORMAT
+              value: "json"
+            - name: POSTGRES_HOST
+              value: postgres
+            - name: POSTGRES_PORT
+              value: "5432"
+            - name: POSTGRES_DB
+              value: tribe
+            - name: POSTGRES_USER
+              value: tribe
+            - name: SEED_DEMO
+              value: "false"
+            - name: COOKIE_SECURE        # clients reach the gateway over HTTPS
+              value: "true"
+            - name: BREAKGLASS_EMAIL
+              value: admin@local
+            - name: DISABLE_SCHEDULER
+              value: "1"
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef: { name: teamfollowup-secrets, key: SECRET_KEY }
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: teamfollowup-secrets, key: POSTGRES_PASSWORD }
+            - name: BREAKGLASS_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: teamfollowup-secrets, key: BREAKGLASS_PASSWORD }
+          volumeMounts:
+            - name: internal-ca
+              mountPath: /etc/internal-ca
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 8000
+              scheme: HTTP
+            initialDelaySeconds: 15
+            periodSeconds: 5
+            failureThreshold: 30
+          resources:
+            requests: { cpu: "300m", memory: "512Mi" }
+      volumes:
+        - name: internal-ca
+          secret:
+            secretName: internal-ca
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: teamfollowup-app
+  namespace: tfu
+spec:
+  type: ClusterIP
+  selector: { app: teamfollowup-app }
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8000
+      appProtocol: HTTP

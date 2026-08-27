@@ -17,7 +17,7 @@ def send_email(cfg: dict, to: str, subject: str, body: str, attachment: tuple | 
     if not cfg.get("enabled") or not cfg.get("host") or not to:
         return False
     msg = EmailMessage()
-    from_name = cfg.get("from_name") or "Tribe Cockpit"
+    from_name = cfg.get("from_name") or "TeamFollowUP"
     msg["From"] = f"{from_name} <{cfg.get('from_addr')}>"
     msg["To"] = to
     cc = [c for c in (cc or []) if c]

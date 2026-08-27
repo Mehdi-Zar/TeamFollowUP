@@ -1,7 +1,7 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "Tribe Cockpit",
+    "title": "TeamFollowUP",
     "description": "Outil de pilotage de tribe : consolidation, drill-down, saisie, organigramme, exports.",
     "version": "1.0.0"
   },
@@ -3210,7 +3210,7 @@
           "admin"
         ],
         "summary": "Read Auth Config",
-        "description": "GET /api/admin/auth-config — read the OIDC/SAML auth config. Admin only.",
+        "description": "GET /api/admin/auth-config — read the OIDC/SAML auth config. Admin only.\n\n``request`` lets the SSO URLs be derived from the URL the admin is actually\nbrowsing when no public base URL is configured (see authconfig).",
         "operationId": "read_auth_config_api_admin_auth_config_get",
         "responses": {
           "200": {
@@ -3230,6 +3230,47 @@
         "summary": "Update Auth Config",
         "description": "PUT /api/admin/auth-config — update the OIDC/SAML auth config. Admin only;\naudits which providers are enabled.",
         "operationId": "update_auth_config_api_admin_auth_config_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "title": "Payload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/auth-config/test": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Test Auth Config",
+        "description": "POST /api/admin/auth-config/test — probe the configured IdP. Admin only.\n\nTests what is currently on screen, not only what is saved: any field sent in\nthe body is layered over the stored config, so an administrator can check a\nchange before committing it. Read-only; nothing is persisted.",
+        "operationId": "test_auth_config_api_admin_auth_config_test_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -6745,6 +6786,48 @@
             "content": {
               "application/json": {
                 "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/access-requests/history": {
+      "get": {
+        "tags": [
+          "access"
+        ],
+        "summary": "List History",
+        "description": "Decisions already taken (and the SSO arrivals that led to them), newest first.\n\nScope is applied in ``acc.decision_history``: gatekeepers see everything, a\nsquad leader sees their own decisions.",
+        "operationId": "list_history_api_access_requests_history_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 60,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
               }
             }
           }

@@ -2,7 +2,7 @@
 
 ## Vision
 
-**Tribe Cockpit** gives a tribe (a group of squads in a scaled-Agile organization) a single,
+**TeamFollowUP** gives a tribe (a group of squads in a scaled-Agile organization) a single,
 trustworthy place to consolidate and steer delivery: where each squad stands on its annual
 objectives and quarterly roadmap, what is blocked or at risk, and what was decided in the last
 review (COPIL). It replaces scattered spreadsheets and slide decks with a live, role-aware product.

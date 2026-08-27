@@ -3,6 +3,20 @@
 ## Unreleased
 
 ### Added
+- **The Kubernetes/Keycloak bench is now part of the repository** (`bench/k8s-sso/`) with a
+  step-by-step tutorial, [16 - Banc Kubernetes de bout en bout](docs/16-banc-kubernetes-sso.md).
+  Four manifests, the Keycloak realm, the 18-check driver (`run-tests.py`) and an optional
+  access-history seeder reproduce, on any machine, the exact chain the SSO work was validated
+  against: app on a single plain-HTTP port behind an Envoy gateway that terminates TLS with an
+  internal CA, two public names on one certificate, then a full OIDC login and a full SAML login
+  against a real IdP. `make-pki.sh` generates the throwaway PKI, which stays gitignored. The
+  app deployment is deliberately the one prescribed by §6.9 of the deployment guide, so running
+  the bench also tests the documentation.
+- **`backend/scripts/dump_openapi.py`** writes `docs/openapi.json` from the app's routes without
+  starting a server, and `--check` fails when the committed snapshot is stale. The CI **Backend**
+  job now runs that check on every push, so an unintended contract change surfaces in the pull
+  request. The snapshot was already two endpoints behind (`/api/admin/auth-config/test` and
+  `/api/access-requests/history`); it is now regenerated and accurate (140 paths). Closes TD-API-1.
 - **"Test the connection to the IdP" button**, one per protocol, in Administration →
   Authentification (`POST /api/admin/auth-config/test`, `app/ssotest.py`). Returns an
   ordered list of checks so a failure names the field to fix rather than reporting a
@@ -42,6 +56,17 @@
   `tests/test_saml_settings.py`.
 
 ### Changed
+- **One name for the application: TeamFollowUP.** Three coexisted - "Tribe Run Tracker" in the
+  README and `package.json`, "Tribe Cockpit" in the backend default `app_name`, the i18n `brand`
+  key, the SPA `<title>`, the SMTP sender, the print header, the generated certificates and most
+  of the documentation, and "TeamFollowUP" in the repository and the deployment guide. Everything
+  now says TeamFollowUP. Existing instances are unaffected: `app_name` is an `AppSetting`, so only
+  fresh installs pick up the new default.
+- **Documentation figures refreshed against the code**: 289 backend tests over 32 modules (the
+  testing strategy still claimed 131 over 13), 11 frontend tests, FR/EN parity on 1132 keys (not
+  540), ~17k/~15k lines back/front. The deployment guide's opening summary still said the pod
+  "serves HTTPS on :8443, its only port", contradicting §6.9 since the single-port change; it now
+  states the port is chosen by `TLS_ENABLED`.
 - **SSO configuration is now driven by one public URL.** The OIDC redirect URI and
   the SAML SP entity ID / ACS URL are no longer three absolute URLs to keep in sync
   by hand: they are derived from the app's **public base URL** plus a fixed path

@@ -1,4 +1,4 @@
-# Tribe Cockpit - Documentation
+# TeamFollowUP - Documentation
 
 > Outil de pilotage de tribe (organisation Agile à l'échelle) : consolidation de l'avancement
 > des squads, roadmap, objectifs, KPIs, revue (COPIL), fil d'actualité, organigramme et exports.
@@ -21,20 +21,21 @@ understand, run, operate and extend the product **without further explanation**.
 | 09 | [Audit Report (consolidated)](09-audit-report.md) | Exec / Tech leads |
 | 10 | [Technical Debt & Risk Register](10-tech-debt-and-risk-register.md) | Tech leads |
 | 11 | [Roadmap & Enterprise Readiness](11-roadmap-and-enterprise-readiness.md) | Exec / Architects |
-| 12 | [Deployment Guide (VMware · GCP · S3NS · AWS · Azure)](12-deployment-guide.md) | Ops / Architects |
+| 12 | [Deployment Guide (VMware, GCP, S3NS, AWS, Azure)](12-deployment-guide.md) | Ops / Architects |
 | 13 | [Maintenance & Updates (ship new versions, keep data)](13-maintenance-and-updates.md) | Ops / Architects |
 | 14 | [Import de l'organisation (Excel)](14-import-organisation.md) | Ops / Admins |
 | 15 | [Steerco (saisie mensuelle & one-pager)](15-steerco.md) | PM / Admins / Engineers |
+| 16 | [Banc Kubernetes de bout en bout (OIDC + SAML)](16-banc-kubernetes-sso.md) | Ops / Engineers |
 | - | [Architecture Decision Records (ADR)](adr/README.md) | Engineers / Architects |
 
 ## At a glance
 
-- **Stack**: FastAPI (Python 3.12) + SQLAlchemy 2 + PostgreSQL 16 · React 18 + TypeScript + Vite (SPA).
+- **Stack**: FastAPI (Python 3.12) + SQLAlchemy 2 + PostgreSQL 16, React 18 + TypeScript + Vite (SPA).
 - **Packaging**: single Docker image (multi-stage) - the API also serves the built SPA. `docker compose` adds Postgres.
-- **Auth**: signed session cookie · local password (Argon2) · OIDC (Authlib) · SAML (python3-saml) · break-glass admin.
+- **Auth**: signed session cookie, local password (Argon2), OIDC (Authlib), SAML (python3-saml), break-glass admin.
 - **Authorization**: role tiers + a configurable **persona → capability** matrix + per-module on/off switches.
 - **Per squad**: products & hardware, OTD (committed annual objectives), detailed roadmap, curated key messages, and **budget tracking** (total / spent / forecast → on-track / at-risk / over), visible only to admin, the tribe leader and the squad's own leader.
-- **Size**: ~8k LOC backend, ~9k LOC frontend, 24 API routers, 28 tables, 27 migrations, 27 backend test modules (253 tests). Single-squad **HTML & PPTX exports** mirror the squad page.
+- **Size**: ~17k LOC backend, ~15k LOC frontend, 24 API routers, 28 tables, 27 migrations, 32 backend test modules (289 tests) + 11 frontend tests. Single-squad **HTML & PPTX exports** mirror the squad page.
 
 See [01-product-overview](01-product-overview.md) for the full picture.
 </content>

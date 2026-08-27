@@ -14,7 +14,7 @@ Legend: ✅ done · ◑ partial · ⬜ open.
 | TD-SEC-1 | Security | Default secrets / cookie not https_only | P0 | ◑ startup warning + **env-driven** `COOKIE_SECURE`/`SameSite` (set in prod) |
 | TD-SEC-2 | Security | No login rate-limiting/lockout | P1 | ✅ per-IP throttle on `/api/auth/login` |
 | TD-SEC-3 | Security | No dependency CVE scanning | P1 | ✅ Dependabot + `pip-audit`/`npm audit` CI job |
-| TD-TEST-1 | Testing | No frontend/E2E tests | P1 | ◑ Vitest added + CI; Playwright E2E still open |
+| TD-TEST-1 | Testing | No frontend/E2E tests | P1 | ◑ Vitest + CI, and a reproducible K8s/SSO bench ([16](16-banc-kubernetes-sso.md)); Playwright E2E still open |
 | TD-TEST-2 | Testing | No coverage threshold | P2 | ⬜ add coverage gate |
 | TD-PERF-1 | Performance | Potential N+1 on dashboard/report at scale | P2 | ✅ `selectinload` eager-loading |
 | TD-PERF-2 | Performance | Single JS bundle (no code-splitting) | P2 | ✅ route-level `React.lazy` (initial bundle 384→246 KB) |
@@ -24,7 +24,7 @@ Legend: ✅ done · ◑ partial · ⬜ open.
 | TD-CODE-1 | Code | `AdminPage.tsx` (~1.3k lines), `report.py` large | P2 | ⬜ split into sub-modules |
 | TD-UI-1 | UI | Spacing/typography not tokenized | P2 | ⬜ introduce CSS tokens |
 | TD-A11Y-1 | A11y | Admin form inputs lack `htmlFor`/`id` | P2 | ◑ user-creation form associated (+ password now masked); finish remaining forms |
-| TD-API-1 | API | OpenAPI not snapshotted/diffed | P2 | ◑ `docs/openapi.json` committed; CI diff still open |
+| TD-API-1 | API | OpenAPI not snapshotted/diffed | P2 | ✅ `docs/openapi.json` committed + CI check (`dump_openapi.py --check`) |
 
 ## Risk register
 

@@ -261,8 +261,8 @@ def test_smtp(payload: dict = Body(...), db: Session = Depends(get_db), admin: U
     cfg = get_smtp(db)
     if not cfg.get("enabled"):
         raise HTTPException(status_code=400, detail="SMTP désactivé")
-    ok = send_email(cfg, to, "Tribe Cockpit - test SMTP",
-                    "Ceci est un email de test envoyé depuis Tribe Cockpit. Si vous le recevez, la configuration SMTP fonctionne.")
+    ok = send_email(cfg, to, "TeamFollowUP - test SMTP",
+                    "Ceci est un email de test envoyé depuis TeamFollowUP. Si vous le recevez, la configuration SMTP fonctionne.")
     return {"ok": ok, "to": to}
 
 

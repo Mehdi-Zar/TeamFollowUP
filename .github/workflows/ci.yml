@@ -7,7 +7,7 @@ on:
 
 jobs:
   backend:
-    name: Backend (pytest)
+    name: Backend (pytest + OpenAPI snapshot)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,6 +22,9 @@ jobs:
       - name: Run tests
         working-directory: backend
         run: python -m pytest -p no:warnings -q
+      - name: OpenAPI snapshot is up to date
+        working-directory: backend
+        run: python scripts/dump_openapi.py --check
 
   frontend:
     name: Frontend (typecheck + build + i18n parity)
@@ -64,7 +67,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build image
-        run: docker build -t tribe-cockpit:ci .
+        run: docker build -t teamfollowup:ci .
 
   audit:
     name: Dependency audit (non-blocking)

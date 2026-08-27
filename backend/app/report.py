@@ -396,7 +396,7 @@ def build_report_data(db: Session, scope_tribe: int | None, year: int | None = N
     leaves_upcoming = _upcoming_leaves(db, scope_tribe, squad_id, sq_ids, now)
 
     return {
-        "app_name": cfg.get("app_name") or "Tribe Cockpit",
+        "app_name": cfg.get("app_name") or "TeamFollowUP",
         "subtitle": cfg.get("app_subtitle") or "",
         "scope_name": scope_name,
         "squad_scoped": squad_id is not None,
@@ -2272,7 +2272,7 @@ def build_dependencies_data(db: Session, scope_tribe: int | None, year: int | No
 
     scope_name = tribes[scope_tribe].name if scope_tribe in tribes else rt(lang, "all_tribes")
     return {
-        "app_name": cfg.get("app_name") or "Tribe Cockpit",
+        "app_name": cfg.get("app_name") or "TeamFollowUP",
         "scope_name": scope_name, "lang": lang, "year": year,
         "generated_at": now, "mode": mode, "groups": group_list, "total": total,
     }

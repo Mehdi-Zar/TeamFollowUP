@@ -22,7 +22,7 @@ flowchart TB
     SL[Squad leader]
     M[Member]
   end
-  Users -->|HTTPS, session cookie| APP[Tribe Cockpit\nFastAPI + SPA]
+  Users -->|HTTPS, session cookie| APP[TeamFollowUP\nFastAPI + SPA]
   APP -->|SQL| DB[(PostgreSQL)]
   APP -->|SMTP| MAIL[(Mail server)]
   APP -->|OIDC / SAML| IDP[(Identity Provider)]

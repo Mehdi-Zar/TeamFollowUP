@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     # --- Core ---
-    app_name: str = "Tribe Cockpit"
+    app_name: str = "TeamFollowUP"
     secret_key: str = "change-me-in-prod-please-32chars-min-secret"
     session_cookie: str = "trt_session"
     session_max_age_seconds: int = 60 * 60 * 12  # 12h

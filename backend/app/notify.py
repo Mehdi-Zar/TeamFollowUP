@@ -25,7 +25,7 @@ def _emit(db: Session, smtp: dict, mods: dict, user: User, kind: str, actor: str
         db.add(Notification(user_id=user.id, kind=kind, actor_name=actor, excerpt=excerpt, link=link))
     email_on = is_active(mods, "notifications", "email")
     if email_on and user.email_notifications and user.email and smtp.get("enabled"):
-        body = f"{actor} - {excerpt}\n\nOuvrir : (votre instance Tribe Cockpit){link}"
+        body = f"{actor} - {excerpt}\n\nOuvrir : (votre instance TeamFollowUP){link}"
         send_async(smtp, user.email, subject, body)
 
 
