@@ -2638,6 +2638,7 @@ function SettingsAdmin() {
           <div style={{ width: 240 }}>
             <label>{t("set.feed_retention")}</label>
             <input aria-label={t("set.feed_retention")} type="number" min={0} value={cfg.feed_retention_days ?? 0} onChange={(e) => set("feed_retention_days", Number(e.target.value))} />
+            <div className="small muted">{t("set.feed_retention_hint")}</div>
           </div>
         </div>
       </div>

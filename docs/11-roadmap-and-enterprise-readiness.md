@@ -13,7 +13,7 @@
 | DevOps/CI-CD | 🟢 High | Reproducible build + **CI (tests/typecheck/build/i18n/audit)** + Dependabot; no CD/envs yet |
 | Observability | 🟢 High | Structured logs + audit + **Prometheus metrics, 7 alert rules, ready-to-run Grafana stack**; external uptime probe still to add |
 | Data/BCP | 🟢 High | Backup sidecar with **verified dumps**, a **tested** restore procedure and a drill protocol ([19](19-plan-de-reprise.md)); off-host copies, encryption and PITR still to arrange |
-| Compliance/Governance | 🟡 Medium | Audit log + access control; no formal retention/DPA |
+| Compliance/Governance | 🟢 High | Audit log + access control + **enforced retention** + a documented GDPR posture ([20](20-donnees-personnelles-et-retention.md)); DPAs and retention durations are the organisation's call |
 | Multi-tenancy/SaaS | 🔴 Low | Tribe scoping only; not isolated for external tenants |
 | FinOps | 🔴 Low | Single small footprint; no cost controls/metrics |
 
@@ -44,7 +44,7 @@ needs the P1 track before scale or external/SaaS use.
 - [ ] Environment promotion (dev → staging → prod) + CD with migrations gating
 - [x] Backups → **DR runbook with stated RPO/RTO and a restore procedure that was actually executed** ([19](19-plan-de-reprise.md)); off-host copies and alerting on failed backups still open
 - [ ] Design tokens + component-library extraction; split large components
-- [ ] Data retention/archival policy (audit_log, report_snapshots) + GDPR/DPA posture
+- [x] Data retention **enforced** (audit log + feed) and the GDPR posture written down: what is stored, for how long, who sees it, and how to answer an access or erasure request ([20](20-donnees-personnelles-et-retention.md)). The organisation-level decisions it lists (retention durations, the free-text leave reason, DPAs) are deliberately left open
 
 ### Long-term evolution
 - [ ] True multi-tenancy / SaaS (per-tenant isolation, billing, FinOps dashboards)

@@ -20,7 +20,7 @@ Legend: ✅ done · ◑ partial · ⬜ open.
 | TD-PERF-2 | Performance | Single JS bundle (no code-splitting) | P2 | ✅ route-level `React.lazy` (initial bundle 384→246 KB) |
 | TD-DATA-1 | Data | `users.role` free string, personas in app_settings (no FK) | P2 | ⬜ admin PUT reassigns orphans; consider personas table |
 | TD-DATA-2 | Data | `objectives.rag_status` retained but unauthoritative | P2 | ◑ documented |
-| TD-DATA-3 | Data | No retention/rotation for audit_log | P2 | ✅ opt-in purge (`maintenance.py`, `AUDIT_RETENTION_DAYS`) |
+| TD-DATA-3 | Data | No retention/rotation for audit_log | P2 | ✅ opt-in purge for the audit log **and the feed** (`maintenance.py`); what is stored, for how long, and how to answer an access or erasure request: [20](20-donnees-personnelles-et-retention.md) |
 | TD-CODE-1 | Code | `AdminPage.tsx` (~1.3k lines), `report.py` large | P2 | ⬜ split into sub-modules |
 | TD-UI-1 | UI | Spacing/typography not tokenized | P2 | ⬜ introduce CSS tokens |
 | TD-A11Y-1 | A11y | Form controls without an accessible name | P2 | ◑ **every control in `AdminPage.tsx` now has one** (visible `<label>` mirrored into `aria-label`, `aria-label` on inline table editors). Remaining: the other pages, and `htmlFor`/`id` pairing so clicking a label focuses its field |

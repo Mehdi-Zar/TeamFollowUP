@@ -29,6 +29,17 @@
   and to GKE (`PodMonitoring`).
 
 ### Added
+- **[20 - Données personnelles et rétention](docs/20-donnees-personnelles-et-retention.md).**
+  The application describes an organisation: people, their roles, and their **absences**. That
+  is personal-data processing whether or not anyone called it that. The document lists what is
+  stored and why, how long each kind is kept, who can see it, and the exact queries to answer
+  an access request or an erasure request - including the decisions erasure actually requires:
+  leaves and feed posts are deleted, but audit entries are **detached** (`user_id = NULL`)
+  rather than destroyed, because the trail answers a separate legitimate interest and the
+  schema was built nullable for exactly that. It also names the two things that deserve
+  attention rather than burying them: `org_members` can describe someone who never opened the
+  application, and the free-text leave reason is a field where somebody can write a medical
+  reason.
 - **[19 - Plan de reprise](docs/19-plan-de-reprise.md): the restore procedure, as executed.**
   The roadmap has wanted a DR runbook since the first audit. This one states the RPO and RTO
   the shipped configuration actually gives (24 h and about 15 minutes) and what to change to
@@ -75,6 +86,18 @@
   Dependabot had not opened a pull request for this one.
 
 ### Fixed
+- **"Message retention" retained everything.** The setting, offered in Administration >
+  Settings as *Message retention (days, 0 = keep all)*, only ever **hid** older posts from the
+  listing endpoint. They stayed in the database and in every backup, forever. An administrator
+  who set it to satisfy a retention policy had satisfied nothing, and had no way of knowing.
+  The hourly purge now really deletes feed posts past the window, along with their replies and
+  reactions, through the ORM so the declared cascade runs (the foreign keys have no
+  `ON DELETE CASCADE`, so a bulk delete would have failed). **Pinned posts are exempt**:
+  pinning is somebody deciding this one stays, which is also how the listing already treated
+  them. The admin screen now says plainly that the messages are permanently deleted.
+  **Behaviour change**: an instance that already has a non-zero value will start deleting on
+  the next scheduler tick. That is what the setting always claimed to do. Eight regression
+  tests in `tests/test_retention.py`, where the module had two.
 - **The backup sidecar was leaving zero-byte files that counted as backups.** It wrote
   `pg_dump` straight into the final filename, so a failed dump left an empty
   `tribe_AAAAMMJJ_HHMMSS.sql` behind: indistinguishable from a real backup, counted by the
