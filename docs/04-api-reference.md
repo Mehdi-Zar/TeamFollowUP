@@ -149,7 +149,11 @@ PPTX export template: `GET /pptx-template` (status), `POST /pptx-template` (uplo
 (masters/theme/branding); see `app/pptxtpl.py`
 
 ### audit (`/api/audit-log`) - admin
-`GET ""`
+`GET ""` - one page, newest first: `?limit` (1..500, default 50) `&offset` `&action` (case-insensitive
+substring) `&entity` (exact) `&user_id` `&since` `&until` (ISO timestamps). Returns
+`{items, total, limit, offset}`, where **`total` counts the filtered set, not the page**. Each item
+carries the acting user's `user_email` / `user_name`, resolved server-side and null when that
+account has since been deleted.
 
 ## Generate a static OpenAPI file
 

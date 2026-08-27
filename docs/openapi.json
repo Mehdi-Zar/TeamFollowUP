@@ -4762,7 +4762,7 @@
           "audit"
         ],
         "summary": "List Audit",
-        "description": "Return the most recent audit-log entries, newest first.\n\nGET /api/audit-log?limit=...\nAccess: admin only (require_admin). The limit is clamped to 1..1000 to bound\nthe response regardless of the value requested.",
+        "description": "Return one page of audit entries, newest first, with the total that matched.\n\nGET /api/audit-log?limit=&offset=&action=&entity=&user_id=&since=&until=\nAccess: admin only (require_admin).\n\n``total`` is the count for the filters, not the page, so the UI can say\n\"showing 50 of 12480\" and know whether a next page exists.",
         "operationId": "list_audit_api_audit_log_get",
         "parameters": [
           {
@@ -4771,9 +4771,114 @@
             "required": false,
             "schema": {
               "type": "integer",
-              "default": 200,
+              "maximum": 500,
+              "minimum": 1,
+              "default": 50,
               "title": "Limit"
             }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "action",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Case-insensitive substring of the action name.",
+              "title": "Action"
+            },
+            "description": "Case-insensitive substring of the action name."
+          },
+          {
+            "name": "entity",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Exact entity type, e.g. 'user' or 'squad'.",
+              "title": "Entity"
+            },
+            "description": "Exact entity type, e.g. 'user' or 'squad'."
+          },
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only entries recorded for this acting user.",
+              "title": "User Id"
+            },
+            "description": "Only entries recorded for this acting user."
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Inclusive lower bound on the timestamp.",
+              "title": "Since"
+            },
+            "description": "Inclusive lower bound on the timestamp."
+          },
+          {
+            "name": "until",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Inclusive upper bound on the timestamp.",
+              "title": "Until"
+            },
+            "description": "Inclusive upper bound on the timestamp."
           }
         ],
         "responses": {
@@ -4782,11 +4887,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/AuditOut"
-                  },
-                  "title": "Response List Audit Api Audit Log Get"
+                  "$ref": "#/components/schemas/AuditPage"
                 }
               }
             }
@@ -8454,6 +8555,28 @@
             ],
             "title": "User Id"
           },
+          "user_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Email"
+          },
+          "user_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Name"
+          },
           "action": {
             "type": "string",
             "title": "Action"
@@ -8504,7 +8627,39 @@
           "timestamp"
         ],
         "title": "AuditOut",
-        "description": "An audit-log entry as returned by the API."
+        "description": "An audit-log entry as returned by the API.\n\n``user_email`` / ``user_name`` are resolved by the router from the acting\nuser, and stay None when that account has since been deleted - the trail\noutlives its authors on purpose."
+      },
+      "AuditPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AuditOut"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "AuditPage",
+        "description": "One page of audit entries plus the total that matched the filters.\n\n``total`` counts the filtered set, not the page: the screen needs it to say\nhow much it is not showing, and to know whether a next page exists."
       },
       "AuthConfig": {
         "properties": {

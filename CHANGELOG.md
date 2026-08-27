@@ -29,6 +29,19 @@
   and to GKE (`PodMonitoring`).
 
 ### Changed
+- **The audit log is paginated and filterable, and says who acted.** The screen rendered "the
+  last 200 entries", which on an instance that has been running for a year answers no question
+  at all: what an administrator needs is *who disabled this account* or *what happened on the
+  12th*. `GET /api/audit-log` now takes `limit` / `offset` and filters on action (substring,
+  case-insensitive), entity, acting user and a date range, and returns
+  `{items, total, limit, offset}` - `total` counting the filtered set, so the screen can say
+  how much it is not showing. The acting user is resolved server-side into `user_email` /
+  `user_name` instead of the bare numeric id the table used to print; it stays null when the
+  account has since been deleted, which the nullable foreign key allows on purpose. The admin
+  screen gained the matching filter bar, a page size and pagination, with the action box
+  debounced so typing does not fire a request per keystroke. **Breaking for any direct API
+  consumer**: the response is now an object, not a bare list. Ten regression tests in
+  `tests/test_audit_api.py`, where there were none.
 - **Doc 16 now teaches the bench instead of listing it.** It assumed minikube, kubectl,
   OpenSSL and Docker were already installed, the scripts already understood, and the purpose
   of each command guessable. Rewritten so nothing is magic: why the bench exists at all (in

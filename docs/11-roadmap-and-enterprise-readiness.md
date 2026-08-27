@@ -37,7 +37,7 @@ needs the P1 track before scale or external/SaaS use.
 - [x] Frontend tests (Vitest, 11 tests) wired into CI; **E2E (Playwright)** still to add
 - [x] Externalize the scheduler via **Postgres advisory lock** (multi-replica safe) - `main.py`
 - [x] Performance: **eager-loading** on dashboard/report (N+1 removed) + **route code-splitting**
-      (initial bundle 384→246 KB); audit-log pagination still open
+      (initial bundle 384→246 KB); **audit log paginated + filterable** (action, entity, user, date range)
 - [x] Data retention: opt-in purge of old audit/auto-progress records (`maintenance.py`)
 
 ### Strategic investments (quarter)

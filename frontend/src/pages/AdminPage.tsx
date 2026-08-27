@@ -19,7 +19,7 @@ import { api, ApiError } from "../api";
 import { useI18n } from "../i18n";
 import { useModule, useReloadConfig } from "../config";
 import { useAuth } from "../auth";
-import { AuditEntry, LeaveConfig, LeaveType, ModuleKey, Permissions, Persona, Role, Squad, SquadDetail, Tribe, User } from "../types";
+import { AuditEntry, AuditPage, LeaveConfig, LeaveType, ModuleKey, Permissions, Persona, Role, Squad, SquadDetail, Tribe, User } from "../types";
 import { ErrorBanner, Spinner, Dot, Modal, EmptyState } from "../components/ui";
 import { ADMIN_TABS_BY_ROLE, ALL_ROLES } from "../perms";
 import { useSetPageChrome } from "../components/pageChrome";
@@ -2721,50 +2721,140 @@ function PptxTemplateAdmin() {
   );
 }
 
-/** Admin > Audit: read-only table of the audit log (timestamp, user, action,
- *  entity, detail) for security/compliance review. Admin only. */
+/** Admin > Audit: the audit log, paginated and filterable. Admin only.
+ *
+ *  It used to render "the last 200 entries", which on an instance that has been
+ *  running for a year answers no question at all: what an administrator actually
+ *  needs is "who disabled this account" or "what happened on the 12th". Hence the
+ *  filters, and a total that says how much is NOT being shown. */
 function AuditAdmin() {
   const { t, formatDateTime } = useI18n();
-  const [entries, setEntries] = useState<AuditEntry[] | null>(null);
+  const [page, setPage] = useState<AuditPage | null>(null);
+  const [action, setAction] = useState("");
+  const [entity, setEntity] = useState("");
+  const [since, setSince] = useState("");
+  const [until, setUntil] = useState("");
+  const [limit, setLimit] = useState(50);
+  const [offset, setOffset] = useState(0);
   const { error, wrap } = useErr();
+
+  // Debounced so typing in the action box does not fire a request per keystroke.
   useEffect(() => {
-    wrap(() => api.get<AuditEntry[]>("/api/audit-log")).then((d) => d && setEntries(d));
-  }, []);
+    const handle = setTimeout(() => {
+      const q = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+      if (action.trim()) q.set("action", action.trim());
+      if (entity.trim()) q.set("entity", entity.trim());
+      // <input type="date"> gives YYYY-MM-DD; widen it to cover the whole day.
+      if (since) q.set("since", `${since}T00:00:00`);
+      if (until) q.set("until", `${until}T23:59:59`);
+      wrap(() => api.get<AuditPage>(`/api/audit-log?${q.toString()}`)).then((d) => d && setPage(d));
+    }, 250);
+    return () => clearTimeout(handle);
+  }, [action, entity, since, until, limit, offset]);
+
+  // Any filter change invalidates the current position in the list.
+  const onFilter = (setter: (v: string) => void) => (v: string) => { setOffset(0); setter(v); };
+
+  const reset = () => { setAction(""); setEntity(""); setSince(""); setUntil(""); setOffset(0); };
+
   if (error) return <ErrorBanner message={error} />;
-  if (!entries) return <Spinner />;
+  if (!page) return <Spinner />;
+
+  const pages = Math.max(1, Math.ceil(page.total / page.limit));
+  const current = Math.floor(page.offset / page.limit) + 1;
+  const hasFilter = !!(action || entity || since || until);
+
+  /** Who acted: a name if we still have the account, otherwise say so plainly
+   *  rather than showing a bare id nobody can resolve. */
+  const who = (e: AuditEntry) => {
+    if (e.user_name || e.user_email) return e.user_name || e.user_email;
+    if (e.user_id == null) return t("admin.audit_system");
+    return t("admin.audit_deleted_user");
+  };
+
   return (
-    <div className="card" style={{ padding: 0, overflowX: "auto" }}>
-      <table>
-        <thead>
-          <tr>
-            <th>{t("admin.ts")}</th>
-            <th>{t("admin.user_col")}</th>
-            <th>{t("admin.action")}</th>
-            <th>{t("admin.entity")}</th>
-            <th>{t("admin.detail")}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {entries.map((e) => (
-            <tr key={e.id}>
-              <td className="muted" style={{ whiteSpace: "nowrap" }}>{formatDateTime(e.timestamp)}</td>
-              <td>{e.user_id ?? "-"}</td>
-              <td style={{ fontFamily: "monospace", fontSize: 12 }}>{e.action}</td>
-              <td className="muted">{e.entity ? `${e.entity}${e.entity_id ? ` #${e.entity_id}` : ""}` : "-"}</td>
-              <td className="muted small" style={{ maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {e.detail ? JSON.stringify(e.detail) : "-"}
-              </td>
-            </tr>
-          ))}
-          {entries.length === 0 && (
+    <div className="stack" style={{ gap: 12 }}>
+      <div className="card inline" style={{ gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
+        <label className="stack" style={{ gap: 4 }}>
+          <span className="small muted">{t("admin.audit_filter_action")}</span>
+          <input value={action} onChange={(e) => onFilter(setAction)(e.target.value)}
+                 placeholder="login, user.update..." style={{ minWidth: 180 }} />
+        </label>
+        <label className="stack" style={{ gap: 4 }}>
+          <span className="small muted">{t("admin.audit_filter_entity")}</span>
+          <input value={entity} onChange={(e) => onFilter(setEntity)(e.target.value)}
+                 placeholder="user, squad..." style={{ minWidth: 140 }} />
+        </label>
+        <label className="stack" style={{ gap: 4 }}>
+          <span className="small muted">{t("admin.audit_from")}</span>
+          <input type="date" value={since} onChange={(e) => onFilter(setSince)(e.target.value)} />
+        </label>
+        <label className="stack" style={{ gap: 4 }}>
+          <span className="small muted">{t("admin.audit_to")}</span>
+          <input type="date" value={until} onChange={(e) => onFilter(setUntil)(e.target.value)} />
+        </label>
+        <label className="stack" style={{ gap: 4 }}>
+          <span className="small muted">{t("admin.audit_per_page")}</span>
+          <select value={limit} onChange={(e) => { setOffset(0); setLimit(Number(e.target.value)); }}>
+            {[25, 50, 100, 200].map((n) => <option key={n} value={n}>{n}</option>)}
+          </select>
+        </label>
+        {hasFilter && (
+          <button className="btn-ghost btn-sm" onClick={reset}>{t("admin.audit_reset")}</button>
+        )}
+        <div className="small muted" style={{ marginLeft: "auto" }}>
+          {t("admin.audit_count", { shown: String(page.items.length), total: String(page.total) })}
+        </div>
+      </div>
+
+      <div className="card" style={{ padding: 0, overflowX: "auto" }}>
+        <table>
+          <thead>
             <tr>
-              <td className="muted" colSpan={5}>
-                {t("admin.no_audit")}
-              </td>
+              <th>{t("admin.ts")}</th>
+              <th>{t("admin.user_col")}</th>
+              <th>{t("admin.action")}</th>
+              <th>{t("admin.entity")}</th>
+              <th>{t("admin.detail")}</th>
             </tr>
-          )}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {page.items.map((e) => (
+              <tr key={e.id}>
+                <td className="muted" style={{ whiteSpace: "nowrap" }}>{formatDateTime(e.timestamp)}</td>
+                <td>{who(e)}</td>
+                <td style={{ fontFamily: "monospace", fontSize: 12 }}>{e.action}</td>
+                <td className="muted">{e.entity ? `${e.entity}${e.entity_id ? ` #${e.entity_id}` : ""}` : "-"}</td>
+                <td className="muted small" style={{ maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                    title={e.detail ? JSON.stringify(e.detail) : ""}>
+                  {e.detail ? JSON.stringify(e.detail) : "-"}
+                </td>
+              </tr>
+            ))}
+            {page.items.length === 0 && (
+              <tr>
+                <td className="muted" colSpan={5}>{t("admin.no_audit")}</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {pages > 1 && (
+        <div className="inline" style={{ gap: 10, alignItems: "center", justifyContent: "center" }}>
+          <button className="btn-secondary btn-sm" disabled={page.offset <= 0}
+                  onClick={() => setOffset(Math.max(0, page.offset - page.limit))}>
+            {t("admin.audit_prev")}
+          </button>
+          <span className="small muted">
+            {t("admin.audit_page", { page: String(current), pages: String(pages) })}
+          </span>
+          <button className="btn-secondary btn-sm" disabled={page.offset + page.limit >= page.total}
+                  onClick={() => setOffset(page.offset + page.limit)}>
+            {t("admin.audit_next")}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

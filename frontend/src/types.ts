@@ -596,15 +596,28 @@ export interface TribeOrg {
   tree: OrgNode[];
 }
 
-/** One audit-log entry (who did what to which entity, when). */
+/** One audit-log entry (who did what to which entity, when).
+ *  user_email / user_name are resolved server-side and stay null when the acting
+ *  account has since been deleted: the trail outlives its authors on purpose. */
 export interface AuditEntry {
   id: number;
   user_id?: number | null;
+  user_email?: string | null;
+  user_name?: string | null;
   action: string;
   entity?: string | null;
   entity_id?: string | null;
   timestamp: string;
   detail?: any;
+}
+
+/** One page of audit entries. `total` counts the filtered set, not the page, so
+ *  the screen can say how much it is not showing. */
+export interface AuditPage {
+  items: AuditEntry[];
+  total: number;
+  limit: number;
+  offset: number;
 }
 
 /** Which SSO methods are enabled, so the login page shows the right buttons. */

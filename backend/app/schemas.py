@@ -819,14 +819,33 @@ class ReportSubscriptionIn(BaseModel):
 
 # ---------- Audit ----------
 class AuditOut(ORMModel):
-    """An audit-log entry as returned by the API."""
+    """An audit-log entry as returned by the API.
+
+    ``user_email`` / ``user_name`` are resolved by the router from the acting
+    user, and stay None when that account has since been deleted - the trail
+    outlives its authors on purpose.
+    """
     id: int
     user_id: Optional[int] = None
+    user_email: Optional[str] = None
+    user_name: Optional[str] = None
     action: str
     entity: Optional[str] = None
     entity_id: Optional[str] = None
     timestamp: datetime
     detail: Optional[dict] = None
+
+
+class AuditPage(BaseModel):
+    """One page of audit entries plus the total that matched the filters.
+
+    ``total`` counts the filtered set, not the page: the screen needs it to say
+    how much it is not showing, and to know whether a next page exists.
+    """
+    items: list[AuditOut]
+    total: int
+    limit: int
+    offset: int
 
 
 # ---------- Review actions ----------
