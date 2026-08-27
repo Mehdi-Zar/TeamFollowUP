@@ -7,6 +7,9 @@
  * persona capability ({@link Section}). Screens are lazily imported for
  * per-route code splitting.
  */
+// React 19 removed the GLOBAL JSX namespace from @types/react; it is exported
+// from the module instead. Type-only import, so it costs nothing at runtime.
+import type { JSX } from "react";
 import { lazy, Suspense } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { useAuth } from "./auth";

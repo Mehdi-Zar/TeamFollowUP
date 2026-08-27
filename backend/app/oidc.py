@@ -2,6 +2,16 @@
 from authlib.integrations.starlette_client import OAuth
 
 
+def discovery_url(issuer: str) -> str:
+    """The provider's well-known document for an issuer URL.
+
+    Split out of :func:`get_oauth` so it can be asserted on directly: Authlib
+    keeps the value it was given on a private attribute, and a test that reaches
+    for a private attribute breaks on the next release for no good reason.
+    """
+    return (issuer or "").rstrip("/") + "/.well-known/openid-configuration"
+
+
 def get_oauth(cfg: dict) -> OAuth:
     """Build a fresh Authlib OAuth client from the (DB) auth config.
 
@@ -11,12 +21,11 @@ def get_oauth(cfg: dict) -> OAuth:
     exchange against interception.
     """
     oauth = OAuth()
-    issuer = (cfg.get("oidc_issuer_url") or "").rstrip("/")
     oauth.register(
         name="oidc",
         client_id=cfg.get("oidc_client_id"),
         client_secret=cfg.get("oidc_client_secret"),
-        server_metadata_url=issuer + "/.well-known/openid-configuration",
+        server_metadata_url=discovery_url(cfg.get("oidc_issuer_url")),
         client_kwargs={"scope": cfg.get("oidc_scopes") or "openid email profile", "code_challenge_method": "S256"},
     )
     return oauth

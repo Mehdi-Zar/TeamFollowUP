@@ -3,6 +3,9 @@
 // shown only when the persona holds the matching capability AND its module is on
 // (fail-closed). The card order is persona-specific, and admin/steering surfaces
 // are intentionally pushed to the bottom rather than being the headline.
+// React 19 removed the GLOBAL JSX namespace from @types/react; it is exported
+// from the module instead. Type-only import, so it costs nothing at runtime.
+import type { JSX } from "react";
 import { Link } from "react-router-dom";
 import { useI18n } from "../i18n";
 import { useAuth } from "../auth";

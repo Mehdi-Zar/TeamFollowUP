@@ -5,6 +5,9 @@
 // the first-login welcome modal, and the command palette. The routed page renders
 // through <Outlet/>. Nav visibility is filtered by role, enabled modules, and
 // persona capabilities.
+// React 19 removed the GLOBAL JSX namespace from @types/react; it is exported
+// from the module instead. Type-only import, so it costs nothing at runtime.
+import type { JSX } from "react";
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { api } from "../api";

@@ -28,7 +28,33 @@
   it fires, how to protect `/metrics`, and the transposition to Kubernetes (`ServiceMonitor`)
   and to GKE (`PodMonitoring`).
 
+### Security
+- **`react-router-dom` was vulnerable to an open redirect leading to XSS**
+  ([GHSA-jjmj-jmhj-qwj2](https://github.com/advisories/GHSA-jjmj-jmhj-qwj2), plus
+  [GHSA-wrjc-x8rr-h8h6](https://github.com/advisories/GHSA-wrjc-x8rr-h8h6): a backslash in a
+  `<Link>` target or a `useNavigate` call escaping the app's origin). The whole 6.x line is
+  affected and the fix only exists in 7.x, so the router moved to 7.18.2. Nothing in the app
+  had to change: it uses `BrowserRouter` / `Routes` / `Link` / `NavLink` / `Navigate` /
+  `Outlet` / `useLocation` / `useNavigate` / `useParams` / `useSearchParams`, all unchanged in
+  v7. `npm audit` now reports **0 vulnerabilities**, production and development alike.
+  Dependabot had not opened a pull request for this one.
+
 ### Changed
+- **Every pending dependency update applied and verified**, closing the thirteen Dependabot
+  pull requests that had piled up. Backend: authlib 1.4 to 1.7.2, google-auth 2.38 to 2.56.3,
+  PyJWT 2.10.1 to 2.13.0, argon2-cffi 23.1 to 25.1, psycopg2-binary 2.9.12. Frontend: React 18
+  to 19.2, react-router-dom 7.18.2 (see above), and a coordinated build-toolchain upgrade -
+  vite 5 to 8, vitest 2 to 4 and `@vitejs/plugin-react` 4 to 6 **have to move together**,
+  which is exactly why the three separate pull requests could not be merged one by one. Also
+  jsdom 25 to 30, `@types/node` 22 to 26, and the GitHub Actions to checkout v7 / setup-node v7
+  / setup-python v7.
+  React 19 removed the global `JSX` namespace from `@types/react`; three files now import the
+  type from the module instead. Two consequences worth knowing: the initial bundle grew from
+  317 to 382 KB (117 KB gzipped) between React 19 and router 7, and the production build got
+  about three times faster.
+  New guard: `tests/test_oidc_client.py` pins the Authlib surface the login actually calls.
+  The real OIDC exchange is covered by the Kubernetes bench, which needs a cluster; a rename
+  in a future Authlib release would otherwise go unnoticed until somebody clicks "Sign in".
 - **Coverage is measured and enforced.** `pytest-cov` with a `fail_under` floor in
   `backend/.coveragerc`, run by the CI backend job. The floor is deliberately a **ratchet**
   set just under what the suite actually reaches (74% of `app/`), not an aspiration: a floor
