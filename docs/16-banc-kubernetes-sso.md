@@ -396,6 +396,11 @@ docker pull envoyproxy/envoy:v1.31-latest
 docker pull quay.io/keycloak/keycloak:26.0
 ```
 
+`docker pull` les télécharge **sur votre poste**, pas dans le cluster : c'est l'étape
+suivante qui les y transfère. Les versions sont fixées volontairement, pour que le banc
+donne le même résultat dans six mois qu'aujourd'hui. Comptez environ 1,5 Go au total, une
+seule fois.
+
 ### Charger les quatre dans le nœud
 
 ```bash
@@ -405,7 +410,20 @@ for img in teamfollowup-app:bench postgres:16-alpine \
 done
 ```
 
-Comptez plusieurs minutes : chaque image est transférée dans le nœud.
+- La boucle `for ... do ... done` répète la même commande sur les quatre noms ; rien ne vous
+  empêche de lancer les quatre `minikube image load` a la main, c'est strictement
+  équivalent.
+- `minikube -p tfu image load <image>` prend l'image du Docker **de votre poste** et l'écrit
+  dans le stock d'images **du nœud**. C'est le transfert évoqué plus haut.
+- La barre oblique inverse en fin de ligne est une simple continuation : la commande tient
+  sur deux lignes pour rester lisible.
+
+Comptez plusieurs minutes : chaque image est transférée dans le nœud. Pour vérifier ce qui
+est arrivé à destination :
+
+```bash
+minikube -p tfu image ls | grep -E "teamfollowup|postgres|envoy|keycloak"
+```
 
 ### Le tag attendu par le manifeste
 
@@ -496,7 +514,50 @@ configuration Envoy fait exactement ce que fait un ALB Google :
 Le Service de la passerelle a une **ClusterIP fixe** (`10.96.200.200`), celle que
 `hostAliases` référence dans `20-app.yaml`.
 
-### 8.2 Créer les secrets
+### 8.2 Ce que déclare le royaume Keycloak
+
+Vous n'avez **rien à cliquer dans Keycloak** : sa configuration est le fichier
+[`realm-tribe.json`](../bench/k8s-sso/realm-tribe.json), importé au démarrage grâce à
+l'option `--import-realm`. C'est ce qui rend le banc rejouable, et c'est aussi ce qui
+vous dit quels identifiants utiliser.
+
+| Objet déclaré | Valeur | À quoi il sert |
+|---|---|---|
+| Royaume | `tribe` | l'espace isolé qui contient tout le reste ; il apparaît dans les URL : `https://idp.localtest.me/realms/tribe` |
+| Groupe | `tribe-leads` | c'est **lui** qui sera traduit en rôle applicatif. Sans groupe, il n'y a pas de mapping à tester |
+| Utilisateur | `alice` / `alice-pw`, `alice@exemple.com`, **membre de `tribe-leads`** | la personne qui doit ressortir `tribe_leader` côté application |
+| Utilisateur | `bob` / `bob-pw`, `bob@exemple.com`, **dans aucun groupe** | le cas témoin : quelqu'un qui arrive sans droit particulier (utilisé à l'étape 12) |
+| Client OIDC | `teamfollowup`, **confidentiel**, secret `teamfollowup-oidc-secret`, rappel `https://app.localtest.me/api/auth/oidc/callback` | ce que l'application présente à Keycloak pour l'échange OIDC |
+| Client SAML | entity ID `https://app.localtest.me/api/auth/saml/metadata`, ACS `https://app.localtest.me/api/auth/saml/acs` | l'équivalent SAML. **L'entity ID est une URL**, et c'est normal : ce n'est qu'un identifiant, celui que l'application publie |
+
+Chaque client porte des **mappers**, les règles qui décident quelles informations partent
+dans le jeton ou dans l'assertion :
+
+- côté OIDC, un `oidc-group-membership-mapper` qui place les groupes dans une revendication
+  nommée `groups` ;
+- côté SAML, trois mappers : l'email, le `displayName`, et les groupes dans un attribut
+  également nommé `groups`.
+
+C'est pour cela que la configuration côté application désigne `groups` des deux côtés
+(`oidc_groups_claim` et `saml_groups_attr`) : les deux noms doivent correspondre.
+
+**Les deux réglages qui ne se devinent pas :**
+
+- **`saml.client.signature: "false"`** dispense l'application de signer ses AuthnRequests.
+  Sans lui, Keycloak exigerait une signature, donc une paire de clés SP, pour un banc qui
+  n'en a pas besoin.
+- **`full.path: "false"`** sur le mapper de groupes. Keycloak enverrait sinon le chemin
+  complet, `/tribe-leads` avec sa barre oblique. La règle de correspondance compare avec
+  `tribe-leads`, la comparaison échoue, et l'utilisateur n'obtient jamais son rôle : un
+  échec silencieux qui ressemble à un bug applicatif.
+
+Une fois le banc démarré, tout cela se retrouve dans l'interface de Keycloak sur
+`https://idp.localtest.me` (`admin` / `admin-pw`) : royaume **tribe**, sections *Clients*,
+*Groups* et *Users*. Attention : ce que vous y modifiez à la main **ne survit pas** au
+redémarrage du pod, puisque le royaume est réimporté. Pour un changement durable, éditez
+le JSON.
+
+### 8.3 Créer les secrets
 
 Trois objets Kubernetes à fabriquer à partir des fichiers produits à l'étape 4.
 
@@ -536,7 +597,7 @@ kubectl -n tfu create configmap keycloak-realm \
 Le royaume Keycloak. Un ConfigMap et non un Secret : c'est de la configuration, et
 elle est lisible dans le dépôt.
 
-### 8.3 Appliquer les trois derniers manifestes
+### 8.4 Appliquer les trois derniers manifestes
 
 ```bash
 kubectl apply -f 40-gateway.yaml -f 30-keycloak.yaml -f 20-app.yaml
@@ -546,7 +607,7 @@ L'ordre n'a pas d'importance pour Kubernetes, qui réconcilie ce qu'on lui donne
 On met la passerelle en premier par habitude : son Service, et donc sa ClusterIP
 fixe, existe avant que le pod applicatif ne cherche à la résoudre.
 
-### 8.4 Attendre que tout démarre
+### 8.5 Attendre que tout démarre
 
 ```bash
 kubectl -n tfu get pods -w
@@ -754,15 +815,46 @@ elle n'est pas stockée comme surcharge : le champ redevient vide et suit de nou
 
 ## 12. Peupler un historique d'accès réel (facultatif)
 
-`seed-history.py` rend l'écran « Accès » de l'application parlant. Rien n'est
-fabriqué directement dans la base : **deux personnes se connectent réellement par
-le SSO**, l'une en OIDC (Alice), l'autre en SAML (Bob), atterrissent dans la file
-d'attente parce que la validation est exigée, puis l'administrateur en valide une
-et refuse l'autre.
+`seed-history.py` rend l'écran « Accès » de l'application parlant. Rien n'est fabriqué
+directement dans la base : deux personnes se connectent réellement par le SSO, atterrissent
+dans la file d'attente, puis sont traitées.
+
+### Ce que le script fait, exactement
+
+Comme le pilote de tests, il agit, il ne se contente pas d'observer. En six étapes :
+
+1. **Il se connecte en compte de secours** (`admin@local`), comme le ferait un
+   administrateur.
+2. **Il active les deux protocoles à la fois** par un `PUT /api/admin/auth-config`, avec
+   une différence essentielle par rapport à l'étape 11 : `require_approval: true`. C'est ce
+   réglage qui fait atterrir les arrivants dans une file d'attente au lieu de leur ouvrir
+   directement l'application. Sans lui, il n'y aurait rien à valider ni à refuser.
+3. **Alice se connecte en OIDC** (`alice` / `alice-pw`). Le script suit les redirections,
+   remplit le formulaire Keycloak, et revient sur l'application, exactement comme un
+   navigateur.
+4. **Bob se connecte en SAML** (`bob` / `bob-pw`). Même chose avec l'autre protocole :
+   Keycloak répond par un formulaire auto-soumis portant l'assertion, que le script poste
+   sur l'URL ACS.
+5. **L'administrateur tranche** : il lit `/api/access-requests`, **valide Alice** en lui
+   donnant le rôle `tribe_leader`, et **refuse Bob**. Deux décisions opposées, pour que
+   l'écran montre les deux cas.
+6. **Il relit l'historique** (`/api/access-requests/history`) et l'imprime : ce que vous
+   voyez à l'écran est lu dans le journal d'audit, seul endroit qui enregistre l'auteur
+   d'une décision.
+
+Rappel de l'étape 7 : Alice est dans le groupe `tribe-leads`, Bob n'est dans aucun groupe.
+C'est ce qui rend les deux issues crédibles plutôt qu'arbitraires.
+
+### Le lancer
 
 ```bash
 python seed-history.py
 ```
+
+> **À savoir.** Le script laisse les deux protocoles **activés** et `require_approval` à
+> `true`, contrairement à `run-tests.py` qui remet tout à zéro en sortant. C'est voulu : on
+> veut ensuite parcourir l'application dans cet état. Pour revenir à un banc neutre,
+> relancez `python run-tests.py`, qui désactive les deux à la fin.
 
 ```
   Alice se connecte via OIDC...
@@ -823,32 +915,86 @@ Le parcours qui montre l'essentiel :
 
 ## 14. Diagnostiquer quand quelque chose ne marche pas
 
-Les commandes à connaître, dans l'ordre où on les sort.
+### D'abord : qui tourne ?
 
 ```bash
-kubectl -n tfu get pods                       # qui tourne, qui redémarre en boucle
-kubectl -n tfu describe pod <pod>             # les événements Kubernetes
-kubectl -n tfu logs deploy/teamfollowup-app   # les journaux de l'application
-kubectl -n tfu logs deploy/keycloak           # ceux de l'IdP
-kubectl -n tfu logs deploy/gateway            # ceux d'Envoy (une ligne par requete)
+kubectl -n tfu get pods
 ```
 
-Regarder ce que le pod voit vraiment, de l'intérieur :
+- `-n tfu` : le namespace du banc. **Sans lui**, `kubectl` regarde `default`, qui est vide,
+  et vous conclurez à tort que rien n'est déployé.
+- La colonne `READY` doit afficher `1/1`, la colonne `STATUS` `Running`. `RESTARTS` qui
+  monte veut dire que le conteneur démarre puis meurt en boucle.
+
+Les états que vous verrez, et ce qu'ils veulent dire :
+
+| STATUS | Ce que Kubernetes vous dit | Où chercher |
+|---|---|---|
+| `ErrImageNeverPull`, `ImagePullBackOff` | le tag du manifeste ne correspond à aucune image chargée dans le nœud | étape 7 : construire et recharger avec le bon tag |
+| `CrashLoopBackOff` | le processus démarre puis s'arrête | les journaux, y compris ceux de l'exécution **précédente** (voir plus bas) |
+| `Pending` | aucun nœud ne peut l'accueillir | mémoire ou CPU : `describe pod` le dit dans les événements |
+| `Running` mais `0/1` | il tourne, mais sa sonde de disponibilité échoue | la sonde interroge `/api/health` : le pod répond-il ? |
+
+### Ensuite : pourquoi ?
+
+```bash
+kubectl -n tfu describe pod <nom-du-pod>
+```
+
+Descend l'affichage jusqu'à **`Events`**, tout en bas : c'est la partie utile. Kubernetes y
+écrit en clair ce qu'il a tenté et ce qui a échoué (image absente, sonde en échec, mémoire
+insuffisante).
+
+```bash
+kubectl -n tfu logs deploy/teamfollowup-app   # l'application
+kubectl -n tfu logs deploy/keycloak           # l'IdP
+kubectl -n tfu logs deploy/gateway            # Envoy, une ligne par requête
+kubectl -n tfu logs deploy/teamfollowup-app --previous   # l'exécution qui a planté
+```
+
+- `deploy/<nom>` évite d'avoir à copier le nom du pod, qui change à chaque redémarrage.
+- **`--previous` est la commande qui sauve** en cas de `CrashLoopBackOff` : sans elle vous
+  lisez les journaux du conteneur qui vient de naître, pas de celui qui est mort.
+- Ajoutez `-f` pour suivre en direct, `--tail 50` pour n'avoir que la fin.
+
+### Ce que le pod voit vraiment, de l'intérieur
 
 ```bash
 kubectl -n tfu exec deploy/teamfollowup-app -- env | grep -E "PUBLIC_BASE_URL|TLS_ENABLED"
 kubectl -n tfu exec deploy/teamfollowup-app -- curl -s http://localhost:8000/api/health
 ```
 
-Contourner la passerelle pour savoir de quel côté est le problème :
+- `exec ... -- <commande>` lance une commande **dans** le conteneur. Le `--` sépare les
+  options de `kubectl` de la commande à exécuter ; l'oublier fait interpréter vos options
+  par `kubectl`.
+- La première ligne répond à « le manifeste dit-il bien ce que je crois ? ». Une variable
+  absente de cette sortie n'est pas passée au processus, quoi que dise le fichier YAML que
+  vous avez sous les yeux mais peut-être pas appliqué.
+- La seconde répond à « l'application est-elle vivante, indépendamment du réseau ? ».
+
+Vérifier qu'un correctif est réellement dans l'image qui tourne :
+
+```bash
+kubectl -n tfu exec deploy/teamfollowup-app -- grep -c un_motif_de_votre_correctif app/le_fichier.py
+```
+
+Une réponse `0` signifie que le pod exécute l'ancien binaire : relisez le piège de
+l'étape 7.
+
+### Isoler : est-ce l'application ou la passerelle ?
 
 ```bash
 kubectl -n tfu port-forward deploy/teamfollowup-app 8000:8000
 curl http://127.0.0.1:8000/api/health     # dans un autre terminal
 ```
 
-Si l'application répond ici mais pas à travers `https://app.localtest.me`, le
-problème est dans la passerelle ou le tunnel, pas dans l'application.
+Ce tunnel-là vise **le pod applicatif directement**, en contournant Envoy et le TLS. Le
+raisonnement :
+
+- ça répond ici mais pas sur `https://app.localtest.me` : le problème est dans la
+  passerelle, le certificat ou le tunnel du port 443, pas dans l'application ;
+- ça ne répond pas non plus ici : le problème est dans l'application ou sa base, et les
+  journaux vous le diront.
 
 Redéployer après avoir chargé une nouvelle image :
 
@@ -856,6 +1002,13 @@ Redéployer après avoir chargé une nouvelle image :
 kubectl -n tfu set image deploy/teamfollowup-app app=teamfollowup-app:bench-v7
 kubectl -n tfu rollout status deploy/teamfollowup-app
 ```
+
+- `set image deploy/<déploiement> <conteneur>=<image>` change l'image sans toucher au
+  fichier YAML. Ici `app` est le **nom du conteneur** déclaré dans `20-app.yaml`, pas celui
+  du déploiement : les deux diffèrent, et se tromper donne « container not found ».
+- `rollout status` attend et rend la main quand le nouveau pod est prêt. Sans lui, vous
+  testeriez pendant que l'ancien sert encore.
+- Pour revenir en arrière : `kubectl -n tfu rollout undo deploy/teamfollowup-app`.
 
 Puis **relancez le port-forward**, que le remplacement du pod passerelle a pu tuer.
 
