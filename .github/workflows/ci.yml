@@ -7,7 +7,7 @@ on:
 
 jobs:
   backend:
-    name: Backend (pytest + OpenAPI snapshot)
+    name: Backend (pytest + coverage + OpenAPI snapshot)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,9 +19,11 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-      - name: Run tests
+      - name: Run tests with coverage
         working-directory: backend
-        run: python -m pytest -p no:warnings -q
+        # The floor lives in backend/.coveragerc (fail_under). It is a ratchet:
+        # raise it when the suite improves, never lower it to make a build pass.
+        run: python -m pytest -p no:warnings -q --cov=app --cov-report=term
       - name: OpenAPI snapshot is up to date
         working-directory: backend
         run: python scripts/dump_openapi.py --check

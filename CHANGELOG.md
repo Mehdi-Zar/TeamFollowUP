@@ -29,6 +29,17 @@
   and to GKE (`PodMonitoring`).
 
 ### Changed
+- **Coverage is measured and enforced.** `pytest-cov` with a `fail_under` floor in
+  `backend/.coveragerc`, run by the CI backend job. The floor is deliberately a **ratchet**
+  set just under what the suite actually reaches (74% of `app/`), not an aspiration: a floor
+  above reality fails the build on day one and gets deleted by the first person in a hurry.
+  Entry points and one-shot data loaders are excluded, because counting code that is
+  exercised by running the app rather than by tests lets real gaps hide behind a comfortable
+  percentage. Coverage stays out of `addopts` so a local `pytest` does not pay for it.
+  The measurement immediately named the largest genuine hole: `app/import_org.py`, 188
+  statements at 0%, which parses an administrator-supplied Excel file. Recorded in
+  [08](docs/08-testing-strategy.md). No frontend gate: with eleven unit tests the floor would
+  sit at a number that protects nothing, and the real gap there is end-to-end coverage.
 - **The audit log is paginated and filterable, and says who acted.** The screen rendered "the
   last 200 entries", which on an instance that has been running for a year answers no question
   at all: what an administrator needs is *who disabled this account* or *what happened on the

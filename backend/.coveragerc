@@ -1,0 +1,31 @@
+# Coverage settings for the backend.
+#
+# The threshold is a RATCHET, not a target: it is set just under the coverage the
+# suite actually reaches, and it only ever goes up. A floor set above reality
+# fails CI on day one and gets deleted by the first person in a hurry.
+
+[run]
+source = app
+branch = False
+omit =
+    # Entry points and one-shot data loaders. They are exercised by running the
+    # app (the entrypoint, the Kubernetes bench) rather than by unit tests, and
+    # counting them would let real gaps hide behind a comfortable percentage.
+    app/server.py
+    app/init_db.py
+    app/bootstrap.py
+    app/seed.py
+    app/seed_fake.py
+    app/reset_data.py
+
+[report]
+precision = 1
+show_missing = True
+skip_covered = True
+# Raise this as the suite improves. Never lower it to make a build pass: if a
+# change drops coverage, the change is what needs tests.
+fail_under = 74
+exclude_lines =
+    pragma: no cover
+    if TYPE_CHECKING:
+    raise NotImplementedError

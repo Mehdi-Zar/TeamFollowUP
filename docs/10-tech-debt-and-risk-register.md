@@ -15,7 +15,7 @@ Legend: ✅ done · ◑ partial · ⬜ open.
 | TD-SEC-2 | Security | No login rate-limiting/lockout | P1 | ✅ per-IP throttle on `/api/auth/login` |
 | TD-SEC-3 | Security | No dependency CVE scanning | P1 | ✅ Dependabot + `pip-audit`/`npm audit` CI job |
 | TD-TEST-1 | Testing | No frontend/E2E tests | P1 | ◑ Vitest + CI, and a reproducible K8s/SSO bench ([16](16-banc-kubernetes-sso.md)); Playwright E2E still open |
-| TD-TEST-2 | Testing | No coverage threshold | P2 | ⬜ add coverage gate |
+| TD-TEST-2 | Testing | No coverage threshold | P2 | ✅ `pytest-cov` + `fail_under` ratchet (74%) enforced in CI |
 | TD-PERF-1 | Performance | Potential N+1 on dashboard/report at scale | P2 | ✅ `selectinload` eager-loading |
 | TD-PERF-2 | Performance | Single JS bundle (no code-splitting) | P2 | ✅ route-level `React.lazy` (initial bundle 384→246 KB) |
 | TD-DATA-1 | Data | `users.role` free string, personas in app_settings (no FK) | P2 | ⬜ admin PUT reassigns orphans; consider personas table |

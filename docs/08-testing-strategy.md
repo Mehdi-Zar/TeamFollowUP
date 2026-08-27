@@ -8,6 +8,7 @@
 | Frontend unit/component | **Vitest + Testing Library + jsdom** | **Present** - 11 tests (labels, perms, i18n parity), wired into CI |
 | End-to-end (functional) | `e2e_test.py` (script at repo root) | **Ad-hoc**, not in CI - Playwright still to add |
 | End-to-end (deployment + SSO) | [Kubernetes + Keycloak bench](16-banc-kubernetes-sso.md), `bench/k8s-sso/run-tests.py` | **Manual**, reproducible - 18 checks against a real IdP (OIDC and SAML) |
+| Coverage | `pytest-cov`, floor in `backend/.coveragerc` | Enforced in CI - **74%** on `app/` (entry points and seed scripts excluded) |
 | Type safety | `tsc --noEmit` (FE), Pydantic (BE) | Enforced |
 | i18n parity | Vitest (`i18n.parity.test.ts`) | Enforced (FR/EN 1132/1132) |
 
@@ -23,10 +24,35 @@ derivation and SAML settings assembly, TLS material handling, log export and the
 | Gap | Priority |
 |-----|----------|
 | No real E2E (Playwright) for the core journeys | P1 |
-| No coverage reporting / threshold gate | P2 |
 | No load/performance test (dashboard & report at scale) | P2 |
 | No contract test of OpenAPI (breaking-change detection) | P2 |
 | No security test (auth bypass fuzz, RBAC matrix property test) | P2 |
+
+## Coverage
+
+```bash
+cd backend
+python -m pytest --cov=app --cov-report=term-missing     # the report, with the missing lines
+python -m pytest --cov=app --cov-report=html && open htmlcov/index.html
+```
+
+Coverage is **not** in `addopts`: measuring costs about a third of the run time and
+the number only matters in CI, so a local `pytest` stays fast.
+
+The floor (`fail_under` in `backend/.coveragerc`) is a **ratchet**, set just under
+what the suite actually reaches. Raise it when coverage improves; never lower it to
+make a build pass, because a change that drops coverage is a change that needs
+tests. Entry points and one-shot data loaders (`server.py`, `init_db.py`,
+`bootstrap.py`, `seed*.py`, `reset_data.py`) are excluded: they are exercised by
+running the app, and counting them would let real gaps hide behind a comfortable
+percentage.
+
+The largest genuine hole today is **`app/import_org.py`** (188 statements, 0%),
+which parses an administrator-supplied Excel file. It is worth tests.
+
+There is no frontend coverage gate. With eleven unit tests the floor would sit at a
+number so low it would protect nothing; the real gap on that side is end-to-end
+coverage, tracked separately.
 
 ## Target test pyramid
 
