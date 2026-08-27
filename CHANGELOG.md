@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.0 - SSO driven by one public URL, single-port container (2026-08-27)
 
 ### Added
 - **The Kubernetes/Keycloak bench is now part of the repository** (`bench/k8s-sso/`) with a
@@ -65,6 +65,14 @@
   `tests/test_saml_settings.py`.
 
 ### Changed
+- **Version 2.0.0, and the first tagged release.** The project documented its own release
+  procedure (bump `backend/app/main.py`, tag `vX.Y.Z`, build the image under that tag,
+  `docs/13`) but had never applied it: the version stayed at `1.0.0` while this section grew,
+  and the repository had no tag at all, so nothing linked a running container back to a
+  commit. The major number reflects the breaking changes below (single-port container, the
+  `:8080` redirect listener and `PUT /api/admin/tls-config` removed). `app/ops.py`'s
+  `APP_VERSION` default, shown in Admin > Ops, follows, and `docs/openapi.json` was
+  regenerated so the published contract announces the same version.
 - **One name for the application: TeamFollowUP.** Three coexisted - "Tribe Run Tracker" in the
   README and `package.json`, "Tribe Cockpit" in the backend default `app_name`, the i18n `brand`
   key, the SPA `<title>`, the SMTP sender, the print header, the generated certificates and most
