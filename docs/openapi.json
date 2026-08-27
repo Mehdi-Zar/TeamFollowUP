@@ -3,7 +3,7 @@
   "info": {
     "title": "TeamFollowUP",
     "description": "Outil de pilotage de tribe : consolidation, drill-down, saisie, organigramme, exports.",
-    "version": "2.0.0"
+    "version": "2.1.0"
   },
   "paths": {
     "/api/auth/config": {

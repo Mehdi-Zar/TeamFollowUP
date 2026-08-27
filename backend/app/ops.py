@@ -29,7 +29,7 @@ from sqlalchemy.orm import Session
 _START = time.time()
 
 # Surfaced in the Ops panel. Override via env at build/deploy time.
-APP_VERSION = os.environ.get("APP_VERSION", "2.0.0")
+APP_VERSION = os.environ.get("APP_VERSION", "2.1.0")
 
 
 def detect_orchestrator() -> str:

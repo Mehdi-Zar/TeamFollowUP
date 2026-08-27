@@ -51,7 +51,7 @@ configure_logging(settings.log_format, settings.log_level)
 app = FastAPI(
     title=settings.app_name,
     description="Outil de pilotage de tribe : consolidation, drill-down, saisie, organigramme, exports.",
-    version="2.0.0",
+    version="2.1.0",
 )
 
 # Session middleware is required by Authlib (OIDC state/PKCE).

@@ -1,6 +1,11 @@
 # Changelog
 
-## Unreleased
+## 2.1 - Observability, end-to-end tests, and the promises that were not kept (2026-08-27)
+
+> **One behaviour change to know about before upgrading.** "Message retention" now
+> really deletes feed posts past its window, where it used to only hide them. An
+> instance with a non-zero value starts deleting on the next scheduler tick. That is
+> what the setting always claimed to do; pinned posts are exempt. See *Fixed*.
 
 ### Added
 - **Observability: the app finally measures itself.** The only operational signals were the
