@@ -56,6 +56,42 @@ def _git_sha() -> str | None:
     return None
 
 
+def insecure_defaults() -> list[dict]:
+    """Which shipped defaults are still in use, and how bad each one is here.
+
+    The startup guard already logs these. A log line is read once, by whoever
+    happened to deploy, and never again; this puts the same facts on the Ops
+    screen where an administrator can see them at any time.
+
+    Severity depends on whether this looks like a real deployment. PUBLIC_BASE_URL
+    being set is the honest signal: nobody fills it in on their laptop.
+    """
+    from .config import settings
+
+    looks_deployed = bool((settings.public_base_url or "").strip())
+    sev = "critical" if looks_deployed else "warning"
+    out: list[dict] = []
+    if str(settings.secret_key).startswith("change-me"):
+        out.append({"key": "SECRET_KEY", "severity": sev,
+                    "detail": "Every session cookie is signed with a key that is public "
+                              "in the repository: anyone can forge one."})
+    if settings.postgres_password == "tribe":
+        out.append({"key": "POSTGRES_PASSWORD", "severity": sev,
+                    "detail": "The database password is the shipped default."})
+    if looks_deployed and not settings.cookie_secure:
+        out.append({"key": "COOKIE_SECURE", "severity": "critical",
+                    "detail": "A public URL is configured but the session cookie is not "
+                              "marked Secure, so it can travel over plain HTTP."})
+    if settings.metrics_enabled and not settings.metrics_token and looks_deployed:
+        out.append({"key": "METRICS_TOKEN", "severity": "warning",
+                    "detail": "/metrics is reachable by anyone who can reach the app. "
+                              "Set a token, or keep the path off the public route."})
+    if settings.breakglass_password and settings.breakglass_password == "changeme-admin":
+        out.append({"key": "BREAKGLASS_PASSWORD", "severity": sev,
+                    "detail": "The emergency administrator still has the example password."})
+    return out
+
+
 def runtime_status(db: Session) -> dict:
     """Read-only diagnostics for the Ops panel (identity, uptime, serving mode).
 
@@ -81,6 +117,8 @@ def runtime_status(db: Session) -> dict:
         "tls_enabled": tls.get("tls_enabled"),
         "tls_running": tls.get("tls_running"),
         "restart_pending": tls.get("tls_enabled") != tls.get("tls_running"),
+        # Shipped defaults still in use. Empty is the answer you want.
+        "insecure_defaults": insecure_defaults(),
     }
 
 

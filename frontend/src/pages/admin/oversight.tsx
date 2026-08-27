@@ -300,6 +300,24 @@ export function OpsAdmin() {
         </div>
       )}
 
+      {/* Shipped defaults still in use. The startup guard logs these too, but a log
+          line is read once by whoever deployed and never again. */}
+      {Array.isArray(rt.insecure_defaults) && rt.insecure_defaults.length > 0 && (
+        <div className="card stack" style={{ gap: 8, borderLeft: "4px solid var(--red)" }}>
+          <div className="strong">{t("ops.defaults_title")}</div>
+          <div className="small muted">{t("ops.defaults_hint")}</div>
+          {rt.insecure_defaults.map((d: any) => (
+            <div key={d.key} className="between" style={{ padding: "6px 0", borderBottom: "1px solid var(--line)", gap: 12 }}>
+              <span className="small strong" style={{ fontFamily: "monospace", whiteSpace: "nowrap" }}>{d.key}</span>
+              <span className="small" style={{ flex: 1 }}>{d.detail}</span>
+              <span className={`badge ${d.severity === "critical" ? "badge-red" : "badge-orange"}`}>
+                {d.severity === "critical" ? t("ops.defaults.critical") : t("ops.defaults.warning")}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
       <div className="card stack" style={{ gap: 4 }}>
         <div className="between" style={{ marginBottom: 8 }}>
           <h2 style={{ margin: 0 }}>{t("ops.runtime_title")}</h2>

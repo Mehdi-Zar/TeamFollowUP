@@ -92,6 +92,20 @@ audited (`ops.*`).
 > The ring buffer is **in memory and per process**: it is emptied by a restart and is not a
 > substitute for log shipping. Use it to diagnose live, not to retain.
 
+## Shipped defaults still in use
+
+**Administration > Ops** lists every setting that is still the one the application
+ships with: `SECRET_KEY`, `POSTGRES_PASSWORD`, `BREAKGLASS_PASSWORD`, an unmarked
+session cookie, an open `/metrics`. Each line says what the consequence is.
+
+The severity depends on whether this looks like a deployment, and
+`PUBLIC_BASE_URL` is the signal used: nobody fills it in on a laptop. With it set,
+these become **critical**; without it, warnings. The same facts are logged once at
+startup - the screen exists because a log line is read by whoever deployed and
+never again.
+
+An empty list is the answer you want. Check it after every first deploy.
+
 ## Monitoring & logging
 
 - **Metrics**: Prometheus exposition on `/metrics` - traffic, error rate, latency histogram,

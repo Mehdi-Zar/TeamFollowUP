@@ -75,6 +75,17 @@
   and runs them, publishing the logs and the HTML report as artefacts when it fails.
 
 ### Security
+- **The shipped defaults are now visible in the product, not only in a log line.** The startup
+  guard has warned about a default `SECRET_KEY` or database password since the first hardening
+  pass, and that warning is read once, by whoever happened to deploy, and never again.
+  **Administration > Ops** now lists every default still in use with the consequence spelled
+  out (a default `SECRET_KEY` means anyone can forge a session cookie), and adds three the
+  guard never covered: the example break-glass password, a session cookie left unmarked while
+  a public URL is configured, and an open `/metrics`. Severity is raised to **critical** when
+  `PUBLIC_BASE_URL` is set, which is the honest signal that this is not somebody's laptop -
+  a security notice that fires on every developer machine is one everybody learns to ignore.
+  Nine tests in `tests/test_insecure_defaults.py`, including the one that matters: a properly
+  configured deployment reports nothing at all.
 - **`react-router-dom` was vulnerable to an open redirect leading to XSS**
   ([GHSA-jjmj-jmhj-qwj2](https://github.com/advisories/GHSA-jjmj-jmhj-qwj2), plus
   [GHSA-wrjc-x8rr-h8h6](https://github.com/advisories/GHSA-wrjc-x8rr-h8h6): a backslash in a

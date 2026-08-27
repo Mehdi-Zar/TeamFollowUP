@@ -11,7 +11,7 @@ Legend: ✅ done · ◑ partial · ⬜ open.
 | TD-OPS-1 | Ops | No automated DB backup | P0 | ✅ `pg_dump` sidecar + rotation, **dump verified before it is published** and retried on failure; restore procedure executed and written up ([19](19-plan-de-reprise.md)) |
 | TD-OPS-2 | Ops | No monitoring/metrics/alerting | P1 | ✅ `/metrics` (Prometheus) + 7 alert rules + local Grafana stack ([17](17-observabilite.md)); external uptime probe still open |
 | TD-OPS-3 | Ops | Single-replica scheduler in-process | P1 | ✅ Postgres advisory lock → multi-replica safe (`main.py`) |
-| TD-SEC-1 | Security | Default secrets / cookie not https_only | P0 | ◑ startup warning + **env-driven** `COOKIE_SECURE`/`SameSite` (set in prod) |
+| TD-SEC-1 | Security | Default secrets / cookie not https_only | P0 | ✅ startup warning + env-driven `COOKIE_SECURE`/`SameSite` + **the list is shown in Admin > Ops**, severity raised to critical once `PUBLIC_BASE_URL` says this is a deployment |
 | TD-SEC-2 | Security | No login rate-limiting/lockout | P1 | ✅ per-IP throttle on `/api/auth/login` |
 | TD-SEC-3 | Security | No dependency CVE scanning | P1 | ✅ Dependabot + `pip-audit`/`npm audit` CI job |
 | TD-TEST-1 | Testing | No frontend/E2E tests | P1 | ✅ Vitest + **Playwright (12 tests) against the real stack in CI** ([18](18-tests-e2e.md)) + the K8s/SSO bench ([16](16-banc-kubernetes-sso.md)) |
@@ -31,7 +31,7 @@ Legend: ✅ done · ◑ partial · ⬜ open.
 | ID | Risk | Likelihood | Impact | Priority | Owner | Mitigation |
 |----|------|-----------|--------|----------|-------|------------|
 | R-1 | Data loss (no backups) | Low | **Critical** | P1 | Ops | TD-OPS-1 + a tested restore ([19](19-plan-de-reprise.md)). Residual: backups sit on the same host, unencrypted, and nothing alerts on repeated failures ([19](19-plan-de-reprise.md) §8) |
-| R-2 | Prod run with default secrets | Med | **Critical** | P0 | Security | TD-SEC-1 + startup guard |
+| R-2 | Prod run with default secrets | Low | **Critical** | P1 | Security | TD-SEC-1: the startup guard, plus a permanent notice in Admin > Ops naming each default still in use |
 | R-3 | Duplicate/lost scheduled emails if scaled >1 replica | Med | Med | P1 | Platform | TD-OPS-3 |
 | R-4 | Brute-force/credential stuffing on login | Med | High | P1 | Security | TD-SEC-2 |
 | R-5 | Unknown CVE in dependency | Med | High | P1 | Security | TD-SEC-3 |
