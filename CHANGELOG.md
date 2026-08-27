@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+- **The deployment guide handed you a mutable image tag, and that breaks Alembic.** The GKE
+  manifests pinned `teamfollowup:1.0`, a tag anyone naturally re-pushes on the next build.
+  Kubernetes defaults `imagePullPolicy` to `IfNotPresent` for every tag but `:latest`, so a
+  node that already cached it keeps serving the old image - and the symptom is not "the old
+  version is running", it is the pod dying on
+  `Can't locate revision identified by '0027_steerco_entries'`, because the database has been
+  migrated past what that stale image contains. The manifests now use the version as an
+  immutable tag, the build step says never to re-push one, and §11 gains the failure with the
+  three commands that settle it (what the database believes, what the image carries, and which
+  image is really running **by digest**, since the tag lies). It also says plainly not to
+  reach for `alembic stamp`: stamping backwards leaves the tables that migration created in
+  place but unrecorded, so the next deployment tries to create them again. The same warning is
+  in the maintenance guide, where upgrades actually happen.
+
 ## 2.1 - Observability, end-to-end tests, and the promises that were not kept (2026-08-27)
 
 > **One behaviour change to know about before upgrading.** "Message retention" now

@@ -80,6 +80,11 @@ new one" and "the old one" become indistinguishable and rollback is guesswork.
   Use [SemVer](https://semver.org): patch for fixes, minor for features, major for
   breaking changes.
 - **Tag the git commit**: `git tag v1.1.0 && git push --tags` (in the dev world).
+- **Never re-push an image tag.** Kubernetes defaults `imagePullPolicy` to `IfNotPresent`
+  for any tag but `:latest`, so a node that already cached `teamfollowup:1.1.0` keeps
+  serving the old bits. The failure does not look like "old version running": it looks like
+  Alembic dying with `Can't locate revision identified by '00NN_xxx'`, because the database
+  has been migrated past what that stale image contains. One version, one tag, forever.
 - **Tag the Docker image with the same number** - never rely on `:latest` for
   prod. `:latest` is a moving target; `:1.1.0` is forever that exact build.
 

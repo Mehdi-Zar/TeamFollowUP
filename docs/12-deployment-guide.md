@@ -184,12 +184,21 @@ from the platform's secret manager, never from a committed file.
 
 ```bash
 # Build
-docker build -t teamfollowup:1.0 .
+docker build -t teamfollowup:2.1.0 .
 
 # Tag & push to your registry (examples)
-docker tag teamfollowup:1.0 REGISTRY/teamfollowup:1.0
-docker push REGISTRY/teamfollowup:1.0
+docker tag teamfollowup:2.1.0 REGISTRY/teamfollowup:2.1.0
+docker push REGISTRY/teamfollowup:2.1.0
 ```
+
+> **Tag with the version, and never re-push a tag.** Kubernetes defaults
+> `imagePullPolicy` to `IfNotPresent` for any tag other than `:latest`, so a node that
+> already has this tag cached **will not pull your new image** and keeps serving the old
+> one. The first symptom is almost never "the old version is running" - it is Alembic
+> refusing to start with `Can't locate revision` (see §11, Troubleshooting). The
+> application version lives in `backend/app/main.py`; `docker images --digests` gives you
+> the digest if you prefer to pin that instead.
+
 
 Registry per platform: **GCP** → Artifact Registry (`REGION-docker.pkg.dev/PROJECT/REPO`),
 **S3NS** → Artifact Registry on its own host (`u-france-east1-docker.s3nsregistry.fr/PROJECT/REPO` - see §6),
@@ -246,7 +255,7 @@ Serverless, scales to zero, managed Postgres.
 3. **Service**: deploy to **Cloud Run**, attaching the Cloud SQL instance:
    ```bash
    gcloud run deploy teamfollowup \
-     --image REGION-docker.pkg.dev/PROJECT/REPO/teamfollowup:1.0 \
+     --image REGION-docker.pkg.dev/PROJECT/REPO/teamfollowup:2.1.0 \
      --region REGION --port 8080 --allow-unauthenticated \
      --add-cloudsql-instances PROJECT:REGION:INSTANCE \
      --set-env-vars TLS_ENABLED=false,HTTP_PORT=8080,POSTGRES_HOST=/cloudsql/PROJECT:REGION:INSTANCE,POSTGRES_DB=tribe,POSTGRES_USER=tribe,COOKIE_SECURE=true,SEED_DEMO=false,PUBLIC_BASE_URL=https://teamfollowup.example.com \
@@ -425,7 +434,7 @@ cd TeamFollowUP
 **Step 2 - Build the application image** (this is the only build; it downloads
 `node` + `python` and bakes the React frontend + FastAPI backend into one image):
 ```bash
-docker build -t teamfollowup:1.0 .
+docker build -t teamfollowup:2.1.0 .
 ```
 
 **Step 3 - Also fetch the database image, if you need one** (see §6.7):
@@ -438,7 +447,7 @@ docker build -t teamfollowup:1.0 .
 
 **Step 4 - Save the images to files** (so you can carry them):
 ```bash
-docker save teamfollowup:1.0 -o app.tar
+docker save teamfollowup:2.1.0 -o app.tar
 docker save postgres:16-alpine    -o postgres.tar     # option A only
 ```
 
@@ -460,9 +469,9 @@ gcloud auth configure-docker u-france-east1-docker.s3nsregistry.fr
 **Step 8 - Re-tag the images for YOUR S3NS registry, then push**
 ```bash
 # App image
-docker tag teamfollowup:1.0 \
-  u-france-east1-docker.s3nsregistry.fr/PROJECT/tribe/teamfollowup:1.0
-docker push u-france-east1-docker.s3nsregistry.fr/PROJECT/tribe/teamfollowup:1.0
+docker tag teamfollowup:2.1.0 \
+  u-france-east1-docker.s3nsregistry.fr/PROJECT/tribe/teamfollowup:2.1.0
+docker push u-france-east1-docker.s3nsregistry.fr/PROJECT/tribe/teamfollowup:2.1.0
 
 # Postgres - option A only (in-cluster DB)
 docker tag postgres:16-alpine \
@@ -759,7 +768,13 @@ spec:
     spec:
       containers:
         - name: app
-          image: u-france-east1-docker.s3nsregistry.fr/PROJECT/tribe/teamfollowup:1.0
+          # Use an IMMUTABLE tag: the version you are deploying, never a tag you
+          # re-push. Kubernetes defaults imagePullPolicy to IfNotPresent for any
+          # tag other than :latest, so a node that already cached this tag will
+          # keep serving the OLD image - and the first symptom is usually Alembic
+          # refusing to start (see the troubleshooting table). Best of all, pin
+          # the digest: ...teamfollowup@sha256:<digest>.
+          image: u-france-east1-docker.s3nsregistry.fr/PROJECT/tribe/teamfollowup:2.1.0
           ports:
             - containerPort: 8000
               name: http
@@ -975,7 +990,13 @@ spec:
     spec:
       containers:
         - name: app
-          image: u-france-east1-docker.s3nsregistry.fr/PROJECT/tribe/teamfollowup:1.0
+          # Use an IMMUTABLE tag: the version you are deploying, never a tag you
+          # re-push. Kubernetes defaults imagePullPolicy to IfNotPresent for any
+          # tag other than :latest, so a node that already cached this tag will
+          # keep serving the OLD image - and the first symptom is usually Alembic
+          # refusing to start (see the troubleshooting table). Best of all, pin
+          # the digest: ...teamfollowup@sha256:<digest>.
+          image: u-france-east1-docker.s3nsregistry.fr/PROJECT/tribe/teamfollowup:2.1.0
           ports:
             - containerPort: 8443          # the app's ONLY port (HTTPS)
               name: https
@@ -1230,6 +1251,7 @@ file) or, only if nothing else is possible, the **`key`** method.
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
+| `Can't locate revision identified by '00NN_xxx'` on startup | The **database is ahead of the image**: `alembic_version` names a migration the running image does not contain. Almost always a stale image - a re-pushed tag the node kept cached, or an older tag deployed over a database a newer build had already migrated. | Confirm with the three commands below, then deploy an image at least as recent as the database. **Do not `alembic stamp` backwards**: the tables that migration created still exist, so the newer image would then try to create them again. |
 | Pod stuck `ImagePullBackOff` | wrong registry host, image not pushed, or no pull permission | Check the `image:` host is `u-france-east1-docker.s3nsregistry.fr/PROJECT/tribe/…`; re-run §6.5 step 9 to confirm it exists; ensure the cluster's service account has *Artifact Registry Reader*. |
 | `gcloud` errors / wrong account | gcloud not on the S3NS universe | Re-run §6.3; check `gcloud config list` shows `universe_domain = s3nsapis.fr`. |
 | `docker push` denied | docker not authenticated to S3NS | Re-run `gcloud auth configure-docker u-france-east1-docker.s3nsregistry.fr` (§6.4). |
@@ -1247,6 +1269,42 @@ file) or, only if nothing else is possible, the **`key`** method.
 | Browser accepts the cert but a CLI client rejects it | the secret holds the leaf certificate without its **intermediate CA chain** | Rebuild `server.crt` as the full chain (leaf + intermediates) and re-apply the secret (§6.8.3). |
 | `kubectl get gatewayclass` returns nothing | Gateway API not enabled (Standard cluster) | `gcloud container clusters update tribe-cluster --gateway-api=standard --region u-france-east1`. Autopilot has it on by default. |
 | Two pods race the migration on first deploy | scaled out too early | First rollout with **1 replica** (the manifest already does); scale up only after it's healthy. |
+
+### Is the pod really running the image you pushed?
+
+The three commands that settle an "old code is running" suspicion, in order. The third is
+the only one that cannot be argued with.
+
+```bash
+# 1. What the DATABASE believes it has been migrated to.
+kubectl -n NAMESPACE exec deploy/teamfollowup-app --   python -c "from app.database import engine; import sqlalchemy as sa;              print(engine.connect().execute(sa.text('select version_num from alembic_version')).all())"
+
+# 2. What the IMAGE actually carries.
+kubectl -n NAMESPACE exec deploy/teamfollowup-app -- ls alembic/versions | tail -3
+
+# 3. WHICH image is running, by digest - not by tag, which lies.
+kubectl -n NAMESPACE get pods -l app=teamfollowup-app   -o jsonpath='{range .items[*]}{.status.containerStatuses[*].imageID}{"
+"}{end}'
+```
+
+If (1) names a revision that is not in (2), the database is ahead of the image. Compare the
+digest from (3) with the one your registry holds for that tag
+(`gcloud artifacts docker images describe REGISTRY/teamfollowup:TAG`): if they differ, the
+node is serving a cached image and the tag was re-pushed.
+
+**The fix is to move forward, never backward.** Build and push under a new, immutable tag,
+point the Deployment at it, and wait for the rollout:
+
+```bash
+kubectl -n NAMESPACE set image deploy/teamfollowup-app app=REGISTRY/teamfollowup:2.1.0
+kubectl -n NAMESPACE rollout status deploy/teamfollowup-app
+```
+
+Do **not** reach for `alembic stamp` to make the error go away. Stamping the database back
+to the older revision leaves the tables that migration created in place, unrecorded; the
+next deployment of the newer image then tries to create them again and fails on a
+relation that already exists. Downgrading properly is worse still - it drops those tables,
+and with them their data.
 
 ### 6.12 Ship a new version later
 
@@ -1322,7 +1380,7 @@ The new pod runs `alembic upgrade head` automatically. **Back up the database fi
 3. **App**: **Azure Container Apps**:
    ```bash
    az containerapp create -n teamfollowup -g RG --environment ENV \
-     --image REGISTRY.azurecr.io/teamfollowup:1.0 \
+     --image REGISTRY.azurecr.io/teamfollowup:2.1.0 \
      --target-port 8000 --ingress external \
      --min-replicas 1 --max-replicas 4 \
      --env-vars TLS_ENABLED=false HTTP_PORT=8000 POSTGRES_HOST=SERVER.postgres.database.azure.com POSTGRES_DB=tribe POSTGRES_USER=tribe COOKIE_SECURE=true SEED_DEMO=false PUBLIC_BASE_URL=https://teamfollowup.example.com \
