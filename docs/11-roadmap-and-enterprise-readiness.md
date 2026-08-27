@@ -9,7 +9,7 @@
 | Code quality | 🟢 High | Layered, typed, tested (backend), low dead code |
 | Architecture | 🟡 Medium | Clean monolith; single-replica assumptions; no HA |
 | Security | 🟢 High | RBAC + **env-driven cookie hardening + login throttle + default-secret guard** |
-| Testing | 🟡 Medium | Strong backend (289) + **frontend Vitest (11)** + **K8s/SSO bench (18 checks)**; Playwright E2E still to add |
+| Testing | 🟢 High | Backend 314 (74% covered, gated) + frontend Vitest 11 + **Playwright 12 against the real stack** + K8s/SSO bench (18 checks) |
 | DevOps/CI-CD | 🟢 High | Reproducible build + **CI (tests/typecheck/build/i18n/audit)** + Dependabot; no CD/envs yet |
 | Observability | 🟢 High | Structured logs + audit + **Prometheus metrics, 7 alert rules, ready-to-run Grafana stack**; external uptime probe still to add |
 | Data/BCP | 🟡 Medium | **Backup sidecar (pg_dump + rotation)**; DR drills/PITR still to formalize |
@@ -34,7 +34,7 @@ needs the P1 track before scale or external/SaaS use.
 ### High impact (weeks)
 - [x] Observability: structured logs (`LOG_FORMAT=json`) + **Prometheus metrics + alert rules + Grafana stack** (`ops/`, [17](17-observabilite.md)); external uptime probe still to add
 - [x] Login rate-limiting (per-IP throttle, env-configurable) - `auth.py`
-- [x] Frontend tests (Vitest, 11 tests) wired into CI; **E2E (Playwright)** still to add
+- [x] Frontend tests (Vitest, 11) wired into CI; **E2E (Playwright, 12 tests against the real Docker stack)** - `e2e/`, [18](18-tests-e2e.md)
 - [x] Externalize the scheduler via **Postgres advisory lock** (multi-replica safe) - `main.py`
 - [x] Performance: **eager-loading** on dashboard/report (N+1 removed) + **route code-splitting**
       (initial bundle 384→246 KB); **audit log paginated + filterable** (action, entity, user, date range)

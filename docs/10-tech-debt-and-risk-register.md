@@ -14,7 +14,7 @@ Legend: ✅ done · ◑ partial · ⬜ open.
 | TD-SEC-1 | Security | Default secrets / cookie not https_only | P0 | ◑ startup warning + **env-driven** `COOKIE_SECURE`/`SameSite` (set in prod) |
 | TD-SEC-2 | Security | No login rate-limiting/lockout | P1 | ✅ per-IP throttle on `/api/auth/login` |
 | TD-SEC-3 | Security | No dependency CVE scanning | P1 | ✅ Dependabot + `pip-audit`/`npm audit` CI job |
-| TD-TEST-1 | Testing | No frontend/E2E tests | P1 | ◑ Vitest + CI, and a reproducible K8s/SSO bench ([16](16-banc-kubernetes-sso.md)); Playwright E2E still open |
+| TD-TEST-1 | Testing | No frontend/E2E tests | P1 | ✅ Vitest + **Playwright (12 tests) against the real stack in CI** ([18](18-tests-e2e.md)) + the K8s/SSO bench ([16](16-banc-kubernetes-sso.md)) |
 | TD-TEST-2 | Testing | No coverage threshold | P2 | ✅ `pytest-cov` + `fail_under` ratchet (74%) enforced in CI |
 | TD-PERF-1 | Performance | Potential N+1 on dashboard/report at scale | P2 | ✅ `selectinload` eager-loading |
 | TD-PERF-2 | Performance | Single JS bundle (no code-splitting) | P2 | ✅ route-level `React.lazy` (initial bundle 384→246 KB) |
@@ -35,7 +35,7 @@ Legend: ✅ done · ◑ partial · ⬜ open.
 | R-3 | Duplicate/lost scheduled emails if scaled >1 replica | Med | Med | P1 | Platform | TD-OPS-3 |
 | R-4 | Brute-force/credential stuffing on login | Med | High | P1 | Security | TD-SEC-2 |
 | R-5 | Unknown CVE in dependency | Med | High | P1 | Security | TD-SEC-3 |
-| R-6 | Undetected regression (no FE/E2E tests) | Med | Med | P1 | QA | TD-TEST-1 |
+| R-6 | Undetected regression (no FE/E2E tests) | Low | Med | P2 | QA | TD-TEST-1 (Vitest + Playwright in CI) |
 | R-7 | Slow dashboard/report at large scale | Low | Med | P2 | Eng | TD-PERF-1 |
 | R-8 | Operational blind spots (no monitoring) | Low | Med | P2 | SRE | TD-OPS-2 (metrics + alerts shipped) |
 

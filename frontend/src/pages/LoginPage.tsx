@@ -58,12 +58,17 @@ export default function LoginPage() {
         </p>
         <form onSubmit={onSubmit} className="stack" style={{ marginTop: 16 }}>
           <div>
-            <label>{t("login.email")}</label>
-            <input type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required />
+            {/* htmlFor/id rather than aria-label: this form is a singleton, so the
+                ids cannot collide, and the association also makes clicking the
+                label focus the field. */}
+            <label htmlFor="login-email">{t("login.email")}</label>
+            <input id="login-email" type="email" autoComplete="username" value={email}
+                   onChange={(e) => setEmail(e.target.value)} required />
           </div>
           <div>
-            <label>{t("login.password")}</label>
-            <input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+            <label htmlFor="login-password">{t("login.password")}</label>
+            <input id="login-password" type="password" autoComplete="current-password" value={password}
+                   onChange={(e) => setPassword(e.target.value)} required />
           </div>
           {error && <div className="error-text">{error}</div>}
           <button type="submit" disabled={submitting} style={{ width: "100%" }}>

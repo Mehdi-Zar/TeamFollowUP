@@ -28,6 +28,24 @@
   it fires, how to protect `/metrics`, and the transposition to Kubernetes (`ServiceMonitor`)
   and to GKE (`PodMonitoring`).
 
+### Added
+- **End-to-end tests, in a browser, against the real deployment** (`e2e/`, twelve tests,
+  [18](docs/18-tests-e2e.md)). They drive the Docker image serving the built SPA and its API in
+  front of a real PostgreSQL, not `vite dev` with a stubbed backend, because the bugs that
+  justify an end-to-end suite are the ones that only exist once the pieces are assembled: a
+  route guard that lets a member open Administration (the API returns 403, but the screen was
+  shown), a build shipping a stale chunk, a session cookie the browser refuses to send, a
+  dependency upgrade that passes typecheck and build then breaks at runtime. That last one is
+  not hypothetical: this suite was written right after the move to React 19 and Vite 8, and it
+  is what confirmed the app actually works rather than merely compiles.
+  Covered: the login screen and its refusal to say which half of the credentials was wrong,
+  logout really invalidating the session server-side, the route guard on a URL typed by hand,
+  a tribe created and deleted through the running app, the audit trail recording it and the
+  filter finding it, pagination that neither repeats nor skips a row, and a member being
+  refused Administration by the navigation, by the URL and by the API.
+  A new CI job starts the stack with `docker compose up -d --build`, waits for `/api/health`
+  and runs them, publishing the logs and the HTML report as artefacts when it fails.
+
 ### Security
 - **`react-router-dom` was vulnerable to an open redirect leading to XSS**
   ([GHSA-jjmj-jmhj-qwj2](https://github.com/advisories/GHSA-jjmj-jmhj-qwj2), plus

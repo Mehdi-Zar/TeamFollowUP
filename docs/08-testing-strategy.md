@@ -6,7 +6,8 @@
 |-------|---------|----------|
 | Backend unit/integration | pytest + FastAPI `TestClient` + SQLite in-memory | **Good** - 289 tests / 32 modules |
 | Frontend unit/component | **Vitest + Testing Library + jsdom** | **Present** - 11 tests (labels, perms, i18n parity), wired into CI |
-| End-to-end (functional) | `e2e_test.py` (script at repo root) | **Ad-hoc**, not in CI - Playwright still to add |
+| End-to-end (browser) | **Playwright** against the real Docker stack ([18](18-tests-e2e.md)) | **12 tests in CI** - login, route guards, RBAC, the write path, the audit screen |
+| End-to-end (API script) | `e2e_test.py` (script at repo root) | Ad-hoc, not in CI - superseded for the journeys Playwright now covers |
 | End-to-end (deployment + SSO) | [Kubernetes + Keycloak bench](16-banc-kubernetes-sso.md), `bench/k8s-sso/run-tests.py` | **Manual**, reproducible - 18 checks against a real IdP (OIDC and SAML) |
 | Coverage | `pytest-cov`, floor in `backend/.coveragerc` | Enforced in CI - **74%** on `app/` (entry points and seed scripts excluded) |
 | Type safety | `tsc --noEmit` (FE), Pydantic (BE) | Enforced |
@@ -23,7 +24,6 @@ derivation and SAML settings assembly, TLS material handling, log export and the
 
 | Gap | Priority |
 |-----|----------|
-| No real E2E (Playwright) for the core journeys | P1 |
 | No load/performance test (dashboard & report at scale) | P2 |
 | No contract test of OpenAPI (breaking-change detection) | P2 |
 | No security test (auth bypass fuzz, RBAC matrix property test) | P2 |
