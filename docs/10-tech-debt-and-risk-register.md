@@ -18,11 +18,11 @@ Legend: ✅ done · ◑ partial · ⬜ open.
 | TD-TEST-2 | Testing | No coverage threshold | P2 | ✅ `pytest-cov` + `fail_under` ratchet (74%) enforced in CI |
 | TD-PERF-1 | Performance | Potential N+1 on dashboard/report at scale | P2 | ✅ `selectinload` eager-loading |
 | TD-PERF-2 | Performance | Single JS bundle (no code-splitting) | P2 | ✅ route-level `React.lazy` (initial bundle 384→246 KB) |
-| TD-DATA-1 | Data | `users.role` free string, personas in app_settings (no FK) | P2 | ⬜ admin PUT reassigns orphans; consider personas table |
+| TD-DATA-1 | Data | `users.role` free string, personas in app_settings (no FK) | P2 | ✅ **closed by decision**: deleting a persona reassigns its users to `member` (tested) and an unknown role grants nothing (fail-closed). A table + FK would add a migration for a guarantee the code already gives. See DECISIONS.md |
 | TD-DATA-2 | Data | `objectives.rag_status` retained but unauthoritative | P2 | ◑ documented |
 | TD-DATA-3 | Data | No retention/rotation for audit_log | P2 | ✅ opt-in purge for the audit log **and the feed** (`maintenance.py`); what is stored, for how long, and how to answer an access or erasure request: [20](20-donnees-personnelles-et-retention.md) |
 | TD-CODE-1 | Code | `AdminPage.tsx`, `report.py` large | P2 | ✅ `AdminPage.tsx` 3085 → **152** (shell) + `pages/admin/*`; `report.py` 2440 → **1400** + `reportpptx` (the four decks) + `reportcommon` (the eleven names both formats share). Both moves were made behind a smoke test written first |
-| TD-UI-1 | UI | Spacing/typography not tokenized | P2 | ⬜ introduce CSS tokens |
+| TD-UI-1 | UI | Spacing/typography not tokenized | P2 | ⬜ **deferred by decision**: adding an unused scale is dead CSS, and migrating hundreds of inline styles cannot be verified without visual-regression testing. See DECISIONS.md |
 | TD-A11Y-1 | A11y | Form controls without an accessible name | P2 | ◑ **every control in `AdminPage.tsx` now has one** (visible `<label>` mirrored into `aria-label`, `aria-label` on inline table editors). Remaining: the other pages, and `htmlFor`/`id` pairing so clicking a label focuses its field |
 | TD-API-1 | API | OpenAPI not snapshotted/diffed | P2 | ✅ `docs/openapi.json` committed + CI check (`dump_openapi.py --check`) |
 

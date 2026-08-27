@@ -39,7 +39,9 @@ understand, run, operate and extend the product **without further explanation**.
 - **Auth**: signed session cookie, local password (Argon2), OIDC (Authlib), SAML (python3-saml), break-glass admin.
 - **Authorization**: role tiers + a configurable **persona → capability** matrix + per-module on/off switches.
 - **Per squad**: products & hardware, OTD (committed annual objectives), detailed roadmap, curated key messages, and **budget tracking** (total / spent / forecast → on-track / at-risk / over), visible only to admin, the tribe leader and the squad's own leader.
-- **Size**: ~17k LOC backend, ~15k LOC frontend, 24 API routers, 28 tables, 27 migrations, 35 backend test modules (344 tests, 76% covered) + 11 frontend tests + 12 Playwright end-to-end tests. Single-squad **HTML & PPTX exports** mirror the squad page.
+- **Size**: ~18k LOC backend, ~16k LOC frontend, 24 API routers, 28 tables, 27 migrations.
+- **Tests**: 39 backend modules (**378 tests**, 77% covered, gated in CI) + 11 frontend (Vitest) + **30 Playwright** end-to-end against the real Docker stack + an 18-check Kubernetes/Keycloak SSO bench.
+- **Observability**: Prometheus `/metrics`, seven alert rules, a ready-to-run Grafana stack (`ops/`).
 
 See [01-product-overview](01-product-overview.md) for the full picture.
 </content>

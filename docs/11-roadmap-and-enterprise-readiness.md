@@ -41,9 +41,9 @@ needs the P1 track before scale or external/SaaS use.
 - [x] Data retention: opt-in purge of old audit/auto-progress records (`maintenance.py`)
 
 ### Strategic investments (quarter)
-- [ ] Environment promotion (dev → staging → prod) + CD with migrations gating
+- [ ] Environment promotion (dev → staging → prod) + CD with migrations gating - **deliberately not started**: a deploy pipeline is only verified by deploying, and shipping one that has never run is worse than the manual procedure that is written down and has been followed ([13](13-maintenance-and-updates.md)). See DECISIONS.md
 - [x] Backups → **DR runbook with stated RPO/RTO and a restore procedure that was actually executed** ([19](19-plan-de-reprise.md)); off-host copies and alerting on failed backups still open
-- [ ] Design tokens + component-library extraction; split large components
+- [x] Split large components (`AdminPage.tsx` 3085 → 152, `report.py` 2440 → 1400); design tokens deferred by decision (DECISIONS.md)
 - [x] Data retention **enforced** (audit log + feed) and the GDPR posture written down: what is stored, for how long, who sees it, and how to answer an access or erasure request ([20](20-donnees-personnelles-et-retention.md)). The organisation-level decisions it lists (retention durations, the free-text leave reason, DPAs) are deliberately left open
 
 ### Long-term evolution

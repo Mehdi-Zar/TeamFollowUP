@@ -128,3 +128,37 @@ qui satisfait la spec ».
   Le payload est une copie figée JSON au moment de la soumission.
 - **Max 3 highlights actifs par équipe**, 280 caractères chacun, contrainte
   appliquée à la création et à la réactivation.
+
+## Dette laissee ouverte, et pourquoi (2026-08-27)
+
+Trois points du registre de dette ont ete examines puis **volontairement laisses
+en l'etat**. Les fermer aurait coute plus que ce qu'ils rapportent, et le dire est
+plus utile que de les traiter a moitie.
+
+- **TD-UI-1, tokeniser les espacements et la typographie.** `theme.css` a deja des
+  tokens de couleur ; ce qui manque, ce sont les espacements, ecrits en dur dans
+  des centaines de `style={{ gap: 8, marginTop: 12 }}`. Introduire l'echelle est
+  trivial ; migrer les appelants ne l'est pas, et rien ici ne permet de detecter
+  une regression visuelle (aucune comparaison de captures). Ajouter des tokens que
+  personne n'utilise serait du CSS mort. **Decision** : ne rien changer tant qu'il
+  n'y a pas de refonte visuelle qui justifie la migration, ou un test de regression
+  visuelle qui la rende verifiable.
+
+- **TD-DATA-1, une table `personas` avec cle etrangere.** `users.role` est une
+  chaine libre et les personas vivent dans `app_settings`. L'integrite est deja
+  assuree autrement : supprimer un persona **reassigne** ses utilisateurs vers
+  `member` (`routers/admin.py`, teste par
+  `test_deleting_persona_reassigns_users_to_member`), et un role inconnu ne donne
+  **aucune** capacite (`persona_caps`, fail-closed). Passer a une table demanderait
+  une migration touchant l'authentification, le RBAC, les seeds et les tests, pour
+  une garantie que le code fournit deja. **Decision** : garder le modele actuel ;
+  ce n'est un sujet que le jour ou les personas doivent porter autre chose que des
+  capacites.
+
+- **La chaine de deploiement automatisee (dev vers staging vers prod).** Un
+  workflow de deploiement ne se verifie qu'en deployant : sans environnement de
+  destination ni identifiants, on ne peut qu'ecrire du YAML plausible et esperer.
+  Livrer une automatisation jamais executee est pire que la procedure manuelle,
+  qui, elle, est ecrite et a ete suivie ([docs/13](docs/13-maintenance-and-updates.md)).
+  **Decision** : ne pas livrer de pipeline non teste. Les options et leurs
+  compromis sont deja decrits dans `docs/13`, a trancher avec la plateforme cible.

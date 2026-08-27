@@ -4,17 +4,17 @@
 
 | Layer | Tooling | Coverage |
 |-------|---------|----------|
-| Backend unit/integration | pytest + FastAPI `TestClient` + SQLite in-memory | **Good** - 344 tests / 35 modules |
+| Backend unit/integration | pytest + FastAPI `TestClient` + SQLite in-memory | **Good** - 378 tests / 39 modules |
 | Frontend unit/component | **Vitest + Testing Library + jsdom** | **Present** - 11 tests (labels, perms, i18n parity), wired into CI |
-| End-to-end (browser) | **Playwright** against the real Docker stack ([18](18-tests-e2e.md)) | **12 tests in CI** - login, route guards, RBAC, the write path, the audit screen |
+| End-to-end (browser) | **Playwright** against the real Docker stack ([18](18-tests-e2e.md)) | **30 tests in CI** - login, route guards, RBAC, the write path, the audit screen, and every one of the 18 admin sections |
 | End-to-end (API script) | `e2e_test.py` (script at repo root) | Ad-hoc, not in CI - superseded for the journeys Playwright now covers |
 | End-to-end (deployment + SSO) | [Kubernetes + Keycloak bench](16-banc-kubernetes-sso.md), `bench/k8s-sso/run-tests.py` | **Manual**, reproducible - 18 checks against a real IdP (OIDC and SAML) |
-| Coverage | `pytest-cov`, floor in `backend/.coveragerc` | Enforced in CI - **76%** on `app/` (entry points and seed scripts excluded) |
+| Coverage | `pytest-cov`, floor in `backend/.coveragerc` | Enforced in CI - **77%** on `app/` (entry points and seed scripts excluded) |
 | Type safety | `tsc --noEmit` (FE), Pydantic (BE) | Enforced |
 | i18n parity | Vitest (`i18n.parity.test.ts`) | Enforced (FR/EN 1132/1132) |
 
 ### Backend test modules
-`test_access`, `test_access_history`, `test_actions`, `test_api_keys`, `test_authconfig_urls`, `test_budget`, `test_changenotify`, `test_committees`, `test_freshness`, `test_hardening`, `test_initiatives_otd`, `test_leaves`, `test_logconfig`, `test_logexport`, `test_modules`, `test_notifications`, `test_ops`, `test_otds`, `test_personas`, `test_pptx_template`, `test_rbac`, `test_rbac_admin`, `test_report`, `test_review_access`, `test_roadmap_deps`, `test_saml_settings`, `test_snapshot`, `test_squad_products`, `test_ssotest`, `test_status`, `test_steerco`, `test_tls`.
+`test_access`, `test_access_history`, `test_actions`, `test_api_keys`, `test_audit_api`, `test_authconfig_urls`, `test_budget`, `test_changenotify`, `test_committees`, `test_freshness`, `test_hardening`, `test_import_org`, `test_initiatives_otd`, `test_insecure_defaults`, `test_leaves`, `test_logconfig`, `test_logexport`, `test_metrics`, `test_modules`, `test_notifications`, `test_oidc_client`, `test_ops`, `test_otds`, `test_personas`, `test_pptx_template`, `test_rbac`, `test_rbac_admin`, `test_report`, `test_report_surface`, `test_retention`, `test_review_access`, `test_roadmap_deps`, `test_saml_settings`, `test_snapshot`, `test_squad_products`, `test_ssotest`, `test_status`, `test_steerco`, `test_tls`.
 
 They cover RBAC/persona capabilities, derived objective status, roadmap dependency + EA/GA,
 report/roadmap rendering (incl. the single-page guarantee), snapshots, freshness, the SSO URL
