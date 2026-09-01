@@ -99,7 +99,7 @@ jobs:
         run: docker compose logs app
       - name: Keep the report (on failure)
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report
           path: e2e/playwright-report
