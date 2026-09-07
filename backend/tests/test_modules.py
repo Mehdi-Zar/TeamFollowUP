@@ -77,6 +77,37 @@ def test_disabling_feed_reactions_only(client, seeded):
     assert client.post(f"/api/feed/{pid}/replies", json={"content": "hi"}).status_code == 201
 
 
+def test_disabling_feed_kinds_is_enforced_by_the_api_not_only_the_screen(client, seeded):
+    """`feed > kinds` used to be the one feature flag with no server-side effect.
+
+    Its three siblings (reactions, replies, pin) each gate a route, so switching
+    them off really removes the behaviour. `kinds` only hid the selector: a client
+    could still post an "incident" and still filter on it, which makes the admin
+    switch a suggestion rather than a decision about the data.
+    """
+    login(client, seeded["admin"])
+    _disable(client, {"feed": {"kinds": False}})
+
+    login(client, seeded["sl_a"])
+    posted = client.post("/api/feed", json={"content": "still tagged?", "kind": "incident"})
+    assert posted.status_code == 201, posted.text
+    assert posted.json()["kind"] == "info"          # coerced, not stored as incident
+
+    # And the filter stops slicing a taxonomy that no longer exists: asking for a
+    # kind returns what an unfiltered call returns, rather than a subset carved out
+    # of posts written before the switch was flipped.
+    everything = client.get("/api/feed").json()
+    assert client.get("/api/feed?kind=incident").json() == everything
+    assert any(p["content"] == "still tagged?" for p in everything)
+
+
+def test_feed_kinds_still_work_when_the_feature_is_on(client, seeded):
+    login(client, seeded["sl_a"])
+    posted = client.post("/api/feed", json={"content": "outage", "kind": "incident"})
+    assert posted.json()["kind"] == "incident"
+    assert [p["content"] for p in client.get("/api/feed?kind=incident").json()] == ["outage"]
+
+
 def test_disabling_dashboard(client, seeded):
     login(client, seeded["admin"])
     assert client.get("/api/dashboard").status_code == 200

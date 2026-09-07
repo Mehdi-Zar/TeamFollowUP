@@ -3,6 +3,21 @@
 ## Unreleased
 
 ### Fixed
+- **One feed feature flag was a suggestion, and one setting did nothing at all.** Both found
+  while auditing for the same defect class as the trusted-authority store: something that
+  exists in the model and the API surface without being wired to an effect.
+  `feed > kinds` hid the kind selector in the SPA but gated no route, unlike its three
+  siblings (`reactions`, `replies`, `pin`), which each carry `require_module`. A client could
+  still post an `incident` and still filter on it with the switch off, so an admin decision
+  about the data was enforced only by the screen. The API now coerces the kind to `info` when
+  the feature is off and ignores the `kind` filter, with two tests pinning both directions.
+  `feed_kinds` in the general settings was worse: stored, validated, published on the
+  unauthenticated `/api/config` and typed in the SPA, but read by nothing. The kinds are
+  structural (a Pydantic `Literal`, a TS union, a translation key and a colour each), so it
+  could not be made configurable by wiring alone and was removed rather than left as a promise.
+- **CI carried two implementations of the i18n parity rule.** A 14-line inline node script
+  duplicated `i18n.parity.test.ts`, which `npm test` already runs in the same job. The script
+  is gone; the test is the single implementation, and it runs locally too.
 - **The report and the PPTX shipped the one character the project bans.** `CLAUDE.md` forbids
   the em dash and the middot in anything a user reads, generated HTML and PPTX documents
   included, because they read as machine-written. The weekly report used the middot as its

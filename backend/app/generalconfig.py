@@ -26,7 +26,6 @@ def _defaults() -> dict:
         "staleness_threshold_days": settings.staleness_threshold_days,
         "feed_post_scope": "leaders",   # leaders | everyone
         "feed_retention_days": 0,        # 0 = keep all
-        "feed_kinds": ["incident", "info", "success"],
     }
 
 
@@ -75,8 +74,6 @@ def set_general(db: Session, patch: dict) -> dict:
         cfg["feed_retention_days"] = max(0, int(cfg["feed_retention_days"]))
     except (TypeError, ValueError):
         cfg["feed_retention_days"] = 0
-    if not isinstance(cfg.get("feed_kinds"), list) or not cfg["feed_kinds"]:
-        cfg["feed_kinds"] = ["incident", "info", "success"]
 
     row = db.get(AppSetting, GENERAL_KEY)
     payload = json.dumps(cfg)
@@ -103,7 +100,6 @@ def public_config(db: Session) -> dict:
         "default_lang": cfg["default_lang"],
         "default_year": cfg["default_year"],
         "feed_post_scope": cfg["feed_post_scope"],
-        "feed_kinds": cfg["feed_kinds"],
         "smtp_enabled": bool(get_smtp(db).get("enabled")),
         "modules": get_modules(db),
     }

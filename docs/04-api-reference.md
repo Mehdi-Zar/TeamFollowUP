@@ -93,6 +93,9 @@ SAML: `GET /saml/metadata`,`GET /saml/login`,`POST /saml/acs` · `POST /imperson
 ### feed (`/api/feed`) - module `feed` + capability `feed`
 `GET ""` · `POST ""` · `DELETE /{id}` · `PUT /{id}/pin` (feature `pin`) · `POST /{id}/replies` (feature
 `replies`) · `DELETE /replies/{id}` · `POST /{id}/reactions` (feature `reactions`)
+Feature `kinds` gates no route of its own, it gates a field: with it off, `POST ""` stores
+`info` whatever kind was sent and the `?kind=` filter on `GET ""` is ignored, so the switch
+removes the taxonomy instead of only hiding its selector.
 
 ### notifications (`/api/notifications`) - module `notifications.inapp`
 `GET ""` · `POST /{id}/read` · `POST /read-all` · `GET /me/preferences` · `PUT /me/preferences`

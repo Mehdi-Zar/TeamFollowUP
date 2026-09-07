@@ -78,7 +78,7 @@ erDiagram
 
 | Key | Owner module | Contents |
 |-----|--------------|----------|
-| `general` | `generalconfig.py` | app_name, app_subtitle, default_lang, default_year, staleness_threshold_days, feed_post_scope, feed_retention_days, feed_kinds |
+| `general` | `generalconfig.py` | app_name, app_subtitle, default_lang, default_year, staleness_threshold_days, feed_post_scope, feed_retention_days |
 | `modules` | `modulesconfig.py` | module on/off + sub-feature flags |
 | `personas` | `personasconfig.py` | persona → capability matrix (+ custom personas) |
 | `smtp` | `smtpconfig.py` | SMTP host/port/credentials/enabled |

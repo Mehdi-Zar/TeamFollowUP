@@ -35,7 +35,6 @@ const DEFAULTS: PublicConfig = {
   default_lang: "fr",
   default_year: new Date().getFullYear(),
   feed_post_scope: "leaders",
-  feed_kinds: ["incident", "info", "success"],
   smtp_enabled: false,
   modules: DEFAULT_MODULES,
 };

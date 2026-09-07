@@ -2512,7 +2512,7 @@
           "feed"
         ],
         "summary": "List Feed",
-        "description": "List feed posts visible to the caller, newest first (pinned on top).\n\nGET /api/feed?squad_id=...&kind=...\nAccess: any authenticated user; results are limited to the caller's tribe scope\n(visible_tribe_id) plus global posts. Optional squad_id / kind filters.\nBusiness rule: the `feed_retention_days` general setting hides posts older than\nthe cutoff (pinned posts are always kept).",
+        "description": "List feed posts visible to the caller, newest first (pinned on top).\n\nGET /api/feed?squad_id=...&kind=...\nAccess: any authenticated user; results are limited to the caller's tribe scope\n(visible_tribe_id) plus global posts. Optional squad_id / kind filters.\nBusiness rule: the `feed_retention_days` general setting hides posts older than\nthe cutoff (pinned posts are always kept). The `kind` filter is ignored when the\n`feed > kinds` feature is off: the switch has to mean the same thing to the API\nas it does to the screen, or turning it off only hides the selector.",
         "operationId": "list_feed_api_feed_get",
         "parameters": [
           {

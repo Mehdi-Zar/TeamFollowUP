@@ -29,7 +29,7 @@ jobs:
         run: python scripts/dump_openapi.py --check
 
   frontend:
-    name: Frontend (typecheck + build + i18n parity)
+    name: Frontend (typecheck + unit tests + build)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -42,23 +42,12 @@ jobs:
       - name: Type-check
         working-directory: frontend
         run: npx tsc --noEmit
+      # Vitest carries the guards that used to be duplicated as inline node scripts
+      # here: FR/EN key parity (i18n.parity.test.ts) and the typography rule
+      # (typography.test.ts). One implementation, runnable locally.
       - name: Unit tests (Vitest)
         working-directory: frontend
         run: npm test
-      - name: i18n FR/EN parity
-        working-directory: frontend
-        run: |
-          node -e '
-            const fs=require("fs");
-            const txt=fs.readFileSync("src/i18n.tsx","utf8");
-            const block=(a)=>{const m=txt.search(new RegExp(a+"\\s*:\\s*\\{"));let i=txt.indexOf("{",m),d=0;for(let j=i;j<txt.length;j++){if(txt[j]==="{")d++;else if(txt[j]==="}"){d--;if(d===0)return txt.slice(i,j+1);}}};
-            const keys=(s)=>new Set([...s.matchAll(/"([\w.]+)":/g)].map(m=>m[1]));
-            const fr=keys(block("\\n  fr")), en=keys(block("\\n  en"));
-            const only=(a,b)=>[...a].filter(k=>!b.has(k));
-            const miss=[...only(fr,en).map(k=>"FR-only:"+k), ...only(en,fr).map(k=>"EN-only:"+k)];
-            if(miss.length){console.error("i18n parity FAILED\n"+miss.join("\n"));process.exit(1);}
-            console.log("i18n parity OK ("+fr.size+" keys)");
-          '
       - name: Build
         working-directory: frontend
         run: npm run build

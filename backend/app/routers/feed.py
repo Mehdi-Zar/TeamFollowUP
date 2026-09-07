@@ -18,6 +18,7 @@ from ..database import get_db
 from ..deps import (get_current_user, record_audit, require_capability, require_module,
                     require_writer, visible_tribe_id)
 from ..generalconfig import get_general
+from ..modulesconfig import get_modules, is_active
 from ..models import FeedPost, FeedReaction, FeedReply, Squad, User
 from ..notify import notify_new_post, notify_reply
 from ..schemas import (
@@ -84,8 +85,12 @@ def list_feed(squad_id: int | None = Query(default=None), kind: str | None = Que
     Access: any authenticated user; results are limited to the caller's tribe scope
     (visible_tribe_id) plus global posts. Optional squad_id / kind filters.
     Business rule: the `feed_retention_days` general setting hides posts older than
-    the cutoff (pinned posts are always kept).
+    the cutoff (pinned posts are always kept). The `kind` filter is ignored when the
+    `feed > kinds` feature is off: the switch has to mean the same thing to the API
+    as it does to the screen, or turning it off only hides the selector.
     """
+    if kind and not is_active(get_modules(db), "feed", "kinds"):
+        kind = None
     q = select(FeedPost)
     scope = visible_tribe_id(user)
     # None scope = cross-tribe visibility (admin); otherwise own tribe + globals.
@@ -130,8 +135,13 @@ def create_post(payload: FeedPostCreate, db: Session = Depends(get_db), user: Us
         raise HTTPException(status_code=404, detail="Squad introuvable")
     # tribe of the post: the author's tribe, or (for admin) the tagged squad's tribe, else global
     tribe_id = user.tribe_id or (squad.tribe_id if squad else None)
+    # With `feed > kinds` off the SPA hides the selector and posts "info". Enforce
+    # the same server-side rather than trusting the screen: the flag is an admin
+    # decision about the data, not a cosmetic one, and its three siblings
+    # (reactions, replies, pin) are all enforced on the route.
+    kind = payload.kind if is_active(get_modules(db), "feed", "kinds") else "info"
     post = FeedPost(tribe_id=tribe_id, author_user_id=user.id, content=payload.content,
-                    kind=payload.kind, squad_id=payload.squad_id)
+                    kind=kind, squad_id=payload.squad_id)
     db.add(post)
     db.flush()
     notify_new_post(db, post)

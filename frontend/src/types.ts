@@ -519,7 +519,6 @@ export interface PublicConfig {
   default_lang: "fr" | "en";
   default_year: number;
   feed_post_scope: "leaders" | "everyone";
-  feed_kinds: FeedKind[];
   smtp_enabled: boolean;
   modules: ModulesConfig;
 }

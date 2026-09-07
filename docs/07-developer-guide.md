@@ -88,10 +88,9 @@ frontend/src/
   run with the normal suites: `backend/tests/test_typography.py` inspects every non-docstring
   string literal under `backend/app` (developer prose is exempt on purpose), and
   `frontend/src/typography.test.ts` scans `frontend/src` outside comment lines.
-- **i18n parity gate** (run before commit):
-  ```bash
-  cd frontend && node -e "/* see CI workflow */"   # or the snippet in .github/workflows/ci.yml
-  ```
+- **Gates (run before commit)**: `cd frontend && npm test` carries both the i18n FR/EN parity
+  check and the typography guard, and `cd backend && pytest` carries the backend one. CI runs
+  the same two commands, so there is nothing to keep in sync by hand.
 
 ## Definition of done (per change)
 
