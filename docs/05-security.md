@@ -187,8 +187,21 @@ Three independent layers, all enforced **server-side** (the SPA only hides UI):
 1. **Role tiers** - `admin > tribe_leader > squad_leader > member` (+ custom persona keys).
    Coarse guards: `require_admin`, `require_tribe_or_admin`, `require_writer`.
 2. **Persona → capability matrix** (`personasconfig`) - section access (`dashboard, roadmap, org,
-   feed, reporting, mysquads, leaves`) per persona, enforced by `require_capability(cap)`.
-   Admin-configurable in **Admin → Personas**. See [ADR-0005](adr/0005-persona-capability-model.md).
+   feed, reporting, mysquads, leaves`) per persona, admin-configurable in
+   **Admin → Personas**. See [ADR-0005](adr/0005-persona-capability-model.md).
+   Six of the seven are enforced by `require_capability(cap)` on the router that serves the
+   section: `dashboard` (dashboard + `/api/reports/*`), `roadmap`, `org` (org + org export),
+   `feed`, `reporting` (snapshots), `leaves`.
+   **`mysquads` is a navigation capability only, and deliberately so.** The screen it opens
+   drives routes that other sections also drive (`PUT /api/squads/{id}` carries the budget
+   toggle on the squad page and the Steerco toggle on the entry page), so gating that route on
+   the capability would break unrelated features for a persona that merely has the menu entry
+   hidden. What protects the actions themselves is layer 1 plus ownership:
+   `require_tribe_or_admin` on squad create and delete, and on update a tribe-scope check with
+   the structural fields (leader, ordering, KPI/budget toggles) reserved to tribe leaders and
+   admins. Turning `mysquads` off removes the entry point, not the permission: a squad leader
+   who reaches the API directly can still edit their own squad, which is what their role says
+   they may do.
 3. **Module on/off** (`modulesconfig`) - `require_module(module[,feature])` returns 404 when a feature
    is disabled (a disabled service is indistinguishable from a missing one).
 

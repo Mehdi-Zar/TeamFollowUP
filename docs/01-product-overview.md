@@ -51,7 +51,7 @@ isolation beyond tribe scoping, mobile native apps.
 | Review (COPIL) | `review` (+notes/weekly_report) | `review` | timeline + actions + presentation mode |
 | Comitologie (committees) | `committees` (off by default) | via reporting | squad leaders declare recurring governance meetings; tribe-leader oversight |
 | Steerco (steering committee) | `steerco` (off by default) | via reporting / `dashboard` | opt-in per squad; monthly snapshot → auto-built KPI one-pager (HTML/PPTX), see [15](15-steerco.md) |
-| My squads | - | `mysquads` | management for tribe/squad leaders |
+| My squads | - | `mysquads` (navigation only, see [05](05-security.md)) | management for tribe/squad leaders; the actions are guarded by role and ownership, not by the capability |
 | Exports (HTML/PPTX) | via section modules | via section gates | dashboard, weekly, roadmap & dependencies decks (`/api/reports/*`) |
 | Weekly report (HTML/PPTX/email) | `review.weekly_report` | - | scheduled + on-demand |
 | Notifications | `notifications` (inapp/email) | - | bell + preferences |

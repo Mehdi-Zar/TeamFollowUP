@@ -3,6 +3,18 @@
 ## Unreleased
 
 ### Fixed
+- **The security documentation claimed a guard that does not exist.** docs/05 stated that all
+  seven persona capabilities are enforced server-side by `require_capability`. Six are
+  (`dashboard`, `roadmap`, `org`, `feed`, `reporting`, `leaves`); `mysquads` is navigation only.
+  That is the right design, not a hole: the screen it opens drives `PUT /api/squads/{id}`,
+  which also carries the budget toggle on the squad page and the Steerco toggle on the entry
+  page, so gating that route on the capability would break unrelated features for a persona
+  that merely has a menu entry hidden. The actions are guarded by role and ownership instead
+  (`require_tribe_or_admin` on create and delete, tribe scope plus reserved structural fields
+  on update). The claim is now precise in docs/05 and docs/01, and a test asserts which
+  capabilities carry a guard, so the documentation cannot drift from the code again.
+- `BACKUP_RETRY_SECONDS` was read by the backup sidecar but missing from `.env.example`, where
+  its two siblings were documented.
 - **One feed feature flag was a suggestion, and one setting did nothing at all.** Both found
   while auditing for the same defect class as the trusted-authority store: something that
   exists in the model and the API surface without being wired to an effect.

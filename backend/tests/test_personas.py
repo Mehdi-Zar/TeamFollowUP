@@ -79,3 +79,35 @@ def test_deleting_persona_reassigns_users_to_member(client, seeded, db):
     from app.models import User
     from sqlalchemy import select
     assert db.scalar(select(User).where(User.email == "temp@test")).role == "member"
+
+
+def test_which_capabilities_are_enforced_server_side_matches_the_documentation():
+    """The capability matrix is only as strong as the guards behind it.
+
+    docs/05 used to state that all seven capabilities are enforced by
+    ``require_capability``. Six are. ``mysquads`` is navigation only, and on
+    purpose: the screen it opens drives ``PUT /api/squads/{id}``, which also
+    carries the budget toggle on the squad page and the Steerco toggle on the
+    entry page, so gating that route on the capability would break unrelated
+    features for a persona that merely has the menu entry hidden. The actions are
+    guarded by role and ownership instead.
+
+    This test is the reason the documentation can be trusted: adding or removing
+    an enforcement point fails here, so the claim has to be updated with the code.
+    """
+    import re
+    from pathlib import Path
+
+    from app.personasconfig import CAPABILITIES
+
+    routers = Path(__file__).resolve().parent.parent / "app" / "routers"
+    enforced = set()
+    for src in routers.rglob("*.py"):
+        enforced |= set(re.findall(r'require_capability\(\s*["\'](\w+)["\']', src.read_text(encoding="utf-8")))
+
+    assert enforced <= set(CAPABILITIES), f"unknown capability guarded: {enforced - set(CAPABILITIES)}"
+    assert sorted(set(CAPABILITIES) - enforced) == ["mysquads"], (
+        "The set of capabilities enforced server-side changed. Update "
+        "docs/05-security.md (layer 2) and docs/01-product-overview.md to match, "
+        "then adjust this test."
+    )
