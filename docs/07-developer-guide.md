@@ -82,6 +82,12 @@ frontend/src/
 - **Frontend**: typed API via `api.ts`; **all UI strings via `i18n.tsx`** (FR + EN must stay in parity -
   CI/parity script enforces it); section access via `useAuth().can(cap)` and the `Section` guard; reuse
   `ui.tsx` primitives (`EmptyState`, `Modal`, `StatusBadge`, `Spinner`) instead of re-implementing.
+- **Typography**: no em dash and no middot in anything a user reads (UI labels, FR/EN
+  translations, generated HTML/PPTX, emails, titles, tooltips). They read as machine-written.
+  Use a comma, a colon, parentheses, a line break or a plain space. Two guards enforce it and
+  run with the normal suites: `backend/tests/test_typography.py` inspects every non-docstring
+  string literal under `backend/app` (developer prose is exempt on purpose), and
+  `frontend/src/typography.test.ts` scans `frontend/src` outside comment lines.
 - **i18n parity gate** (run before commit):
   ```bash
   cd frontend && node -e "/* see CI workflow */"   # or the snippet in .github/workflows/ci.yml

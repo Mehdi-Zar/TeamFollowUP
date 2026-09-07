@@ -352,7 +352,7 @@ def _squad_detail_parts(r: dict, lang: str, e, *, with_title: bool = True) -> li
     det = r.get("detail") or {}
     parts: list[str] = ['<div class="sq-detail">']
     if with_title:
-        parts.append(f'<h3>{e(r["name"])} <span class="muted">· {r["annual_pct"]}%</span></h3>')
+        parts.append(f'<h3>{e(r["name"])} <span class="muted">({r["annual_pct"]}%)</span></h3>')
 
     # Initiatives
     inits = det.get("initiatives") or []
@@ -364,7 +364,7 @@ def _squad_detail_parts(r: dict, lang: str, e, *, with_title: bool = True) -> li
                 meta.append(e(ini["owner"]))
             if ini.get("deadline"):
                 meta.append(f'{e(rt(lang, "deadline"))} {e(ini["deadline"])}')
-            tail = f' <span class="muted">({e(" · ".join(meta))})</span>' if meta else ""
+            tail = f' <span class="muted">({e(", ".join(meta))})</span>' if meta else ""
             parts.append(f'<li>{e(ini["title"])}{tail}</li>')
         parts.append('</ul>')
 
@@ -374,7 +374,7 @@ def _squad_detail_parts(r: dict, lang: str, e, *, with_title: bool = True) -> li
         parts.append('<ul class="d-obj">')
         for o in det["objectives"]:
             rag = _status_rag(o["rag"])
-            dl = f' · {e(rt(lang, "deadline"))} {e(o["target_date"])}' if o.get("target_date") else ""
+            dl = f', {e(rt(lang, "deadline"))} {e(o["target_date"])}' if o.get("target_date") else ""
             parts.append(f'<li><span class="dot" style="background:{RAG_COLOR[rag]}"></span>'
                          f'{e(o["title"])} <span class="muted">({e(_status_label(o["rag"], lang))}{dl})</span></li>')
         parts.append('</ul>')
@@ -391,7 +391,7 @@ def _squad_detail_parts(r: dict, lang: str, e, *, with_title: bool = True) -> li
             for it in qd["items"]:
                 rag = _status_rag(it["status"])
                 stage = f' <strong>({e(it["stage"])})</strong>' if it.get("stage") else ""
-                dep = f' <span class="muted">· {e(rt(lang, "dep"))} {e(it["dependency"])}</span>' if it.get("dependency") else ""
+                dep = f' <span class="muted">({e(rt(lang, "dep"))} {e(it["dependency"])})</span>' if it.get("dependency") else ""
                 parts.append(f'<li><span class="dot" style="background:{RAG_COLOR[rag]}"></span>'
                              f'{e(it["title"])}{stage}{dep}</li>')
             parts.append('</ul>')
@@ -408,7 +408,7 @@ def _squad_detail_parts(r: dict, lang: str, e, *, with_title: bool = True) -> li
         parts.append('<ul class="d-obj">')
         for m in kms:
             rag = km_rag.get(m["kind"], "grey")
-            ts = f' <span class="muted">· {e(m["created_at"])}</span>' if m.get("created_at") else ""
+            ts = f' <span class="muted">({e(m["created_at"])})</span>' if m.get("created_at") else ""
             parts.append(f'<li><span class="dot" style="background:{RAG_COLOR[rag]}"></span>'
                          f'<strong>{e(rt(lang, "km_" + m["kind"]))}</strong> - {e(m["text"])}{ts}</li>')
         parts.append('</ul>')
@@ -421,15 +421,15 @@ def _squad_detail_parts(r: dict, lang: str, e, *, with_title: bool = True) -> li
         fmtn = lambda v: "-" if v is None else f"{v:,.0f} €"
         st_rag = {"on_track": "green", "at_risk": "amber", "over": "red"}[bud["status"]]
         st_lbl = rt(lang, {"on_track": "b_on_track", "at_risk": "b_at_risk", "over": "b_over"}[bud["status"]])
-        over = f' (+{fmtn(bud["overrun"])} · {bud["overrun_pct"]}%)' if bud["status"] == "over" else ""
+        over = f' (+{fmtn(bud["overrun"])}, {bud["overrun_pct"]}%)' if bud["status"] == "over" else ""
         parts.append(f'<div class="d-sub">{e(rt(lang, "h_budget"))} '
                      f'<span class="dot" style="background:{RAG_COLOR[st_rag]}"></span> '
                      f'<span class="muted">{e(st_lbl)}{e(over)}</span></div>')
         if bud["total"] is None and bud["spent"] is None and bud["forecast"] is None:
             parts.append(f'<div class="muted small">{e(rt(lang, "no_budget"))}</div>')
         else:
-            sp = f' <span class="muted">· {bud["spent_pct"]}%</span>' if bud.get("spent_pct") is not None else ""
-            fp = f' <span class="muted">· {bud["forecast_pct"]}%</span>' if bud.get("forecast_pct") is not None else ""
+            sp = f' <span class="muted">({bud["spent_pct"]}%)</span>' if bud.get("spent_pct") is not None else ""
+            fp = f' <span class="muted">({bud["forecast_pct"]}%)</span>' if bud.get("forecast_pct") is not None else ""
             parts.append('<ul class="d-obj">')
             parts.append(f'<li>{e(rt(lang, "b_total"))} : <strong>{fmtn(bud["total"])}</strong></li>')
             parts.append(f'<li>{e(rt(lang, "b_spent"))} : <strong>{fmtn(bud["spent"])}</strong>{sp}</li>')
@@ -498,7 +498,7 @@ def _squad_app_cards(det: dict, lang: str, e, year: int) -> list[str]:
     C.append(f'<div class="card"><h2>{e(rt(lang, "h_otd_section"))} {year}</h2>')
     if det.get("objectives"):
         for o in det["objectives"]:
-            dl = f' · {e(rt(lang, "deadline"))} {e(o["target_date"])}' if o.get("target_date") else ""
+            dl = f', {e(rt(lang, "deadline"))} {e(o["target_date"])}' if o.get("target_date") else ""
             C.append(f'<div class="item-row">{_dot(_status_rag(o["rag"]))}'
                      f'<div class="grow"><div>{e(o["title"])}</div></div>'
                      f'<span class="small muted">{e(_status_label(o["rag"], lang))}{dl}</span></div>')
@@ -521,7 +521,7 @@ def _squad_app_cards(det: dict, lang: str, e, year: int) -> list[str]:
             C.append(f'<div class="small muted">{e(rt(lang, "no_jalon"))}</div>')
         for it in qd["items"]:
             stage = f'<span class="badge badge-navy" style="font-size:10px">{e(it["stage"])}</span>' if it.get("stage") else ""
-            dep = f'<span class="small muted">· {e(rt(lang, "dep"))} {e(it["dependency"])}</span>' if it.get("dependency") else ""
+            dep = f'<span class="small muted">({e(rt(lang, "dep"))} {e(it["dependency"])})</span>' if it.get("dependency") else ""
             C.append(f'<div class="item-row">{_dot(_status_rag(it["status"]))}'
                      f'<span class="grow small">{e(it["title"])}</span>{stage}'
                      f'<span class="small muted">{e(_status_label(it["status"], lang))}</span>{dep}</div>')
@@ -545,14 +545,14 @@ def _squad_app_cards(det: dict, lang: str, e, year: int) -> list[str]:
     bud = det.get("budget")
     if bud is not None:
         st_lbl = rt(lang, {"on_track": "b_on_track", "at_risk": "b_at_risk", "over": "b_over"}[bud["status"]])
-        over = f' (+{fmtn(bud["overrun"])} · {bud["overrun_pct"]}%)' if bud["status"] == "over" else ""
+        over = f' (+{fmtn(bud["overrun"])}, {bud["overrun_pct"]}%)' if bud["status"] == "over" else ""
         C.append(f'<div class="card"><div class="between"><h2 style="margin:0">{e(rt(lang, "h_budget"))}</h2>'
                  f'<span class="badge {_BUD_BADGE[bud["status"]]}">{e(st_lbl)}{e(over)}</span></div>')
         if bud["total"] is None and bud["spent"] is None and bud["forecast"] is None:
             C.append(f'<div class="small muted">{e(rt(lang, "no_budget"))}</div>')
         else:
-            sp = f' · {bud["spent_pct"]}%' if bud.get("spent_pct") is not None else ""
-            fp = f' · {bud["forecast_pct"]}%' if bud.get("forecast_pct") is not None else ""
+            sp = f' ({bud["spent_pct"]}%)' if bud.get("spent_pct") is not None else ""
+            fp = f' ({bud["forecast_pct"]}%)' if bud.get("forecast_pct") is not None else ""
             C.append('<div class="stack" style="gap:6px;margin-top:6px">'
                      f'<div class="between"><span class="small muted">{e(rt(lang, "b_total"))}</span>'
                      f'<span class="strong">{fmtn(bud["total"])}</span></div>'
@@ -588,7 +588,7 @@ def _render_squad_page(data: dict, standalone: bool, e, lang: str) -> str:
         P = [f'<div class="export-page"><h1 style="color:var(--navy);margin:0 0 8px">{e(r["name"])}</h1>',
              f'<div class="inline" style="gap:10px;flex-wrap:wrap;margin-bottom:6px">{"".join(badges)}</div>',
              f'<div class="muted small" style="margin-bottom:16px">{e(rt(lang, "h_leader"))} : '
-             f'<span class="strong">{e(r["leader"] or "-")}</span> · {e(rt(lang, "year"))} {year}</div>',
+             f'<span class="strong">{e(r["leader"] or "-")}</span>, {e(rt(lang, "year"))} {year}</div>',
              '<div class="stack" style="gap:18px">']
         P.extend(_squad_app_cards(r["detail"], lang, e, year))
         P.append('</div></div>')
@@ -710,7 +710,7 @@ def diff_report(prev: dict | None, cur: dict, lang: str) -> dict:
         parts.append(rt(lang, "sum_blocked", n=tally["blocked"]))
     if tally["stale"]:
         parts.append(rt(lang, "sum_stale", n=tally["stale"]))
-    return {"first": False, "count": count, "summary": " · ".join(parts), "by_squad": by_squad}
+    return {"first": False, "count": count, "summary": ", ".join(parts), "by_squad": by_squad}
 
 
 def subject_prefix(changes: dict | None, lang: str) -> str:
@@ -793,8 +793,8 @@ def render_html(data: dict, *, standalone: bool = True, changes: dict | None = N
 
     parts: list[str] = []
     parts.append(f'<div class="hdr"><h1>{e(data["app_name"])} - {e(rt(lang, "report"))}</h1>')
-    parts.append(f'<div class="sub">{e(data["scope_name"])} · {e(rt(lang, "year"))} {data["year"]} · '
-                 f'{e(rt(lang, "generated"))} {e(gen_str)} · {e(rt(lang, "window", n=data["since_days"]))}</div></div>')
+    parts.append(f'<div class="sub">{e(data["scope_name"])}, {e(rt(lang, "year"))} {data["year"]}, '
+                 f'{e(rt(lang, "generated"))} {e(gen_str)}, {e(rt(lang, "window", n=data["since_days"]))}</div></div>')
 
     # "What's new since your last report" - right under the header.
     if changes is not None:
@@ -905,7 +905,7 @@ def render_roadmap_html(data: dict, *, standalone: bool = True) -> str:
 
     parts: list[str] = []
     parts.append(f'<div class="hdr"><h1>{e(data["app_name"])} - {e(rt(lang, "roadmap_report"))}</h1>')
-    parts.append(f'<div class="sub">{e(data["scope_name"])} · {e(rt(lang, "year"))} {year} · '
+    parts.append(f'<div class="sub">{e(data["scope_name"])}, {e(rt(lang, "year"))} {year}, '
                  f'{e(rt(lang, "generated"))} {e(gen_str)}</div></div>')
 
     # EA/GA legend (status is no longer colour-coded in the roadmap view)
@@ -1371,23 +1371,23 @@ def render_dependencies_html(data: dict, *, standalone: bool = True) -> str:
     lang = _lang(data.get("lang", "fr"))
     T = _DEP_T[lang]
     parts = [f'<div class="hdr"><h1>{e(T["title"])} - {e(data["scope_name"])}</h1>',
-             f'<div class="sub">{e(rt(lang, "year"))} {data["year"]} · '
+             f'<div class="sub">{e(rt(lang, "year"))} {data["year"]}, '
              f'{e(T["total"].format(n=data["total"]))}</div></div>']
     if data["total"] == 0:
         parts.append(f'<div class="muted small">{e(T["none"])}</div>')
     for g in data["groups"]:
         tlbl = {"tribe": T["t_tribe"], "squad": T["t_squad"], "text": T["t_text"]}.get(g["target_type"], "")
         if g["target_type"] == "squad" and g.get("target_tribe"):
-            tlbl = f'{tlbl} · {e(g["target_tribe"])}'
+            tlbl = f'{tlbl}, {e(g["target_tribe"])}'
         parts.append(f'<h2>▶ {e(g["target_label"])} '
-                     f'<span class="muted">({tlbl} · {e(T["gcount"].format(n=len(g["items"])))})</span></h2>')
+                     f'<span class="muted">({tlbl}, {e(T["gcount"].format(n=len(g["items"])))})</span></h2>')
         parts.append('<table><thead><tr>'
                      f'<th>{e(T["c_jalon"])}</th><th>{e(T["c_squad"])}</th><th>{e(T["c_trim"])}</th>'
                      f'<th>{e(T["c_owner"])}</th><th>{e(T["c_status"])}</th></tr></thead><tbody>')
         for it in g["items"]:
             parts.append(
                 f'<tr><td><strong>{e(it["jalon"])}</strong></td>'
-                f'<td>{e(it["squad_name"])} · {e(it["tribe_name"])}</td>'
+                f'<td>{e(it["squad_name"])} ({e(it["tribe_name"])})</td>'
                 f'<td>Q{it["quarter"]} {str(it["year"])[2:]}</td>'
                 f'<td>{e(it["owner"] or "-")}</td>'
                 f'<td>{e(_status_label(it["status"], lang))}</td></tr>')

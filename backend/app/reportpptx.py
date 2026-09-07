@@ -215,7 +215,7 @@ def render_pptx(data: dict) -> bytes:
         # corner label (left title and right meta can't share one text frame).
         place(band, [
             (f'{data["app_name"]} - {rt(lang, "report")}', 26, B["white"], True, PP_ALIGN.LEFT, 5),
-            (f'{data["scope_name"]} · {rt(lang, "year")} {data["year"]}', 13, rgb("#C7D2FE"), False, PP_ALIGN.LEFT, 0),
+            (f'{data["scope_name"]}, {rt(lang, "year")} {data["year"]}', 13, rgb("#C7D2FE"), False, PP_ALIGN.LEFT, 0),
         ], anchor=MSO_ANCHOR.TOP, ml=0.55, mt=0.18, mr=4.2)
         textbox(s, Inches(9.3), Inches(0.3), Inches(3.5), Inches(0.6),
                 f'{rt(lang, "generated_full", d=gen_str)}\n{rt(lang, "window_full", n=data["since_days"])}', 11,
@@ -288,7 +288,7 @@ def render_pptx(data: dict) -> bytes:
         band = rect(s, Inches(0), Inches(0), prs.slide_width, Inches(0.92), B["navy"])
         place(band, [
             (r["name"], 22, B["white"], True, PP_ALIGN.LEFT, 4),
-            (f'{rt(lang, "year")} {data["year"]} · {rt(lang, "h_progress_long")} {r["annual_pct"]}%',
+            (f'{rt(lang, "year")} {data["year"]}, {rt(lang, "h_progress_long")} {r["annual_pct"]}%',
              12, rgb("#C7D2FE"), False, PP_ALIGN.LEFT, 0),
         ], anchor=MSO_ANCHOR.TOP, ml=0.5, mt=0.12, mr=0.5)
 
@@ -298,15 +298,15 @@ def render_pptx(data: dict) -> bytes:
             f = lambda v: "-" if v is None else f"{v:,.0f} €"
             st_color = {"on_track": "green", "at_risk": "amber", "over": "red"}[bud["status"]]
             st_lbl = rt(lang, {"on_track": "b_on_track", "at_risk": "b_at_risk", "over": "b_over"}[bud["status"]])
-            bline = f'{rt(lang, "h_budget")}: {st_lbl} · {rt(lang, "b_total")} {f(bud["total"])}'
+            bline = f'{rt(lang, "h_budget")}: {st_lbl}, {rt(lang, "b_total")} {f(bud["total"])}'
             if bud["spent"] is not None:
                 pc = f' ({bud["spent_pct"]}%)' if bud.get("spent_pct") is not None else ""
-                bline += f' · {rt(lang, "b_spent")} {f(bud["spent"])}{pc}'
+                bline += f', {rt(lang, "b_spent")} {f(bud["spent"])}{pc}'
             if bud["forecast"] is not None:
                 pc = f' ({bud["forecast_pct"]}%)' if bud.get("forecast_pct") is not None else ""
-                bline += f' · {rt(lang, "b_forecast")} {f(bud["forecast"])}{pc}'
+                bline += f', {rt(lang, "b_forecast")} {f(bud["forecast"])}{pc}'
             if bud["status"] == "over":
-                bline += f' · +{f(bud["overrun"])} ({bud["overrun_pct"]}%)'
+                bline += f', +{f(bud["overrun"])} ({bud["overrun_pct"]}%)'
             textbox(s, margin, Inches(0.96), Inches(12.3), Inches(0.22), bline, 10, bold=True,
                     color=rgb(_RAG_BRAND[st_color]))
 
@@ -319,7 +319,7 @@ def render_pptx(data: dict) -> bytes:
                 lines = []
                 for o in objs[:6]:
                     rag = _status_rag(o["rag"])
-                    dl = f' · {rt(lang, "deadline")} {o["target_date"]}' if o.get("target_date") else ""
+                    dl = f', {rt(lang, "deadline")} {o["target_date"]}' if o.get("target_date") else ""
                     lines.append((f'•  {o["title"]}   ({_status_label(o["rag"], lang)}{dl})',
                                   rgb(_RAG_BRAND[rag]), False))
                 if len(objs) > 6:
@@ -348,7 +348,7 @@ def render_pptx(data: dict) -> bytes:
             lines = []
             for it in items[:10]:
                 rag = _status_rag(it["status"])
-                dep = f'   · {rt(lang, "dep")} {it["dependency"]}' if it.get("dependency") else ""
+                dep = f'   ({rt(lang, "dep")} {it["dependency"]})' if it.get("dependency") else ""
                 lines.append((f'•  {it["title"]}{dep}', rgb(_RAG_BRAND[rag]), False))
             if not items:
                 lines.append((rt(lang, "no_jalon"), B["muted"], False))
@@ -418,7 +418,7 @@ def render_pptx(data: dict) -> bytes:
         for ini in inits[:3]:
             meta = [x for x in (ini.get("owner"),
                                 (f'{rt(lang, "deadline")} {ini["deadline"]}' if ini.get("deadline") else None)) if x]
-            tail = f'   ({" · ".join(meta)})' if meta else ""
+            tail = f'   ({", ".join(meta)})' if meta else ""
             ilines.append((f'{ini["title"]}{tail}', B["ink"], False))
         if len(inits) > 3:
             ilines.append((f'+{len(inits) - 3}…', B["muted"], False))
@@ -428,7 +428,7 @@ def render_pptx(data: dict) -> bytes:
         olines = []
         for o in objs[:3]:
             rag = _status_rag(o["rag"])
-            dl = f' · {rt(lang, "deadline")} {o["target_date"]}' if o.get("target_date") else ""
+            dl = f', {rt(lang, "deadline")} {o["target_date"]}' if o.get("target_date") else ""
             olines.append((f'●  {o["title"]}   ({_status_label(o["rag"], lang)}{dl})', rgb(_RAG_BRAND[rag]), False))
         if len(objs) > 3:
             olines.append((f'+{len(objs) - 3}…', B["muted"], False))
@@ -500,8 +500,8 @@ def render_pptx(data: dict) -> bytes:
             st_lbl = rt(lang, {"on_track": "b_on_track", "at_risk": "b_at_risk", "over": "b_over"}[bud["status"]])
             rows = [
                 (rt(lang, "b_total"), f(bud["total"])),
-                (rt(lang, "b_spent"), f(bud["spent"]) + (f' · {bud["spent_pct"]}%' if bud.get("spent_pct") is not None else "")),
-                (rt(lang, "b_forecast"), f(bud["forecast"]) + (f' · {bud["forecast_pct"]}%' if bud.get("forecast_pct") is not None else "")),
+                (rt(lang, "b_spent"), f(bud["spent"]) + (f' ({bud["spent_pct"]}%)' if bud.get("spent_pct") is not None else "")),
+                (rt(lang, "b_forecast"), f(bud["forecast"]) + (f' ({bud["forecast_pct"]}%)' if bud.get("forecast_pct") is not None else "")),
             ]
             for label, val in rows:
                 p = btf.add_paragraph(); p.space_after = Pt(3)
@@ -628,9 +628,9 @@ def render_roadmap_pptx(data: dict) -> bytes:
 
     def draw_header(s):
         textbox(s, MARGIN, 0.22, 8.6, 0.5,
-                [(f'{rt(lang, "roadmap_report")} · {data["scope_name"]}', C["dark"], True)], 22)
+                [(f'{rt(lang, "roadmap_report")} - {data["scope_name"]}', C["dark"], True)], 22)
         textbox(s, MARGIN, 0.66, 8.6, 0.25,
-                [(f'{rt(lang, "year")} {year} · {rt(lang, "generated_full", d=gen_str)}', C["muted"], False)], 10.5)
+                [(f'{rt(lang, "year")} {year}, {rt(lang, "generated_full", d=gen_str)}', C["muted"], False)], 10.5)
         legend = [("EA  ", STAGE["EA"], True), (rt(lang, "stage_ea") + "      ", C["dark"], False),
                   ("GA  ", STAGE["GA"], True), (rt(lang, "stage_ga"), C["dark"], False)]
         textbox(s, SLIDE_W - 5.9, 0.34, 5.4, 0.3, legend, 10, align=PP_ALIGN.RIGHT)
@@ -738,7 +738,7 @@ def render_initiatives_pptx(data: dict, *, lang: str = "fr") -> bytes:
     head = s.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0), Inches(0), prs.slide_width, Inches(0.92))
     head.fill.solid(); head.fill.fore_color.rgb = B["navy"]; head.line.fill.background(); head.shadow.inherit = False
     tf = head.text_frame; tf.margin_left = Inches(0.5); tf.vertical_anchor = MSO_ANCHOR.MIDDLE
-    p = tf.paragraphs[0]; r = p.add_run(); r.text = f'{T["title"]} · {data["scope_name"]}'
+    p = tf.paragraphs[0]; r = p.add_run(); r.text = f'{T["title"]} - {data["scope_name"]}'
     r.font.size = Pt(22); r.font.bold = True; r.font.color.rgb = B["white"]
 
     headers = [T["h_init"], T["h_owner"], T["h_squad"], T["h_deadline"]]
@@ -836,7 +836,7 @@ def render_dependencies_pptx(data: dict) -> bytes:
         textbox(s, margin, Inches(0.14), Inches(9.2), Inches(0.5),
                 T["title"] + (T["suite"] if cont else ""), 22, bold=True, color=B["white"], anchor=MSO_ANCHOR.TOP)
         textbox(s, margin, Inches(0.64), Inches(9.2), Inches(0.3),
-                f'{data["scope_name"]} · {rt(lang, "year")} {data["year"]} · {T["total"].format(n=data["total"])}',
+                f'{data["scope_name"]}, {rt(lang, "year")} {data["year"]}, {T["total"].format(n=data["total"])}',
                 12, color=rgb("#C7D2FE"), anchor=MSO_ANCHOR.TOP)
         textbox(s, int(SW) - int(Inches(4.3)), Inches(0.32), Inches(3.8), Inches(0.4),
                 rt(lang, "generated_full", d=gen_str), 10, color=rgb("#C7D2FE"), align=PP_ALIGN.RIGHT)
@@ -851,7 +851,7 @@ def render_dependencies_pptx(data: dict) -> bytes:
         rect(s, margin, y, content_w, GRP_H, rgb("#EEF2FF"))
         tlbl = {"tribe": T["t_tribe"], "squad": T["t_squad"], "text": T["t_text"]}.get(g["target_type"], "")
         if g["target_type"] == "squad" and g.get("target_tribe"):
-            tlbl = f'{tlbl} · {g["target_tribe"]}'
+            tlbl = f'{tlbl}, {g["target_tribe"]}'
         txt = f'▶  {g["target_label"]}   ({tlbl})' + (T["suite"] if cont else "")
         textbox(s, colx[0], y, content_w - int(Inches(2.4)), GRP_H, txt, 13, bold=True, color=B["navy"])
         textbox(s, margin + content_w - int(Inches(2.4)), y, Inches(2.3), GRP_H,
@@ -866,7 +866,7 @@ def render_dependencies_pptx(data: dict) -> bytes:
         if zebra:
             rect(s, margin, y, content_w, ROW_H, rgb("#F8FAFC"))
         vals = [trunc(it["jalon"], 62),
-                trunc(f'{it["squad_name"]} · {it["tribe_name"]}', 34),
+                trunc(f'{it["squad_name"]} ({it["tribe_name"]})', 34),
                 f'Q{it["quarter"]} {str(it["year"])[2:]}',
                 trunc(it["owner"] or "-", 24),
                 _status_label(it["status"], lang)]

@@ -107,11 +107,14 @@ def _run(squad_id: int, event: str, actor_name: str | None, year: int | None) ->
 
         label = _EVENT_LABEL.get(lang, _EVENT_LABEL["fr"]).get(event, event)
         tribe = squad.tribe.name if squad.tribe else None
-        who = f" · {actor_name}" if actor_name else ""
+        # "by/par <author>" rather than a separator: this is an email subject
+        # line, read in a list of dozens, and a name has to read as a name.
         if lang == "en":
+            who = f" by {actor_name}" if actor_name else ""
             subject = f"[Reporting] {squad.name}" + (f" ({tribe})" if tribe else "") + \
                       f" - {label} updated{who}"
         else:
+            who = f" par {actor_name}" if actor_name else ""
             subject = f"[Reporting] {squad.name}" + (f" ({tribe})" if tribe else "") + \
                       f" - {label} mis à jour{who}"
 

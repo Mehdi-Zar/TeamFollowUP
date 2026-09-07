@@ -141,7 +141,7 @@ def principal(key: ApiKey) -> User:
     return User(
         id=None,
         email=f"apikey:{key.prefix}",
-        display_name=f"API · {key.name}",
+        display_name=f"API {key.name}",
         role="admin" if key.tribe_id is None else "member",
         status="active",
         tribe_id=key.tribe_id,

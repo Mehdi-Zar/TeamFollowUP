@@ -3,6 +3,19 @@
 ## Unreleased
 
 ### Fixed
+- **The report and the PPTX shipped the one character the project bans.** `CLAUDE.md` forbids
+  the em dash and the middot in anything a user reads, generated HTML and PPTX documents
+  included, because they read as machine-written. The weekly report used the middot as its
+  separator throughout: squad headings (`Squad A · 72%`), the document header, budget lines,
+  deadlines, dependencies, and the `Squad · Tribe` column of the dependency table. So did the
+  PPTX export, the API-key label shown in the audit log, and the subject of every
+  change-notification email. Each separator was replaced by what actually fits its sentence:
+  parentheses for a supplementary figure (`Squad A (72%)`, `(Tribe)`), a comma inside a list of
+  equal-weight items, a hyphen in deck titles where the other titles already used one, and
+  `by`/`par <author>` in the email subject, where a name has to read as a name. Two guards keep
+  it from coming back and run with the normal suites: `backend/tests/test_typography.py`
+  inspects every non-docstring string literal under `backend/app`, so developer prose stays
+  free, and `frontend/src/typography.test.ts` scans the frontend outside comment lines.
 - **The trusted-authority store was locked behind an unrelated toggle, and did nothing for
   outbound calls anyway.** Connecting to an internal IdP over OIDC failed with
   `self signed certificate in certificate chain`, and the admin screen offered no way out:
