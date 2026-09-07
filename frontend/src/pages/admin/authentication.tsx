@@ -90,9 +90,13 @@ export function SmtpAdmin() {
 }
 
 
-/** Admin > TLS: manage the gateway certificate. Shows the active cert, and lets
- *  the admin regenerate a self-signed one, import a PEM or PFX, and manage the
- *  trusted CA store (roots/intermediates). Admin only. */
+/** Admin > TLS. Two independent concerns on one screen:
+ *  - the SERVED certificate (active cert, self-signed regeneration, PEM/PFX
+ *    import), which only applies when the app terminates TLS itself and is
+ *    therefore hidden behind the toggle;
+ *  - the TRUSTED authorities, used to verify the app's own outbound calls (IdP,
+ *    SMTP, log export), always shown because they apply in both serving modes.
+ *  Admin only. */
 export function TlsAdmin() {
   const { t } = useI18n();
   const [st, setSt] = useState<any | null>(null);
@@ -190,7 +194,7 @@ export function TlsAdmin() {
       <div className="small muted">{t("tls.expires")}: {c.not_after?.slice(0, 10)}</div>
       <div className="inline" style={{ gap: 8 }}>
         <a className="btn-secondary btn-sm" href={`/api/admin/tls-config/ca/${c.id}/download`}>{t("tls.download")}</a>
-        <button className="btn-danger btn-sm" onClick={() => removeCa(c.id)} disabled={inactive}>{t("action.delete")}</button>
+        <button className="btn-danger btn-sm" onClick={() => removeCa(c.id)}>{t("action.delete")}</button>
       </div>
     </div>
   );
@@ -314,8 +318,13 @@ export function TlsAdmin() {
         </div>
         <div><button onClick={importPfx} disabled={inactive}>{t("tls.install")}</button></div>
       </div>
+      </>}
 
-      {/* CA store */}
+      {/* Trusted authorities. Deliberately OUTSIDE the toggle above: these are the
+          authorities the app trusts when it CALLS an IdP, an SMTP relay or a log
+          sink, which has nothing to do with who terminates the TLS in front of it.
+          Gating them behind in-app TLS used to force an administrator to flip the
+          serving mode (and restart on another port) just to import a root CA. */}
       <div className="card stack" style={{ gap: 10 }}>
         <span className="strong">{t("tls.ca_title")}</span>
         <div className="small muted">{t("tls.ca_hint")}</div>
@@ -334,10 +343,9 @@ export function TlsAdmin() {
             <label>{t("tls.ca_name")}</label>
             <input aria-label={t("tls.ca_name")} value={caName} onChange={(e) => setCaName(e.target.value)} />
           </div>
-          <button className="btn-secondary" onClick={addCa} disabled={inactive}>{t("tls.add_ca")}</button>
+          <button className="btn-secondary" onClick={addCa}>{t("tls.add_ca")}</button>
         </div>
       </div>
-      </>}
 
       {msg && <div className="small" style={{ color: "var(--green)" }}>{msg}</div>}
     </div>

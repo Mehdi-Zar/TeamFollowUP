@@ -1,5 +1,6 @@
 """HTTPS / TLS: crypto primitives, DB orchestration and admin API."""
 import datetime as dt
+import os
 
 import pytest
 from cryptography import x509
@@ -8,16 +9,26 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives.serialization import pkcs12
 from cryptography.x509.oid import NameOID
 
-from app import tls, tlsconfig
+from app import tls, tlsconfig, trust
 from tests.conftest import login
 
 
 @pytest.fixture(autouse=True)
 def _tmp_cert_dir(tmp_path, monkeypatch):
-    """Keep materialised cert files out of the real CERT_DIR."""
+    """Keep materialised cert files out of the real CERT_DIR.
+
+    The trust bundle is redirected too, and the environment is restored on the
+    way out: ``trust.apply`` points SSL_CERT_FILE at the bundle it writes, and a
+    temporary path leaking into later tests would break every outbound call.
+    """
     monkeypatch.setattr(tls, "CERT_DIR", str(tmp_path))
     monkeypatch.setattr(tls, "FULLCHAIN_PATH", str(tmp_path / "fullchain.pem"))
     monkeypatch.setattr(tls, "KEY_PATH", str(tmp_path / "server.key"))
+    monkeypatch.setattr(trust, "BUNDLE_PATH", str(tmp_path / "trust_bundle.pem"))
+    saved = dict(os.environ)
+    yield
+    os.environ.clear()
+    os.environ.update(saved)
 
 
 def _make_ca():
@@ -148,6 +159,39 @@ def test_ca_store_add_remove(db):
     assert st["roots"] == []
     with pytest.raises(ValueError):
         tlsconfig.remove_ca(db, ca_id)
+
+
+def test_adding_a_ca_makes_it_trusted_for_outbound_calls(db):
+    """The point of the store on an infra-TLS deployment: an imported authority
+    must reach the outbound trust bundle, without any restart."""
+    _, ca_cert = _make_ca()
+    pem = _pem(ca_cert)
+    tlsconfig.add_ca(db, pem, "Internal Root")
+
+    with open(trust.BUNDLE_PATH, encoding="utf-8") as fh:
+        bundle = fh.read()
+    assert pem.strip() in bundle
+    # Public roots are kept: the app still talks to public endpoints.
+    assert bundle.count("BEGIN CERTIFICATE") > 1
+    assert os.environ["SSL_CERT_FILE"] == trust.BUNDLE_PATH
+
+
+def test_removing_a_ca_withdraws_the_trust(db):
+    _, ca_cert = _make_ca()
+    pem = _pem(ca_cert)
+    st = tlsconfig.add_ca(db, pem, "Internal Root")
+    tlsconfig.remove_ca(db, st["roots"][0]["id"])
+    with open(trust.BUNDLE_PATH, encoding="utf-8") as fh:
+        assert pem.strip() not in fh.read()
+
+
+def test_trust_applies_without_a_served_certificate(db):
+    """Infra-TLS mode never materialises a leaf, and the CA store must work
+    anyway: this is exactly the case where the old UI hid it."""
+    _, ca_cert = _make_ca()
+    tlsconfig.add_ca(db, _pem(ca_cert), "Internal Root")
+    assert tlsconfig.ensure_trust(db) == 1
+    assert not os.path.exists(tls.FULLCHAIN_PATH)
 
 
 # ---- admin API -----------------------------------------------------------------

@@ -9,6 +9,11 @@ Nothing here mutates state. Outbound calls go to URLs the administrator supplied
 which is the same trust level as the login path itself (only an admin can set an
 issuer or a metadata URL, and the app already fetches both during a real login).
 Timeouts are short so a wrong host fails fast instead of hanging the screen.
+
+Certificates are verified against the same trust store the login path uses
+(``trust.context``), so a green test really means the login will connect. A test
+that passed by skipping verification would be worse than no test: it would hide
+exactly the misconfiguration an administrator is here to find.
 """
 from __future__ import annotations
 
@@ -51,6 +56,8 @@ def test_oidc(cfg: dict) -> dict[str, Any]:
     """
     import httpx
 
+    from . import trust
+
     checks: list[dict] = []
     issuer = (cfg.get("oidc_issuer_url") or "").strip().rstrip("/")
     client_id = (cfg.get("oidc_client_id") or "").strip()
@@ -62,7 +69,7 @@ def test_oidc(cfg: dict) -> dict[str, Any]:
 
     well_known = f"{issuer}/.well-known/openid-configuration"
     try:
-        with httpx.Client(timeout=TIMEOUT, follow_redirects=True) as client:
+        with httpx.Client(timeout=TIMEOUT, follow_redirects=True, verify=trust.context()) as client:
             resp = client.get(well_known)
     except Exception as exc:
         return _result("oidc", checks + [
@@ -101,7 +108,7 @@ def test_oidc(cfg: dict) -> dict[str, Any]:
     jwks_uri = doc.get("jwks_uri")
     if jwks_uri:
         try:
-            with httpx.Client(timeout=TIMEOUT, follow_redirects=True) as client:
+            with httpx.Client(timeout=TIMEOUT, follow_redirects=True, verify=trust.context()) as client:
                 jwks = client.get(jwks_uri)
             keys = (jwks.json() or {}).get("keys") or []
             checks.append(_check("Clés de signature récupérées", bool(keys), f"{len(keys)} clé(s)"))
@@ -115,7 +122,7 @@ def test_oidc(cfg: dict) -> dict[str, Any]:
     token_endpoint = doc.get("token_endpoint")
     if token_endpoint:
         try:
-            with httpx.Client(timeout=TIMEOUT, follow_redirects=True) as client:
+            with httpx.Client(timeout=TIMEOUT, follow_redirects=True, verify=trust.context()) as client:
                 probe = client.post(token_endpoint, data={
                     "grant_type": "authorization_code",
                     "code": "teamfollowup-connectivity-probe",

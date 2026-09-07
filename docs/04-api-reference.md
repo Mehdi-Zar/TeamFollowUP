@@ -148,6 +148,23 @@ PPTX export template: `GET /pptx-template` (status), `POST /pptx-template` (uplo
 `GET /pptx-template/download`, `DELETE /pptx-template` - when set, every PPTX export is built on it
 (masters/theme/branding); see `app/pptxtpl.py`
 
+**HTTPS / certificates** (`/api/admin/tls-config`, admin only, every mutation audited as
+`tls_config.*`). `GET ""` returns the status: active certificate (subject, SANs, expiry), serving
+mode (`tls_enabled` wanted vs `tls_running` actual), and the trusted-authority store. The private
+key is never returned by any of these.
+`POST /enabled` (body `{enabled: bool}`) toggles in-app TLS termination; the listener is bound at
+boot, so `tls_running` keeps its old value until a restart.
+`POST /self-signed` (body `{cn, sans}`) mints a fresh self-signed certificate.
+`POST /import-pem` (multipart: `cert`/`key` files or `cert_pem`/`key_pem` text, optional
+`passphrase`) and `POST /import-pfx` (`pfx` file, optional `password`) install a server
+certificate; both hot-reload the live `SSLContext`, with no restart.
+`POST /ca` (multipart: `ca` file or `ca_pem` text, optional `name`) and `DELETE /ca/{id}` manage
+the **trusted authorities**, which apply in **both** serving modes: they feed the outbound trust
+bundle used to verify OIDC, SAML, SMTP and log-export connections, and intermediates additionally
+extend the served chain. Effective on the next outbound call, without a restart
+([05](05-security.md)).
+`GET /ca/{id}/download` and `GET /active/download` return public PEM material.
+
 ### audit (`/api/audit-log`) - admin
 `GET ""` - one page, newest first: `?limit` (1..500, default 50) `&offset` `&action` (case-insensitive
 substring) `&entity` (exact) `&user_id` `&since` `&until` (ISO timestamps). Returns

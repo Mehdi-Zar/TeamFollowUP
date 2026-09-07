@@ -83,3 +83,34 @@ def test_metadata_without_extras_still_works(parsed):
     settings = saml.build_settings(CFG)
     assert settings["sp"]["entityId"] == CFG["saml_sp_entity_id"]
     assert settings["strict"] is True
+
+
+def test_idp_metadata_is_fetched_over_a_verified_connection(monkeypatch):
+    """The remote fetch used python3-saml's ``parse_remote(validate_cert=False)``,
+    which skipped verification outright: anyone able to answer for the metadata
+    host could hand us their own IdP certificate, and the app would then accept
+    assertions signed by it. The document is now verified against the
+    admin-managed trust store, with a bounded timeout."""
+    import ssl
+
+    import httpx
+
+    seen = {}
+
+    class Resp:
+        text = "<EntityDescriptor/>"
+
+        def raise_for_status(self):
+            pass
+
+    def _get(url, **kw):
+        seen.update(kw, url=url)
+        return Resp()
+
+    monkeypatch.setattr(httpx, "get", _get)
+
+    assert saml._fetch_idp_metadata("https://idp.internal.example/metadata") == "<EntityDescriptor/>"
+    assert seen["url"] == "https://idp.internal.example/metadata"
+    assert isinstance(seen["verify"], ssl.SSLContext)
+    assert seen["verify"].verify_mode == ssl.CERT_REQUIRED
+    assert seen["timeout"] > 0

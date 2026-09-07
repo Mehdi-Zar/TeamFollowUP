@@ -21,17 +21,35 @@ def saml_available() -> bool:
         return False
 
 
+def _fetch_idp_metadata(url: str) -> str:
+    """Download the IdP metadata document over a verified connection.
+
+    python3-saml's ``parse_remote`` is bypassed on purpose. Its ``validate_cert``
+    flag is all or nothing: it either verifies against the process default store
+    or disables verification outright, and it takes no timeout. Fetching the
+    document here lets it be verified against the admin-managed CA store, which
+    is what makes a privately issued IdP work *without* turning verification off,
+    and bounds the wait so a wrong host fails fast.
+    """
+    import httpx
+
+    from . import trust
+
+    resp = httpx.get(url, timeout=15.0, follow_redirects=True, verify=trust.context())
+    resp.raise_for_status()
+    return resp.text
+
+
 def _load_idp_metadata_settings(cfg: dict) -> dict[str, Any]:
     """Fetch and parse the IdP half of the SAML settings from URL or file.
 
     Prefers a remote metadata URL, falling back to a local metadata file, then to
-    an empty IdP block. ``validate_cert=False`` on the remote fetch trusts the
-    transport/network to the IdP metadata endpoint (see deployment docs).
+    an empty IdP block.
     """
     from onelogin.saml2.idp_metadata_parser import OneLogin_Saml2_IdPMetadataParser
 
     if cfg.get("saml_idp_metadata_url"):
-        return OneLogin_Saml2_IdPMetadataParser.parse_remote(cfg["saml_idp_metadata_url"], validate_cert=False)
+        return OneLogin_Saml2_IdPMetadataParser.parse(_fetch_idp_metadata(cfg["saml_idp_metadata_url"]))
     if cfg.get("saml_idp_metadata_path"):
         with open(cfg["saml_idp_metadata_path"], "r", encoding="utf-8") as f:
             return OneLogin_Saml2_IdPMetadataParser.parse(f.read())

@@ -489,6 +489,14 @@ Deux ajouts propres au banc, tous deux commentés dans le fichier :
   Sans cela, la découverte OIDC, que l'application fait elle-même en TLS avec
   `httpx`, rejetterait notre certificat émis par une autorité privée.
 
+  L'application offre aussi le chemin normal pour un client : importer l'autorité
+  depuis **Administration > HTTPS / Certificats > Autorités approuvées**, ce qui
+  s'applique sans redémarrage (voir [05](05-security.md)). Le banc garde
+  l'ajustement par fichier parce qu'il doit être opérationnel **avant** qu'un
+  administrateur se connecte : les pilotes de tests enchaînent le déploiement et
+  la connexion OIDC sans intervention humaine. Les deux se cumulent, le magasin
+  administrable prenant comme base le magasin déjà présent dans l'image.
+
 **[`30-keycloak.yaml`](../bench/k8s-sso/30-keycloak.yaml)** déploie l'IdP en mode
 `start-dev --import-realm` : base embarquée, royaume importé au démarrage depuis un
 ConfigMap. Deux variables méritent une explication :

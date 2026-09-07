@@ -137,6 +137,8 @@ An empty list is the answer you want. Check it after every first deploy.
 | Locked out of admin | break-glass admin (`admin@local`) | reset its password via DB or `BREAKGLASS_PASSWORD` + restart |
 | Emails not sending | Admin → SMTP "test"; `smtp.enabled` | fix SMTP config; check app logs for send failures |
 | Weekly report not sent | scheduler single-replica? `weekly_report` enabled? SMTP on? | `POST /api/admin/progress/run-weekly`; verify `last_sent_week` |
+| SSO fails with `self signed certificate in certificate chain` | is the IdP issued by an internal authority? Admin → SSO "test the connection" | import the authority in Admin → HTTPS / Certificats → Autorités approuvées; applies at once, no restart ([05](05-security.md)) |
+| SMTP or SAML metadata stopped working after the upgrade | same cause: both now verify the certificate, where they used not to | import the internal authority; do not look for a switch to disable the check, there is none |
 | TLS toggle changed, nothing happened | Admin → Ops: `restart_pending` true? | the listener is bound at boot: restart (Ops → Restart, or redeploy) |
 | Need to debug without shell access | Admin → Ops → logs | set the level to DEBUG (persist off), clear the buffer, reproduce, download, then set it back |
 

@@ -3,6 +3,31 @@
 ## Unreleased
 
 ### Fixed
+- **The trusted-authority store was locked behind an unrelated toggle, and did nothing for
+  outbound calls anyway.** Connecting to an internal IdP over OIDC failed with
+  `self signed certificate in certificate chain`, and the admin screen offered no way out:
+  the whole CA section was rendered only when *the application terminates TLS itself*, so on
+  the recommended deployment (infrastructure terminates TLS, `TLS_ENABLED=false`) an
+  administrator was told to enable in-app TLS, which rebinds the listener from 8000 to 8443
+  at the next restart, in front of a Gateway that expects 8000. Two unrelated concerns had
+  been merged into one switch. Even after flipping it, the import would not have helped:
+  imported authorities only ever fed the chain *served* to browsers, never the verification
+  of the calls the app *makes*. The store is now managed in both serving modes, and it is
+  merged with the public roots into an outbound trust bundle (`app/trust.py`) that every
+  outbound call verifies against: OIDC discovery/JWKS/token exchange, SAML metadata, SMTP, the
+  log export, and the SSO connectivity test, so a green test now means the login will really
+  connect. `SSL_CERT_FILE` points at the same bundle as a net for anything whose client we do
+  not construct. The public roots are always kept, and a bundle already supplied at deploy time
+  is used as the base rather than replaced. Adding or removing an authority applies on the next
+  outbound call, with no restart.
+- **SAML metadata and SMTP were not verifying certificates at all.** The two workarounds that
+  the missing trust store had made necessary: `parse_remote(..., validate_cert=False)` for the
+  IdP metadata, and `starttls()` with no context, which makes smtplib fall back to
+  `ssl._create_stdlib_context()` (`check_hostname=False`, `verify_mode=CERT_NONE`) and hand
+  the SMTP credentials to whatever answered. Both now verify against the same store.
+  **Behaviour change:** an internal SMTP relay or metadata URL with a privately issued
+  certificate stops working until its authority is imported. That is the point, it was never
+  verified before. There is deliberately no switch to turn verification off.
 - **The deployment guide handed you a mutable image tag, and that breaks Alembic.** The GKE
   manifests pinned `teamfollowup:1.0`, a tag anyone naturally re-pushes on the next build.
   Kubernetes defaults `imagePullPolicy` to `IfNotPresent` for every tag but `:latest`, so a

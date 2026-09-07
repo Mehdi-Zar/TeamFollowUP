@@ -61,9 +61,9 @@ With `TLS_ENABLED=true` (`app/server.py` + `app/tls.py`):
 - **Bring your own cert** from **Administration → HTTPS / Certificats** (admin-only):
   - import a **PEM** certificate (+ intermediates) and its private key (optionally
     passphrase-protected), or a **PFX / PKCS#12** bundle;
-  - manage the **root** and **intermediate CA** store (intermediates are appended
-    to the served chain);
   - regenerate a self-signed cert with a custom CN/SAN.
+  - (Intermediates in the trusted-authority store below are also appended to the
+    served chain, which is the only part of that store tied to this mode.)
 - **Source of truth = the database** (`AppSetting` key `tls`); on boot and on every
   change the material is written to `CERT_DIR` (`/app/certs`) and the **live
   `SSLContext` is hot-reloaded** (`ssl.SSLContext.load_cert_chain`), so a new
@@ -76,6 +76,45 @@ plain-HTTP local run (the compose default): a browser will not send a `Secure` c
 over `http://localhost`, and login would silently fail. Endpoints: `GET /api/admin/tls-config`,
 `POST /api/admin/tls-config/{self-signed,import-pem,import-pfx,ca}`,
 `DELETE /api/admin/tls-config/ca/{id}`.
+
+### Outbound TLS trust (the certificates the app *accepts*)
+
+Serving TLS and trusting TLS are different problems, and only the first depends on
+`TLS_ENABLED`. Whoever terminates the inbound connection, the app still **calls**
+an OIDC/SAML IdP, an SMTP relay and a log sink, and on an internal network those
+are routinely issued by a private authority no public trust store knows about.
+Without that authority the very first OIDC call, the discovery fetch, fails with
+`self signed certificate in certificate chain`, and SSO simply cannot work.
+
+**Administration → HTTPS / Certificats → Autorités approuvées** is the supported
+answer. It is shown in **both** serving modes on purpose: it used to be hidden
+behind the in-app TLS toggle, which meant an administrator had to flip the serving
+mode (and restart on another port, in front of a Gateway that expects 8000) just
+to import a root CA.
+
+- Imported roots and intermediates are merged with the public roots into
+  `CERT_DIR/trust_bundle.pem` (`app/trust.py`).
+- Every call site we build verifies against it: OIDC discovery / JWKS / token
+  exchange (`app/oidc.py`), SAML metadata (`app/saml.py`), SMTP STARTTLS and
+  implicit TLS (`app/mail.py`), the SSO connectivity test (`app/ssotest.py`).
+- `SSL_CERT_FILE` and `REQUESTS_CA_BUNDLE` point at the same bundle for clients we
+  do not construct ourselves (google-auth in `app/logexport.py`).
+- Add and remove take effect on the **next outbound call, without a restart**, and
+  are audited (`tls_config.add_ca`, `tls_config.remove_ca`).
+
+The public roots are always kept: replacing them would make the internal IdP
+reachable and break every public endpoint in the same move. A bundle supplied at
+deploy time (`SSL_CERT_FILE` baked into the image, as the Kubernetes bench does)
+is used as the base, so it composes with the store instead of being replaced.
+
+**There is no "skip verification" switch, by design.** Two existed in effect and
+are gone: SAML metadata was fetched with `validate_cert=False`, and SMTP called
+`starttls()` with no context, which makes smtplib fall back to
+`ssl._create_stdlib_context()`, that is `check_hostname=False` and
+`verify_mode=CERT_NONE`, handing the SMTP credentials to whatever answered on that
+host and port. **Upgrade note:** an internal SMTP relay or metadata URL with a
+privately issued certificate stops working until its authority is imported. That
+is the intended outcome, since neither was ever actually verified before.
 
 ## SSO provisioning & access approval
 
@@ -166,7 +205,7 @@ type and detail are public.
 | # | Risk | Status |
 |---|------|--------|
 | A01 Broken Access Control | **Mitigated** - layered server-side guards + tribe scoping + tests (`test_rbac*`, `test_personas`, `test_review_access`). |
-| A02 Cryptographic Failures | **Partial** - Argon2 for passwords; **session cookie `https_only=False`** and a **default `secret_key`** must be overridden in prod (see TD/risks). |
+| A02 Cryptographic Failures | **Partial** - Argon2 for passwords; **session cookie `https_only=False`** and a **default `secret_key`** must be overridden in prod (see TD/risks). Outbound TLS now verifies against the admin-managed trust store (`app/trust.py`): the `CERT_NONE` fallback on SMTP and the unverified SAML metadata fetch are gone. |
 | A03 Injection | **Mitigated** - SQLAlchemy ORM/parameterized queries; Pydantic validation; SPA escapes; report HTML uses `html.escape`. |
 | A04 Insecure Design | **Mitigated** - explicit RBAC, derived statuses, immutable snapshots. |
 | A05 Security Misconfiguration | **Action needed** - prod must set `SECRET_KEY`, `POSTGRES_PASSWORD`, `BREAKGLASS_PASSWORD`, HTTPS, and `https_only` cookie. See `.env.example`. |
@@ -174,7 +213,7 @@ type and detail are public.
 | A07 Auth Failures | **Mitigated** - Argon2, session expiry, break-glass guarded; **no account lockout / rate limiting** (tracked). |
 | A08 Integrity Failures | **Mitigated** - audit log; immutable snapshots; signed cookie. |
 | A09 Logging & Monitoring | **Partial** - `audit_log` + app logs; **no centralized monitoring/alerting** (tracked). |
-| A10 SSRF | **Low** - outbound only to configured SMTP/IdP. |
+| A10 SSRF | **Low** - outbound only to the configured SMTP relay, IdP and log sink, all admin-set, all certificate-verified against the trust store. |
 
 ## Risk matrix
 

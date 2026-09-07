@@ -7,6 +7,11 @@ authentication order (see ``logexportconfig`` docstring): attached service accou
 (ADC), Workload Identity Federation, impersonation, and - last - a JSON key. The
 token endpoints (metadata server, STS, IAM Credentials) are driven over the same
 httpx client via a small transport adapter, so we keep a single HTTP client.
+
+Every call verifies against the admin-managed trust store (``trust.context``),
+which is what makes the export work behind a TLS-inspecting proxy: its authority
+is imported once from Administration, rather than verification being weakened
+here.
 """
 from __future__ import annotations
 
@@ -23,6 +28,7 @@ from google.oauth2 import service_account
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from . import trust
 from .models import AuditLog, User
 
 DEFAULT_UNIVERSE = "googleapis.com"
@@ -184,7 +190,8 @@ class _HttpxAuthRequest(_AuthRequest):
     server, STS, IAM Credentials) uses the same HTTP client as the data plane."""
 
     def __call__(self, url, method="GET", body=None, headers=None, timeout=None, **kwargs):
-        resp = httpx.request(method, url, content=body, headers=headers, timeout=timeout or 30)
+        resp = httpx.request(method, url, content=body, headers=headers, timeout=timeout or 30,
+                             verify=trust.context())
         return _HttpxAuthResponse(resp)
 
 
@@ -303,6 +310,7 @@ def _upload_gcs(cfg: dict, entries: list[dict]) -> tuple[bool, str]:
         headers={"Authorization": f"Bearer {token}", "Content-Type": "application/x-ndjson"},
         content=ndjson.encode("utf-8"),
         timeout=30,
+        verify=trust.context(),
     )
     if resp.status_code not in (200, 201):
         raise LogExportError(f"Échec de l'envoi GCS ({resp.status_code}): {resp.text[:200]}")
@@ -343,6 +351,7 @@ def _insert_bigquery(cfg: dict, entries: list[dict]) -> tuple[bool, str]:
         headers={"Authorization": f"Bearer {token}"},
         json={"kind": "bigquery#tableDataInsertAllRequest", "rows": rows},
         timeout=30,
+        verify=trust.context(),
     )
     if resp.status_code != 200:
         raise LogExportError(f"Échec BigQuery ({resp.status_code}): {resp.text[:200]}")

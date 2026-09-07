@@ -1,6 +1,8 @@
 """OIDC integration via Authlib (Authorization Code + PKCE), configured at runtime."""
 from authlib.integrations.starlette_client import OAuth
 
+from . import trust
+
 
 def discovery_url(issuer: str) -> str:
     """The provider's well-known document for an issuer URL.
@@ -19,6 +21,12 @@ def get_oauth(cfg: dict) -> OAuth:
     a restart. The provider is discovered from the issuer's well-known document,
     and ``code_challenge_method=S256`` enforces PKCE to protect the auth-code
     exchange against interception.
+
+    ``verify`` carries the admin-managed trust store. Authlib routes all three
+    outbound fetches (discovery document, JWKS, token exchange) through this one
+    client, so a single context covers the whole flow; without it an IdP issued
+    by an internal authority fails at discovery with a self-signed error, and the
+    only fix would be filesystem access to the container.
     """
     oauth = OAuth()
     oauth.register(
@@ -26,6 +34,10 @@ def get_oauth(cfg: dict) -> OAuth:
         client_id=cfg.get("oidc_client_id"),
         client_secret=cfg.get("oidc_client_secret"),
         server_metadata_url=discovery_url(cfg.get("oidc_issuer_url")),
-        client_kwargs={"scope": cfg.get("oidc_scopes") or "openid email profile", "code_challenge_method": "S256"},
+        client_kwargs={
+            "scope": cfg.get("oidc_scopes") or "openid email profile",
+            "code_challenge_method": "S256",
+            "verify": trust.context(),
+        },
     )
     return oauth

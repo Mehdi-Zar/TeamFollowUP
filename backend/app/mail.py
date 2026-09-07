@@ -4,6 +4,8 @@ import smtplib
 import threading
 from email.message import EmailMessage
 
+from . import trust
+
 logger = logging.getLogger("trt.mail")
 
 
@@ -34,12 +36,19 @@ def send_email(cfg: dict, to: str, subject: str, body: str, attachment: tuple | 
         msg.add_attachment(data, maintype=maintype, subtype=subtype, filename=filename)
     try:
         host, port = cfg["host"], int(cfg.get("port") or 587)
+        # An explicit context is required, not a nicety: called without one,
+        # smtplib falls back to ssl._create_stdlib_context(), which sets
+        # check_hostname=False and verify_mode=CERT_NONE. The credentials below
+        # would then be handed to whatever answered on that host and port. The
+        # context carries the admin-managed CA store, so an internal relay is
+        # reached by importing its authority rather than by trusting anything.
+        ctx = trust.context()
         if cfg.get("use_ssl"):
-            server = smtplib.SMTP_SSL(host, port, timeout=15)
+            server = smtplib.SMTP_SSL(host, port, timeout=15, context=ctx)
         else:
             server = smtplib.SMTP(host, port, timeout=15)
             if cfg.get("use_tls"):
-                server.starttls()
+                server.starttls(context=ctx)
         if cfg.get("username"):
             server.login(cfg["username"], cfg.get("password") or "")
         server.send_message(msg)

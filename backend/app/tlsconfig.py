@@ -7,6 +7,17 @@ uploaded certificates take effect immediately without restarting the container.
 
 Out of the box (no blob yet) a self-signed certificate is generated so the site
 is served over HTTPS from first boot.
+
+The CA store has two independent effects, and only the first depends on the app
+terminating TLS itself:
+
+  * intermediates extend the chain **served** to browsers (see ``_fullchain``);
+  * every authority, root and intermediate alike, is trusted for the app's
+    **outbound** calls (IdP, SMTP, log export) via ``trust.apply``.
+
+The second one is why the store is managed regardless of the serving mode: what
+the app trusts when it calls an internal IdP has nothing to do with who
+terminates the TLS in front of it.
 """
 from __future__ import annotations
 
@@ -16,7 +27,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
-from . import tls
+from . import tls, trust
 from .config import settings
 from .models import AppSetting
 
@@ -88,6 +99,31 @@ def _ca_entry(pem: str, name: str | None) -> dict:
         "fingerprint": info["fingerprint_sha256"],
         "added_at": _now_iso(),
     }
+
+
+# ---------------------------------------------------------------------------
+# Outbound trust (independent of the serving mode)
+# ---------------------------------------------------------------------------
+
+def _trust_pems(cfg: dict) -> list[str]:
+    """Every certificate in the store, whatever its kind.
+
+    Roots and intermediates are both required to verify a privately issued
+    endpoint: the root anchors the chain, the intermediates close it when the
+    server does not send them itself.
+    """
+    return [c["pem"] for c in cfg.get("cas", []) if c.get("pem")]
+
+
+def ensure_trust(db: Session) -> int:
+    """Boot hook: make the CA store effective for outbound TLS.
+
+    Runs in BOTH serving modes, unlike :func:`ensure_materialized`. Returns the
+    number of authorities applied, for the startup log.
+    """
+    pems = _trust_pems(_read(db))
+    trust.apply(pems)
+    return len(pems)
 
 
 # ---------------------------------------------------------------------------
@@ -212,7 +248,13 @@ def import_pfx(db: Session, data: bytes, password: str | None = None) -> dict:
 
 
 def add_ca(db: Session, pem: str, name: str | None = None) -> dict:
-    """Add one or more CA certificates (root and/or intermediate) to the store."""
+    """Add one or more CA certificates (root and/or intermediate) to the store.
+
+    Both effects are refreshed on the spot, with no restart: the authority is
+    trusted for outbound calls immediately (which is what makes a privately
+    issued IdP or SMTP relay reachable), and the served chain is rebuilt in case
+    an intermediate extends it.
+    """
     entries = [_ca_entry(p, name) for p in tls.split_pem_bundle(pem)]
     if not entries:
         raise ValueError("Aucun certificat d'autorité trouvé dans le PEM fourni.")
@@ -224,6 +266,7 @@ def add_ca(db: Session, pem: str, name: str | None = None) -> dict:
             existing.add(e["id"])
     _write(db, cfg)
     db.commit()
+    trust.apply(_trust_pems(cfg))  # outbound trust, whatever the serving mode
     materialize(db)  # intermediates may extend the served chain
     return status(db)
 
@@ -231,8 +274,9 @@ def add_ca(db: Session, pem: str, name: str | None = None) -> dict:
 def remove_ca(db: Session, ca_id: str) -> dict:
     """Delete a CA from the store by id, then re-materialise the served chain.
 
-    Raises if the id is unknown. Removing an intermediate may shorten the chain
-    presented to clients, hence the materialise.
+    Raises if the id is unknown. Removing an authority withdraws the outbound
+    trust immediately, and removing an intermediate may shorten the chain
+    presented to clients, hence both refreshes.
     """
     cfg = _read(db)
     before = len(cfg["cas"])
@@ -241,6 +285,7 @@ def remove_ca(db: Session, ca_id: str) -> dict:
         raise ValueError("Autorité de certification introuvable.")
     _write(db, cfg)
     db.commit()
+    trust.apply(_trust_pems(cfg))
     materialize(db)
     return status(db)
 
