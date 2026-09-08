@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### Removed
+- **142 dead translation keys, and a test so they do not come back.** 1165 keys, 1023 of them
+  actually reachable: the rest were leftovers from an OTD screen, an older dashboard, a
+  reporting and subscription UI and an export menu that had each been redesigned. Dead labels
+  are not free. They get read as an inventory of what the product does, they get translated,
+  and they bury the live ones. Removing them safely needed the reachability question answered
+  properly, not guessed: a key counts as used when it is named anywhere in the source, or when
+  a template literal can build it (`` t(`leaves.status.${s}`) ``). Both were resolved from the
+  code, every candidate was cross-checked against every dynamic prefix, and the families that
+  looked alive but were not (`brand`, `dash.filter.all` next to a live `dash.filter.all_f`)
+  were confirmed one at a time. `i18n.usage.test.ts` now holds both directions: no key the code
+  asks for may be missing, since `t()` falls back to printing the raw key on screen, and no key
+  in the dictionary may be unreachable. It discovers the dynamic prefixes from the source
+  rather than from a list, so a new family is protected without anyone remembering, and both
+  halves were checked against a planted violation.
+
 ### Fixed
 - **Deleting a user returned 500 for anyone who had ever logged in.** Nineteen columns
   reference `users.id`, every one with `NO ACTION`, and `DELETE /api/admin/users/{id}` detached

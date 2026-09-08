@@ -5,13 +5,14 @@
 | Layer | Tooling | Coverage |
 |-------|---------|----------|
 | Backend unit/integration | pytest + FastAPI `TestClient` + SQLite in-memory | **Good** - 378 tests / 39 modules |
-| Frontend unit/component | **Vitest + Testing Library + jsdom** | **Present** - 20 tests (labels, perms, i18n parity, typography, the language a visitor gets, the HTTPS panel), wired into CI |
+| Frontend unit/component | **Vitest + Testing Library + jsdom** | **Present** - 23 tests (labels, perms, i18n parity and usage, typography, the language a visitor gets, the HTTPS panel), wired into CI |
 | End-to-end (browser) | **Playwright** against the real Docker stack ([18](18-tests-e2e.md)) | **34 tests in CI** - login, route guards, RBAC, the write path, the audit screen, every one of the 18 admin sections, the trusted-authority panel in infra-TLS mode, and the language a first-time visitor gets |
 | End-to-end (API script) | `e2e_test.py` (script at repo root) | Ad-hoc, not in CI - superseded for the journeys Playwright now covers |
 | End-to-end (deployment + SSO) | [Kubernetes + Keycloak bench](16-banc-kubernetes-sso.md), `bench/k8s-sso/run-tests.py` | **Manual**, reproducible - 18 checks against a real IdP (OIDC and SAML) |
 | Coverage | `pytest-cov`, floor in `backend/.coveragerc` | Enforced in CI - **80%** on `app/`, ratchet at 79 (entry points and seed scripts excluded) |
 | Type safety | `tsc --noEmit` (FE), Pydantic (BE) | Enforced |
-| i18n parity | Vitest (`i18n.parity.test.ts`) | Enforced (FR/EN 1165/1165) |
+| i18n parity | Vitest (`i18n.parity.test.ts`) | Enforced (FR/EN 1023/1023) |
+| i18n usage | Vitest (`i18n.usage.test.ts`) | Enforced both ways - no key the code asks for is missing (it would render as the raw key), no key in the dictionary is unreachable |
 | Typography | `test_typography.py` (whole repository), `typography.test.ts` (frontend), `test_report_typography.py` (rendered HTML/PPTX) | Enforced - no em dash, no middot anywhere, no allowlist |
 
 ### Backend test modules
@@ -69,8 +70,8 @@ squad with every optional field and reads all eight rendered documents; that mod
 95.9%. A percentage on a module that builds documents means little until something actually
 reads the documents.
 
-There is no frontend coverage gate. With twenty unit tests the floor would sit at a
-number so low it would protect nothing; the real gap on that side is end-to-end
+There is no frontend coverage gate. With twenty-three unit tests the floor would sit at
+a number so low it would protect nothing; the real gap on that side is end-to-end
 coverage, tracked separately.
 
 Two of those twenty are component tests (jsdom + Testing Library), the first in the

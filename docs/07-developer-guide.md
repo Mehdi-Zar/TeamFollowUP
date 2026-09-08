@@ -93,9 +93,15 @@ frontend/src/
   (fast frontend feedback), and `backend/tests/test_report_typography.py`, which reads the HTML
   and PPTX documents actually produced, since no source-level check can prove what an f-string
   assembles.
-- **Gates (run before commit)**: `cd frontend && npm test` carries both the i18n FR/EN parity
-  check and the typography guard, and `cd backend && pytest` carries the backend one. CI runs
-  the same two commands, so there is nothing to keep in sync by hand.
+- **Gates (run before commit)**: `cd frontend && npm test` carries the i18n checks (FR/EN key
+  parity, plus `i18n.usage.test.ts`: every key the code asks for exists, and every key in the
+  dictionary is reachable) and the typography guard; `cd backend && pytest` carries the backend
+  ones. CI runs the same two commands, so there is nothing to keep in sync by hand.
+- **Adding a translation key**: add it to **both** dictionaries and use it in the same change.
+  A key nobody reaches fails the suite, which is deliberate: 142 dead labels had accumulated
+  from screens that were redesigned, and they read as an inventory of what the product does.
+  A key built dynamically (`` t(`leaves.status.${s}`) ``) is protected automatically, because
+  the test discovers those prefixes from the template literals in the source.
 
 ## Definition of done (per change)
 
