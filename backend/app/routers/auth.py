@@ -2,11 +2,11 @@
 
 Owns every way a user obtains (or drops) a session cookie:
 
-  * ``/login`` — local email+password, with a per-IP brute-force throttle;
-  * ``/oidc/*`` and ``/saml/*`` — SSO login/callback flows;
-  * ``/me`` and ``/me/permissions`` — the identity + capability payload the SPA
+  * ``/login``: local email+password, with a per-IP brute-force throttle;
+  * ``/oidc/*`` and ``/saml/*``: SSO login/callback flows;
+  * ``/me`` and ``/me/permissions``: the identity + capability payload the SPA
     reads to decide what to render;
-  * ``/impersonate`` / ``/stop-impersonation`` — admin "view as" simulation.
+  * ``/impersonate`` / ``/stop-impersonation``: admin "view as" simulation.
 
 The shared ``_provision`` function implements just-in-time (JIT) provisioning for
 SSO: it creates or updates the local account behind an IdP identity while
@@ -120,7 +120,7 @@ def login(payload: LoginIn, request: Request, response: Response, db: Session = 
     _check_login_rate(ip)
     user = db.scalar(select(User).where(User.email == payload.email.lower().strip()))
     if user is None or not user.password_hash or not verify_password(payload.password, user.password_hash):
-        # Uniform failure path — do not reveal which of the three conditions failed.
+        # Uniform failure path: do not reveal which of the three conditions failed.
         _login_failures[ip].append(time.time())
         _count_login("failure")
         raise HTTPException(status_code=401, detail="Identifiants invalides")
@@ -138,7 +138,7 @@ def login(payload: LoginIn, request: Request, response: Response, db: Session = 
 
 @router.post("/logout")
 def logout(response: Response):
-    """Clear the session cookie. Stateless — nothing server-side to invalidate."""
+    """Clear the session cookie. Stateless: nothing server-side to invalidate."""
     response.delete_cookie(settings.session_cookie)
     return {"ok": True}
 
@@ -239,13 +239,13 @@ def _provision(db: Session, *, subject: str | None, email: str, name: str, group
 
     Existing account:
       * a ``disabled`` (revoked) account is refused even though the IdP accepted
-        it — revocation wins over a valid SSO assertion;
+        it, revocation wins over a valid SSO assertion;
       * the IdP subject is backfilled if it was missing;
       * the group→role remap is applied ONLY to already-``active`` accounts, so IdP
         claims can never silently elevate or re-activate a pending/disabled one.
 
-    Side effects: writes audit rows and may enqueue notifications. Does not commit
-    — the calling endpoint owns the transaction.
+    Side effects: writes audit rows and may enqueue notifications. Does not
+    commit: the calling endpoint owns the transaction.
     """
     user = None
     if subject:

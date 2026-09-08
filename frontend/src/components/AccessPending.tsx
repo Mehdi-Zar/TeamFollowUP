@@ -1,5 +1,5 @@
 // AccessPending: full-screen gate shown after SSO when the account exists but is
-// not yet usable — either awaiting a manager's validation or explicitly disabled.
+// not yet usable: either awaiting a manager's validation or explicitly disabled.
 // Rendered in place of the app shell by the router/auth guard.
 import { useAuth } from "../auth";
 import { useI18n } from "../i18n";

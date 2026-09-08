@@ -45,7 +45,7 @@ def _validate_squad(db: Session, tribe_id: int, squad_id: int | None) -> None:
 def list_initiatives(tribe_id: int | None = Query(default=None), year: int | None = Query(default=None),
                      squad_id: int | None = Query(default=None),
                      db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """GET /api/initiatives — flat list of initiatives, visible to everyone in
+    """GET /api/initiatives: flat list of initiatives, visible to everyone in
     scope (read-only for non tribe-leaders).
 
     Scope: an admin may target any ``tribe_id``; others are pinned to their
@@ -64,7 +64,7 @@ def list_initiatives(tribe_id: int | None = Query(default=None), year: int | Non
 @router.post("", response_model=InitiativeOut, status_code=201)
 def create_initiative(payload: InitiativeCreate, db: Session = Depends(get_db),
                       user: User = Depends(require_tribe_or_admin)):
-    """POST /api/initiatives — create an initiative (201). Tribe leader or admin.
+    """POST /api/initiatives: create an initiative (201). Tribe leader or admin.
 
     Requires ``assert_can_manage_tribe_reporting`` for the target tribe (404 if
     the tribe is unknown) and that any assigned squad belongs to that tribe.
@@ -86,7 +86,7 @@ def create_initiative(payload: InitiativeCreate, db: Session = Depends(get_db),
 @router.put("/{initiative_id}", response_model=InitiativeOut)
 def update_initiative(initiative_id: int, payload: InitiativeUpdate, db: Session = Depends(get_db),
                       user: User = Depends(require_tribe_or_admin)):
-    """PUT /api/initiatives/{initiative_id} — update an initiative. Tribe leader
+    """PUT /api/initiatives/{initiative_id}: update an initiative. Tribe leader
     or admin.
 
     Requires ``assert_can_manage_tribe_reporting`` for the initiative's tribe;
@@ -108,7 +108,7 @@ def update_initiative(initiative_id: int, payload: InitiativeUpdate, db: Session
 @router.delete("/{initiative_id}", status_code=204)
 def delete_initiative(initiative_id: int, db: Session = Depends(get_db),
                       user: User = Depends(require_tribe_or_admin)):
-    """DELETE /api/initiatives/{initiative_id} — delete an initiative (204). Tribe
+    """DELETE /api/initiatives/{initiative_id}: delete an initiative (204). Tribe
     leader or admin, requires ``assert_can_manage_tribe_reporting``. Audited."""
     init = db.get(Initiative, initiative_id)
     if init is None:
@@ -124,7 +124,7 @@ def delete_initiative(initiative_id: int, db: Session = Depends(get_db),
 def initiatives_html(tribe_id: int | None = Query(default=None), year: int | None = Query(default=None),
                      lang: str | None = Query(default=None),
                      db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """GET /api/initiatives/report.html — flat initiatives list as a standalone
+    """GET /api/initiatives/report.html: flat initiatives list as a standalone
     page. Any authenticated user; scoped like the list endpoint (admins may target
     a tribe, others are pinned)."""
     from ..report import build_initiative_list, render_initiatives_html
@@ -138,7 +138,7 @@ def initiatives_html(tribe_id: int | None = Query(default=None), year: int | Non
 def initiatives_pptx(tribe_id: int | None = Query(default=None), year: int | None = Query(default=None),
                      lang: str | None = Query(default=None),
                      db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """GET /api/initiatives/report.pptx — flat initiatives list as a branded deck.
+    """GET /api/initiatives/report.pptx: flat initiatives list as a branded deck.
 
     Any authenticated user; scoped like the list endpoint. Returns 501 if
     python-pptx is not installed."""

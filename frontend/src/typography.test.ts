@@ -10,8 +10,9 @@ import { resolve, join } from "node:path";
 // renders text is. A trailing comment on a code line is therefore still flagged,
 // which errs on the side of noticing.
 const BANNED: Array<[string, string]> = [
-  ["—", "em dash"],
-  ["·", "middot"],
+  // Escaped, so this file is clean under its own rule.
+  ["\u2014", "em dash"],
+  ["\u00b7", "middot"],
 ];
 
 function walk(dir: string, out: string[] = []): string[] {

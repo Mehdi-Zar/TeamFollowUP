@@ -82,18 +82,23 @@ frontend/src/
 - **Frontend**: typed API via `api.ts`; **all UI strings via `i18n.tsx`** (FR + EN must stay in parity -
   CI/parity script enforces it); section access via `useAuth().can(cap)` and the `Section` guard; reuse
   `ui.tsx` primitives (`EmptyState`, `Modal`, `StatusBadge`, `Spinner`) instead of re-implementing.
-- **Typography**: no em dash and no middot in anything a user reads (UI labels, FR/EN
-  translations, generated HTML/PPTX, emails, titles, tooltips). They read as machine-written.
-  Use a comma, a colon, parentheses, a line break or a plain space. Two guards enforce it and
-  run with the normal suites: `backend/tests/test_typography.py` inspects every non-docstring
-  string literal under `backend/app` (developer prose is exempt on purpose), and
-  `frontend/src/typography.test.ts` scans `frontend/src` outside comment lines.
+- **Typography**: no em dash (U+2014) and no middot (U+00B7) **anywhere in the repository**,
+  with no allowlist. They read as machine-written. Use a comma, a colon, parentheses, a line
+  break or a plain space, whichever the sentence wants. The scope is the whole repo rather
+  than "anything a user reads" because that boundary needed adjudicating every time and
+  nobody did it: the weekly report shipped the middot as its separator, the API reference used
+  it 92 times, and 105 em dashes sat in router docstrings, which FastAPI publishes as endpoint
+  descriptions into Swagger UI and the committed OpenAPI snapshot. Three guards, all in the
+  normal suites: `backend/tests/test_typography.py` (whole repo), `frontend/src/typography.test.ts`
+  (fast frontend feedback), and `backend/tests/test_report_typography.py`, which reads the HTML
+  and PPTX documents actually produced, since no source-level check can prove what an f-string
+  assembles.
 - **Gates (run before commit)**: `cd frontend && npm test` carries both the i18n FR/EN parity
   check and the typography guard, and `cd backend && pytest` carries the backend one. CI runs
   the same two commands, so there is nothing to keep in sync by hand.
 
 ## Definition of done (per change)
 
-1. `tsc --noEmit` clean · 2. `npm run build` ok · 3. backend `pytest` green · 4. i18n FR/EN parity ·
-5. migration added if schema changed · 6. docs updated if behaviour/contract changed.
+1. `tsc --noEmit` clean, 2. `npm run build` ok, 3. backend `pytest` green, 4. i18n FR/EN parity,
+5. migration added if schema changed, 6. docs updated if behaviour/contract changed.
 </content>

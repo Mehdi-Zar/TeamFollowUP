@@ -76,7 +76,7 @@
           "auth"
         ],
         "summary": "Logout",
-        "description": "Clear the session cookie. Stateless — nothing server-side to invalidate.",
+        "description": "Clear the session cookie. Stateless: nothing server-side to invalidate.",
         "operationId": "logout_api_auth_logout_post",
         "responses": {
           "200": {
@@ -302,7 +302,7 @@
           "tribes"
         ],
         "summary": "List Tribes",
-        "description": "GET /api/tribes — list all tribes, ordered. Any authenticated user.",
+        "description": "GET /api/tribes: list all tribes, ordered. Any authenticated user.",
         "operationId": "list_tribes_api_tribes_get",
         "responses": {
           "200": {
@@ -326,7 +326,7 @@
           "tribes"
         ],
         "summary": "Create Tribe",
-        "description": "POST /api/tribes — create a tribe (201). Admin only.\n\nOptional ``leader_user_id`` promotes an existing user to tribe leader of the\nnew tribe (404 if unknown; the break-glass account cannot be made a tribe\nleader). Audited.",
+        "description": "POST /api/tribes: create a tribe (201). Admin only.\n\nOptional ``leader_user_id`` promotes an existing user to tribe leader of the\nnew tribe (404 if unknown; the break-glass account cannot be made a tribe\nleader). Audited.",
         "operationId": "create_tribe_api_tribes_post",
         "requestBody": {
           "content": {
@@ -368,7 +368,7 @@
           "tribes"
         ],
         "summary": "Org Overview",
-        "description": "GET /api/tribes/org-overview — read-only org charts of ALL tribes (one per\ntribe). Admin only.\n\nBuilds a per-squad status map for the current year and a per-tribe squad count,\nthen assembles each tribe's org tree from its ``OrgNode`` rows.",
+        "description": "GET /api/tribes/org-overview: read-only org charts of ALL tribes (one per\ntribe). Admin only.\n\nBuilds a per-squad status map for the current year and a per-tribe squad count,\nthen assembles each tribe's org tree from its ``OrgNode`` rows.",
         "operationId": "org_overview_api_tribes_org_overview_get",
         "responses": {
           "200": {
@@ -394,7 +394,7 @@
           "tribes"
         ],
         "summary": "Update Tribe",
-        "description": "PUT /api/tribes/{tribe_id} — update a tribe.\n\nAllowed for an admin or the tribe's own leader (``can_edit_tribe``); 403\notherwise. ``display_order`` is a global ordering concern, so it is dropped\nfrom the payload for non-admins. Audited.",
+        "description": "PUT /api/tribes/{tribe_id}: update a tribe.\n\nAllowed for an admin or the tribe's own leader (``can_edit_tribe``); 403\notherwise. ``display_order`` is a global ordering concern, so it is dropped\nfrom the payload for non-admins. Audited.",
         "operationId": "update_tribe_api_tribes__tribe_id__put",
         "parameters": [
           {
@@ -445,7 +445,7 @@
           "tribes"
         ],
         "summary": "Delete Tribe",
-        "description": "DELETE /api/tribes/{tribe_id} — delete a tribe (204). Admin only.\n\nRefuses with 409 while the tribe still has squads (they must be moved or\ndeleted first). Side effects: users of the tribe are detached (``tribe_id``\ncleared) and the tribe's org-chart nodes are deleted. Audited.",
+        "description": "DELETE /api/tribes/{tribe_id}: delete a tribe (204). Admin only.\n\nRefuses with 409 while the tribe still has squads (they must be moved or\ndeleted first). Side effects: users of the tribe are detached (``tribe_id``\ncleared) and the tribe's org-chart nodes are deleted. Audited.",
         "operationId": "delete_tribe_api_tribes__tribe_id__delete",
         "parameters": [
           {
@@ -481,7 +481,7 @@
           "squads"
         ],
         "summary": "List Squads",
-        "description": "GET /api/squads — list squads visible to the caller.\n\nA tribe-scoped user is pinned to their own tribe; an admin (no scope) may\nfilter by the optional ``tribe_id`` query param.",
+        "description": "GET /api/squads: list squads visible to the caller.\n\nA tribe-scoped user is pinned to their own tribe; an admin (no scope) may\nfilter by the optional ``tribe_id`` query param.",
         "operationId": "list_squads_api_squads_get",
         "parameters": [
           {
@@ -533,7 +533,7 @@
           "squads"
         ],
         "summary": "Create Squad",
-        "description": "POST /api/squads — create a squad (201). Tribe leader or admin only.\n\nA tribe leader may only create in their own tribe (the payload's ``tribe_id``\nis ignored for them and forced to their tribe); an admin picks the tribe.\nAudited.",
+        "description": "POST /api/squads: create a squad (201). Tribe leader or admin only.\n\nA tribe leader may only create in their own tribe (the payload's ``tribe_id``\nis ignored for them and forced to their tribe); an admin picks the tribe.\nAudited.",
         "operationId": "create_squad_api_squads_post",
         "requestBody": {
           "required": true,
@@ -575,7 +575,7 @@
           "squads"
         ],
         "summary": "Get Squad",
-        "description": "GET /api/squads/{squad_id} — full squad detail for a year.\n\nRequires the caller to be in the squad's tribe. ``privileged`` (budget and\nother sensitive fields) is computed from ``is_squad_privileged`` and controls\nwhat the serializer exposes. ``year`` defaults to the current one.",
+        "description": "GET /api/squads/{squad_id}: full squad detail for a year.\n\nRequires the caller to be in the squad's tribe. ``privileged`` (budget and\nother sensitive fields) is computed from ``is_squad_privileged`` and controls\nwhat the serializer exposes. ``year`` defaults to the current one.",
         "operationId": "get_squad_api_squads__squad_id__get",
         "parameters": [
           {
@@ -632,7 +632,7 @@
           "squads"
         ],
         "summary": "Update Squad",
-        "description": "PUT /api/squads/{squad_id} — update a squad.\n\nRequires tribe scope. Only an admin may move a squad to another tribe.\nStructural fields (leader assignment, ordering, KPI/budget toggles) are\nreserved to tribe leaders and admins; a squad leader may edit the squad but\nnot those fields (403 if attempted). Audited.",
+        "description": "PUT /api/squads/{squad_id}: update a squad.\n\nRequires tribe scope. Only an admin may move a squad to another tribe.\nStructural fields (leader assignment, ordering, KPI/budget toggles) are\nreserved to tribe leaders and admins; a squad leader may edit the squad but\nnot those fields (403 if attempted). Audited.",
         "operationId": "update_squad_api_squads__squad_id__put",
         "parameters": [
           {
@@ -683,7 +683,7 @@
           "squads"
         ],
         "summary": "Delete Squad",
-        "description": "DELETE /api/squads/{squad_id} — delete a squad (204). Tribe leader or admin\nonly, within tribe scope.\n\nSide effect: org-chart nodes and feed posts that pointed at this squad are\ndetached (their ``squad_id`` is cleared) rather than deleted. Audited.",
+        "description": "DELETE /api/squads/{squad_id}: delete a squad (204). Tribe leader or admin\nonly, within tribe scope.\n\nSide effect: org-chart nodes and feed posts that pointed at this squad are\ndetached (their ``squad_id`` is cleared) rather than deleted. Audited.",
         "operationId": "delete_squad_api_squads__squad_id__delete",
         "parameters": [
           {
@@ -719,7 +719,7 @@
           "squads"
         ],
         "summary": "Squad Dependents",
-        "description": "GET /api/squads/{squad_id}/dependents — milestones in *other* squads that\ndeclared a dependency on this squad.\n\nA dependency targets this squad directly, or this squad's tribe. This lets a\nsquad surface what other teams are waiting on from them (\"le faire apparaître\").\nRequires tribe scope on the squad; ``year`` defaults to the current one.",
+        "description": "GET /api/squads/{squad_id}/dependents: milestones in *other* squads that\ndeclared a dependency on this squad.\n\nA dependency targets this squad directly, or this squad's tribe. This lets a\nsquad surface what other teams are waiting on from them (\"le faire apparaître\").\nRequires tribe scope on the squad; ``year`` defaults to the current one.",
         "operationId": "squad_dependents_api_squads__squad_id__dependents_get",
         "parameters": [
           {
@@ -782,7 +782,7 @@
           "squads"
         ],
         "summary": "Export Squad Roadmap Pptx",
-        "description": "GET /api/squads/{squad_id}/roadmap.pptx — roadmap-only PowerPoint for a\nsingle squad (title slide + roadmap slide).\n\nGated by the ``squad_content``/``roadmap`` module and tribe scope. Returns 501\nif python-pptx is not installed.",
+        "description": "GET /api/squads/{squad_id}/roadmap.pptx: roadmap-only PowerPoint for a\nsingle squad (title slide + roadmap slide).\n\nGated by the ``squad_content``/``roadmap`` module and tribe scope. Returns 501\nif python-pptx is not installed.",
         "operationId": "export_squad_roadmap_pptx_api_squads__squad_id__roadmap_pptx_get",
         "parameters": [
           {
@@ -855,7 +855,7 @@
           "squads"
         ],
         "summary": "Export Squad Roadmap Html",
-        "description": "GET /api/squads/{squad_id}/roadmap.html — roadmap-only web page for a\nsingle squad. Gated by the roadmap module and tribe scope.",
+        "description": "GET /api/squads/{squad_id}/roadmap.html: roadmap-only web page for a\nsingle squad. Gated by the roadmap module and tribe scope.",
         "operationId": "export_squad_roadmap_html_api_squads__squad_id__roadmap_html_get",
         "parameters": [
           {
@@ -928,7 +928,7 @@
           "squads"
         ],
         "summary": "Set Quarter Progress",
-        "description": "PUT /api/squads/{squad_id}/quarter-progress — set the squad's progress %\nand comment for a given year/quarter (upsert).\n\nSquad-leader reporting: requires ``assert_can_edit_squad``. Audited, then\nemits ``notify_change(..., \"progress\", ...)``.",
+        "description": "PUT /api/squads/{squad_id}/quarter-progress: set the squad's progress %\nand comment for a given year/quarter (upsert).\n\nSquad-leader reporting: requires ``assert_can_edit_squad``. Audited, then\nemits ``notify_change(..., \"progress\", ...)``.",
         "operationId": "set_quarter_progress_api_squads__squad_id__quarter_progress_put",
         "parameters": [
           {
@@ -981,7 +981,7 @@
           "squads"
         ],
         "summary": "Set Squad Budget",
-        "description": "PUT /api/squads/{squad_id}/budget — set the squad's budget line for a year\n(upsert).\n\nRequires ``assert_can_edit_squad`` and the squad's budget module to be enabled\n(403 otherwise). Business rule: the total envelope is a tribe-leader/admin\ndecision — a squad leader may only report spent/forecast/comment, so an\nincoming ``total`` from a squad leader is ignored. Audited, then\n``notify_change(..., \"budget\", ...)``.",
+        "description": "PUT /api/squads/{squad_id}/budget: set the squad's budget line for a year\n(upsert).\n\nRequires ``assert_can_edit_squad`` and the squad's budget module to be enabled\n(403 otherwise). Business rule: the total envelope is a tribe-leader/admin\ndecision: a squad leader may only report spent/forecast/comment, so an\nincoming ``total`` from a squad leader is ignored. Audited, then\n``notify_change(..., \"budget\", ...)``.",
         "operationId": "set_squad_budget_api_squads__squad_id__budget_put",
         "parameters": [
           {
@@ -1050,7 +1050,7 @@
           "squads"
         ],
         "summary": "Create Key Message",
-        "description": "POST /api/squads/{squad_id}/key-messages — add a curated key message\n(success/alert/risk) for a year (201).\n\nSquad leader (or admin) only. Audited, then ``notify_change(..., \"key_message\",\n...)``. ``year`` defaults to the current one.",
+        "description": "POST /api/squads/{squad_id}/key-messages: add a curated key message\n(success/alert/risk) for a year (201).\n\nSquad leader (or admin) only. Audited, then ``notify_change(..., \"key_message\",\n...)``. ``year`` defaults to the current one.",
         "operationId": "create_key_message_api_squads__squad_id__key_messages_post",
         "parameters": [
           {
@@ -1119,7 +1119,7 @@
           "squads"
         ],
         "summary": "Update Key Message",
-        "description": "PUT /api/squads/{squad_id}/key-messages/{msg_id} — update a key message.\n\nSquad leader (or admin) only, message must belong to the squad. Audited, then\n``notify_change(..., \"key_message\", ...)``.",
+        "description": "PUT /api/squads/{squad_id}/key-messages/{msg_id}: update a key message.\n\nSquad leader (or admin) only, message must belong to the squad. Audited, then\n``notify_change(..., \"key_message\", ...)``.",
         "operationId": "update_key_message_api_squads__squad_id__key_messages__msg_id__put",
         "parameters": [
           {
@@ -1179,7 +1179,7 @@
           "squads"
         ],
         "summary": "Delete Key Message",
-        "description": "DELETE /api/squads/{squad_id}/key-messages/{msg_id} — delete a key message\n(204).\n\nSquad leader (or admin) only, message must belong to the squad. Audited, then\n``notify_change(..., \"key_message\", ...)``.",
+        "description": "DELETE /api/squads/{squad_id}/key-messages/{msg_id}: delete a key message\n(204).\n\nSquad leader (or admin) only, message must belong to the squad. Audited, then\n``notify_change(..., \"key_message\", ...)``.",
         "operationId": "delete_key_message_api_squads__squad_id__key_messages__msg_id__delete",
         "parameters": [
           {
@@ -1224,7 +1224,7 @@
           "dashboard"
         ],
         "summary": "Get Dashboard",
-        "description": "GET /api/dashboard — squad cards + summary for a year.\n\nRequires the ``dashboard`` module and capability. Squads are scoped to the\ncaller's visible tribe; an admin (no scope) may filter by ``tribe_id``. Cards\nare ordered worst-first (risk, then blocked count, then name), and the summary\naggregates totals (blocked/at-risk milestones, stale squads, average\nprogress). ``year`` defaults to the current one.",
+        "description": "GET /api/dashboard: squad cards + summary for a year.\n\nRequires the ``dashboard`` module and capability. Squads are scoped to the\ncaller's visible tribe; an admin (no scope) may filter by ``tribe_id``. Cards\nare ordered worst-first (risk, then blocked count, then name), and the summary\naggregates totals (blocked/at-risk milestones, stale squads, average\nprogress). ``year`` defaults to the current one.",
         "operationId": "get_dashboard_api_dashboard_get",
         "parameters": [
           {
@@ -1687,7 +1687,7 @@
           "objectives"
         ],
         "summary": "Create Objective",
-        "description": "POST /api/objectives — create an objective for a squad (201).\n\nRequires ``assert_can_manage_objectives`` on the target squad. Audited, then\n``notify_change(..., \"objectives\", ...)``.",
+        "description": "POST /api/objectives: create an objective for a squad (201).\n\nRequires ``assert_can_manage_objectives`` on the target squad. Audited, then\n``notify_change(..., \"objectives\", ...)``.",
         "operationId": "create_objective_api_objectives_post",
         "requestBody": {
           "content": {
@@ -1729,7 +1729,7 @@
           "objectives"
         ],
         "summary": "Update Objective",
-        "description": "PUT /api/objectives/{objective_id} — update an objective.\n\nRequires ``assert_can_manage_objectives`` on the objective's squad. Audited,\nthen ``notify_change(..., \"objectives\", ...)``.",
+        "description": "PUT /api/objectives/{objective_id}: update an objective.\n\nRequires ``assert_can_manage_objectives`` on the objective's squad. Audited,\nthen ``notify_change(..., \"objectives\", ...)``.",
         "operationId": "update_objective_api_objectives__objective_id__put",
         "parameters": [
           {
@@ -1780,7 +1780,7 @@
           "objectives"
         ],
         "summary": "Delete Objective",
-        "description": "DELETE /api/objectives/{objective_id} — delete an objective (204).\n\nRequires ``assert_can_manage_objectives`` on the objective's squad. Audited,\nthen ``notify_change(..., \"objectives\", ...)``.",
+        "description": "DELETE /api/objectives/{objective_id}: delete an objective (204).\n\nRequires ``assert_can_manage_objectives`` on the objective's squad. Audited,\nthen ``notify_change(..., \"objectives\", ...)``.",
         "operationId": "delete_objective_api_objectives__objective_id__delete",
         "parameters": [
           {
@@ -1816,7 +1816,7 @@
           "roadmap"
         ],
         "summary": "List Themes",
-        "description": "GET /api/roadmap-items/themes — distinct existing milestone themes,\nmost-used first, for reuse/autocomplete.\n\nRequires ``require_writer``. Scoped to the writer's visibility: admins see\nevery theme, others see the themes used across their own tribe's squads.",
+        "description": "GET /api/roadmap-items/themes: distinct existing milestone themes,\nmost-used first, for reuse/autocomplete.\n\nRequires ``require_writer``. Scoped to the writer's visibility: admins see\nevery theme, others see the themes used across their own tribe's squads.",
         "operationId": "list_themes_api_roadmap_items_themes_get",
         "responses": {
           "200": {
@@ -1842,7 +1842,7 @@
           "roadmap"
         ],
         "summary": "Create Item",
-        "description": "POST /api/roadmap-items — create a milestone (201).\n\nWriter who leads the target squad only (``assert_leads_squad``). The\ndependency reference is normalized and the linked objective validated before\ninsert. Audited, then ``notify_change(..., \"roadmap\", ...)``.",
+        "description": "POST /api/roadmap-items: create a milestone (201).\n\nWriter who leads the target squad only (``assert_leads_squad``). The\ndependency reference is normalized and the linked objective validated before\ninsert. Audited, then ``notify_change(..., \"roadmap\", ...)``.",
         "operationId": "create_item_api_roadmap_items_post",
         "requestBody": {
           "content": {
@@ -1884,7 +1884,7 @@
           "roadmap"
         ],
         "summary": "Update Item",
-        "description": "PUT /api/roadmap-items/{item_id} — update a milestone.\n\nWriter who leads the milestone's squad only. Dependency fields are re-\nnormalized and the objective link re-validated only when those fields are part\nof the update. Audited, then ``notify_change(..., \"roadmap\", ...)``.",
+        "description": "PUT /api/roadmap-items/{item_id}: update a milestone.\n\nWriter who leads the milestone's squad only. Dependency fields are re-\nnormalized and the objective link re-validated only when those fields are part\nof the update. Audited, then ``notify_change(..., \"roadmap\", ...)``.",
         "operationId": "update_item_api_roadmap_items__item_id__put",
         "parameters": [
           {
@@ -1935,7 +1935,7 @@
           "roadmap"
         ],
         "summary": "Delete Item",
-        "description": "DELETE /api/roadmap-items/{item_id} — delete a milestone (204).\n\nWriter who leads the milestone's squad only. Audited, then\n``notify_change(..., \"roadmap\", ...)``.",
+        "description": "DELETE /api/roadmap-items/{item_id}: delete a milestone (204).\n\nWriter who leads the milestone's squad only. Audited, then\n``notify_change(..., \"roadmap\", ...)``.",
         "operationId": "delete_item_api_roadmap_items__item_id__delete",
         "parameters": [
           {
@@ -2998,7 +2998,7 @@
           "admin"
         ],
         "summary": "List Users",
-        "description": "GET /api/admin/users — list users.\n\nAdmins and tribe leaders only. A tribe leader sees only users of their own\ntribe (scope from ``users_scope_tribe``); an admin sees everyone.",
+        "description": "GET /api/admin/users: list users.\n\nAdmins and tribe leaders only. A tribe leader sees only users of their own\ntribe (scope from ``users_scope_tribe``); an admin sees everyone.",
         "operationId": "list_users_api_admin_users_get",
         "responses": {
           "200": {
@@ -3022,7 +3022,7 @@
           "admin"
         ],
         "summary": "Create User",
-        "description": "POST /api/admin/users — create a user (201).\n\nAdmins and tribe leaders only. The actor must be allowed to assign the\nrequested role, and a tribe leader may only create users inside their own\ntribe. Email must be unique. Writes a ``user.create`` audit entry.",
+        "description": "POST /api/admin/users: create a user (201).\n\nAdmins and tribe leaders only. The actor must be allowed to assign the\nrequested role, and a tribe leader may only create users inside their own\ntribe. Email must be unique. Writes a ``user.create`` audit entry.",
         "operationId": "create_user_api_admin_users_post",
         "requestBody": {
           "content": {
@@ -3064,7 +3064,7 @@
           "admin"
         ],
         "summary": "Update User",
-        "description": "PUT /api/admin/users/{user_id} — update a user.\n\nAdmins and tribe leaders only, and the target must be inside the actor's\nscope (``can_manage_user``). Enforces several rules: role changes stay within\nwhat the actor may assign; the break-glass account must remain admin; only an\nadmin may move a user to a different tribe. Writes a ``user.update`` audit.",
+        "description": "PUT /api/admin/users/{user_id}: update a user.\n\nAdmins and tribe leaders only, and the target must be inside the actor's\nscope (``can_manage_user``). Enforces several rules: role changes stay within\nwhat the actor may assign; the break-glass account must remain admin; only an\nadmin may move a user to a different tribe. Writes a ``user.update`` audit.",
         "operationId": "update_user_api_admin_users__user_id__put",
         "parameters": [
           {
@@ -3115,7 +3115,7 @@
           "admin"
         ],
         "summary": "Delete User",
-        "description": "DELETE /api/admin/users/{user_id} — delete a user (204).\n\nAdmins and tribe leaders only, target must be in the actor's scope. The\nbreak-glass account cannot be deleted, and nobody may delete their own\naccount. Writes a ``user.delete`` audit entry.",
+        "description": "DELETE /api/admin/users/{user_id}: delete a user (204).\n\nAdmins and tribe leaders only, target must be in the actor's scope. The\nbreak-glass account cannot be deleted, and nobody may delete their own\naccount. Writes a ``user.delete`` audit entry.",
         "operationId": "delete_user_api_admin_users__user_id__delete",
         "parameters": [
           {
@@ -3151,7 +3151,7 @@
           "admin"
         ],
         "summary": "Get Settings Endpoint",
-        "description": "GET /api/admin/settings — read general application settings. Admin only.",
+        "description": "GET /api/admin/settings: read general application settings. Admin only.",
         "operationId": "get_settings_endpoint_api_admin_settings_get",
         "responses": {
           "200": {
@@ -3169,7 +3169,7 @@
           "admin"
         ],
         "summary": "Update Settings Endpoint",
-        "description": "PUT /api/admin/settings — update general settings. Admin only; audited.",
+        "description": "PUT /api/admin/settings: update general settings. Admin only; audited.",
         "operationId": "update_settings_endpoint_api_admin_settings_put",
         "requestBody": {
           "content": {
@@ -3210,7 +3210,7 @@
           "admin"
         ],
         "summary": "Read Auth Config",
-        "description": "GET /api/admin/auth-config — read the OIDC/SAML auth config. Admin only.\n\n``request`` lets the SSO URLs be derived from the URL the admin is actually\nbrowsing when no public base URL is configured (see authconfig).",
+        "description": "GET /api/admin/auth-config: read the OIDC/SAML auth config. Admin only.\n\n``request`` lets the SSO URLs be derived from the URL the admin is actually\nbrowsing when no public base URL is configured (see authconfig).",
         "operationId": "read_auth_config_api_admin_auth_config_get",
         "responses": {
           "200": {
@@ -3228,7 +3228,7 @@
           "admin"
         ],
         "summary": "Update Auth Config",
-        "description": "PUT /api/admin/auth-config — update the OIDC/SAML auth config. Admin only;\naudits which providers are enabled.",
+        "description": "PUT /api/admin/auth-config: update the OIDC/SAML auth config. Admin only;\naudits which providers are enabled.",
         "operationId": "update_auth_config_api_admin_auth_config_put",
         "requestBody": {
           "content": {
@@ -3269,7 +3269,7 @@
           "admin"
         ],
         "summary": "Test Auth Config",
-        "description": "POST /api/admin/auth-config/test — probe the configured IdP. Admin only.\n\nTests what is currently on screen, not only what is saved: any field sent in\nthe body is layered over the stored config, so an administrator can check a\nchange before committing it. Read-only; nothing is persisted.",
+        "description": "POST /api/admin/auth-config/test: probe the configured IdP. Admin only.\n\nTests what is currently on screen, not only what is saved: any field sent in\nthe body is layered over the stored config, so an administrator can check a\nchange before committing it. Read-only; nothing is persisted.",
         "operationId": "test_auth_config_api_admin_auth_config_test_post",
         "requestBody": {
           "content": {
@@ -3310,7 +3310,7 @@
           "admin"
         ],
         "summary": "Read Smtp Config",
-        "description": "GET /api/admin/smtp-config — read outbound email (SMTP) config. Admin only.",
+        "description": "GET /api/admin/smtp-config: read outbound email (SMTP) config. Admin only.",
         "operationId": "read_smtp_config_api_admin_smtp_config_get",
         "responses": {
           "200": {
@@ -3328,7 +3328,7 @@
           "admin"
         ],
         "summary": "Update Smtp Config",
-        "description": "PUT /api/admin/smtp-config — update the SMTP config. Admin only; audited.",
+        "description": "PUT /api/admin/smtp-config: update the SMTP config. Admin only; audited.",
         "operationId": "update_smtp_config_api_admin_smtp_config_put",
         "requestBody": {
           "content": {
@@ -3369,7 +3369,7 @@
           "admin"
         ],
         "summary": "Test Smtp",
-        "description": "POST /api/admin/smtp-config/test — send a test email to check SMTP.\n\nAdmin only. Sends to ``payload.to`` or, by default, the admin's own address.\nFails with 400 if SMTP is disabled.",
+        "description": "POST /api/admin/smtp-config/test: send a test email to check SMTP.\n\nAdmin only. Sends to ``payload.to`` or, by default, the admin's own address.\nFails with 400 if SMTP is disabled.",
         "operationId": "test_smtp_api_admin_smtp_config_test_post",
         "requestBody": {
           "content": {
@@ -3410,7 +3410,7 @@
           "admin"
         ],
         "summary": "Read Personas",
-        "description": "GET /api/admin/personas — list personas (roles) and the full capability\ncatalogue the UI can toggle. Admin only.",
+        "description": "GET /api/admin/personas: list personas (roles) and the full capability\ncatalogue the UI can toggle. Admin only.",
         "operationId": "read_personas_api_admin_personas_get",
         "responses": {
           "200": {
@@ -3428,7 +3428,7 @@
           "admin"
         ],
         "summary": "Update Personas",
-        "description": "PUT /api/admin/personas — replace the persona definitions. Admin only.\n\nSide effect: any user whose persona no longer exists is downgraded to\n``member`` (the break-glass account is left untouched) so nobody is stranded\nwith an invalid role. Audited.",
+        "description": "PUT /api/admin/personas: replace the persona definitions. Admin only.\n\nSide effect: any user whose persona no longer exists is downgraded to\n``member`` (the break-glass account is left untouched) so nobody is stranded\nwith an invalid role. Audited.",
         "operationId": "update_personas_api_admin_personas_put",
         "requestBody": {
           "content": {
@@ -3469,7 +3469,7 @@
           "admin"
         ],
         "summary": "Read Modules Config",
-        "description": "GET /api/admin/modules-config — read feature-module enablement. Admin only.",
+        "description": "GET /api/admin/modules-config: read feature-module enablement. Admin only.",
         "operationId": "read_modules_config_api_admin_modules_config_get",
         "responses": {
           "200": {
@@ -3487,7 +3487,7 @@
           "admin"
         ],
         "summary": "Update Modules Config",
-        "description": "PUT /api/admin/modules-config — enable/disable feature modules. Admin only;\naudits which modules ended up enabled.",
+        "description": "PUT /api/admin/modules-config: enable/disable feature modules. Admin only;\naudits which modules ended up enabled.",
         "operationId": "update_modules_config_api_admin_modules_config_put",
         "requestBody": {
           "content": {
@@ -3528,7 +3528,7 @@
           "admin"
         ],
         "summary": "Read Report Config",
-        "description": "GET /api/admin/report-config — read the weekly-report schedule/recipients.\nAdmin only.",
+        "description": "GET /api/admin/report-config: read the weekly-report schedule/recipients.\nAdmin only.",
         "operationId": "read_report_config_api_admin_report_config_get",
         "responses": {
           "200": {
@@ -3546,7 +3546,7 @@
           "admin"
         ],
         "summary": "Update Report Config",
-        "description": "PUT /api/admin/report-config — update the weekly-report schedule. Admin\nonly; audited. ``last_sent_week`` is scheduler bookkeeping and is stripped\nfrom the payload so the UI can never overwrite it.",
+        "description": "PUT /api/admin/report-config: update the weekly-report schedule. Admin\nonly; audited. ``last_sent_week`` is scheduler bookkeeping and is stripped\nfrom the payload so the UI can never overwrite it.",
         "operationId": "update_report_config_api_admin_report_config_put",
         "requestBody": {
           "content": {
@@ -3587,7 +3587,7 @@
           "admin"
         ],
         "summary": "Test Report Config",
-        "description": "POST /api/admin/report-config/test — send the weekly report now to the\nadmin (or a chosen address) as a check. Admin only.\n\nBuilds the current-year report, renders the HTML body and (if python-pptx is\navailable) attaches the PPTX. Fails with 400 if SMTP is disabled. Audited.",
+        "description": "POST /api/admin/report-config/test: send the weekly report now to the\nadmin (or a chosen address) as a check. Admin only.\n\nBuilds the current-year report, renders the HTML body and (if python-pptx is\navailable) attaches the PPTX. Fails with 400 if SMTP is disabled. Audited.",
         "operationId": "test_report_config_api_admin_report_config_test_post",
         "requestBody": {
           "content": {
@@ -3627,7 +3627,7 @@
           "admin"
         ],
         "summary": "Read Change Notify Config",
-        "description": "GET /api/admin/change-notify-config — read the on-modification email config.\nAdmin only. Also returns the full ``_all_events`` catalogue so the UI can\nrender every available trigger condition.",
+        "description": "GET /api/admin/change-notify-config: read the on-modification email config.\nAdmin only. Also returns the full ``_all_events`` catalogue so the UI can\nrender every available trigger condition.",
         "operationId": "read_change_notify_config_api_admin_change_notify_config_get",
         "responses": {
           "200": {
@@ -3645,7 +3645,7 @@
           "admin"
         ],
         "summary": "Update Change Notify Config",
-        "description": "PUT /api/admin/change-notify-config — update the on-modification email\nconfig. Admin only; audited. Keys prefixed with ``_`` are UI-only helpers\n(e.g. ``_all_events``) and are stripped before saving.",
+        "description": "PUT /api/admin/change-notify-config: update the on-modification email\nconfig. Admin only; audited. Keys prefixed with ``_`` are UI-only helpers\n(e.g. ``_all_events``) and are stripped before saving.",
         "operationId": "update_change_notify_config_api_admin_change_notify_config_put",
         "requestBody": {
           "content": {
@@ -3686,7 +3686,7 @@
           "admin"
         ],
         "summary": "Test Change Notify Config",
-        "description": "POST /api/admin/change-notify-config/test — send a sample change\nnotification (a real squad's export) to verify setup. Admin only.\n\nUses ``payload.squad_id`` or the first squad by display order. Fails with 400\nif SMTP is disabled or no squad exists. Audited.",
+        "description": "POST /api/admin/change-notify-config/test: send a sample change\nnotification (a real squad's export) to verify setup. Admin only.\n\nUses ``payload.squad_id`` or the first squad by display order. Fails with 400\nif SMTP is disabled or no squad exists. Audited.",
         "operationId": "test_change_notify_config_api_admin_change_notify_config_test_post",
         "requestBody": {
           "content": {
@@ -3726,7 +3726,7 @@
           "admin"
         ],
         "summary": "Read Log Export Config",
-        "description": "GET /api/admin/log-export-config — read the audit-log export config (e.g.\nSIEM destination). Admin only; secrets stay masked.",
+        "description": "GET /api/admin/log-export-config: read the audit-log export config (e.g.\nSIEM destination). Admin only; secrets stay masked.",
         "operationId": "read_log_export_config_api_admin_log_export_config_get",
         "responses": {
           "200": {
@@ -3744,7 +3744,7 @@
           "admin"
         ],
         "summary": "Update Log Export Config",
-        "description": "PUT /api/admin/log-export-config — update the log-export config. Admin\nonly; audited.",
+        "description": "PUT /api/admin/log-export-config: update the log-export config. Admin\nonly; audited.",
         "operationId": "update_log_export_config_api_admin_log_export_config_put",
         "requestBody": {
           "content": {
@@ -3785,7 +3785,7 @@
           "admin"
         ],
         "summary": "Test Log Export",
-        "description": "POST /api/admin/log-export-config/test — push a single synthetic entry to\nthe configured destination to check connectivity. Admin only.\n\nReads the config with secrets revealed (needed to actually connect). Fails\nwith 400 if export is disabled. Audited.",
+        "description": "POST /api/admin/log-export-config/test: push a single synthetic entry to\nthe configured destination to check connectivity. Admin only.\n\nReads the config with secrets revealed (needed to actually connect). Fails\nwith 400 if export is disabled. Audited.",
         "operationId": "test_log_export_api_admin_log_export_config_test_post",
         "responses": {
           "200": {
@@ -3805,7 +3805,7 @@
           "admin"
         ],
         "summary": "Flush Log Export",
-        "description": "POST /api/admin/log-export-config/flush — export the most recent audit\nentries on demand. Admin only.\n\n``payload.limit`` (default 200) is clamped to 1..1000. Fails with 400 if\nexport is disabled. Audited.",
+        "description": "POST /api/admin/log-export-config/flush: export the most recent audit\nentries on demand. Admin only.\n\n``payload.limit`` (default 200) is clamped to 1..1000. Fails with 400 if\nexport is disabled. Audited.",
         "operationId": "flush_log_export_api_admin_log_export_config_flush_post",
         "requestBody": {
           "content": {
@@ -3845,7 +3845,7 @@
           "admin"
         ],
         "summary": "Read Tls Config",
-        "description": "GET /api/admin/tls-config — read the current TLS status (active cert +\ntrusted CAs). Admin only.",
+        "description": "GET /api/admin/tls-config: read the current TLS status (active cert +\ntrusted CAs). Admin only.",
         "operationId": "read_tls_config_api_admin_tls_config_get",
         "responses": {
           "200": {
@@ -3905,7 +3905,7 @@
           "admin"
         ],
         "summary": "Tls Regenerate Self Signed",
-        "description": "POST /api/admin/tls-config/self-signed — (re)generate a self-signed cert.\nAdmin only.\n\n``cn`` defaults to ``localhost``; ``sans`` may be a list or a comma/newline\nseparated string. Invalid input yields 400. Audited.",
+        "description": "POST /api/admin/tls-config/self-signed: (re)generate a self-signed cert.\nAdmin only.\n\n``cn`` defaults to ``localhost``; ``sans`` may be a list or a comma/newline\nseparated string. Invalid input yields 400. Audited.",
         "operationId": "tls_regenerate_self_signed_api_admin_tls_config_self_signed_post",
         "requestBody": {
           "content": {
@@ -3945,7 +3945,7 @@
           "admin"
         ],
         "summary": "Tls Import Pem",
-        "description": "POST /api/admin/tls-config/import-pem — install a cert + private key from\nPEM (uploaded files or pasted text). Admin only.\n\nBoth cert and key are required (400 otherwise); an optional ``passphrase``\ndecrypts the key. Parse/validation errors yield 400. Audited.",
+        "description": "POST /api/admin/tls-config/import-pem: install a cert + private key from\nPEM (uploaded files or pasted text). Admin only.\n\nBoth cert and key are required (400 otherwise); an optional ``passphrase``\ndecrypts the key. Parse/validation errors yield 400. Audited.",
         "operationId": "tls_import_pem_api_admin_tls_config_import_pem_post",
         "requestBody": {
           "content": {
@@ -3984,7 +3984,7 @@
           "admin"
         ],
         "summary": "Tls Import Pfx",
-        "description": "POST /api/admin/tls-config/import-pfx — install a cert + key from a PKCS#12\n(.pfx) bundle. Admin only.\n\nEmpty file yields 400; a wrong password or malformed bundle also yields 400.\nAudited.",
+        "description": "POST /api/admin/tls-config/import-pfx: install a cert + key from a PKCS#12\n(.pfx) bundle. Admin only.\n\nEmpty file yields 400; a wrong password or malformed bundle also yields 400.\nAudited.",
         "operationId": "tls_import_pfx_api_admin_tls_config_import_pfx_post",
         "requestBody": {
           "content": {
@@ -4024,7 +4024,7 @@
           "admin"
         ],
         "summary": "Tls Add Ca",
-        "description": "POST /api/admin/tls-config/ca — add a trusted CA certificate (upload or\npasted text), with an optional friendly ``name``. Admin only.\n\nEmpty/invalid input yields 400. Audited.",
+        "description": "POST /api/admin/tls-config/ca: add a trusted CA certificate (upload or\npasted text), with an optional friendly ``name``. Admin only.\n\nEmpty/invalid input yields 400. Audited.",
         "operationId": "tls_add_ca_api_admin_tls_config_ca_post",
         "requestBody": {
           "content": {
@@ -4063,7 +4063,7 @@
           "admin"
         ],
         "summary": "Tls Remove Ca",
-        "description": "DELETE /api/admin/tls-config/ca/{ca_id} — remove a trusted CA. Admin only.\nUnknown id yields 404. Audited.",
+        "description": "DELETE /api/admin/tls-config/ca/{ca_id}: remove a trusted CA. Admin only.\nUnknown id yields 404. Audited.",
         "operationId": "tls_remove_ca_api_admin_tls_config_ca__ca_id__delete",
         "parameters": [
           {
@@ -4104,7 +4104,7 @@
           "admin"
         ],
         "summary": "Tls Download Ca",
-        "description": "GET /api/admin/tls-config/ca/{ca_id}/download — download a trusted CA as a\nPEM attachment. Admin only. Unknown id yields 404.",
+        "description": "GET /api/admin/tls-config/ca/{ca_id}/download: download a trusted CA as a\nPEM attachment. Admin only. Unknown id yields 404.",
         "operationId": "tls_download_ca_api_admin_tls_config_ca__ca_id__download_get",
         "parameters": [
           {
@@ -4145,7 +4145,7 @@
           "admin"
         ],
         "summary": "Tls Download Active",
-        "description": "GET /api/admin/tls-config/active/download — download the active server\ncertificate as a PEM attachment. Admin only. 404 if none is set.",
+        "description": "GET /api/admin/tls-config/active/download: download the active server\ncertificate as a PEM attachment. Admin only. 404 if none is set.",
         "operationId": "tls_download_active_api_admin_tls_config_active_download_get",
         "responses": {
           "200": {
@@ -4382,7 +4382,7 @@
           "admin"
         ],
         "summary": "List Api Keys",
-        "description": "GET /api/admin/api-keys — list API keys (public view: prefix only, never\nthe secret) plus the catalogue of assignable scopes. Admin only.",
+        "description": "GET /api/admin/api-keys: list API keys (public view: prefix only, never\nthe secret) plus the catalogue of assignable scopes. Admin only.",
         "operationId": "list_api_keys_api_admin_api_keys_get",
         "responses": {
           "200": {
@@ -4400,7 +4400,7 @@
           "admin"
         ],
         "summary": "Create Api Key",
-        "description": "POST /api/admin/api-keys — mint a service API key (201). Admin only.\n\nThe plaintext secret is returned HERE AND NOWHERE ELSE (only its hash is\nstored). Requires a name and at least one valid scope; an optional\n``expires_in_days`` (>= 1) sets expiry, and ``tribe_id`` scopes the key to a\ntribe. Invalid input yields 400. Audited.",
+        "description": "POST /api/admin/api-keys: mint a service API key (201). Admin only.\n\nThe plaintext secret is returned HERE AND NOWHERE ELSE (only its hash is\nstored). Requires a name and at least one valid scope; an optional\n``expires_in_days`` (>= 1) sets expiry, and ``tribe_id`` scopes the key to a\ntribe. Invalid input yields 400. Audited.",
         "operationId": "create_api_key_api_admin_api_keys_post",
         "requestBody": {
           "content": {
@@ -4441,7 +4441,7 @@
           "admin"
         ],
         "summary": "Revoke Api Key",
-        "description": "POST /api/admin/api-keys/{key_id}/revoke — revoke a key. Admin only.\n\nRevoking is immediate and irreversible; the row is kept (not deleted) for the\naudit trail. Idempotent — re-revoking an already-revoked key is a no-op.\nUnknown id yields 404. Audited on the first revoke.",
+        "description": "POST /api/admin/api-keys/{key_id}/revoke: revoke a key. Admin only.\n\nRevoking is immediate and irreversible; the row is kept (not deleted) for the\naudit trail. Idempotent: re-revoking an already-revoked key is a no-op.\nUnknown id yields 404. Audited on the first revoke.",
         "operationId": "revoke_api_key_api_admin_api_keys__key_id__revoke_post",
         "parameters": [
           {
@@ -4482,7 +4482,7 @@
           "admin"
         ],
         "summary": "Delete Api Key",
-        "description": "DELETE /api/admin/api-keys/{key_id} — permanently delete a key (204). Admin\nonly. Unlike revoke, this removes the row entirely. Unknown id yields 404.\nAudited.",
+        "description": "DELETE /api/admin/api-keys/{key_id}: permanently delete a key (204). Admin\nonly. Unlike revoke, this removes the row entirely. Unknown id yields 404.\nAudited.",
         "operationId": "delete_api_key_api_admin_api_keys__key_id__delete",
         "parameters": [
           {
@@ -4518,7 +4518,7 @@
           "admin"
         ],
         "summary": "Download Org Template",
-        "description": "GET /api/admin/import-org/template — download the blank Excel template\n(4 sheets: Tribu / Squads / Initiatives / OTD) to fill in. Admin only.",
+        "description": "GET /api/admin/import-org/template: download the blank Excel template\n(4 sheets: Tribu / Squads / Initiatives / OTD) to fill in. Admin only.",
         "operationId": "download_org_template_api_admin_import_org_template_get",
         "responses": {
           "200": {
@@ -4538,7 +4538,7 @@
           "admin"
         ],
         "summary": "Import Org Upload",
-        "description": "POST /api/admin/import-org — upload a filled Excel (.xlsx) or YAML file and\nimport the organisation (tribe, squads + leaders, initiatives, OTD). Admin\nonly. Idempotent: re-running updates existing rows instead of duplicating.\n\nReturns a summary of what was processed. 400 if the file is the wrong format\nor has no tribe. Audited.",
+        "description": "POST /api/admin/import-org: upload a filled Excel (.xlsx) or YAML file and\nimport the organisation (tribe, squads + leaders, initiatives, OTD). Admin\nonly. Idempotent: re-running updates existing rows instead of duplicating.\n\nReturns a summary of what was processed. 400 if the file is the wrong format\nor has no tribe. Audited.",
         "operationId": "import_org_upload_api_admin_import_org_post",
         "requestBody": {
           "content": {
@@ -6202,7 +6202,7 @@
           "initiatives"
         ],
         "summary": "List Initiatives",
-        "description": "GET /api/initiatives — flat list of initiatives, visible to everyone in\nscope (read-only for non tribe-leaders).\n\nScope: an admin may target any ``tribe_id``; others are pinned to their\nvisible tribe. Optionally filtered to a single ``squad_id`` (for that squad's\nreport) and a ``year`` (defaults to current).",
+        "description": "GET /api/initiatives: flat list of initiatives, visible to everyone in\nscope (read-only for non tribe-leaders).\n\nScope: an admin may target any ``tribe_id``; others are pinned to their\nvisible tribe. Optionally filtered to a single ``squad_id`` (for that squad's\nreport) and a ``year`` (defaults to current).",
         "operationId": "list_initiatives_api_initiatives_get",
         "parameters": [
           {
@@ -6286,7 +6286,7 @@
           "initiatives"
         ],
         "summary": "Create Initiative",
-        "description": "POST /api/initiatives — create an initiative (201). Tribe leader or admin.\n\nRequires ``assert_can_manage_tribe_reporting`` for the target tribe (404 if\nthe tribe is unknown) and that any assigned squad belongs to that tribe.\nAudited.",
+        "description": "POST /api/initiatives: create an initiative (201). Tribe leader or admin.\n\nRequires ``assert_can_manage_tribe_reporting`` for the target tribe (404 if\nthe tribe is unknown) and that any assigned squad belongs to that tribe.\nAudited.",
         "operationId": "create_initiative_api_initiatives_post",
         "requestBody": {
           "required": true,
@@ -6328,7 +6328,7 @@
           "initiatives"
         ],
         "summary": "Update Initiative",
-        "description": "PUT /api/initiatives/{initiative_id} — update an initiative. Tribe leader\nor admin.\n\nRequires ``assert_can_manage_tribe_reporting`` for the initiative's tribe;\nany (re)assigned squad is re-validated against that tribe. Audited.",
+        "description": "PUT /api/initiatives/{initiative_id}: update an initiative. Tribe leader\nor admin.\n\nRequires ``assert_can_manage_tribe_reporting`` for the initiative's tribe;\nany (re)assigned squad is re-validated against that tribe. Audited.",
         "operationId": "update_initiative_api_initiatives__initiative_id__put",
         "parameters": [
           {
@@ -6379,7 +6379,7 @@
           "initiatives"
         ],
         "summary": "Delete Initiative",
-        "description": "DELETE /api/initiatives/{initiative_id} — delete an initiative (204). Tribe\nleader or admin, requires ``assert_can_manage_tribe_reporting``. Audited.",
+        "description": "DELETE /api/initiatives/{initiative_id}: delete an initiative (204). Tribe\nleader or admin, requires ``assert_can_manage_tribe_reporting``. Audited.",
         "operationId": "delete_initiative_api_initiatives__initiative_id__delete",
         "parameters": [
           {
@@ -6415,7 +6415,7 @@
           "initiatives"
         ],
         "summary": "Initiatives Html",
-        "description": "GET /api/initiatives/report.html — flat initiatives list as a standalone\npage. Any authenticated user; scoped like the list endpoint (admins may target\na tribe, others are pinned).",
+        "description": "GET /api/initiatives/report.html: flat initiatives list as a standalone\npage. Any authenticated user; scoped like the list endpoint (admins may target\na tribe, others are pinned).",
         "operationId": "initiatives_html_api_initiatives_report_html_get",
         "parameters": [
           {
@@ -6497,7 +6497,7 @@
           "initiatives"
         ],
         "summary": "Initiatives Pptx",
-        "description": "GET /api/initiatives/report.pptx — flat initiatives list as a branded deck.\n\nAny authenticated user; scoped like the list endpoint. Returns 501 if\npython-pptx is not installed.",
+        "description": "GET /api/initiatives/report.pptx: flat initiatives list as a branded deck.\n\nAny authenticated user; scoped like the list endpoint. Returns 501 if\npython-pptx is not installed.",
         "operationId": "initiatives_pptx_api_initiatives_report_pptx_get",
         "parameters": [
           {
@@ -6577,7 +6577,7 @@
           "otds"
         ],
         "summary": "Candidate Jalons",
-        "description": "GET /api/otds/candidate-jalons — milestones of the scope's squads, for\nassigning them to an OTD. Tribe leader or admin.\n\nScope: an admin may target any ``tribe_id``; a tribe leader is pinned to their\ntribe. Each row carries its current ``otd_id`` so the UI can show what is\nalready assigned. ``year`` defaults to current.",
+        "description": "GET /api/otds/candidate-jalons: milestones of the scope's squads, for\nassigning them to an OTD. Tribe leader or admin.\n\nScope: an admin may target any ``tribe_id``; a tribe leader is pinned to their\ntribe. Each row carries its current ``otd_id`` so the UI can show what is\nalready assigned. ``year`` defaults to current.",
         "operationId": "candidate_jalons_api_otds_candidate_jalons_get",
         "parameters": [
           {
@@ -6703,7 +6703,7 @@
           "otds"
         ],
         "summary": "Create Otd",
-        "description": "POST /api/otds — create an OTD (201). Tribe leader or admin.\n\nRequires ``assert_can_manage_tribe_reporting`` for the target tribe (404 if\nunknown). Any assigned owner must be a squad leader of that tribe\n(``_validate_owner``, a cross-tribe-disclosure guard). Audited.",
+        "description": "POST /api/otds: create an OTD (201). Tribe leader or admin.\n\nRequires ``assert_can_manage_tribe_reporting`` for the target tribe (404 if\nunknown). Any assigned owner must be a squad leader of that tribe\n(``_validate_owner``, a cross-tribe-disclosure guard). Audited.",
         "operationId": "create_otd_api_otds_post",
         "requestBody": {
           "required": true,
@@ -6743,7 +6743,7 @@
           "otds"
         ],
         "summary": "Update Otd",
-        "description": "PUT /api/otds/{otd_id} — update an OTD. Tribe leader or admin.\n\nRequires ``assert_can_manage_tribe_reporting`` for the OTD's tribe; a changed\nowner is re-validated (``_validate_owner``). Audited.",
+        "description": "PUT /api/otds/{otd_id}: update an OTD. Tribe leader or admin.\n\nRequires ``assert_can_manage_tribe_reporting`` for the OTD's tribe; a changed\nowner is re-validated (``_validate_owner``). Audited.",
         "operationId": "update_otd_api_otds__otd_id__put",
         "parameters": [
           {
@@ -6792,7 +6792,7 @@
           "otds"
         ],
         "summary": "Delete Otd",
-        "description": "DELETE /api/otds/{otd_id} — delete an OTD (204). Tribe leader or admin,\nrequires ``assert_can_manage_tribe_reporting``.\n\nSide effect: member milestones keep existing; only their ``otd_id`` link is\ncleared. Audited.",
+        "description": "DELETE /api/otds/{otd_id}: delete an OTD (204). Tribe leader or admin,\nrequires ``assert_can_manage_tribe_reporting``.\n\nSide effect: member milestones keep existing; only their ``otd_id`` link is\ncleared. Audited.",
         "operationId": "delete_otd_api_otds__otd_id__delete",
         "parameters": [
           {
@@ -6828,7 +6828,7 @@
           "otds"
         ],
         "summary": "Set Otd Jalons",
-        "description": "PUT /api/otds/{otd_id}/jalons — set the milestones that make up this OTD\n(replaces the current set). Tribe leader or admin.\n\nRequires ``assert_can_manage_tribe_reporting``. Only milestones from the OTD's\ntribe are accepted (400 otherwise); this is the ONLY place the milestone<->OTD\nlink is managed (squad leaders never touch it). Audited.",
+        "description": "PUT /api/otds/{otd_id}/jalons: set the milestones that make up this OTD\n(replaces the current set). Tribe leader or admin.\n\nRequires ``assert_can_manage_tribe_reporting``. Only milestones from the OTD's\ntribe are accepted (400 otherwise); this is the ONLY place the milestone<->OTD\nlink is managed (squad leaders never touch it). Audited.",
         "operationId": "set_otd_jalons_api_otds__otd_id__jalons_put",
         "parameters": [
           {

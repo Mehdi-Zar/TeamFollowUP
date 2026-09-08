@@ -1,4 +1,4 @@
-# 12 - Deployment Guide (VMware · GCP · S3NS · AWS · Azure)
+# 12 - Deployment Guide (VMware, GCP, S3NS, AWS, Azure)
 
 This guide explains how to deploy **TeamFollowUP** to production on the main
 target platforms. The application ships as **one container image** plus a
@@ -1324,9 +1324,9 @@ The new pod runs `alembic upgrade head` automatically. **Back up the database fi
 (§10). Full upgrade/rollback playbook: `13-maintenance-and-updates.md`.
 
 > **S3NS references** (verify specifics against your tenant - the catalogue evolves):
-> [S3NS docs](https://documentation.s3ns.fr/products) ·
-> [set up gcloud for S3NS](https://documentation.s3ns.fr/docs/get-started-tpc/setup-gcloud) ·
-> [regions & zones](https://documentation.s3ns.fr/docs/get-started-tpc/regions-and-zones) ·
+> [S3NS docs](https://documentation.s3ns.fr/products),
+> [set up gcloud for S3NS](https://documentation.s3ns.fr/docs/get-started-tpc/setup-gcloud),
+> [regions & zones](https://documentation.s3ns.fr/docs/get-started-tpc/regions-and-zones),
 > [Artifact Registry (Docker)](https://documentation.s3ns.fr/artifact-registry/docs/docker/store-docker-container-images).
 
 ---

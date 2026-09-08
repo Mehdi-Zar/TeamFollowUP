@@ -47,7 +47,7 @@ KEEPALIVE_TIMEOUT = int(os.environ.get("KEEPALIVE_TIMEOUT", "620"))
 def main() -> None:
     """Entry point: materialize the TLS cert, then run the HTTPS uvicorn server.
 
-    Order matters — the certificate must exist on disk before uvicorn builds its
+    Order matters: the certificate must exist on disk before uvicorn builds its
     SSLContext. After ``load()`` we hand the live SSLContext to ``tls`` so an admin
     certificate upload can swap it in place without restarting the process.
     """

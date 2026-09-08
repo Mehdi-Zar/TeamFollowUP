@@ -1,8 +1,8 @@
 # Architecture Decision Records (ADR)
 
 Reconstructed (retroactive) records of the significant decisions embodied in the codebase.
-Format per ADR: **Status · Context · Options Considered · Decision · Rationale · Consequences ·
-Risks · Future Evolution**.
+Format per ADR: **Status, Context, Options Considered, Decision, Rationale, Consequences,
+Risks, Future Evolution**.
 
 ## Registry
 
@@ -36,6 +36,6 @@ flowchart TB
 ```
 
 ## Future ADR candidates
-- Observability stack choice · Scheduler externalization · Multi-tenancy strategy · Frontend test
-  stack · CD/environment promotion · Design-token system.
+- Observability stack choice, Scheduler externalization, Multi-tenancy strategy, Frontend test
+  stack, CD/environment promotion, Design-token system.
 </content>

@@ -2,7 +2,31 @@
 
 ## Unreleased
 
+### Changed
+- **The typography rule now covers the whole repository, with no allowlist.** It was scoped to
+  "anything a user reads", and that boundary was the problem: it needed adjudicating on every
+  edit and nobody did it, which is how the weekly report ended up shipping the middot as its
+  separator. 185 em dashes and 153 middots are gone. The em dashes were mostly route
+  docstrings, `GET /api/x` followed by a dash and a summary, now a colon; those are not
+  internal prose, FastAPI publishes them as endpoint descriptions into Swagger UI and into the
+  committed OpenAPI snapshot. The middots were list separators: 92 in the API reference (now
+  semicolons, which a comma could not do without colliding with the commas already inside the
+  items), plus ADR headers, deployment titles, the definition-of-done checklist and the
+  CHANGELOG's own prose. `CLAUDE.md` names the two characters by code point and the guards
+  write them as escapes, so the rule file and its tests pass their own rule and nothing needs
+  exempting. `backend/tests/test_typography.py` is now a flat repository-wide scan, checked
+  against a planted violation, with a second test asserting it really looks at something (an
+  over-tight filter would leave it permanently green).
+
 ### Fixed
+- **`leaves > overlap_alert` was the last feature flag with no effect on screen.** The
+  calendar called `GET /api/leaves/overlaps` unconditionally and swallowed the refusal in a
+  `.catch`. The behaviour was right, the banner never appeared, but it meant a request the app
+  already knew would be refused on every month change, in the network panel and the access
+  logs. The page now asks the module map first. And a new test asserts that **every** declared
+  feature flag is enforced server-side, in one of the two legitimate shapes: `require_module`
+  on the route when the feature owns endpoints, or `is_active` where it acts when it governs a
+  field or a side effect. That is the guard that would have caught `feed > kinds`.
 - **The instance's default language never reached the interface.** `default_lang` (Administration
   > Settings, French out of the box) drove the weekly report and the notification emails
   correctly, but never the SPA: `I18nProvider` wrote `trt_lang` from a mount effect, stamping
@@ -62,8 +86,9 @@
 - **The report and the PPTX shipped the one character the project bans.** `CLAUDE.md` forbids
   the em dash and the middot in anything a user reads, generated HTML and PPTX documents
   included, because they read as machine-written. The weekly report used the middot as its
-  separator throughout: squad headings (`Squad A · 72%`), the document header, budget lines,
-  deadlines, dependencies, and the `Squad · Tribe` column of the dependency table. So did the
+  separator throughout: the squad headings, where it stood between the name and the progress
+  percentage, the document header, budget lines, deadlines, dependencies, and the squad/tribe
+  column of the dependency table. So did the
   PPTX export, the API-key label shown in the audit log, and the subject of every
   change-notification email. Each separator was replaced by what actually fits its sentence:
   parentheses for a supplementary figure (`Squad A (72%)`, `(Tribe)`), a comma inside a list of
@@ -366,7 +391,7 @@
   of a decision. Gatekeepers see everything; a squad leader sees their own decisions.
 - **Milestone-dependency deck (PPTX/HTML).** New export listing every jalon that
   depends on another team, grouped by the entity it waits on. Each line shows the
-  jalon, its source squad·tribe, the quarter, the owner and the status. By default
+  jalon, its source squad and tribe, the quarter, the owner and the status. By default
   it keeps only **cross-tribe** dependencies (`mode=cross_tribe`, the real
   coordination points); `mode=all` includes same-tribe and free-text actors. The
   table paginates across slides so no dependency is ever dropped. Available from
@@ -531,7 +556,7 @@ following additions and a finalization pass.
 - **Budget tracking** - the tribe leader sets the **total** envelope; the squad
   leader reports **spent** (to date) and **forecast** (projected landing) + a
   comment. Status is derived from forecast (else spent) vs total:
-  **on track** (< 90%) · **at risk** (90-100%) · **over** (> 100%, with overrun
+  **on track** (< 90%), **at risk** (90-100%), **over** (> 100%, with overrun
   amount & %). **Visible only** to the admin, the tribe leader, and the squad's
   own leader (enforced server-side; a squad leader never sees another squad's
   budget, and cannot change the total).
@@ -545,8 +570,8 @@ following additions and a finalization pass.
   gated to authorized viewers in both formats.
 
 ### Administration
-- **Redesigned admin navigation**: a grouped left sidebar (Organisation ·
-  Configuration · Authentification & Email · Modération & Journaux) replacing the
+- **Redesigned admin navigation**: a grouped left sidebar (Organisation,
+  Configuration, Authentification & Email, Modération & Journaux) replacing the
   flat tab bar. Sober, text-only, role-aware (empty groups hidden).
 
 ### Security / Transport (HTTPS)
@@ -570,11 +595,11 @@ following additions and a finalization pass.
   always picked up (no stale SPA after deploy).
 
 ### Docs & housekeeping
-- New **[Deployment Guide](docs/12-deployment-guide.md)** (VMware · GCP · S3NS ·
-  AWS · Azure).
+- New **[Deployment Guide](docs/12-deployment-guide.md)** (VMware, GCP, S3NS,
+  AWS, Azure).
 - Untracked compiled artifacts (`__pycache__`/`*.pyc`), removed Office temp lock
   files, hardened `.gitignore`, organized one-shot scripts.
 
 ### Migrations
-- `0013` squad budget + key messages · `0014` budget forecast ·
+- `0013` squad budget + key messages, `0014` budget forecast,
   `0015` squad products & hardware.

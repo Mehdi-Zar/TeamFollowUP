@@ -145,3 +145,46 @@ def test_disabling_org(client, seeded):
     assert client.get("/api/org").status_code == 200
     _disable(client, {"org": {"enabled": False}})
     assert client.get("/api/org").status_code == 404
+
+
+def test_every_declared_feature_flag_is_enforced_somewhere_server_side():
+    """A switch the server does not honour is a suggestion, not a setting.
+
+    `feed > kinds` was exactly that: it hid the selector in the SPA and gated
+    nothing, so a client could still post an "incident" with the feature off. Its
+    three siblings each carry a `require_module` on their route.
+
+    Two enforcement shapes are legitimate, and both count here:
+
+      * `require_module(module, feature)` as a route dependency, when the feature
+        owns whole endpoints (`pin`, `replies`, `reactions`, `overlap_alert`, ...);
+      * `is_active(..., module, feature)` in the code that acts, when the feature
+        governs a field or a side effect rather than a route (`feed > kinds`
+        coercing the kind, `notifications > email` skipping the send).
+
+    A feature matching neither is unenforced, and this fails until it is.
+    """
+    import re
+    from pathlib import Path
+
+    from app.modulesconfig import _defaults
+
+    app_dir = Path(__file__).resolve().parent.parent / "app"
+    sources = "\n".join(
+        p.read_text(encoding="utf-8") for p in app_dir.rglob("*.py")
+        if p.name not in ("modulesconfig.py", "deps.py")
+    )
+
+    unenforced = []
+    for module, feats in _defaults().items():
+        for feature in (k for k in feats if k != "enabled"):
+            pair = rf'["\']{module}["\']\s*,\s*["\']{feature}["\']'
+            # A bounded any-char run, not [^)]*: the first argument is usually
+            # `get_modules(db)`, whose own closing paren would end the class.
+            if not (re.search(r"require_module\(\s*" + pair, sources)
+                    or re.search(r"is_active\(.{0,40}?" + pair, sources)):
+                unenforced.append(f"{module}.{feature}")
+    assert unenforced == [], (
+        "feature flags with no server-side effect: " + ", ".join(unenforced)
+        + ". Gate the route with require_module, or check is_active where it acts."
+    )

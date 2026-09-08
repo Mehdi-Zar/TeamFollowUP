@@ -28,7 +28,7 @@ router = APIRouter(prefix="/api/roadmap-items", tags=["roadmap"],
 
 @router.get("/themes", response_model=list[str])
 def list_themes(db: Session = Depends(get_db), user: User = Depends(require_writer)):
-    """GET /api/roadmap-items/themes — distinct existing milestone themes,
+    """GET /api/roadmap-items/themes: distinct existing milestone themes,
     most-used first, for reuse/autocomplete.
 
     Requires ``require_writer``. Scoped to the writer's visibility: admins see
@@ -69,7 +69,7 @@ def _normalize_dependency(item: RoadmapItem) -> None:
 @router.post("", response_model=RoadmapItemOut, status_code=201)
 def create_item(payload: RoadmapItemCreate, db: Session = Depends(get_db),
                 user: User = Depends(require_writer)):
-    """POST /api/roadmap-items — create a milestone (201).
+    """POST /api/roadmap-items: create a milestone (201).
 
     Writer who leads the target squad only (``assert_leads_squad``). The
     dependency reference is normalized and the linked objective validated before
@@ -93,7 +93,7 @@ def create_item(payload: RoadmapItemCreate, db: Session = Depends(get_db),
 @router.put("/{item_id}", response_model=RoadmapItemOut)
 def update_item(item_id: int, payload: RoadmapItemUpdate, db: Session = Depends(get_db),
                 user: User = Depends(require_writer)):
-    """PUT /api/roadmap-items/{item_id} — update a milestone.
+    """PUT /api/roadmap-items/{item_id}: update a milestone.
 
     Writer who leads the milestone's squad only. Dependency fields are re-
     normalized and the objective link re-validated only when those fields are part
@@ -118,7 +118,7 @@ def update_item(item_id: int, payload: RoadmapItemUpdate, db: Session = Depends(
 
 @router.delete("/{item_id}", status_code=204)
 def delete_item(item_id: int, db: Session = Depends(get_db), user: User = Depends(require_writer)):
-    """DELETE /api/roadmap-items/{item_id} — delete a milestone (204).
+    """DELETE /api/roadmap-items/{item_id}: delete a milestone (204).
 
     Writer who leads the milestone's squad only. Audited, then
     ``notify_change(..., "roadmap", ...)``."""

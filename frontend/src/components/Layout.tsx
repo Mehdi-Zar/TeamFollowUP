@@ -1,4 +1,4 @@
-// Layout: the app chrome wrapping every authenticated route — collapsible left
+// Layout: the app chrome wrapping every authenticated route. Collapsible left
 // sidebar (nav), top bar (page title, notifications, ⌘K, language, admin
 // "view-as" impersonation, logout), an optional contextual sub-bar (tabs +
 // actions pushed by the current page via pageChrome), the impersonation banner,

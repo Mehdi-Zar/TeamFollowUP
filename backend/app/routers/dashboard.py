@@ -24,7 +24,7 @@ router = APIRouter(prefix="/api/dashboard", tags=["dashboard"],
 @router.get("", response_model=DashboardOut, dependencies=[Depends(require_capability("dashboard"))])
 def get_dashboard(year: int | None = Query(default=None), tribe_id: int | None = Query(default=None),
                   db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """GET /api/dashboard — squad cards + summary for a year.
+    """GET /api/dashboard: squad cards + summary for a year.
 
     Requires the ``dashboard`` module and capability. Squads are scoped to the
     caller's visible tribe; an admin (no scope) may filter by ``tribe_id``. Cards

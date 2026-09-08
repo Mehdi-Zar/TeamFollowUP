@@ -111,7 +111,7 @@ select.select-nice {
 .ts-clear { border: none; background: transparent; color: var(--grey); cursor: pointer; width: auto; height: 32px; padding: 0 4px; font-size: 13px; }
 .ts-clear:hover { color: var(--red); }
 
-/* Budget figures: label · % · amount, both numeric columns right-aligned */
+/* Budget figures: label, then %, then amount; both numeric columns right-aligned */
 .budget-figures { display: grid; grid-template-columns: 1fr auto auto; column-gap: 14px; row-gap: 6px; align-items: baseline; }
 .budget-figures .bf-pct { text-align: right; min-width: 44px; font-variant-numeric: tabular-nums; }
 .budget-figures .bf-amt { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
@@ -381,7 +381,7 @@ tr:last-child td { border-bottom: none; }
 }
 .menu-item:hover { background: var(--ice-soft); }
 
-/* Export / share dropdown — refined layout */
+/* Export / share dropdown: refined layout */
 .export-pop { width: 336px; padding: 6px; border-radius: 12px; }
 .export-row { display: flex; align-items: center; justify-content: space-between;
   gap: 10px; padding: 7px 8px 7px 10px; border-radius: 8px; }

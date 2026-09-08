@@ -25,7 +25,7 @@ router = APIRouter(prefix="/api/objectives", tags=["objectives"],
 @router.post("", response_model=ObjectiveOut, status_code=201)
 def create_objective(payload: ObjectiveCreate, db: Session = Depends(get_db),
                      user: User = Depends(get_current_user)):
-    """POST /api/objectives — create an objective for a squad (201).
+    """POST /api/objectives: create an objective for a squad (201).
 
     Requires ``assert_can_manage_objectives`` on the target squad. Audited, then
     ``notify_change(..., "objectives", ...)``."""
@@ -47,7 +47,7 @@ def create_objective(payload: ObjectiveCreate, db: Session = Depends(get_db),
 @router.put("/{objective_id}", response_model=ObjectiveOut)
 def update_objective(objective_id: int, payload: ObjectiveUpdate, db: Session = Depends(get_db),
                      user: User = Depends(get_current_user)):
-    """PUT /api/objectives/{objective_id} — update an objective.
+    """PUT /api/objectives/{objective_id}: update an objective.
 
     Requires ``assert_can_manage_objectives`` on the objective's squad. Audited,
     then ``notify_change(..., "objectives", ...)``."""
@@ -67,7 +67,7 @@ def update_objective(objective_id: int, payload: ObjectiveUpdate, db: Session = 
 
 @router.delete("/{objective_id}", status_code=204)
 def delete_objective(objective_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """DELETE /api/objectives/{objective_id} — delete an objective (204).
+    """DELETE /api/objectives/{objective_id}: delete an objective (204).
 
     Requires ``assert_can_manage_objectives`` on the objective's squad. Audited,
     then ``notify_change(..., "objectives", ...)``."""

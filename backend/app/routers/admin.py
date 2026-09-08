@@ -7,7 +7,7 @@ change-notification emails, log export, TLS/HTTPS certificates, and service
 API keys.
 
 Access model: most endpoints are admin-only (``require_admin``). User management
-is the exception — it is opened to tribe leaders as well, but strictly scoped to
+is the exception: it is opened to tribe leaders as well, but strictly scoped to
 their own tribe (see ``_require_user_manager`` / ``users_scope_tribe``). Every
 mutating endpoint writes an audit entry via ``record_audit`` before committing.
 """
@@ -63,7 +63,7 @@ def _assert_can_assign(db: Session, actor: User, role: str) -> None:
 
 @router.get("/users", response_model=list[UserOut])
 def list_users(db: Session = Depends(get_db), actor: User = Depends(get_current_user)):
-    """GET /api/admin/users — list users.
+    """GET /api/admin/users: list users.
 
     Admins and tribe leaders only. A tribe leader sees only users of their own
     tribe (scope from ``users_scope_tribe``); an admin sees everyone."""
@@ -77,7 +77,7 @@ def list_users(db: Session = Depends(get_db), actor: User = Depends(get_current_
 
 @router.post("/users", response_model=UserOut, status_code=201)
 def create_user(payload: UserCreate, db: Session = Depends(get_db), actor: User = Depends(get_current_user)):
-    """POST /api/admin/users — create a user (201).
+    """POST /api/admin/users: create a user (201).
 
     Admins and tribe leaders only. The actor must be allowed to assign the
     requested role, and a tribe leader may only create users inside their own
@@ -110,7 +110,7 @@ def create_user(payload: UserCreate, db: Session = Depends(get_db), actor: User 
 @router.put("/users/{user_id}", response_model=UserOut)
 def update_user(user_id: int, payload: UserUpdate, db: Session = Depends(get_db),
                 actor: User = Depends(get_current_user)):
-    """PUT /api/admin/users/{user_id} — update a user.
+    """PUT /api/admin/users/{user_id}: update a user.
 
     Admins and tribe leaders only, and the target must be inside the actor's
     scope (``can_manage_user``). Enforces several rules: role changes stay within
@@ -146,7 +146,7 @@ def update_user(user_id: int, payload: UserUpdate, db: Session = Depends(get_db)
 
 @router.delete("/users/{user_id}", status_code=204)
 def delete_user(user_id: int, db: Session = Depends(get_db), actor: User = Depends(get_current_user)):
-    """DELETE /api/admin/users/{user_id} — delete a user (204).
+    """DELETE /api/admin/users/{user_id}: delete a user (204).
 
     Admins and tribe leaders only, target must be in the actor's scope. The
     break-glass account cannot be deleted, and nobody may delete their own
@@ -168,14 +168,14 @@ def delete_user(user_id: int, db: Session = Depends(get_db), actor: User = Depen
 
 @router.get("/settings")
 def get_settings_endpoint(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
-    """GET /api/admin/settings — read general application settings. Admin only."""
+    """GET /api/admin/settings: read general application settings. Admin only."""
     return get_general(db)
 
 
 @router.put("/settings")
 def update_settings_endpoint(payload: dict = Body(...), db: Session = Depends(get_db),
                              admin: User = Depends(require_admin)):
-    """PUT /api/admin/settings — update general settings. Admin only; audited."""
+    """PUT /api/admin/settings: update general settings. Admin only; audited."""
     cfg = set_general(db, payload)
     record_audit(db, admin.id, "settings.update", entity="settings", detail=payload)
     db.commit()
@@ -184,7 +184,7 @@ def update_settings_endpoint(payload: dict = Body(...), db: Session = Depends(ge
 
 @router.get("/auth-config")
 def read_auth_config(request: Request, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
-    """GET /api/admin/auth-config — read the OIDC/SAML auth config. Admin only.
+    """GET /api/admin/auth-config: read the OIDC/SAML auth config. Admin only.
 
     ``request`` lets the SSO URLs be derived from the URL the admin is actually
     browsing when no public base URL is configured (see authconfig)."""
@@ -193,7 +193,7 @@ def read_auth_config(request: Request, db: Session = Depends(get_db), admin: Use
 
 @router.put("/auth-config")
 def update_auth_config(request: Request, payload: dict = Body(...), db: Session = Depends(get_db), admin: User = Depends(require_admin)):
-    """PUT /api/admin/auth-config — update the OIDC/SAML auth config. Admin only;
+    """PUT /api/admin/auth-config: update the OIDC/SAML auth config. Admin only;
     audits which providers are enabled."""
     cfg = set_auth_config(db, payload, request)
     record_audit(db, admin.id, "auth_config.update", entity="auth_config",
@@ -205,7 +205,7 @@ def update_auth_config(request: Request, payload: dict = Body(...), db: Session 
 @router.post("/auth-config/test")
 def test_auth_config(request: Request, payload: dict = Body(...), db: Session = Depends(get_db),
                      admin: User = Depends(require_admin)):
-    """POST /api/admin/auth-config/test — probe the configured IdP. Admin only.
+    """POST /api/admin/auth-config/test: probe the configured IdP. Admin only.
 
     Tests what is currently on screen, not only what is saved: any field sent in
     the body is layered over the stored config, so an administrator can check a
@@ -234,14 +234,14 @@ def test_auth_config(request: Request, payload: dict = Body(...), db: Session = 
 
 @router.get("/smtp-config")
 def read_smtp_config(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
-    """GET /api/admin/smtp-config — read outbound email (SMTP) config. Admin only."""
+    """GET /api/admin/smtp-config: read outbound email (SMTP) config. Admin only."""
     from ..smtpconfig import get_smtp
     return get_smtp(db)
 
 
 @router.put("/smtp-config")
 def update_smtp_config(payload: dict = Body(...), db: Session = Depends(get_db), admin: User = Depends(require_admin)):
-    """PUT /api/admin/smtp-config — update the SMTP config. Admin only; audited."""
+    """PUT /api/admin/smtp-config: update the SMTP config. Admin only; audited."""
     from ..smtpconfig import set_smtp
     cfg = set_smtp(db, payload)
     record_audit(db, admin.id, "smtp_config.update", entity="smtp", detail={"enabled": cfg["enabled"], "host": cfg["host"]})
@@ -251,7 +251,7 @@ def update_smtp_config(payload: dict = Body(...), db: Session = Depends(get_db),
 
 @router.post("/smtp-config/test")
 def test_smtp(payload: dict = Body(...), db: Session = Depends(get_db), admin: User = Depends(require_admin)):
-    """POST /api/admin/smtp-config/test — send a test email to check SMTP.
+    """POST /api/admin/smtp-config/test: send a test email to check SMTP.
 
     Admin only. Sends to ``payload.to`` or, by default, the admin's own address.
     Fails with 400 if SMTP is disabled."""
@@ -268,7 +268,7 @@ def test_smtp(payload: dict = Body(...), db: Session = Depends(get_db), admin: U
 
 @router.get("/personas")
 def read_personas(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
-    """GET /api/admin/personas — list personas (roles) and the full capability
+    """GET /api/admin/personas: list personas (roles) and the full capability
     catalogue the UI can toggle. Admin only."""
     from ..personasconfig import get_personas, CAPABILITIES
     return {"capabilities": CAPABILITIES, "personas": get_personas(db)}
@@ -277,7 +277,7 @@ def read_personas(db: Session = Depends(get_db), admin: User = Depends(require_a
 @router.put("/personas")
 def update_personas(payload: dict = Body(...), db: Session = Depends(get_db),
                     admin: User = Depends(require_admin)):
-    """PUT /api/admin/personas — replace the persona definitions. Admin only.
+    """PUT /api/admin/personas: replace the persona definitions. Admin only.
 
     Side effect: any user whose persona no longer exists is downgraded to
     ``member`` (the break-glass account is left untouched) so nobody is stranded
@@ -297,7 +297,7 @@ def update_personas(payload: dict = Body(...), db: Session = Depends(get_db),
 
 @router.get("/modules-config")
 def read_modules_config(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
-    """GET /api/admin/modules-config — read feature-module enablement. Admin only."""
+    """GET /api/admin/modules-config: read feature-module enablement. Admin only."""
     from ..modulesconfig import get_modules
     return get_modules(db)
 
@@ -305,7 +305,7 @@ def read_modules_config(db: Session = Depends(get_db), admin: User = Depends(req
 @router.put("/modules-config")
 def update_modules_config(payload: dict = Body(...), db: Session = Depends(get_db),
                           admin: User = Depends(require_admin)):
-    """PUT /api/admin/modules-config — enable/disable feature modules. Admin only;
+    """PUT /api/admin/modules-config: enable/disable feature modules. Admin only;
     audits which modules ended up enabled."""
     from ..modulesconfig import set_modules
     cfg = set_modules(db, payload)
@@ -317,7 +317,7 @@ def update_modules_config(payload: dict = Body(...), db: Session = Depends(get_d
 
 @router.get("/report-config")
 def read_report_config(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
-    """GET /api/admin/report-config — read the weekly-report schedule/recipients.
+    """GET /api/admin/report-config: read the weekly-report schedule/recipients.
     Admin only."""
     from ..reportconfig import get_report
     return get_report(db)
@@ -326,7 +326,7 @@ def read_report_config(db: Session = Depends(get_db), admin: User = Depends(requ
 @router.put("/report-config")
 def update_report_config(payload: dict = Body(...), db: Session = Depends(get_db),
                          admin: User = Depends(require_admin)):
-    """PUT /api/admin/report-config — update the weekly-report schedule. Admin
+    """PUT /api/admin/report-config: update the weekly-report schedule. Admin
     only; audited. ``last_sent_week`` is scheduler bookkeeping and is stripped
     from the payload so the UI can never overwrite it."""
     from ..reportconfig import set_report
@@ -343,7 +343,7 @@ def update_report_config(payload: dict = Body(...), db: Session = Depends(get_db
 @router.post("/report-config/test")
 def test_report_config(payload: dict = Body(default=None), db: Session = Depends(get_db),
                        admin: User = Depends(require_admin)):
-    """POST /api/admin/report-config/test — send the weekly report now to the
+    """POST /api/admin/report-config/test: send the weekly report now to the
     admin (or a chosen address) as a check. Admin only.
 
     Builds the current-year report, renders the HTML body and (if python-pptx is
@@ -378,7 +378,7 @@ def test_report_config(payload: dict = Body(default=None), db: Session = Depends
 # ---------- Change-notification emails (on modification) ----------
 @router.get("/change-notify-config")
 def read_change_notify_config(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
-    """GET /api/admin/change-notify-config — read the on-modification email config.
+    """GET /api/admin/change-notify-config: read the on-modification email config.
     Admin only. Also returns the full ``_all_events`` catalogue so the UI can
     render every available trigger condition."""
     from ..changeconfig import get_change_notify, ALL_EVENTS
@@ -390,7 +390,7 @@ def read_change_notify_config(db: Session = Depends(get_db), admin: User = Depen
 @router.put("/change-notify-config")
 def update_change_notify_config(payload: dict = Body(...), db: Session = Depends(get_db),
                                 admin: User = Depends(require_admin)):
-    """PUT /api/admin/change-notify-config — update the on-modification email
+    """PUT /api/admin/change-notify-config: update the on-modification email
     config. Admin only; audited. Keys prefixed with ``_`` are UI-only helpers
     (e.g. ``_all_events``) and are stripped before saving."""
     from ..changeconfig import set_change_notify
@@ -407,7 +407,7 @@ def update_change_notify_config(payload: dict = Body(...), db: Session = Depends
 @router.post("/change-notify-config/test")
 def test_change_notify_config(payload: dict = Body(default=None), db: Session = Depends(get_db),
                               admin: User = Depends(require_admin)):
-    """POST /api/admin/change-notify-config/test — send a sample change
+    """POST /api/admin/change-notify-config/test: send a sample change
     notification (a real squad's export) to verify setup. Admin only.
 
     Uses ``payload.squad_id`` or the first squad by display order. Fails with 400
@@ -446,7 +446,7 @@ def test_change_notify_config(payload: dict = Body(default=None), db: Session = 
 
 @router.get("/log-export-config")
 def read_log_export_config(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
-    """GET /api/admin/log-export-config — read the audit-log export config (e.g.
+    """GET /api/admin/log-export-config: read the audit-log export config (e.g.
     SIEM destination). Admin only; secrets stay masked."""
     from ..logexportconfig import get_log_export
     return get_log_export(db)
@@ -455,7 +455,7 @@ def read_log_export_config(db: Session = Depends(get_db), admin: User = Depends(
 @router.put("/log-export-config")
 def update_log_export_config(payload: dict = Body(...), db: Session = Depends(get_db),
                              admin: User = Depends(require_admin)):
-    """PUT /api/admin/log-export-config — update the log-export config. Admin
+    """PUT /api/admin/log-export-config: update the log-export config. Admin
     only; audited."""
     from ..logexportconfig import set_log_export
     cfg = set_log_export(db, payload)
@@ -467,7 +467,7 @@ def update_log_export_config(payload: dict = Body(...), db: Session = Depends(ge
 
 @router.post("/log-export-config/test")
 def test_log_export(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
-    """POST /api/admin/log-export-config/test — push a single synthetic entry to
+    """POST /api/admin/log-export-config/test: push a single synthetic entry to
     the configured destination to check connectivity. Admin only.
 
     Reads the config with secrets revealed (needed to actually connect). Fails
@@ -487,7 +487,7 @@ def test_log_export(db: Session = Depends(get_db), admin: User = Depends(require
 @router.post("/log-export-config/flush")
 def flush_log_export(payload: dict = Body(default=None), db: Session = Depends(get_db),
                      admin: User = Depends(require_admin)):
-    """POST /api/admin/log-export-config/flush — export the most recent audit
+    """POST /api/admin/log-export-config/flush: export the most recent audit
     entries on demand. Admin only.
 
     ``payload.limit`` (default 200) is clamped to 1..1000. Fails with 400 if
@@ -522,7 +522,7 @@ async def _text_from(upload: UploadFile | None, pasted: str | None) -> str:
 
 @router.get("/tls-config")
 def read_tls_config(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
-    """GET /api/admin/tls-config — read the current TLS status (active cert +
+    """GET /api/admin/tls-config: read the current TLS status (active cert +
     trusted CAs). Admin only."""
     from ..tlsconfig import status
     return status(db)
@@ -548,7 +548,7 @@ def tls_set_enabled(payload: dict = Body(default=None), db: Session = Depends(ge
 @router.post("/tls-config/self-signed")
 def tls_regenerate_self_signed(payload: dict = Body(default=None), db: Session = Depends(get_db),
                                admin: User = Depends(require_admin)):
-    """POST /api/admin/tls-config/self-signed — (re)generate a self-signed cert.
+    """POST /api/admin/tls-config/self-signed: (re)generate a self-signed cert.
     Admin only.
 
     ``cn`` defaults to ``localhost``; ``sans`` may be a list or a comma/newline
@@ -578,7 +578,7 @@ async def tls_import_pem(
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
 ):
-    """POST /api/admin/tls-config/import-pem — install a cert + private key from
+    """POST /api/admin/tls-config/import-pem: install a cert + private key from
     PEM (uploaded files or pasted text). Admin only.
 
     Both cert and key are required (400 otherwise); an optional ``passphrase``
@@ -607,7 +607,7 @@ async def tls_import_pfx(
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
 ):
-    """POST /api/admin/tls-config/import-pfx — install a cert + key from a PKCS#12
+    """POST /api/admin/tls-config/import-pfx: install a cert + key from a PKCS#12
     (.pfx) bundle. Admin only.
 
     Empty file yields 400; a wrong password or malformed bundle also yields 400.
@@ -636,7 +636,7 @@ async def tls_add_ca(
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
 ):
-    """POST /api/admin/tls-config/ca — add a trusted CA certificate (upload or
+    """POST /api/admin/tls-config/ca: add a trusted CA certificate (upload or
     pasted text), with an optional friendly ``name``. Admin only.
 
     Empty/invalid input yields 400. Audited."""
@@ -657,7 +657,7 @@ async def tls_add_ca(
 
 @router.delete("/tls-config/ca/{ca_id}")
 def tls_remove_ca(ca_id: str, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
-    """DELETE /api/admin/tls-config/ca/{ca_id} — remove a trusted CA. Admin only.
+    """DELETE /api/admin/tls-config/ca/{ca_id}: remove a trusted CA. Admin only.
     Unknown id yields 404. Audited."""
     from ..tlsconfig import remove_ca
     try:
@@ -671,7 +671,7 @@ def tls_remove_ca(ca_id: str, db: Session = Depends(get_db), admin: User = Depen
 
 @router.get("/tls-config/ca/{ca_id}/download")
 def tls_download_ca(ca_id: str, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
-    """GET /api/admin/tls-config/ca/{ca_id}/download — download a trusted CA as a
+    """GET /api/admin/tls-config/ca/{ca_id}/download: download a trusted CA as a
     PEM attachment. Admin only. Unknown id yields 404."""
     from ..tlsconfig import export_ca_pem
     try:
@@ -683,7 +683,7 @@ def tls_download_ca(ca_id: str, db: Session = Depends(get_db), admin: User = Dep
 
 @router.get("/tls-config/active/download")
 def tls_download_active(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
-    """GET /api/admin/tls-config/active/download — download the active server
+    """GET /api/admin/tls-config/active/download: download the active server
     certificate as a PEM attachment. Admin only. 404 if none is set."""
     from ..tlsconfig import export_active_cert_pem
     try:
@@ -792,7 +792,7 @@ def clear_logs(db: Session = Depends(get_db), admin: User = Depends(require_admi
 
 @router.get("/api-keys")
 def list_api_keys(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
-    """GET /api/admin/api-keys — list API keys (public view: prefix only, never
+    """GET /api/admin/api-keys: list API keys (public view: prefix only, never
     the secret) plus the catalogue of assignable scopes. Admin only."""
     from ..apikeys import SCOPES, public
     from ..models import ApiKey
@@ -803,7 +803,7 @@ def list_api_keys(db: Session = Depends(get_db), admin: User = Depends(require_a
 @router.post("/api-keys", status_code=201)
 def create_api_key(payload: dict = Body(...), db: Session = Depends(get_db),
                    admin: User = Depends(require_admin)):
-    """POST /api/admin/api-keys — mint a service API key (201). Admin only.
+    """POST /api/admin/api-keys: mint a service API key (201). Admin only.
 
     The plaintext secret is returned HERE AND NOWHERE ELSE (only its hash is
     stored). Requires a name and at least one valid scope; an optional
@@ -855,10 +855,10 @@ def create_api_key(payload: dict = Body(...), db: Session = Depends(get_db),
 @router.post("/api-keys/{key_id}/revoke")
 def revoke_api_key(key_id: int, db: Session = Depends(get_db),
                    admin: User = Depends(require_admin)):
-    """POST /api/admin/api-keys/{key_id}/revoke — revoke a key. Admin only.
+    """POST /api/admin/api-keys/{key_id}/revoke: revoke a key. Admin only.
 
     Revoking is immediate and irreversible; the row is kept (not deleted) for the
-    audit trail. Idempotent — re-revoking an already-revoked key is a no-op.
+    audit trail. Idempotent: re-revoking an already-revoked key is a no-op.
     Unknown id yields 404. Audited on the first revoke."""
     from ..apikeys import public
     from ..models import ApiKey, utcnow
@@ -876,7 +876,7 @@ def revoke_api_key(key_id: int, db: Session = Depends(get_db),
 @router.delete("/api-keys/{key_id}", status_code=204)
 def delete_api_key(key_id: int, db: Session = Depends(get_db),
                    admin: User = Depends(require_admin)):
-    """DELETE /api/admin/api-keys/{key_id} — permanently delete a key (204). Admin
+    """DELETE /api/admin/api-keys/{key_id}: permanently delete a key (204). Admin
     only. Unlike revoke, this removes the row entirely. Unknown id yields 404.
     Audited."""
     from ..models import ApiKey
@@ -900,7 +900,7 @@ _PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.prese
 
 @router.get("/import-org/template")
 def download_org_template(admin: User = Depends(require_admin)):
-    """GET /api/admin/import-org/template — download the blank Excel template
+    """GET /api/admin/import-org/template: download the blank Excel template
     (4 sheets: Tribu / Squads / Initiatives / OTD) to fill in. Admin only."""
     from ..import_org import template_bytes
     return Response(
@@ -916,7 +916,7 @@ async def import_org_upload(
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
 ):
-    """POST /api/admin/import-org — upload a filled Excel (.xlsx) or YAML file and
+    """POST /api/admin/import-org: upload a filled Excel (.xlsx) or YAML file and
     import the organisation (tribe, squads + leaders, initiatives, OTD). Admin
     only. Idempotent: re-running updates existing rows instead of duplicating.
 

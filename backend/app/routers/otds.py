@@ -49,7 +49,7 @@ def _otd_payload(otd: Otd) -> dict:
 @router.get("/candidate-jalons")
 def candidate_jalons(tribe_id: int | None = Query(default=None), year: int | None = Query(default=None),
                      db: Session = Depends(get_db), user: User = Depends(require_tribe_or_admin)):
-    """GET /api/otds/candidate-jalons — milestones of the scope's squads, for
+    """GET /api/otds/candidate-jalons: milestones of the scope's squads, for
     assigning them to an OTD. Tribe leader or admin.
 
     Scope: an admin may target any ``tribe_id``; a tribe leader is pinned to their
@@ -112,7 +112,7 @@ def _validate_owner(db: Session, tribe_id: int, owner_user_id: int | None) -> No
 @router.post("", status_code=201)
 def create_otd(payload: OtdCreate, db: Session = Depends(get_db),
                user: User = Depends(require_tribe_or_admin)):
-    """POST /api/otds — create an OTD (201). Tribe leader or admin.
+    """POST /api/otds: create an OTD (201). Tribe leader or admin.
 
     Requires ``assert_can_manage_tribe_reporting`` for the target tribe (404 if
     unknown). Any assigned owner must be a squad leader of that tribe
@@ -134,7 +134,7 @@ def create_otd(payload: OtdCreate, db: Session = Depends(get_db),
 @router.put("/{otd_id}")
 def update_otd(otd_id: int, payload: OtdUpdate, db: Session = Depends(get_db),
                user: User = Depends(require_tribe_or_admin)):
-    """PUT /api/otds/{otd_id} — update an OTD. Tribe leader or admin.
+    """PUT /api/otds/{otd_id}: update an OTD. Tribe leader or admin.
 
     Requires ``assert_can_manage_tribe_reporting`` for the OTD's tribe; a changed
     owner is re-validated (``_validate_owner``). Audited."""
@@ -156,7 +156,7 @@ def update_otd(otd_id: int, payload: OtdUpdate, db: Session = Depends(get_db),
 @router.put("/{otd_id}/jalons")
 def set_otd_jalons(otd_id: int, payload: OtdMembers, db: Session = Depends(get_db),
                    user: User = Depends(require_tribe_or_admin)):
-    """PUT /api/otds/{otd_id}/jalons — set the milestones that make up this OTD
+    """PUT /api/otds/{otd_id}/jalons: set the milestones that make up this OTD
     (replaces the current set). Tribe leader or admin.
 
     Requires ``assert_can_manage_tribe_reporting``. Only milestones from the OTD's
@@ -190,7 +190,7 @@ def set_otd_jalons(otd_id: int, payload: OtdMembers, db: Session = Depends(get_d
 @router.delete("/{otd_id}", status_code=204)
 def delete_otd(otd_id: int, db: Session = Depends(get_db),
                user: User = Depends(require_tribe_or_admin)):
-    """DELETE /api/otds/{otd_id} — delete an OTD (204). Tribe leader or admin,
+    """DELETE /api/otds/{otd_id}: delete an OTD (204). Tribe leader or admin,
     requires ``assert_can_manage_tribe_reporting``.
 
     Side effect: member milestones keep existing; only their ``otd_id`` link is

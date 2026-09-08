@@ -1,4 +1,4 @@
-// ui: the shared design-system primitives used across the app — selectable list
+// ui: the shared design-system primitives used across the app. Selectable list
 // items, the modal dialog, collapsible cards, RAG/health/freshness badges,
 // progress indicators, spinner, and error/empty states. Keeping them here makes
 // every screen look and behave consistently and accessibly.

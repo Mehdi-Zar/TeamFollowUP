@@ -1,6 +1,6 @@
 # ADR-0011 - API keys and scopes (machine access)
 
-**Status:** Accepted · **Date:** 2026-07-13
+**Status:** Accepted, **Date:** 2026-07-13
 
 ## Context
 

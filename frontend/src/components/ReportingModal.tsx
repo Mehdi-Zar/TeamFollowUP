@@ -1,5 +1,5 @@
 // ReportingModal: the "Subscribe to a report" popup opened from the dashboard.
-// It adapts to the persona — admins get the org-wide reporting configuration
+// It adapts to the persona: admins get the org-wide reporting configuration
 // (ReportingAdmin), everyone else manages their personal delivery schedule
 // (which weekdays + hour to receive the weekly report by email).
 import { useEffect, useState } from "react";

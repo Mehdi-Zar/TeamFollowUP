@@ -28,7 +28,7 @@ from app import report as report_mod
 from app.models import Initiative, KeyMessage, Objective, RoadmapItem, Squad, SquadBudget, User
 
 YEAR = 2026
-BANNED = {"—": "em dash", "·": "middot"}
+BANNED = {"\u2014": "em dash", "\u00b7": "middot"}  # escaped, so this file is clean too
 
 
 @pytest.fixture()

@@ -316,6 +316,6 @@ then GitOps as the need (and the environment's openness) grows.
 
 ---
 
-*See also:* [12 - Deployment Guide](12-deployment-guide.md) ·
-[06 - Operations Runbook](06-operations-runbook.md) ·
+*See also:* [12 - Deployment Guide](12-deployment-guide.md),
+[06 - Operations Runbook](06-operations-runbook.md),
 [08 - Testing Strategy](08-testing-strategy.md).

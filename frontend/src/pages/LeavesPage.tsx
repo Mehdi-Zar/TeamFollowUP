@@ -7,6 +7,7 @@
 // like `can_edit` / `can_decide` on each Leave.
 import { useEffect, useMemo, useState } from "react";
 import { api, ApiError } from "../api";
+import { useModule } from "../config";
 import { useI18n } from "../i18n";
 import { useAuth } from "../auth";
 import { Modal, Spinner } from "../components/ui";
@@ -116,8 +117,10 @@ export default function LeavesPage() {
  * a coloured chip on the days it covers.
  *
  * Business logic:
- * - Fetches leaves and "overlaps" for the visible grid range; overlaps (days where
- *   several people are off) drive an amber warning banner and per-cell highlight.
+ * - Fetches leaves and, when `leaves > overlap_alert` is on, "overlaps" for the
+ *   visible grid range; overlaps (days where several people are off) drive an
+ *   amber warning banner and per-cell highlight. With the feature off the request
+ *   is not made at all, rather than made and refused.
  * - Only approved + pending leaves are shown; a ½ marker denotes a half-day at the
  *   start/end, and a dot marks still-pending requests.
  * - Re-fetches on month change or when `bump` changes (post-mutation refresh).
@@ -126,6 +129,11 @@ export default function LeavesPage() {
  */
 function CalendarView({ bump, onOpen }: { bump: number; onOpen: (l: Leave) => void }) {
   const { t, lang } = useI18n();
+  // The overlap endpoint is gated by `leaves > overlap_alert` server-side. Ask
+  // first rather than calling it and swallowing the 404: a request the app knows
+  // will be refused is noise in the network panel and in the access logs, and it
+  // left this feature as the only one in the module map with no gate on screen.
+  const overlapOn = useModule()("leaves", "overlap_alert");
   const [cursor, setCursor] = useState(() => startOfMonth(new Date()));
   const [leaves, setLeaves] = useState<Leave[] | null>(null);
   const [overlaps, setOverlaps] = useState<LeaveOverlapDay[]>([]);
@@ -138,8 +146,9 @@ function CalendarView({ bump, onOpen }: { bump: number; onOpen: (l: Leave) => vo
   useEffect(() => {
     const qs = `from=${iso(gridStart)}&to=${iso(gridEnd)}`;
     api.get<Leave[]>(`/api/leaves?${qs}`).then(setLeaves).catch(() => setLeaves([]));
+    if (!overlapOn) { setOverlaps([]); return; }
     api.get<LeaveOverlapDay[]>(`/api/leaves/overlaps?${qs}`).then(setOverlaps).catch(() => setOverlaps([]));
-  }, [gridStart.getTime(), bump]);
+  }, [gridStart.getTime(), bump, overlapOn]);
 
   const monthLabel = cursor.toLocaleDateString(lang === "en" ? "en-GB" : "fr-FR", { month: "long", year: "numeric" });
   const overlapByDay = useMemo(() => {

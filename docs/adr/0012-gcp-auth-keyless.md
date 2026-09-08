@@ -1,6 +1,6 @@
 # ADR-0012 - GCP authentication for log export: keyless by default
 
-**Status:** Accepted · **Date:** 2026-07-17
+**Status:** Accepted, **Date:** 2026-07-17
 
 ## Context
 

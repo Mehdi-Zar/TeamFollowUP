@@ -46,7 +46,7 @@ def main():
 
         print(f"Deleted {len(oids)} fake users. Remaining accounts:")
         for u in db.query(User).order_by(User.id).all():
-            print(f"  · #{u.id} {u.email:22} {u.role:13} tribe={u.tribe_id} break_glass={u.is_break_glass}")
+            print(f"  - #{u.id} {u.email:22} {u.role:13} tribe={u.tribe_id} break_glass={u.is_break_glass}")
         if sl and portal:
             print(f"\nSquad leader {sl.email} now leads '{portal.name}'.")
     finally:

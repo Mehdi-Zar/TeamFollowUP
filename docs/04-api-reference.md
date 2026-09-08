@@ -51,16 +51,16 @@ required scope.
 ## Endpoint map (by router)
 
 ### auth (`/api/auth`)
-`GET /config` · `POST /login` · `POST /logout` · `GET /me` · `GET /me/permissions` (role, admin tabs,
-assignable roles, **capabilities**, impersonation) · OIDC: `GET /oidc/login`,`GET /oidc/callback` ·
-SAML: `GET /saml/metadata`,`GET /saml/login`,`POST /saml/acs` · `POST /impersonate` · `POST /stop-impersonation`
+`GET /config`; `POST /login`; `POST /logout`; `GET /me`; `GET /me/permissions` (role, admin tabs,
+assignable roles, **capabilities**, impersonation); OIDC: `GET /oidc/login`,`GET /oidc/callback`;
+SAML: `GET /saml/metadata`,`GET /saml/login`,`POST /saml/acs`; `POST /impersonate`; `POST /stop-impersonation`
 
 ### tribes (`/api/tribes`)
-`GET ""` · `GET /org-overview` · `POST ""` (admin) · `PUT /{id}` · `DELETE /{id}` (admin)
+`GET ""`; `GET /org-overview`; `POST ""` (admin); `PUT /{id}`; `DELETE /{id}` (admin)
 
 ### squads (`/api/squads`)
-`GET ""` · `GET /{id}` (detail) · `GET /{id}/dependents` · `GET /{id}/roadmap.pptx` · `GET /{id}/roadmap.html`
-· `POST ""` · `PUT /{id}` · `DELETE /{id}` · `PUT /{id}/quarter-progress`
+`GET ""`; `GET /{id}` (detail); `GET /{id}/dependents`; `GET /{id}/roadmap.pptx`; `GET /{id}/roadmap.html`;
+`POST ""`; `PUT /{id}`; `DELETE /{id}`; `PUT /{id}/quarter-progress`
 
 ### dashboard (`/api/dashboard`)
 `GET ""` - consolidated cards + summary. Gated by module `dashboard` + capability `dashboard`.
@@ -69,84 +69,86 @@ SAML: `GET /saml/metadata`,`GET /saml/login`,`POST /saml/acs` · `POST /imperson
 `GET /matrix` - in-app global roadmap matrix. Gated by `squad_content.roadmap` module + `roadmap` capability.
 
 ### org (`/api/org`)  - module `org` + capability `org`
-`GET ""` · `POST ""` · `PUT /{id}` · `DELETE /{id}` (edit = tribe/admin)
+`GET ""`; `POST ""`; `PUT /{id}`; `DELETE /{id}` (edit = tribe/admin)
 
 ### objectives (`/api/objectives`) - module `squad_content.objectives`
-`POST ""` · `PUT /{id}` · `DELETE /{id}` (manage = admin/tribe). Status is derived; not settable.
+`POST ""`; `PUT /{id}`; `DELETE /{id}` (manage = admin/tribe). Status is derived; not settable.
 
 ### roadmap (`/api/roadmap-items`) - module `squad_content.roadmap`
-`POST ""` · `PUT /{id}` · `DELETE /{id}` (writer + can-edit-squad). Normalizes EA/GA + dependency.
+`POST ""`; `PUT /{id}`; `DELETE /{id}` (writer + can-edit-squad). Normalizes EA/GA + dependency.
 
 ### kpis (`/api/kpis`) - module `squad_content.kpis`
-`POST ""` · `PUT /{id}` · `DELETE /{id}`
+`POST ""`; `PUT /{id}`; `DELETE /{id}`
 
 ### members (`/api/members`)
-`POST ""` · `PUT /{id}` · `DELETE /{id}`
+`POST ""`; `PUT /{id}`; `DELETE /{id}`
 
 ### snapshots (`/api/squads/{id}/snapshots`) - module `reporting`
-`POST ""` (submit cycle) · `GET ""` · `GET /{snapId}` · `GET /{snapId}/compare`
+`POST ""` (submit cycle); `GET ""`; `GET /{snapId}`; `GET /{snapId}/compare`
 
 ### progress (`/api`) - module `review`
-`GET /squads/{id}/progress` · `POST /squads/{id}/progress` (review note, module `review.notes`) ·
-`GET /progress/review` (**capability `review`**, tribe-scoped) · `POST /admin/progress/run-weekly` (admin)
+`GET /squads/{id}/progress`; `POST /squads/{id}/progress` (review note, module `review.notes`);
+`GET /progress/review` (**capability `review`**, tribe-scoped); `POST /admin/progress/run-weekly` (admin)
 
 ### feed (`/api/feed`) - module `feed` + capability `feed`
-`GET ""` · `POST ""` · `DELETE /{id}` · `PUT /{id}/pin` (feature `pin`) · `POST /{id}/replies` (feature
-`replies`) · `DELETE /replies/{id}` · `POST /{id}/reactions` (feature `reactions`)
+`GET ""`; `POST ""`; `DELETE /{id}`; `PUT /{id}/pin` (feature `pin`); `POST /{id}/replies` (feature
+`replies`); `DELETE /replies/{id}`; `POST /{id}/reactions` (feature `reactions`)
 Feature `kinds` gates no route of its own, it gates a field: with it off, `POST ""` stores
 `info` whatever kind was sent and the `?kind=` filter on `GET ""` is ignored, so the switch
 removes the taxonomy instead of only hiding its selector.
 
 ### notifications (`/api/notifications`) - module `notifications.inapp`
-`GET ""` · `POST /{id}/read` · `POST /read-all` · `GET /me/preferences` · `PUT /me/preferences`
+`GET ""`; `POST /{id}/read`; `POST /read-all`; `GET /me/preferences`; `PUT /me/preferences`
 
 ### reports (`/api/reports`) - module `review.weekly_report`
-`GET /weekly.html` · `GET /weekly.pptx` · `GET /roadmap.html` · `GET /roadmap.pptx` (supports `squad_ids`)
-· `GET /dependencies.html` · `GET /dependencies.pptx` (milestone dependencies grouped by the entity waited on; `mode=cross_tribe`\|`all`, supports `tribe_id`/`squad_ids`/`year`; module `squad_content.roadmap`)
-· `POST /weekly/email` · `GET /subscriptions` · `GET /subscription` · `PUT /subscription`
+`GET /weekly.html`; `GET /weekly.pptx`; `GET /roadmap.html`; `GET /roadmap.pptx` (supports `squad_ids`);
+`GET /dependencies.html`; `GET /dependencies.pptx` (milestone dependencies grouped by the entity waited on; `mode=cross_tribe`\|`all`, supports `tribe_id`/`squad_ids`/`year`; module `squad_content.roadmap`);
+`POST /weekly/email`; `GET /subscriptions`; `GET /subscription`; `PUT /subscription`
 
 ### leaves CSV export
 `GET /api/leaves/export.csv` - absences export (scoped to the caller's tribe); part of the `leaves` module.
 
 ### actions (`/api`) - review action items
-`GET /squads/{id}/actions` · `POST /squads/{id}/actions` · `PUT /actions/{id}` · `DELETE /actions/{id}`
+`GET /squads/{id}/actions`; `POST /squads/{id}/actions`; `PUT /actions/{id}`; `DELETE /actions/{id}`
 
 ### leaves (`/api/leaves`) - module `leaves` + capability `leaves`
-Types: `GET /types` (`?include_inactive`) · `POST /types` · `PUT /types/{id}` · `DELETE /types/{id}` (admin) ·
-Config (per tribe): `GET /config` · `PUT /config` (tribe_leader/admin) · People picker: `GET /people` ·
-Leaves: `GET ""` (filters `from/to/user_id/squad_id/status/mine`) · `POST ""` · `PUT /{id}` ·
-`POST /{id}/decision` (approve/reject, leaders) · `DELETE /{id}` · `GET /overlaps` (`from/to`, module
-`leaves.overlap_alert`) · `GET /export.csv`. Visibility is tribe-scoped (admins: all); the motif is
+`GET /overlaps` additionally requires the `overlap_alert` feature; with it off the SPA does
+not call it at all, so the banner simply never appears.
+Types: `GET /types` (`?include_inactive`); `POST /types`; `PUT /types/{id}`; `DELETE /types/{id}` (admin);
+Config (per tribe): `GET /config`; `PUT /config` (tribe_leader/admin); People picker: `GET /people`;
+Leaves: `GET ""` (filters `from/to/user_id/squad_id/status/mine`); `POST ""`; `PUT /{id}`;
+`POST /{id}/decision` (approve/reject, leaders); `DELETE /{id}`; `GET /overlaps` (`from/to`, module
+`leaves.overlap_alert`); `GET /export.csv`. Visibility is tribe-scoped (admins: all); the motif is
 returned only to the person, their leader and admins.
 
 ### steerco (`/api/steerco`) - module `steerco` (off by default)
 Opt-in: `PUT /squad/{id}/enabled` (writer + can-edit-squad; also settable via `PUT /api/squads/{id}`
-with `steerco_enabled`) · Snapshots: `GET /squad/{id}?period=` (fill status + who/when) ·
-`PUT /squad/{id}?period=` (upsert the month) · `GET /squad/{id}/history?period=` ·
-`PUT /squad/{id}/history` (backfill several months at once) · `POST /squad/{id}/preview.html?period=`
-(renders the **unsaved** body, persists nothing, squad-leader accessible) · Documents
-(**`require_tribe_or_admin`**, tribe-scoped): `GET /entries?period=` · `GET /onepager.html?squad_id=&period=`
-· `GET /document.html?period=` · `GET /document.pptx?period=` (`501` without `python-pptx`).
+with `steerco_enabled`); Snapshots: `GET /squad/{id}?period=` (fill status + who/when);
+`PUT /squad/{id}?period=` (upsert the month); `GET /squad/{id}/history?period=`;
+`PUT /squad/{id}/history` (backfill several months at once); `POST /squad/{id}/preview.html?period=`
+(renders the **unsaved** body, persists nothing, squad-leader accessible); Documents
+(**`require_tribe_or_admin`**, tribe-scoped): `GET /entries?period=`; `GET /onepager.html?squad_id=&period=`;
+`GET /document.html?period=`; `GET /document.pptx?period=` (`501` without `python-pptx`).
 All documents accept `lang=fr|en` (default English). `period` is `YYYY-MM`; every window (charts,
 history, SLA average) is the report's calendar year, January to December, so the charts always start
 in January. Admin Excel template/import (`/api/admin/import-steerco*`) use the same year window. See
 [15](15-steerco.md).
 
 ### admin (`/api/admin`) - `require_admin` (users also tribe_leader)
-Users: `GET/POST /users`, `PUT/DELETE /users/{id}` · Settings: `GET/PUT /settings` · Auth config:
+Users: `GET/POST /users`, `PUT/DELETE /users/{id}`; Settings: `GET/PUT /settings`; Auth config:
 `GET/PUT /auth-config`, `POST /auth-config/test` (probe the IdP: body `{provider: "oidc"|"saml",
 config?: {...}}`; `config` layers unsaved form values over the stored ones so a change can be checked
-before it is committed, returns `{ok, checks[], hint}`, read-only) ·
-Modules: `GET/PUT /modules-config` · **Personas: `GET/PUT /personas`** ·
-SMTP: `GET/PUT /smtp-config`, `POST /smtp-config/test` · Report: `GET/PUT /report-config`,
-`POST /report-config/test` · Log export: `GET/PUT /log-export-config`,
+before it is committed, returns `{ok, checks[], hint}`, read-only);
+Modules: `GET/PUT /modules-config`; **Personas: `GET/PUT /personas`**;
+SMTP: `GET/PUT /smtp-config`, `POST /smtp-config/test`; Report: `GET/PUT /report-config`,
+`POST /report-config/test`; Log export: `GET/PUT /log-export-config`,
 `POST /log-export-config/test`, `POST /log-export-config/flush` (syslog / GCS / BigQuery; GCP auth is
-keyless by default - ADC/WIF/impersonation, JSON key last - see [ADR-0012](adr/0012-gcp-auth-keyless.md)) ·
+keyless by default - ADC/WIF/impersonation, JSON key last - see [ADR-0012](adr/0012-gcp-auth-keyless.md));
 Imports: `GET /import-org/template`, `POST /import-org` ([14](14-import-organisation.md)),
-`GET /import-steerco/template`, `POST /import-steerco` ([15](15-steerco.md)) · API keys:
-`GET/POST /api-keys`, `POST /api-keys/{id}/revoke`, `DELETE /api-keys/{id}` ·
+`GET /import-steerco/template`, `POST /import-steerco` ([15](15-steerco.md)); API keys:
+`GET/POST /api-keys`, `POST /api-keys/{id}/revoke`, `DELETE /api-keys/{id}`;
 Ops: `GET /runtime`, `POST /restart`, `GET /logs`,
-`GET /logs/download`, `POST /logs/clear`, `POST /log-level` ·
+`GET /logs/download`, `POST /logs/clear`, `POST /log-level`;
 PPTX export template: `GET /pptx-template` (status), `POST /pptx-template` (upload a `.pptx`),
 `GET /pptx-template/download`, `DELETE /pptx-template` - when set, every PPTX export is built on it
 (masters/theme/branding); see `app/pptxtpl.py`

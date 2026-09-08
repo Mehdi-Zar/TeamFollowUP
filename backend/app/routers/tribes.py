@@ -25,14 +25,14 @@ router = APIRouter(prefix="/api/tribes", tags=["tribes"])
 
 @router.get("", response_model=list[TribeOut])
 def list_tribes(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """GET /api/tribes — list all tribes, ordered. Any authenticated user."""
+    """GET /api/tribes: list all tribes, ordered. Any authenticated user."""
     # All authenticated users can see the list of tribes (e.g. to browse org charts).
     return list(db.scalars(select(Tribe).order_by(Tribe.display_order, Tribe.id)).all())
 
 
 @router.get("/org-overview", response_model=list[TribeOrg])
 def org_overview(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
-    """GET /api/tribes/org-overview — read-only org charts of ALL tribes (one per
+    """GET /api/tribes/org-overview: read-only org charts of ALL tribes (one per
     tribe). Admin only.
 
     Builds a per-squad status map for the current year and a per-tribe squad count,
@@ -57,7 +57,7 @@ def org_overview(db: Session = Depends(get_db), admin: User = Depends(require_ad
 
 @router.post("", response_model=TribeOut, status_code=201)
 def create_tribe(payload: TribeCreate, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
-    """POST /api/tribes — create a tribe (201). Admin only.
+    """POST /api/tribes: create a tribe (201). Admin only.
 
     Optional ``leader_user_id`` promotes an existing user to tribe leader of the
     new tribe (404 if unknown; the break-glass account cannot be made a tribe
@@ -86,7 +86,7 @@ def create_tribe(payload: TribeCreate, db: Session = Depends(get_db), admin: Use
 @router.put("/{tribe_id}", response_model=TribeOut)
 def update_tribe(tribe_id: int, payload: TribeUpdate, db: Session = Depends(get_db),
                  user: User = Depends(get_current_user)):
-    """PUT /api/tribes/{tribe_id} — update a tribe.
+    """PUT /api/tribes/{tribe_id}: update a tribe.
 
     Allowed for an admin or the tribe's own leader (``can_edit_tribe``); 403
     otherwise. ``display_order`` is a global ordering concern, so it is dropped
@@ -111,7 +111,7 @@ def update_tribe(tribe_id: int, payload: TribeUpdate, db: Session = Depends(get_
 
 @router.delete("/{tribe_id}", status_code=204)
 def delete_tribe(tribe_id: int, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
-    """DELETE /api/tribes/{tribe_id} — delete a tribe (204). Admin only.
+    """DELETE /api/tribes/{tribe_id}: delete a tribe (204). Admin only.
 
     Refuses with 409 while the tribe still has squads (they must be moved or
     deleted first). Side effects: users of the tribe are detached (``tribe_id``

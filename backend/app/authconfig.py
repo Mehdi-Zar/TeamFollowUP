@@ -171,7 +171,7 @@ def set_auth_config(db: Session, patch: dict, request=None) -> dict:
     so the admin UI can round-trip the resolved URLs it displays without turning
     them into frozen overrides. Returns the effective config (derivation applied).
 
-    Note: stages the row on the session but does not commit — the caller controls
+    Note: stages the row on the session but does not commit: the caller controls
     the transaction boundary.
     """
     cfg = _stored_auth_config(db)

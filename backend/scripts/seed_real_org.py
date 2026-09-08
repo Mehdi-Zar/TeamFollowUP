@@ -69,7 +69,7 @@ def main():
         db.commit()
         print(f"\nCreated tribe '{tribe.name}' with {len(SQUADS)} squads.")
         for s in db.query(Squad).order_by(Squad.display_order).all():
-            print(f"  · {s.name:24} [{s.squad_type}] products={s.products} hardware={s.hardware}")
+            print(f"  - {s.name:24} [{s.squad_type}] products={s.products} hardware={s.hardware}")
     finally:
         db.close()
 

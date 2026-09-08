@@ -1,10 +1,10 @@
 # 10 - Technical Debt & Risk Register
 
-Severity: **P0** (block prod) · **P1** (before scale) · **P2** (continuous improvement).
+Severity: **P0** (block prod), **P1** (before scale), **P2** (continuous improvement).
 
 ## Technical debt register
 
-Legend: ✅ done · ◑ partial · ⬜ open.
+Legend: ✅ done, ◑ partial, ⬜ open.
 
 | ID | Area | Item | Sev | Status / action |
 |----|------|------|-----|------------------|

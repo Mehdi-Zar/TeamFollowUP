@@ -48,8 +48,8 @@ def pending_users(db: Session) -> list[User]:
 def pending_count(db: Session, reviewer: User) -> int:
     """Badge count of pending requests, or 0 for a viewer who can't review any.
 
-    Returns the global pending total (the queue is intentionally broad — a
-    brand-new account has no tribe yet), but only to actual reviewers so a plain
+    Returns the global pending total (the queue is intentionally broad,
+    a brand-new account has no tribe yet), but only to actual reviewers so a plain
     member never sees a nonzero badge.
     """
     if not can_review_access(reviewer):
