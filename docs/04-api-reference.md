@@ -112,13 +112,12 @@ removes the taxonomy instead of only hiding its selector.
 `GET /squads/{id}/actions`; `POST /squads/{id}/actions`; `PUT /actions/{id}`; `DELETE /actions/{id}`
 
 ### leaves (`/api/leaves`) - module `leaves` + capability `leaves`
-`GET /overlaps` additionally requires the `overlap_alert` feature; with it off the SPA does
-not call it at all, so the banner simply never appears.
 Types: `GET /types` (`?include_inactive`); `POST /types`; `PUT /types/{id}`; `DELETE /types/{id}` (admin);
 Config (per tribe): `GET /config`; `PUT /config` (tribe_leader/admin); People picker: `GET /people`;
 Leaves: `GET ""` (filters `from/to/user_id/squad_id/status/mine`); `POST ""`; `PUT /{id}`;
 `POST /{id}/decision` (approve/reject, leaders); `DELETE /{id}`; `GET /overlaps` (`from/to`, module
-`leaves.overlap_alert`); `GET /export.csv`. Visibility is tribe-scoped (admins: all); the motif is
+`leaves.overlap_alert`, and with that feature off the SPA does not call it at all, so the banner
+simply never appears); `GET /export.csv`. Visibility is tribe-scoped (admins: all); the motif is
 returned only to the person, their leader and admins.
 
 ### steerco (`/api/steerco`) - module `steerco` (off by default)
