@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Added
+- **The rendered documents are now tested, not just the code that builds them.** Coverage
+  exposed something worse than the typography defect it was there to check: most separator
+  sites in the weekly report were never executed by the suite, and the single-squad deck
+  builder (`squad_page_slide`, 130 lines) was reached by nothing at all. The shared fixtures
+  carry no budget, no deadlines, no dependencies and no key messages, and the budget is
+  withheld unless a viewer is passed, so the richest half of the flagship deliverable shipped
+  unexercised. `test_report_typography.py` fills a squad with all of it, renders all eight
+  documents for a real viewer, and reads the output: the banned characters must be absent, and
+  the replacements must still carry their information. `reportpptx.py` goes from 64.7% to
+  95.9% covered, `report.py` from 81.5% to 87.1%, the suite from 77.3% to 80.1%, and the
+  coverage ratchet moves 76 to 79.
+
 ### Fixed
 - **The security documentation claimed a guard that does not exist.** docs/05 stated that all
   seven persona capabilities are enforced server-side by `require_capability`. Six are
