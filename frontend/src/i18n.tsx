@@ -5,8 +5,11 @@
  * (RAG/roadmap/trend/role), and exposes them through the {@link useI18n} hook.
  * `useI18n().t(key, vars)` looks up a key for the active language and
  * interpolates `{name}` placeholders; sibling helpers format statuses, roles,
- * freshness and dates for the current locale. The chosen language is persisted
- * in localStorage (`trt_lang`).
+ * freshness and dates for the current locale.
+ *
+ * Which language is active: the viewer's own choice when they have made one
+ * (persisted under `trt_lang`), otherwise the instance's `default_lang` from
+ * /api/config. See {@link I18nProvider} for why that distinction is load-bearing.
  */
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { Rag, RoadmapStatus, Trend } from "./types";
@@ -2360,7 +2363,12 @@ const ROLE: Record<Lang, Record<string, string>> = {
 
 interface I18n {
   lang: Lang;
+  /** The viewer picking a language. Persisted: it outranks the server default. */
   setLang: (l: Lang) => void;
+  /** The instance's configured default, applied only while the viewer has not
+   *  picked one. Never persisted, so changing it in Administration reaches
+   *  everybody who has not made a choice, not only first-time visitors. */
+  applyServerDefault: (l: Lang) => void;
   t: (key: string, vars?: Record<string, string | number>) => string;
   rag: (s: Rag) => string;
   roadmap: (s: RoadmapStatus) => string;
@@ -2373,17 +2381,45 @@ interface I18n {
 
 const I18nContext = createContext<I18n | undefined>(undefined);
 
+/** Where the viewer's explicit language choice lives. */
+const LANG_KEY = "trt_lang";
+
 /**
- * Provides the i18n context. Initialises the language from localStorage
- * (defaulting to French), persists it and mirrors it onto `<html lang>` on
- * change, and builds the translation/formatting functions for consumers.
+ * The viewer's stored choice, or null when they have not made one.
+ *
+ * Exported because the distinction between "chosen" and "not chosen yet" is the
+ * rule itself, and it must not be re-derived from the raw key by callers.
+ */
+export function storedLang(): Lang | null {
+  const v = localStorage.getItem(LANG_KEY);
+  return v === "fr" || v === "en" ? v : null;
+}
+
+/**
+ * Provides the i18n context. Starts from the viewer's stored choice, mirrors the
+ * active language onto `<html lang>`, and builds the translation/formatting
+ * functions for consumers.
+ *
+ * `trt_lang` is written ONLY when the viewer picks a language, and that is the
+ * whole point: its presence is what tells `ConfigProvider` that a choice has
+ * been made and the instance's `default_lang` must not override it. Writing it
+ * from a mount effect, as this used to, stamped "en" into storage before
+ * /api/config had even answered, so `default_lang` could never apply and every
+ * first-time visitor of a French instance got English.
  */
 export function I18nProvider({ children }: { children: ReactNode }) {
-  const [lang, setLangState] = useState<Lang>(() => (localStorage.getItem("trt_lang") as Lang) || "en");
+  const [lang, setLangState] = useState<Lang>(() => storedLang() ?? "en");
   useEffect(() => {
-    localStorage.setItem("trt_lang", lang);
     document.documentElement.lang = lang;
   }, [lang]);
+
+  const setLang = (l: Lang) => {
+    localStorage.setItem(LANG_KEY, l);
+    setLangState(l);
+  };
+  const applyServerDefault = (l: Lang) => {
+    if (!storedLang() && (l === "fr" || l === "en")) setLangState(l);
+  };
 
   /**
    * Translate `key` for the active language, interpolating any `{name}`
@@ -2398,7 +2434,8 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   const locale = lang === "fr" ? "fr-FR" : "en-GB";
   const value: I18n = {
     lang,
-    setLang: setLangState,
+    setLang,
+    applyServerDefault,
     t,
     rag: (s) => RAG[lang][s],
     roadmap: (s) => ROADMAP[lang][s],

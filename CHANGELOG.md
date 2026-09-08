@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### Fixed
+- **The instance's default language never reached the interface.** `default_lang` (Administration
+  > Settings, French out of the box) drove the weekly report and the notification emails
+  correctly, but never the SPA: `I18nProvider` wrote `trt_lang` from a mount effect, stamping
+  `en` into localStorage before `/api/config` had answered, and `ConfigProvider` then read that
+  stored value as "the viewer has chosen a language" and declined to override it. So a French
+  instance greeted every new visitor in English while emailing them in French, and the setting
+  did nothing. `trt_lang` is now written only when someone actually picks a language, which is
+  what its presence was always meant to mean, and the "chosen or not" test lives in `i18n.tsx`
+  beside the key it depends on (`storedLang`, `applyServerDefault`). The default is applied
+  without being persisted, so changing it in Administration reaches everyone who has not chosen,
+  not only first-time visitors. Four tests pin the four cases.
+  The Playwright suite was relying on this bug: it names English labels and got English for
+  free. It now pins the language itself, in the `test` fixture exported by `tests/helpers.ts`,
+  before the first navigation, so it no longer depends on a setting an administrator may change.
+
 ### Added
 - **The rendered documents are now tested, not just the code that builds them.** Coverage
   exposed something worse than the typography defect it was there to check: most separator

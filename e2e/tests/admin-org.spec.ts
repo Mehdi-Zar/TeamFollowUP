@@ -1,5 +1,4 @@
-import { expect, test } from "@playwright/test";
-import { BREAKGLASS, signIn, uniqueName } from "./helpers";
+import { BREAKGLASS, expect, signIn, test, uniqueName } from "./helpers";
 
 /**
  * The write path, end to end: a tribe created by this deployment is visible to

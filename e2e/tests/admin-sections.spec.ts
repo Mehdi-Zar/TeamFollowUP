@@ -1,5 +1,4 @@
-import { expect, test } from "@playwright/test";
-import { BREAKGLASS, signIn } from "./helpers";
+import { BREAKGLASS, expect, signIn, test } from "./helpers";
 
 /**
  * Every administration section renders.

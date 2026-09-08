@@ -38,7 +38,10 @@ function offences(file: string): string[] {
 describe("typography", () => {
   it("no em dash and no middot in anything a user reads", () => {
     const src = resolve(process.cwd(), "src");
-    const all = walk(src).filter((f) => !/\.test\.ts$/.test(f)).flatMap(offences);
+    // Only this file is exempt, because it has to spell the characters out. Other
+    // tests are scanned on purpose: one that asserts a user-facing label would
+    // otherwise be free to assert a banned one.
+    const all = walk(src).filter((f) => !f.endsWith("typography.test.ts")).flatMap(offences);
     expect(all).toEqual([]);
   });
 

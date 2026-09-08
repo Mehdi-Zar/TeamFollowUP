@@ -36,10 +36,12 @@ export default defineConfig({
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
     video: "off",
-    // NOTE: this only sets the BROWSER locale. The app's language comes from the
-    // server (Administration > general settings, `default_lang`, English out of
-    // the box) and ignores the browser, so assertions below use English strings.
-    // Pinned anyway so date and number formatting is stable across machines.
+    // NOTE: this only sets the BROWSER locale, which the app ignores for its
+    // interface language: that comes from `default_lang` (Administration >
+    // general settings, FRENCH out of the box) unless the viewer has chosen one.
+    // The suite pins English itself, in the `test` fixture in tests/helpers.ts,
+    // before the first navigation. This line is here so date and number
+    // formatting stay stable across machines, nothing more.
     locale: "en-GB",
   },
   projects: [

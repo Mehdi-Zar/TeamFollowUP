@@ -46,7 +46,7 @@ const ReloadContext = createContext<() => void>(() => {});
 
 /** Fetches /api/config on mount and exposes it (plus a reload fn) to the tree. */
 export function ConfigProvider({ children }: { children: ReactNode }) {
-  const { setLang } = useI18n();
+  const { applyServerDefault } = useI18n();
   const [cfg, setCfg] = useState<PublicConfig>(DEFAULTS);
 
   function load() {
@@ -54,9 +54,10 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
       .get<PublicConfig>("/api/config")
       .then((c) => {
         setCfg(c);
-        // Apply the server's default language only if the user hasn't already
-        // picked one (persisted under trt_lang) - never override a user choice.
-        if (!localStorage.getItem("trt_lang") && c.default_lang) setLang(c.default_lang);
+        // The instance's default language, applied only while the viewer has
+        // made no choice of their own. The "has the viewer chosen" test lives in
+        // i18n.tsx, next to the storage key it depends on.
+        if (c.default_lang) applyServerDefault(c.default_lang);
       })
       .catch(() => {});
   }

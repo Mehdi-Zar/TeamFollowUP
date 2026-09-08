@@ -152,10 +152,20 @@ personne ne regarde, puis que quelqu'un finit par désactiver.
 
 ### L'application est en anglais
 
-La langue vient du **serveur** (Administration > Réglages, `default_lang`, anglais
-à l'installation), pas du navigateur. L'option `locale` de Playwright ne change que
-le formatage des dates et des nombres. Les sélecteurs utilisent donc les libellés
-anglais.
+Pas par accident : la suite l'impose. La langue vient du **serveur**
+(Administration > Réglages, `default_lang`, **français** à l'installation), pas du
+navigateur, et l'option `locale` de Playwright ne change que le formatage des dates
+et des nombres. Comme tous les sélecteurs nomment des libellés anglais, le `test`
+exporté par `tests/helpers.ts` écrit `trt_lang=en` avant la première navigation,
+via `addInitScript`. C'est pour cela que les specs importent `test` et `expect`
+depuis `./helpers` et non depuis `@playwright/test` : en les prenant à la source,
+on contournerait le verrou et la suite dépendrait d'un réglage qu'un administrateur
+peut changer.
+
+Note historique : jusqu'à la correction de `default_lang`, l'interface était
+anglaise quoi qu'on configure, parce que le fournisseur i18n écrivait `trt_lang=en`
+au montage, avant même la réponse de `/api/config`. La suite s'appuyait donc sur un
+bug, ce qui ne se voyait pas.
 
 ### Les liens profonds de l'administration utilisent `?section=`
 
