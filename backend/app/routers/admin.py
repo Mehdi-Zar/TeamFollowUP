@@ -22,6 +22,7 @@ from ..database import get_db
 from ..deps import ADMIN, get_current_user, record_audit, require_admin
 from ..generalconfig import get_general, set_general
 from ..models import User
+from ..userpurge import purge_user_references
 from ..rbac import (
     assignable_roles,
     can_assign_role,
@@ -150,7 +151,13 @@ def delete_user(user_id: int, db: Session = Depends(get_db), actor: User = Depen
 
     Admins and tribe leaders only, target must be in the actor's scope. The
     break-glass account cannot be deleted, and nobody may delete their own
-    account. Writes a ``user.delete`` audit entry."""
+    account. Writes a ``user.delete`` audit entry.
+
+    The references are settled first (``userpurge``): the person's own records go
+    with them, everything else is detached so somebody else's work and the audit
+    trail survive. Without that step this returned 500 for any account that had
+    ever logged in, since nineteen columns point at ``users.id`` with NO ACTION
+    and the first audit row was enough to block the delete."""
     _require_user_manager(actor)
     user = db.get(User, user_id)
     if user is None:
@@ -162,6 +169,7 @@ def delete_user(user_id: int, db: Session = Depends(get_db), actor: User = Depen
     if not can_manage_user(actor, user):
         raise HTTPException(status_code=403, detail="Cet utilisateur n'est pas dans votre périmètre")
     record_audit(db, actor.id, "user.delete", entity="user", entity_id=user.id, detail={"email": user.email})
+    purge_user_references(db, user.id)   # logs what it removed and detached
     db.delete(user)
     db.commit()
 

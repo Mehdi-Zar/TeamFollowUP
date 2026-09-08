@@ -3115,7 +3115,7 @@
           "admin"
         ],
         "summary": "Delete User",
-        "description": "DELETE /api/admin/users/{user_id}: delete a user (204).\n\nAdmins and tribe leaders only, target must be in the actor's scope. The\nbreak-glass account cannot be deleted, and nobody may delete their own\naccount. Writes a ``user.delete`` audit entry.",
+        "description": "DELETE /api/admin/users/{user_id}: delete a user (204).\n\nAdmins and tribe leaders only, target must be in the actor's scope. The\nbreak-glass account cannot be deleted, and nobody may delete their own\naccount. Writes a ``user.delete`` audit entry.\n\nThe references are settled first (``userpurge``): the person's own records go\nwith them, everything else is detached so somebody else's work and the audit\ntrail survive. Without that step this returned 500 for any account that had\never logged in, since nineteen columns point at ``users.id`` with NO ACTION\nand the first audit row was enough to block the delete.",
         "operationId": "delete_user_api_admin_users__user_id__delete",
         "parameters": [
           {

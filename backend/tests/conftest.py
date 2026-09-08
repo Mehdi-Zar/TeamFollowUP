@@ -1,6 +1,6 @@
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -16,6 +16,21 @@ engine = create_engine(
     future=True,
 )
 TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
+
+
+@event.listens_for(engine, "connect")
+def _enforce_foreign_keys(dbapi_connection, _record):
+    """SQLite ignores foreign keys unless asked, and the silence was expensive.
+
+    Production runs PostgreSQL, which enforces them. The suite ran on a SQLite
+    that did not, so a whole class of defect was invisible here and fatal there:
+    `DELETE /api/admin/users/{id}` returned 500 on any account that had ever
+    logged in, because nineteen tables reference `users` with NO ACTION and
+    nothing detached them first. 402 tests passed over that.
+    """
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.close()
 
 
 def _override_get_db():

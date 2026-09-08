@@ -41,6 +41,13 @@ python -m pytest --cov=app --cov-report=html && open htmlcov/index.html
 Coverage is **not** in `addopts`: measuring costs about a third of the run time and
 the number only matters in CI, so a local `pytest` stays fast.
 
+**The test database enforces foreign keys**, since a `PRAGMA foreign_keys=ON` listener
+was added to the SQLite engine in `conftest`. SQLite ignores them otherwise, and the
+silence was expensive: `DELETE /api/admin/users/{id}` returned 500 in production for
+any account that had ever logged in, because nineteen columns reference `users` with
+`NO ACTION` and nothing detached them, while 402 tests passed over it. Turning
+enforcement on broke nothing else, which is the useful part of the answer.
+
 The floor (`fail_under` in `backend/.coveragerc`) is a **ratchet**, set just under
 what the suite actually reaches. Raise it when coverage improves; never lower it to
 make a build pass, because a change that drops coverage is a change that needs

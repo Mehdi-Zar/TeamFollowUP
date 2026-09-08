@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+### Fixed
+- **Deleting a user returned 500 for anyone who had ever logged in.** Nineteen columns
+  reference `users.id`, every one with `NO ACTION`, and `DELETE /api/admin/users/{id}` detached
+  none of them: the first audit row the person produced, which logging in writes, was enough to
+  block the delete. So the right to erasure was not exercisable from the application, and
+  docs/20 pointed at the very screen that failed. The policy was never in doubt, it was written
+  in three places (the `AuditLog` model docstring, docs/20 section 5, and `prune_users.py`) and
+  the endpoint was the only thing not applying it. New `app/userpurge.py` applies it: the
+  person's own records go with them, deleted through the ORM so the declared cascades run, and
+  every other reference is detached so somebody else's work and the audit trail survive. The
+  detach set is derived from the schema, so a table added later needs no one to remember; a new
+  **non-nullable** reference raises instead, because "is this personal data" is a decision.
+  `prune_users.py` now uses the same code, where it previously covered two of the nineteen
+  columns and would have failed on a user with a notification. Verified against PostgreSQL on
+  accounts that really were blocked: the audit trail went from 562 rows to 563 (the deletion
+  entry) with the person's rows anonymised rather than destroyed.
+- **The test database did not enforce foreign keys, which is why nothing caught the above.**
+  SQLite ignores them unless asked; production runs PostgreSQL, which does not. A
+  `PRAGMA foreign_keys=ON` listener is now installed on the test engine. It broke no existing
+  test, so the gap was purely in what the suite was able to see.
+- **The end-to-end suite left a user behind on every run.** Its cleanup deleted the member it
+  created but never asserted the result, so it had been silently receiving that same 500 since
+  the suite was written. Unasserted cleanup is cleanup that does not happen: the delete is now
+  asserted to return 204.
+
 ### Added
 - **Four end-to-end tests for the two changes that only unit tests were holding.** The suite now
   runs 34. `admin-https.spec.ts` opens the HTTPS section on the compose stack, where the

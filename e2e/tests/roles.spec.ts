@@ -52,10 +52,16 @@ test.describe("Roles and route guards", () => {
     const forbidden = await page.request.get("/api/admin/users");
     expect(forbidden.status()).toBe(403);
 
-    // Clean up as the administrator.
+    // Clean up as the administrator, and ASSERT it worked. Unasserted cleanup is
+    // cleanup that silently does not happen: this delete had been returning 500
+    // on every run (nineteen columns point at users.id and nothing detached them),
+    // so each run left a member-e2e-*@e2e.local account behind. Nobody noticed,
+    // because nobody looked at the status code.
     await page.request.post("/api/auth/logout");
-    await page.request.post("/api/auth/login", { data: BREAKGLASS });
-    await page.request.delete(`/api/admin/users/${member.id}`);
+    const back = await page.request.post("/api/auth/login", { data: BREAKGLASS });
+    expect(back.ok(), await back.text()).toBeTruthy();
+    const removed = await page.request.delete(`/api/admin/users/${member.id}`);
+    expect(removed.status(), await removed.text()).toBe(204);
   });
 
   test("the administrator sees the administration screen and its sections", async ({ page }) => {

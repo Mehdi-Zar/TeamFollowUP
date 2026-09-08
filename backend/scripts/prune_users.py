@@ -11,10 +11,9 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from sqlalchemy import update
-
 from app.database import SessionLocal
-from app.models import AuditLog, Squad, Tribe, User
+from app.models import Squad, Tribe, User
+from app.userpurge import purge_user_references
 
 KEEP_EMAILS = ["admin@local", "thomas.tl@local", "membre1@local", "camille.portal@local"]
 
@@ -37,11 +36,13 @@ def main():
 
         others = db.query(User).filter(~User.id.in_(keep_ids)).all()
         oids = [u.id for u in others]
-        if oids:
-            db.execute(update(AuditLog).where(AuditLog.user_id.in_(oids)).values(user_id=None))
-            db.execute(update(Squad).where(Squad.leader_user_id.in_(oids)).values(leader_user_id=None))
-            for u in others:
-                db.delete(u)
+        # Detaching the audit rows and the squad leadership by hand covered two of
+        # the nineteen columns that point at users.id, so this failed on the first
+        # fake user who had a notification or a feed post. Same policy as the
+        # admin screen now, from the same place.
+        for u in others:
+            purge_user_references(db, u.id)
+            db.delete(u)
         db.commit()
 
         print(f"Deleted {len(oids)} fake users. Remaining accounts:")

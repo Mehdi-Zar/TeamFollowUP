@@ -158,6 +158,20 @@ squad dont la personne était responsable se retrouve sans responsable, ce que
 l'écran vous montre). Une suppression directe en base laisserait ces liens dans un
 état incohérent.
 
+La logique appliquée est dans `app/userpurge.py`, et elle est la même que celle
+décrite ici : les enregistrements personnels partent avec la personne, tout le
+reste est détaché. La liste des colonnes détachées est dérivée du schéma, donc une
+table ajoutée plus tard est traitée sans que personne ait à se souvenir de ce
+document ; une nouvelle référence **non nulle** échoue en revanche bruyamment,
+parce que « est-ce une donnée personnelle » est une décision, pas une propriété du
+schéma.
+
+Jusqu'à la version qui introduit ce module, cet écran renvoyait une erreur 500
+pour tout compte s'étant connecté au moins une fois : dix-neuf colonnes pointent
+vers `users.id` en `NO ACTION`, et la première ligne d'audit suffisait à bloquer
+la suppression. Le droit à l'effacement n'était donc pas exerçable depuis
+l'application.
+
 ### Le journal d'audit : à anonymiser, pas à effacer
 
 ```sql
