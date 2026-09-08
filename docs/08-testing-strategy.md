@@ -5,16 +5,18 @@
 | Layer | Tooling | Coverage |
 |-------|---------|----------|
 | Backend unit/integration | pytest + FastAPI `TestClient` + SQLite in-memory | **Good** - 378 tests / 39 modules |
-| Frontend unit/component | **Vitest + Testing Library + jsdom** | **Present** - 11 tests (labels, perms, i18n parity), wired into CI |
+| Frontend unit/component | **Vitest + Testing Library + jsdom** | **Present** - 13 tests (labels, perms, i18n parity, typography), wired into CI |
 | End-to-end (browser) | **Playwright** against the real Docker stack ([18](18-tests-e2e.md)) | **30 tests in CI** - login, route guards, RBAC, the write path, the audit screen, and every one of the 18 admin sections |
 | End-to-end (API script) | `e2e_test.py` (script at repo root) | Ad-hoc, not in CI - superseded for the journeys Playwright now covers |
 | End-to-end (deployment + SSO) | [Kubernetes + Keycloak bench](16-banc-kubernetes-sso.md), `bench/k8s-sso/run-tests.py` | **Manual**, reproducible - 18 checks against a real IdP (OIDC and SAML) |
-| Coverage | `pytest-cov`, floor in `backend/.coveragerc` | Enforced in CI - **77%** on `app/` (entry points and seed scripts excluded) |
+| Coverage | `pytest-cov`, floor in `backend/.coveragerc` | Enforced in CI - **80%** on `app/`, ratchet at 79 (entry points and seed scripts excluded) |
 | Type safety | `tsc --noEmit` (FE), Pydantic (BE) | Enforced |
-| i18n parity | Vitest (`i18n.parity.test.ts`) | Enforced (FR/EN 1132/1132) |
+| i18n parity | Vitest (`i18n.parity.test.ts`) | Enforced (FR/EN 1165/1165) |
+| Typography | `test_typography.py` (BE string literals), `typography.test.ts` (FE), `test_report_typography.py` (rendered documents) | Enforced - no em dash, no middot in anything a user reads |
 
 ### Backend test modules
-`test_access`, `test_access_history`, `test_actions`, `test_api_keys`, `test_audit_api`, `test_authconfig_urls`, `test_budget`, `test_changenotify`, `test_committees`, `test_freshness`, `test_hardening`, `test_import_org`, `test_initiatives_otd`, `test_insecure_defaults`, `test_leaves`, `test_logconfig`, `test_logexport`, `test_metrics`, `test_modules`, `test_notifications`, `test_oidc_client`, `test_ops`, `test_otds`, `test_personas`, `test_pptx_template`, `test_rbac`, `test_rbac_admin`, `test_report`, `test_report_surface`, `test_retention`, `test_review_access`, `test_roadmap_deps`, `test_saml_settings`, `test_snapshot`, `test_squad_products`, `test_ssotest`, `test_status`, `test_steerco`, `test_tls`.
+`test_access`, `test_access_history`, `test_actions`, `test_api_keys`, `test_audit_api`, `test_authconfig_urls`, `test_budget`, `test_changenotify`, `test_committees`, `test_freshness`, `test_hardening`, `test_import_org`, `test_initiatives_otd`, `test_insecure_defaults`, `test_leaves`, `test_logconfig`, `test_logexport`, `test_metrics`, `test_modules`, `test_notifications`, `test_oidc_client`, `test_ops`, `test_otds`, `test_personas`, `test_pptx_template`, `test_rbac`, `test_rbac_admin`, `test_report`, `test_report_surface`, `test_retention`, `test_review_access`, `test_roadmap_deps`, `test_saml_settings`, `test_snapshot`, `test_squad_products`, `test_ssotest`, `test_status`, `test_steerco`, `test_tls`,
+`test_trust`, `test_typography`, `test_report_typography`.
 
 They cover RBAC/persona capabilities, derived objective status, roadmap dependency + EA/GA,
 report/roadmap rendering (incl. the single-page guarantee), snapshots, freshness, the SSO URL
@@ -51,7 +53,16 @@ percentage.
 those tests found a real bug: see the note on the `Tribu` sheet in
 [14](14-import-organisation.md). That is the argument for the whole exercise.
 
-There is no frontend coverage gate. With eleven unit tests the floor would sit at a
+The second-largest hole was hiding behind a comfortable number. `reportpptx.py` sat at 64.7%
+because the shared fixtures give a squad a name and a leader and nothing else: no budget, no
+deadlines, no dependencies, no key messages, and no viewer (the budget is withheld without
+one). So the richest half of the flagship deliverable, including the entire 130-line
+single-squad slide builder, rendered in no test at all. `test_report_typography.py` fills one
+squad with every optional field and reads all eight rendered documents; that module is now at
+95.9%. A percentage on a module that builds documents means little until something actually
+reads the documents.
+
+There is no frontend coverage gate. With thirteen unit tests the floor would sit at a
 number so low it would protect nothing; the real gap on that side is end-to-end
 coverage, tracked separately.
 
@@ -69,7 +80,9 @@ flowchart TB
 1. **Vitest** in `frontend` (`npm i -D vitest @testing-library/react jsdom`) - start with `i18n` parity
    as a test, `Section`/capability guard logic, `ExportMenu` URL building, `RoadmapPage` rendering.
 2. **Playwright** smoke for the 5 core journeys (see [01](01-product-overview.md) personas).
-3. **CI gate** (added in `.github/workflows/ci.yml`): backend pytest + FE typecheck + FE build +
-   i18n parity. Extend with coverage once Vitest lands.
+3. **CI gate** (in `.github/workflows/ci.yml`): backend pytest with the coverage ratchet and the
+   OpenAPI snapshot check, FE typecheck + Vitest + build, Playwright e2e on the real Docker
+   stack, the image build, and a non-blocking dependency audit. The i18n parity rule lives in
+   Vitest only; the duplicated inline node script that used to sit beside it is gone.
 4. **`pip-audit` / `npm audit`** in CI for dependency CVEs.
 </content>
