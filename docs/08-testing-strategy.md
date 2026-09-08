@@ -5,7 +5,7 @@
 | Layer | Tooling | Coverage |
 |-------|---------|----------|
 | Backend unit/integration | pytest + FastAPI `TestClient` + SQLite in-memory | **Good** - 378 tests / 39 modules |
-| Frontend unit/component | **Vitest + Testing Library + jsdom** | **Present** - 13 tests (labels, perms, i18n parity, typography), wired into CI |
+| Frontend unit/component | **Vitest + Testing Library + jsdom** | **Present** - 20 tests (labels, perms, i18n parity, typography, the language a visitor gets, the HTTPS panel), wired into CI |
 | End-to-end (browser) | **Playwright** against the real Docker stack ([18](18-tests-e2e.md)) | **30 tests in CI** - login, route guards, RBAC, the write path, the audit screen, and every one of the 18 admin sections |
 | End-to-end (API script) | `e2e_test.py` (script at repo root) | Ad-hoc, not in CI - superseded for the journeys Playwright now covers |
 | End-to-end (deployment + SSO) | [Kubernetes + Keycloak bench](16-banc-kubernetes-sso.md), `bench/k8s-sso/run-tests.py` | **Manual**, reproducible - 18 checks against a real IdP (OIDC and SAML) |
@@ -62,9 +62,16 @@ squad with every optional field and reads all eight rendered documents; that mod
 95.9%. A percentage on a module that builds documents means little until something actually
 reads the documents.
 
-There is no frontend coverage gate. With thirteen unit tests the floor would sit at a
+There is no frontend coverage gate. With twenty unit tests the floor would sit at a
 number so low it would protect nothing; the real gap on that side is end-to-end
 coverage, tracked separately.
+
+Two of those twenty are component tests (jsdom + Testing Library), the first in the
+repo: `i18n.lang.test.tsx` and `pages/admin/authentication.test.tsx`. Both exist
+because a rendered-behaviour bug is invisible to a typecheck and expensive to catch
+in Playwright: the instance default language never reaching the screen, and a panel
+hidden behind the wrong condition. That is the shape worth reaching for this tool
+for, rather than re-testing what `tsc` already proves.
 
 ## Target test pyramid
 
