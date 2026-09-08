@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Added
+- **Four end-to-end tests for the two changes that only unit tests were holding.** The suite now
+  runs 34. `admin-https.spec.ts` opens the HTTPS section on the compose stack, where the
+  infrastructure terminates TLS, and asserts what the regression got wrong: the
+  served-certificate panel is hidden and says why, while the trusted authorities are present
+  with enabled controls. `language.spec.ts` asserts that a profile which has never chosen a
+  language gets the instance default and stores nothing, then that a choice survives a reload.
+  It is the one spec importing `test` from `@playwright/test` rather than from `./helpers`,
+  because the shared fixture pins the language and here its absence is the case under test.
+
 ### Changed
 - **The typography rule now covers the whole repository, with no allowlist.** It was scoped to
   "anything a user reads", and that boundary was the problem: it needed adjudicating on every
