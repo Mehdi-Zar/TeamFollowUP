@@ -1,5 +1,6 @@
 /**
- * Administration > Authentication and email: SSO, API keys, SMTP, TLS.
+ * Administration > Authentication and email: SSO, API keys, SMTP, trusted
+ * certificate authorities.
  *
  * Everything about how someone or something proves who it is. The SSO callback
  * URLs are DERIVED from the public base URL rather than typed (see docs/12 2.1);
@@ -12,7 +13,7 @@ import { useI18n } from "../../i18n";
 import { Tribe } from "../../types";
 import { ErrorBanner, Modal, EmptyState } from "../../components/ui";
 
-import { useAppRestart, useErr } from "./shared";
+import { useErr } from "./shared";
 
 /** Admin > SMTP: configure the outbound mail server (host/port/credentials/TLS)
  *  used for notifications and reports, with a "send test email" action. Admin only. */
@@ -90,110 +91,50 @@ export function SmtpAdmin() {
 }
 
 
-/** Admin > TLS. Two independent concerns on one screen:
- *  - the SERVED certificate (active cert, self-signed regeneration, PEM/PFX
- *    import), which only applies when the app terminates TLS itself and is
- *    therefore hidden behind the toggle;
- *  - the TRUSTED authorities, used to verify the app's own outbound calls (IdP,
- *    SMTP, log export), always shown because they apply in both serving modes.
- *  Admin only. */
-export function TlsAdmin() {
+/** Admin > Certificate authorities. The authorities the application trusts when
+ *  it CALLS something: OIDC/SAML IdP, SMTP relay, log export. Importing an
+ *  internal authority here is what makes a privately issued endpoint reachable,
+ *  and nothing on this screen can turn verification off. The certificate served
+ *  to browsers is not here and never was the app's business: a load balancer
+ *  terminates TLS in front of it (ADR 0013). Admin only. */
+export function TrustAdmin() {
   const { t } = useI18n();
   const [st, setSt] = useState<any | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const { error, wrap } = useErr();
-  const { restart, overlay } = useAppRestart();
-  const [confirmRestart, setConfirmRestart] = useState(false);
-
-  // Self-signed form
-  const [cn, setCn] = useState("localhost");
-  const [sans, setSans] = useState("localhost, 127.0.0.1");
-  // PEM import
-  const [certFile, setCertFile] = useState<File | null>(null);
-  const [keyFile, setKeyFile] = useState<File | null>(null);
-  const [certText, setCertText] = useState("");
-  const [keyText, setKeyText] = useState("");
-  const [pemPass, setPemPass] = useState("");
-  // PFX import
-  const [pfxFile, setPfxFile] = useState<File | null>(null);
-  const [pfxPass, setPfxPass] = useState("");
-  // CA add
   const [caFile, setCaFile] = useState<File | null>(null);
   const [caName, setCaName] = useState("");
 
-  const load = () => api.get<any>("/api/admin/tls-config").then(setSt);
+  const load = () => api.get<any>("/api/admin/trust-store").then(setSt);
   useEffect(() => { load(); }, []);
   if (!st) return <div className="spinner">{t("common.loading")}</div>;
 
   const flash = (m: string) => { setMsg(m); setTimeout(() => setMsg(null), 2500); };
 
-  async function regen() {
-    await wrap(async () => {
-      setSt(await api.post<any>("/api/admin/tls-config/self-signed", { cn, sans }));
-      flash(t("tls.applied"));
-    });
-  }
-  async function importPem() {
-    await wrap(async () => {
-      const f = new FormData();
-      if (certFile) f.append("cert", certFile); else f.append("cert_pem", certText);
-      if (keyFile) f.append("key", keyFile); else f.append("key_pem", keyText);
-      if (pemPass) f.append("passphrase", pemPass);
-      setSt(await api.postForm<any>("/api/admin/tls-config/import-pem", f));
-      setCertFile(null); setKeyFile(null); setCertText(""); setKeyText(""); setPemPass("");
-      flash(t("tls.applied"));
-    });
-  }
-  async function importPfx() {
-    await wrap(async () => {
-      if (!pfxFile) throw new Error(t("tls.pfx_required"));
-      const f = new FormData();
-      f.append("file", pfxFile);
-      if (pfxPass) f.append("password", pfxPass);
-      setSt(await api.postForm<any>("/api/admin/tls-config/import-pfx", f));
-      setPfxFile(null); setPfxPass("");
-      flash(t("tls.applied"));
-    });
-  }
   async function addCa() {
     await wrap(async () => {
       const f = new FormData();
-      if (caFile) f.append("ca", caFile); else throw new Error(t("tls.ca_required"));
+      if (caFile) f.append("ca", caFile); else throw new Error(t("trust.ca_required"));
       if (caName) f.append("name", caName);
-      setSt(await api.postForm<any>("/api/admin/tls-config/ca", f));
+      setSt(await api.postForm<any>("/api/admin/trust-store/ca", f));
       setCaFile(null); setCaName("");
-      flash(t("tls.applied"));
+      flash(t("trust.applied"));
     });
   }
   async function removeCa(id: string) {
-    await wrap(async () => { setSt(await api.del<any>(`/api/admin/tls-config/ca/${id}`)); });
+    await wrap(async () => { setSt(await api.del<any>(`/api/admin/trust-store/ca/${id}`)); });
   }
-  async function toggleTls(enabled: boolean) {
-    await wrap(async () => {
-      setSt(await api.post<any>("/api/admin/tls-config/enabled", { enabled }));
-      flash(t("tls.applied"));
-    });
-  }
-
-  const a = st.active || {};
-  // enabled: whether the app should terminate TLS itself (the toggle's value).
-  // pending: the running server is still in the other mode until the next restart.
-  const enabled = st.tls_enabled !== false;
-  const inactive = !enabled;
-  const pending = st.tls_running != null && st.tls_enabled !== st.tls_running;
-  // Expiry badge colour: red if expired, orange if under 30 days, else green.
-  const expClass = a.expired ? "badge-red" : (a.days_remaining != null && a.days_remaining < 30 ? "badge-orange" : "badge-green");
 
   const caRow = (c: any) => (
     <div key={c.id} className="card stack" style={{ gap: 4, padding: 10 }}>
       <div className="between">
         <span className="strong">{c.name}</span>
-        <span className={`badge ${c.kind === "root" ? "badge-navy" : "badge-grey"}`}>{t(`tls.kind.${c.kind}`)}</span>
+        <span className={`badge ${c.kind === "root" ? "badge-navy" : "badge-grey"}`}>{t(`trust.kind.${c.kind}`)}</span>
       </div>
-      <div className="small muted">{t("tls.issuer")}: {c.issuer}</div>
-      <div className="small muted">{t("tls.expires")}: {c.not_after?.slice(0, 10)}</div>
+      <div className="small muted">{t("trust.issuer")}: {c.issuer}</div>
+      <div className="small muted">{t("trust.expires")}: {c.not_after?.slice(0, 10)}</div>
       <div className="inline" style={{ gap: 8 }}>
-        <a className="btn-secondary btn-sm" href={`/api/admin/tls-config/ca/${c.id}/download`}>{t("tls.download")}</a>
+        <a className="btn-secondary btn-sm" href={`/api/admin/trust-store/ca/${c.id}/download`}>{t("trust.download")}</a>
         <button className="btn-danger btn-sm" onClick={() => removeCa(c.id)}>{t("action.delete")}</button>
       </div>
     </div>
@@ -202,148 +143,27 @@ export function TlsAdmin() {
   return (
     <div className="stack" style={{ maxWidth: 760 }}>
       {error && <ErrorBanner message={error} />}
+      <div className="banner">{t("trust.intro")}</div>
 
-      {/* Master toggle: does the app terminate TLS itself, or the infrastructure? */}
-      <div className="card stack" style={{ gap: 8 }}>
-        <div className="between">
-          <span className="strong">{t("tls.toggle_title")}</span>
-          <label className="switch">
-            <input type="checkbox" checked={enabled} onChange={(e) => toggleTls(e.target.checked)} />
-            <span className="track"><span className="knob" /></span>
-            <span className="small">{enabled ? t("tls.toggle_on") : t("tls.toggle_off")}</span>
-          </label>
-        </div>
-        <div className="small muted">{t("tls.toggle_hint")}</div>
-        {pending && (
-          <div className="banner" style={{ borderLeft: "4px solid var(--orange)" }}>
-            <div className="between" style={{ gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-              <span>⚠️ {t("tls.pending_restart")}</span>
-              <button className="btn-danger btn-sm" onClick={() => setConfirmRestart(true)}>{t("ops.restart_btn")}</button>
-            </div>
-          </div>
-        )}
-        {confirmRestart && (
-          <div className="modal-overlay" onClick={() => setConfirmRestart(false)}>
-            <div className="modal" onClick={(e) => e.stopPropagation()}>
-              <h3>{t("ops.restart_confirm_title")}</h3>
-              <p className="small">{t("ops.restart_confirm_body")}</p>
-              <div className="inline" style={{ justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
-                <button className="btn-secondary" onClick={() => setConfirmRestart(false)}>{t("action.cancel")}</button>
-                <button className="btn-danger" onClick={async () => { setConfirmRestart(false); await restart(); }}>{t("ops.restart_confirm_yes")}</button>
-              </div>
-            </div>
-          </div>
-        )}
-        {overlay}
-      </div>
-
-      {!enabled && <div className="banner" style={{ borderLeft: "4px solid var(--orange)" }}>{t("tls.infra_managed")}</div>}
-
-      {enabled && <>
-      <div className="banner">{t("tls.intro")}</div>
-
-      {/* Active certificate */}
-      <div className="card stack" style={{ gap: 8 }}>
-        <div className="between">
-          <span className="strong">{t("tls.active")}</span>
-          <span className="inline" style={{ gap: 8 }}>
-            <span className={`badge ${st.mode === "self_signed" ? "badge-orange" : "badge-green"}`}>
-              {t(st.mode === "self_signed" ? "tls.mode.self_signed" : "tls.mode.custom")}
-            </span>
-            {a.days_remaining != null && <span className={`badge ${expClass}`}>{t("tls.days_left", { n: a.days_remaining })}</span>}
-          </span>
-        </div>
-        {a.error ? <div className="small" style={{ color: "var(--red)" }}>{a.error}</div> : (
-          <div className="stack" style={{ gap: 2 }}>
-            <div className="small"><b>{t("tls.subject")}:</b> {a.subject}</div>
-            <div className="small"><b>{t("tls.issuer")}:</b> {a.issuer}</div>
-            <div className="small"><b>SAN:</b> {(a.sans || []).join(", ") || "-"}</div>
-            <div className="small"><b>{t("tls.valid_until")}:</b> {a.not_after?.slice(0, 10)}</div>
-            <div className="small muted" style={{ wordBreak: "break-all" }}><b>SHA-256:</b> {a.fingerprint_sha256}</div>
-            {st.chain_len > 0 && <div className="small muted">{t("tls.chain_len", { n: st.chain_len })}</div>}
-          </div>
-        )}
-        <div className="inline">
-          <a className="btn-secondary btn-sm" href="/api/admin/tls-config/active/download">{t("tls.download_active")}</a>
-        </div>
-      </div>
-
-      {/* Self-signed */}
       <div className="card stack" style={{ gap: 10 }}>
-        <span className="strong">{t("tls.self_signed_title")}</span>
-        <div className="small muted">{t("tls.self_signed_hint")}</div>
-        <div className="row">
-          <div style={{ flex: 1, minWidth: 180 }}><label>{t("tls.cn")}</label>
-            <input aria-label={t("tls.cn")} value={cn} onChange={(e) => setCn(e.target.value)} /></div>
-          <div style={{ flex: 2, minWidth: 220 }}><label>{t("tls.sans")}</label>
-            <input aria-label={t("tls.sans")} value={sans} onChange={(e) => setSans(e.target.value)} placeholder="host.example.com, 10.0.0.5" /></div>
-        </div>
-        <div><button className="btn-secondary" onClick={regen} disabled={inactive}>{t("tls.generate")}</button></div>
-      </div>
-
-      {/* Import PEM */}
-      <div className="card stack" style={{ gap: 10 }}>
-        <span className="strong">{t("tls.import_pem_title")}</span>
-        <div className="small muted">{t("tls.import_pem_hint")}</div>
-        <div className="row">
-          <div style={{ flex: 1, minWidth: 220 }}>
-            <label>{t("tls.cert_file")}</label>
-            <input aria-label={t("tls.cert_file")} type="file" accept=".pem,.crt,.cer" onChange={(e) => setCertFile(e.target.files?.[0] ?? null)} />
-          </div>
-          <div style={{ flex: 1, minWidth: 220 }}>
-            <label>{t("tls.key_file")}</label>
-            <input type="file" accept=".pem,.key" aria-label={t("a11y.choose_file")} onChange={(e) => setKeyFile(e.target.files?.[0] ?? null)} />
-          </div>
-        </div>
-        {!certFile && <textarea rows={4} aria-label={t("tls.cert_paste")} placeholder={t("tls.cert_paste")} value={certText} onChange={(e) => setCertText(e.target.value)} style={{ fontFamily: "monospace", fontSize: 12 }} />}
-        {!keyFile && <textarea rows={4} aria-label={t("tls.key_paste")} placeholder={t("tls.key_paste")} value={keyText} onChange={(e) => setKeyText(e.target.value)} style={{ fontFamily: "monospace", fontSize: 12 }} />}
-        <div className="row">
-          <div style={{ width: 260 }}><label>{t("tls.key_passphrase")}</label>
-            <input aria-label={t("tls.key_passphrase")} type="password" value={pemPass} onChange={(e) => setPemPass(e.target.value)} /></div>
-        </div>
-        <div><button onClick={importPem} disabled={inactive}>{t("tls.install")}</button></div>
-      </div>
-
-      {/* Import PFX */}
-      <div className="card stack" style={{ gap: 10 }}>
-        <span className="strong">{t("tls.import_pfx_title")}</span>
-        <div className="small muted">{t("tls.import_pfx_hint")}</div>
-        <div className="row">
-          <div style={{ flex: 1, minWidth: 220 }}>
-            <label>{t("tls.pfx_file")}</label>
-            <input aria-label={t("tls.pfx_file")} type="file" accept=".pfx,.p12" onChange={(e) => setPfxFile(e.target.files?.[0] ?? null)} />
-          </div>
-          <div style={{ width: 260 }}><label>{t("tls.pfx_password")}</label>
-            <input aria-label={t("tls.pfx_password")} type="password" value={pfxPass} onChange={(e) => setPfxPass(e.target.value)} /></div>
-        </div>
-        <div><button onClick={importPfx} disabled={inactive}>{t("tls.install")}</button></div>
-      </div>
-      </>}
-
-      {/* Trusted authorities. Deliberately OUTSIDE the toggle above: these are the
-          authorities the app trusts when it CALLS an IdP, an SMTP relay or a log
-          sink, which has nothing to do with who terminates the TLS in front of it.
-          Gating them behind in-app TLS used to force an administrator to flip the
-          serving mode (and restart on another port) just to import a root CA. */}
-      <div className="card stack" style={{ gap: 10 }}>
-        <span className="strong">{t("tls.ca_title")}</span>
-        <div className="small muted">{t("tls.ca_hint")}</div>
+        <span className="strong">{t("trust.ca_title")}</span>
+        <div className="small muted">{t("trust.ca_hint")}</div>
         <div className="stack" style={{ gap: 6 }}>
-          <div className="small strong">{t("tls.roots")}</div>
-          {st.roots?.length ? st.roots.map(caRow) : <div className="small muted">{t("tls.none")}</div>}
-          <div className="small strong" style={{ marginTop: 8 }}>{t("tls.intermediates")}</div>
-          {st.intermediates?.length ? st.intermediates.map(caRow) : <div className="small muted">{t("tls.none")}</div>}
+          <div className="small strong">{t("trust.roots")}</div>
+          {st.roots?.length ? st.roots.map(caRow) : <div className="small muted">{t("trust.none")}</div>}
+          <div className="small strong" style={{ marginTop: 8 }}>{t("trust.intermediates")}</div>
+          {st.intermediates?.length ? st.intermediates.map(caRow) : <div className="small muted">{t("trust.none")}</div>}
         </div>
         <div className="row" style={{ alignItems: "flex-end" }}>
           <div style={{ flex: 1, minWidth: 220 }}>
-            <label>{t("tls.ca_file")}</label>
-            <input aria-label={t("tls.ca_file")} type="file" accept=".pem,.crt,.cer" onChange={(e) => setCaFile(e.target.files?.[0] ?? null)} />
+            <label>{t("trust.ca_file")}</label>
+            <input aria-label={t("trust.ca_file")} type="file" accept=".pem,.crt,.cer" onChange={(e) => setCaFile(e.target.files?.[0] ?? null)} />
           </div>
           <div style={{ flex: 1, minWidth: 180 }}>
-            <label>{t("tls.ca_name")}</label>
-            <input aria-label={t("tls.ca_name")} value={caName} onChange={(e) => setCaName(e.target.value)} />
+            <label>{t("trust.ca_name")}</label>
+            <input aria-label={t("trust.ca_name")} value={caName} onChange={(e) => setCaName(e.target.value)} />
           </div>
-          <button className="btn-secondary" onClick={addCa}>{t("tls.add_ca")}</button>
+          <button className="btn-secondary" onClick={addCa}>{t("trust.add_ca")}</button>
         </div>
       </div>
 

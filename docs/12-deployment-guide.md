@@ -43,11 +43,10 @@ is. That's it. Everything below is detail around those two moves.
    (`HTTPRoute`), and GKE provisions an **internal Application Load Balancer (ALB)**
    in front of it. The ALB terminates TLS - with a **self-signed certificate** to get
    you running on day one, swapped for **your PKI certificate** later without touching
-   a manifest - and forwards to the pod. The pod binds **exactly one port**, chosen by
-   `TLS_ENABLED`: plain **HTTP :8000** (`false`, the recommended model, §6.9) or
-   **HTTPS :8443** (`true`, the app terminating TLS itself, §6.10). The HTTP→HTTPS
-   redirect is done **by the Gateway**, not by the app. This is the **only** supported
-   exposure path - no `Service: LoadBalancer`, no `Ingress`. → §6.9/§6.10.
+   a manifest - and forwards to the pod. The pod binds **exactly one port**, plain
+   **HTTP :8000**: the app never terminates TLS (ADR 0013). The HTTP→HTTPS redirect is
+   done **by the Gateway**, not by the app. This is the **only** supported exposure
+   path - no `Service: LoadBalancer`, no `Ingress`. → §6.9.
 7. **Check it works.** Open the site, log in with the break-glass admin, and click
    around. Then configure SSO, SMTP (for emails), backups, etc. from the admin UI. → §10.
    To rehearse the whole chain (gateway TLS, forwarded headers, OIDC **and** SAML
@@ -70,8 +69,8 @@ untouched. That update procedure has its own document: **`13-maintenance-and-upd
 ```
             ┌───────────────────┐     ┌──────────────────────────────┐
   users ───▶│  API Gateway      │────▶│  TeamFollowUP (1 image)      │───▶  PostgreSQL 16
-  HTTPS 443 │  Gateway+HTTPRoute│HTTPS│  FastAPI + built React SPA   │      (managed or self-hosted)
-            │  = internal ALB   │:8443│  HTTPS :8443 (single port)   │
+  HTTPS 443 │  Gateway+HTTPRoute│ HTTP│  FastAPI + built React SPA   │      (managed or self-hosted)
+            │  = internal ALB   │:8000│  HTTP :8000 (single port)    │
             │  self-signed cert │     └──────────────────────────────┘
             │  → PKI cert later │
             └───────────────────┘
@@ -82,16 +81,13 @@ untouched. That update procedure has its own document: **`13-maintenance-and-upd
 > routes**), which provisions an **internal Application Load Balancer**. A `Service` of
 > type `LoadBalancer` and an `Ingress` are **not** supported topologies here and appear
 > nowhere in this guide - the app's `Service` is a `ClusterIP`, unreachable from outside
-> the cluster by design. See **§6.9/§6.10**, and keep it in mind when reading the other
+> the cluster by design. See **§6.9**, and keep it in mind when reading the other
 > platform sections (§4, §7, §8), which predate this decision.
 
 - **Single image** (`Dockerfile`, multi-stage): builds the React SPA, then serves it
-  together with the API from FastAPI/uvicorn. The listener is chosen by **`TLS_ENABLED`**
-  (`app/server.py`): recommended **`false`** serves plain **HTTP on :8000** and lets the
-  infrastructure terminate TLS (§6.9); **`true`** serves **HTTPS on :8443** and the app
-  terminates TLS itself, with a self-signed cert generated on first boot (§6.10). It binds
-  **one** port either way. HTTP→HTTPS redirection is always the infrastructure's job (the
-  Gateway's redirect route), never the app's.
+  together with the API from FastAPI/uvicorn, on **one** port, plain **HTTP on :8000**
+  (`app/server.py`). TLS termination and HTTP→HTTPS redirection are the
+  infrastructure's job, never the app's (ADR 0013, §6.9).
 - **Stateless app**: all state lives in PostgreSQL. You can run **N replicas**.
   The in-process weekly scheduler uses a **Postgres advisory lock**, so only one
   replica ticks at a time - horizontal scaling is safe.
@@ -117,10 +113,9 @@ All config is via environment variables (see `.env.example`). The essentials:
 | `POSTGRES_DB` / `POSTGRES_USER` / `POSTGRES_PASSWORD` | **yes** | DB name / user / password. |
 | `PUBLIC_BASE_URL` | **prod (SSO)** | The app's public URL, e.g. `https://teamfollowup.example.com`. Base of every OIDC/SAML callback URL. Empty = derived per request from `X-Forwarded-Proto` / `-Host`. |
 | `COOKIE_SECURE` | **prod** | `true` as soon as the app is reached over HTTPS, including when TLS terminates upstream. Must be `false` for a plain-HTTP local run. |
-| `TLS_ENABLED` | | `false` = plain HTTP on `HTTP_PORT`, infra terminates TLS (**recommended**, and what compose / the manifests set). `true` = the app terminates TLS itself on `:8443`, and is the fallback when the variable is unset and no Admin → TLS toggle is stored. Set it explicitly. |
-| `HTTP_PORT` | | Container listen port when `TLS_ENABLED=false`. Default `8000`. |
-| `APP_HTTP_PORT` / `APP_HTTPS_PORT` | | Host-side compose mappings only (read by `docker-compose.yml`, not by the app). Default `8000` / `8443`. |
-| `CERT_DIR` | | Where TLS material is written (`/app/certs`), `TLS_ENABLED=true` only. |
+| `HTTP_PORT` | | Container listen port, plain HTTP. Default `8000`. |
+| `APP_HTTP_PORT` | | Host-side compose mapping only (read by `docker-compose.yml`, not by the app). Default `8000`. |
+| `CERT_DIR` | | Scratch directory for the outbound trust bundle (`/app/certs`). The authorities themselves live in the database. |
 | `COOKIE_SAMESITE` | | `lax` (default) or `strict`. |
 | `SEED_DEMO` | | `false` in production (no demo data). |
 | `BREAKGLASS_EMAIL` / `BREAKGLASS_PASSWORD` | **yes** | Emergency admin. If password is empty, a random one is printed in the logs on first boot. |
@@ -163,7 +158,7 @@ combines `X-Forwarded-Proto` with the received `Host`. On GKE that second path i
 one that runs, and it yields `https://<your Gateway hostname>` even though the pod
 itself only ever spoke plain HTTP on `:8000`.
 
-Set it explicitly anyway in production, as the manifests in §6.9/§6.10 do. Three
+Set it explicitly anyway in production, as the manifests in §6.9 do. Three
 reasons: the app may be reachable through several hostnames (the Gateway hostname, a
 `kubectl port-forward`, an internal probe); a request that arrives by IP rather than
 by name would derive an IP-based URL no IdP will accept; and a configured value is not
@@ -226,10 +221,10 @@ Simplest, fully self-hosted. Ideal for on-prem / sovereign-by-default.
    ```
 4. **Exposure.** This compose setup has no API Gateway, so it is a **development /
    evaluation** target only - the supported production exposure is the Gateway API +
-   HTTP routes → internal ALB path (§1, §6.9/§6.10), which requires GKE. For a local trial,
-   reach the app directly on `http://VM:8000` (the compose default), or set
-   `TLS_ENABLED=true` + `APP_HTTPS_PORT=8443` to have it serve TLS itself on
-   `https://VM:8443`.
+   HTTP routes → internal ALB path (§1, §6.9), which requires GKE. For a local trial,
+   reach the app directly on `http://VM:8000` (the compose default). If that VM is on a
+   network where plain HTTP is not acceptable, put a reverse proxy in front of it; the
+   app has no HTTPS listener of its own (ADR 0013).
 5. **Backups**: the compose file ships an optional `pg_dump` sidecar - enable it
    with `docker compose --profile backup up -d`, or snapshot the VM/volume.
 
@@ -243,11 +238,9 @@ managed-cloud options below, use the **managed** database instead.
 Serverless, scales to zero, managed Postgres.
 
 > **Serving mode on Cloud Run.** Cloud Run terminates TLS at its edge and speaks **plain
-> HTTP** to the container, so run the app in its **`TLS_ENABLED=false`** mode (the same
-> plain-HTTP model as §6.9): set `TLS_ENABLED=false` and `HTTP_PORT=8080`, and point
-> `--port 8080` at it. Do **not** use the `TLS_ENABLED=true` / HTTPS :8443 mode here -
-> Cloud Run cannot speak TLS to the container. The app trusts `X-Forwarded-Proto`, so keep
-> `COOKIE_SECURE=true`.
+> HTTP** to the container, which is exactly what the app serves (§6.9): set
+> `HTTP_PORT=8080` and point `--port 8080` at it. The app trusts `X-Forwarded-Proto`, so
+> keep `COOKIE_SECURE=true`.
 
 1. **Database**: create a **Cloud SQL for PostgreSQL 16** instance + a database +
    user.
@@ -258,7 +251,7 @@ Serverless, scales to zero, managed Postgres.
      --image REGION-docker.pkg.dev/PROJECT/REPO/teamfollowup:2.1.0 \
      --region REGION --port 8080 --allow-unauthenticated \
      --add-cloudsql-instances PROJECT:REGION:INSTANCE \
-     --set-env-vars TLS_ENABLED=false,HTTP_PORT=8080,POSTGRES_HOST=/cloudsql/PROJECT:REGION:INSTANCE,POSTGRES_DB=tribe,POSTGRES_USER=tribe,COOKIE_SECURE=true,SEED_DEMO=false,PUBLIC_BASE_URL=https://teamfollowup.example.com \
+     --set-env-vars HTTP_PORT=8080,POSTGRES_HOST=/cloudsql/PROJECT:REGION:INSTANCE,POSTGRES_DB=tribe,POSTGRES_USER=tribe,COOKIE_SECURE=true,SEED_DEMO=false,PUBLIC_BASE_URL=https://teamfollowup.example.com \
      --set-secrets SECRET_KEY=tribe-secret:latest,POSTGRES_PASSWORD=tribe-db-pw:latest,BREAKGLASS_PASSWORD=tribe-admin:latest \
      --min-instances 1 --max-instances 4
    ```
@@ -311,7 +304,7 @@ What makes *your* case harder is **two walls** stacked on top of that simple ide
 
 Order of play: one-time setup (§6.2 checklist, §6.3 gcloud, §6.4 registry) → move the
 image in (§6.5) → create the cluster (§6.6) → pick a database (§6.7) → prepare (§6.8)
-→ follow the end-to-end path for your TLS model (§6.9 or §6.10). Future updates are
+→ follow the end-to-end path in §6.9. Future updates are
 just §6.5 + one command (§6.12).
 
 ### 6.1 What's different about S3NS (the limitations, in plain words)
@@ -577,17 +570,11 @@ set `POSTGRES_HOST` to that private IP.
 > it, turn it on at the instance level - no application change:
 > `gcloud sql instances patch tribe-db --require-ssl --project PROJECT`.
 
-### 6.8 Prepare the deploy (identical for both TLS models)
+### 6.8 Prepare the deploy
 
-Everything in this section is the same whether **the infrastructure** or **the app**
-terminates TLS. Do §6.8 once, then follow **exactly one** of the two end-to-end
-walkthroughs, top to bottom, without mixing them:
-
-- **§6.9 - `TLS_ENABLED=false` (recommended):** the Gateway/ALB terminates TLS, the pod
-  serves plain **HTTP on :8000**.
-- **§6.10 - `TLS_ENABLED=true`:** the pod terminates TLS itself, serving **HTTPS on :8443**.
-
-You never need both. If you are unsure, use §6.9.
+Do §6.8 once (secrets, database wiring, the gateway certificate), then follow the
+end-to-end walkthrough in **§6.9** top to bottom: the Gateway/ALB terminates TLS and the
+pod serves plain **HTTP on :8000**, which is the only model the app supports (ADR 0013).
 
 #### 6.8.1 The application secrets (`teamfollowup-secrets.yaml`)
 
@@ -720,28 +707,20 @@ kubectl create secret tls teamfollowup-tls \
 *(`server.crt` must be the **full chain** - your server certificate followed by any
 intermediate CA certificates - or some clients reject it even when a browser accepts it.)*
 
-#### 6.8.4 Now pick your path
+#### 6.8.4 What the pod expects
 
-| | **§6.9 - `TLS_ENABLED=false`** (recommended) | **§6.10 - `TLS_ENABLED=true`** |
-|---|---|---|
-| Who terminates TLS | the ALB (infrastructure) | the pod (the app) |
-| Pod listens on | plain **HTTP :8000** | **HTTPS :8443** |
-| Certificate on the pod | none | self-signed, auto-generated on boot |
-| ALB to pod hop | HTTP | HTTPS |
-| Extra `HealthCheckPolicy` | not needed | required |
-| When to choose it | almost always | only if policy mandates in-pod TLS |
-
-Both keep `COOKIE_SECURE=true` (clients always reach the ALB over HTTPS; the app trusts
-`X-Forwarded-Proto`). Go to **your** section now and follow it to the end - you will not need
-the other one.
+The ALB terminates TLS and forwards **plain HTTP** to the pod on **:8000**. There is no
+certificate on the pod, no HTTPS backend, and therefore no `HealthCheckPolicy` to add.
+Keep `COOKIE_SECURE=true`: clients always reach the ALB over HTTPS and the app trusts
+`X-Forwarded-Proto`. Go to §6.9 and follow it to the end.
 
 ---
 
-### 6.9 End-to-end: TLS terminated by the infrastructure (`TLS_ENABLED=false`) - RECOMMENDED
+### 6.9 End-to-end: TLS terminated by the infrastructure
 
 The pod serves plain HTTP on :8000; the Gateway/ALB does all the TLS. This removes the whole
 HTTPS-backend class of failures (no certificate on the pod, no protocol mismatch). Follow
-steps 1 to 5 in order - you need nothing from §6.10.
+steps 1 to 5 in order.
 
 ```
   user ──HTTPS 443──▶  Gateway (gke-l7-rilb)  ──HTTP──▶  Service teamfollowup-app  ──▶  pod :8000 (HTTP)
@@ -779,8 +758,6 @@ spec:
             - containerPort: 8000
               name: http
           env:
-            - name: TLS_ENABLED          # infra terminates TLS; the pod serves plain HTTP
-              value: "false"
             - name: HTTP_PORT
               value: "8000"
             - name: LOG_FORMAT           # structured logs for GCP Cloud Logging
@@ -924,7 +901,7 @@ spec:
             statusCode: 301
 ```
 *To expose only part of the API, add `rules` to `teamfollowup-app-route` (first match wins).
-The example in §6.10 Step 3 keeps the admin surface off the gateway; here the `backendRefs`
+A route that keeps the admin surface off the gateway is shown below; here the `backendRefs`
 port is `80`, not `443`.*
 
 **Step 4 - Apply and wire DNS.**
@@ -953,264 +930,7 @@ warn; that is expected.* Then open the URL, log in with the break-glass admin
 (`BREAKGLASS_EMAIL` / the password you set, or the random one printed in the logs on first
 boot), and finish setup (SSO, SMTP, backups) from the admin UI (§9-§10).
 
----
-
-### 6.10 End-to-end: TLS terminated by the app (`TLS_ENABLED=true`)
-
-Use this only if your policy requires TLS all the way into the container. The pod serves
-**HTTPS on :8443, its only port**, with a self-signed certificate generated on first boot
-(replace it later from **Administration → HTTPS / Certificats**). Two certificates are in
-play here, which is normal: the **ALB** presents `teamfollowup-tls` to users, and the **pod**
-presents its own self-signed one on the internal ALB to pod hop, which never leaves the VPC.
-Follow steps 1 to 5 in order - you need nothing from §6.9.
-
-```
-  user ──HTTPS 443──▶  Gateway (gke-l7-rilb)  ──HTTPS──▶  Service teamfollowup-app  ──▶  pod :8443 (HTTPS)
-                       = internal ALB           :443       (ClusterIP, appProtocol HTTPS)
-                       cert: teamfollowup-tls
-```
-
-**Step 1 - The application (`app.yaml`).** The container serves HTTPS on :8443. `TLS_ENABLED`
-defaults to `true`, so it is not set here. Set `POSTGRES_HOST` to the `postgres` Service
-(option A) or the Cloud SQL private IP (option B).
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: teamfollowup-app
-spec:
-  replicas: 1                      # keep 1 for the first rollout (migrations); scale up after
-  selector:
-    matchLabels:
-      app: teamfollowup-app
-  template:
-    metadata:
-      labels:
-        app: teamfollowup-app
-    spec:
-      containers:
-        - name: app
-          # Use an IMMUTABLE tag: the version you are deploying, never a tag you
-          # re-push. Kubernetes defaults imagePullPolicy to IfNotPresent for any
-          # tag other than :latest, so a node that already cached this tag will
-          # keep serving the OLD image - and the first symptom is usually Alembic
-          # refusing to start (see the troubleshooting table). Best of all, pin
-          # the digest: ...teamfollowup@sha256:<digest>.
-          image: u-france-east1-docker.s3nsregistry.fr/PROJECT/tribe/teamfollowup:2.1.0
-          ports:
-            - containerPort: 8443          # the app's ONLY port (HTTPS)
-              name: https
-          env:
-            - name: POSTGRES_HOST
-              value: postgres              # option A: the Service name
-            #  option B (Cloud SQL): value: "10.42.0.3"  <- the private IP from §6.7.1
-            - name: POSTGRES_PORT
-              value: "5432"
-            - name: POSTGRES_DB
-              value: tribe
-            - name: POSTGRES_USER
-              value: tribe
-            - name: SEED_DEMO
-              value: "false"
-            - name: COOKIE_SECURE
-              value: "true"
-            - name: PUBLIC_BASE_URL      # public address, NOT the container port (§2.1)
-              value: "https://tribe.internal.example"     # <- the Gateway listener hostname below
-            - name: BREAKGLASS_EMAIL
-              value: admin@local
-            - name: SECRET_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: teamfollowup-secrets
-                  key: SECRET_KEY
-            - name: POSTGRES_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: teamfollowup-secrets
-                  key: POSTGRES_PASSWORD
-            - name: BREAKGLASS_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: teamfollowup-secrets
-                  key: BREAKGLASS_PASSWORD
-          readinessProbe:
-            httpGet:                       # HTTPS: self-signed cert is fine, kubelet doesn't verify it
-              path: /api/health
-              port: 8443
-              scheme: HTTPS
-            initialDelaySeconds: 20
-            periodSeconds: 10
-          resources:                       # Autopilot requires explicit requests
-            requests:
-              cpu: "500m"
-              memory: "1Gi"
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: teamfollowup-app
-  annotations:
-    cloud.google.com/app-protocols: '{"https":"HTTPS"}'   # legacy signal (Ingress-style)
-spec:
-  type: ClusterIP                          # exposure is the Gateway's job (Step 3)
-  selector:
-    app: teamfollowup-app
-  # appProtocol: HTTPS is the Gateway-API-native signal that the pod speaks TLS on 8443.
-  # WITHOUT it the ALB talks cleartext HTTP to the TLS-only port and EVERY request is reset
-  # with "reset reason: connection termination" - even though health checks stay HEALTHY.
-  ports:
-    - name: https
-      port: 443
-      targetPort: 8443
-      appProtocol: HTTPS
-```
-
-**Step 2 - Apply it and check the pod.**
-```bash
-# Option A (in-cluster Postgres):
-kubectl apply -f teamfollowup-secrets.yaml -f postgres.yaml -f app.yaml
-# Option B (Cloud SQL - no postgres.yaml, the database already exists):
-kubectl apply -f teamfollowup-secrets.yaml -f app.yaml
-
-kubectl rollout status deployment/teamfollowup-app
-kubectl logs deploy/teamfollowup-app | grep -i "migration\|secours"   # migrations + break-glass
-```
-The entrypoint waits for the database (60 x 2 s), runs `alembic upgrade head`, then starts
-the server - so the first pod migrates the DB. Once healthy, scale with `kubectl scale
-deployment/teamfollowup-app --replicas=3` (multi-replica safe via a Postgres advisory lock).
-The `Service` is a `ClusterIP`, so the app is not reachable yet - that is Step 3. To
-sanity-check the pod first: `kubectl port-forward deploy/teamfollowup-app 8443:8443` then
-`curl -k https://localhost:8443/api/health`.
-
-**Step 3 - The Gateway and its routes (`gateway.yaml`).** The Gateway serves your
-`teamfollowup-tls` certificate (§6.8.3) to users and forwards **HTTPS** to the app on port
-443. Because the ALB to pod hop is TLS, a `HealthCheckPolicy` is **required** so the ALB
-health-checks over HTTPS; without it the check defaults to HTTP and every backend is marked
-UNHEALTHY.
-```yaml
-apiVersion: gateway.networking.k8s.io/v1
-kind: Gateway
-metadata:
-  name: teamfollowup-gateway
-spec:
-  gatewayClassName: gke-l7-rilb          # regional INTERNAL Application Load Balancer
-  listeners:
-    - name: https
-      protocol: HTTPS
-      port: 443
-      hostname: tribe.internal.example
-      tls:
-        mode: Terminate                  # the ALB terminates TLS with your cert
-        certificateRefs:
-          - name: teamfollowup-tls
-    - name: http
-      protocol: HTTP
-      port: 80                           # only exists to redirect users to HTTPS
-      hostname: tribe.internal.example
----
-# Everything under / goes to the app, over HTTPS (port 443 = the Service port -> pod :8443).
-apiVersion: gateway.networking.k8s.io/v1
-kind: HTTPRoute
-metadata:
-  name: teamfollowup-app-route
-spec:
-  parentRefs:
-    - name: teamfollowup-gateway
-      sectionName: https
-  hostnames:
-    - tribe.internal.example
-  rules:
-    - matches:
-        - path:
-            type: PathPrefix
-            value: /
-      backendRefs:
-        - name: teamfollowup-app
-          port: 443
----
-# Plain HTTP never reaches the app: the Gateway itself 301s it to HTTPS.
-apiVersion: gateway.networking.k8s.io/v1
-kind: HTTPRoute
-metadata:
-  name: teamfollowup-https-redirect
-spec:
-  parentRefs:
-    - name: teamfollowup-gateway
-      sectionName: http
-  hostnames:
-    - tribe.internal.example
-  rules:
-    - filters:
-        - type: RequestRedirect
-          requestRedirect:
-            scheme: https
-            statusCode: 301
----
-# The ALB health-checks the backend over HTTPS on the pod's serving port.
-# GKE uses container-native (NEG) load balancing: the ALB probes the pods DIRECTLY on their
-# container port 8443, not the Service's virtual :443 - so the port here is 8443, not 443.
-apiVersion: networking.gke.io/v1
-kind: HealthCheckPolicy
-metadata:
-  name: teamfollowup-app-hc
-spec:
-  targetRef:
-    group: ""
-    kind: Service
-    name: teamfollowup-app
-  default:
-    config:
-      type: HTTPS
-      httpsHealthCheck:
-        requestPath: /api/health
-        port: 8443
-```
-*To expose only part of the API, add `rules` to `teamfollowup-app-route` (they run in order,
-first match wins). For example, keep the admin surface off the gateway:*
-```yaml
-  rules:
-    - matches:
-        - path:
-            type: PathPrefix
-            value: /api/admin
-      filters:
-        - type: RequestRedirect
-          requestRedirect:
-            statusCode: 404
-    - matches:
-        - path:
-            type: PathPrefix
-            value: /
-      backendRefs:
-        - name: teamfollowup-app
-          port: 443
-```
-
-**Step 4 - Apply and wire DNS.**
-```bash
-kubectl apply -f gateway.yaml
-
-kubectl wait --for=condition=Programmed gateway/teamfollowup-gateway --timeout=10m
-kubectl get gateway teamfollowup-gateway -o jsonpath='{.status.addresses[0].value}'   # e.g. 10.128.0.30
-```
-Point your internal **DNS** record (`tribe.internal.example`) at that address. Keep
-`COOKIE_SECURE=true`: the ALB sets `X-Forwarded-*` (uvicorn `proxy_headers=True`).
-
-**Step 5 - Verify.**
-```bash
-kubectl get pods                        # teamfollowup-app Running (+ postgres, with option A)
-kubectl get gateway teamfollowup-gateway    # PROGRAMMED=True + an ADDRESS
-kubectl get httproute                   # both routes Accepted
-
-curl -k https://tribe.internal.example/api/health   # {"status":"ok"} - via the ALB
-curl -I http://tribe.internal.example/              # 301 to https://
-```
-*Drop the `-k` once the gateway serves your **PKI** certificate (§6.8.3).* Then open the URL,
-log in with the break-glass admin (`BREAKGLASS_EMAIL` / the password you set, or the random
-one printed in the logs on first boot), and finish setup (SSO, SMTP, backups) from the admin
-UI (§9-§10).
-
-### 6.10.a (Optional) Keyless GCP identity for audit-log export
+### 6.10 (Optional) Keyless GCP identity for audit-log export
 
 If you use **Admin → Logs** to export the audit log to **GCS or BigQuery**, do
 **not** paste a service-account JSON key - that is a long-lived secret Google
@@ -1259,9 +979,9 @@ file) or, only if nothing else is possible, the **`key`** method.
 | App pod hangs on `[entrypoint] DB indisponible` then dies after 60 tries | the pod cannot route to the Cloud SQL private IP | The instance needs **private services access** on the VPC, and the cluster must sit on that **same VPC** (§6.6 `--network`). Check from inside the cluster: `kubectl run -it --rm pg --image=… -- psql -h 10.42.0.3 -U tribe`. |
 | App logs: `password authentication failed for user "tribe"` | `POSTGRES_PASSWORD` mismatch | The value in `teamfollowup-secrets` must equal the password set by `gcloud sql users create` (§6.7.1). |
 | App logs: `no pg_hba.conf entry … SSL off` | the instance enforces TLS (`--require-ssl`) | Either drop the requirement, or keep it and configure the client TLS material - the app connects with plain psycopg2 settings. |
-| Readiness probe never passes, `curl` to the app port refused | probe/Service port doesn't match the TLS model | Match the model: `TLS_ENABLED=false` serves **HTTP :8000** (probe `port: 8000, scheme: HTTP`, Service `targetPort: 8000` - §6.9); `TLS_ENABLED=true` serves **HTTPS :8443** (probe `port: 8443, scheme: HTTPS`, `targetPort: 8443` - §6.10). There is no :8080 listener. |
+| Readiness probe never passes, `curl` to the app port refused | probe/Service port doesn't match the listener | The pod serves **HTTP :8000**: probe `port: 8000, scheme: HTTP`, Service `targetPort: 8000` (§6.9). There is no :8080 and no :8443 listener. |
 | `Gateway` stuck, `Programmed=False`, never gets an address | the **proxy-only subnet** is missing | Create it once per VPC + region - §6.8.3 (`--purpose=REGIONAL_MANAGED_PROXY`). This is by far the most common Gateway failure. |
-| Gateway is up but every request returns **502** | the ALB is health-checking the backend over **HTTP** while the pod speaks HTTPS | Specific to the `TLS_ENABLED=true` model (§6.10): the Service needs `cloud.google.com/app-protocols: '{"https":"HTTPS"}'` **and** the `HealthCheckPolicy` with `type: HTTPS`, `port: 8443`. The recommended `TLS_ENABLED=false` model (§6.9) avoids this entirely. Check backend health: `gcloud compute backend-services get-health …`. |
+| Gateway is up but every request returns **502** | the ALB cannot health-check the backend | The pod speaks plain HTTP on :8000 and the Service must say so (`appProtocol: HTTP`, `targetPort: 8000`); an image from before 2.2.0 configured for in-pod TLS would answer HTTPS on :8443 instead. Check backend health: `gcloud compute backend-services get-health …`. |
 | Backend is **healthy** yet requests intermittently fail with `upstream connect error or disconnect/reset before headers. reset reason: connection termination` | the app's HTTP keep-alive timeout is **shorter** than the ALB's backend idle timeout, so the LB reuses a connection uvicorn just closed | The server sets `timeout_keep_alive=620s` (> the Google ALB default of 600s) - see `app/server.py` (`KEEPALIVE_TIMEOUT`). If your LB uses a longer idle timeout, raise it via the `KEEPALIVE_TIMEOUT` env var so it stays above the LB's. |
 | `HTTPRoute` shows `Accepted=False` / `NotAllowedByListeners` | hostname or `sectionName` mismatch | The route's `hostnames` must match the listener's `hostname`, and `parentRefs.sectionName` must name an existing listener (`https` / `http`). |
 | Browser: "your connection is not private" / `NET::ERR_CERT_AUTHORITY_INVALID` | the gateway is still on the **self-signed** certificate | Expected - click through, or swap in your PKI cert (§6.8.3). Not a misconfiguration. |
@@ -1334,7 +1054,7 @@ The new pod runs `alembic upgrade head` automatically. **Back up the database fi
 ## 7. AWS - ECS Fargate + RDS
 
 > **Not the supported exposure path.** Exposure is standardized on the **API Gateway
-> (Gateway API) + HTTP routes → internal ALB** topology of §6.9/§6.10, which is GKE-specific.
+> (Gateway API) + HTTP routes → internal ALB** topology of §6.9, which is GKE-specific.
 > This section is kept for reference only. If AWS ever becomes a real target, the
 > equivalent is **API Gateway (HTTP API) → VPC Link → internal ALB → ECS**, and this
 > section must be rewritten around it - do not publish the ECS service straight from a
@@ -1343,11 +1063,9 @@ The new pod runs `alembic upgrade head` automatically. **Back up the database fi
 1. **Database**: create **RDS for PostgreSQL 16** (Multi-AZ for HA), a DB and user.
 2. **Image**: push to **ECR**.
 3. **Service**: an **ECS Fargate** service behind an **Application Load Balancer**:
-   - `TLS_ENABLED=false`, task container port **8000**; ALB target group with
+   - task container port **8000**; ALB target group with
      protocol **HTTP** → 8000, health check `GET /api/health`. The ALB listener on
-     443 uses your **ACM** certificate and terminates TLS. (The `TLS_ENABLED=true`
-     variant works too: container port 8443, target group protocol HTTPS, the ALB
-     not verifying the pod's self-signed certificate on that internal hop.)
+     443 uses your **ACM** certificate and terminates TLS.
    - Env from the task definition; secrets from **Secrets Manager / SSM** mapped to
      `SECRET_KEY`, `POSTGRES_PASSWORD`, etc.
    - `POSTGRES_HOST` = the RDS endpoint; open the security group from the ECS tasks
@@ -1367,11 +1085,11 @@ The new pod runs `alembic upgrade head` automatically. **Back up the database fi
 ## 8. Azure - Container Apps + PostgreSQL Flexible Server
 
 > **Not the standardized exposure path.** Exposure is standardized on the **API Gateway +
-> HTTP routes → internal ALB** topology of §6.9/§6.10, and Container Apps' built-in ingress
-> is not that - so this section is kept for reference. The app itself runs fine here in its
-> **`TLS_ENABLED=false`** plain-HTTP mode (Container Apps forwards plain HTTP to the
-> container, and terminates TLS at its edge). If Azure becomes a first-class target, use
-> **AKS** and port the §6.8-§6.10 manifests (the Gateway API is portable; only the
+> HTTP routes → internal ALB** topology of §6.9, and Container Apps' built-in ingress
+> is not that - so this section is kept for reference. The app itself runs fine here
+> (Container Apps forwards plain HTTP to the container, which is what the app serves, and
+> terminates TLS at its edge). If Azure becomes a first-class target, use
+> **AKS** and port the §6.8-§6.9 manifests (the Gateway API is portable; only the
 > `gatewayClassName` changes).
 
 1. **Database**: **Azure Database for PostgreSQL - Flexible Server** (v16), a DB
@@ -1383,7 +1101,7 @@ The new pod runs `alembic upgrade head` automatically. **Back up the database fi
      --image REGISTRY.azurecr.io/teamfollowup:2.1.0 \
      --target-port 8000 --ingress external \
      --min-replicas 1 --max-replicas 4 \
-     --env-vars TLS_ENABLED=false HTTP_PORT=8000 POSTGRES_HOST=SERVER.postgres.database.azure.com POSTGRES_DB=tribe POSTGRES_USER=tribe COOKIE_SECURE=true SEED_DEMO=false PUBLIC_BASE_URL=https://teamfollowup.example.com \
+     --env-vars HTTP_PORT=8000 POSTGRES_HOST=SERVER.postgres.database.azure.com POSTGRES_DB=tribe POSTGRES_USER=tribe COOKIE_SECURE=true SEED_DEMO=false PUBLIC_BASE_URL=https://teamfollowup.example.com \
      --secrets tribe-secret=... db-pw=... admin-pw=... \
      --env-vars SECRET_KEY=secretref:tribe-secret POSTGRES_PASSWORD=secretref:db-pw BREAKGLASS_PASSWORD=secretref:admin-pw
    ```
@@ -1439,10 +1157,9 @@ docker compose exec -T app python - < backend/scripts/seed_real_org.py
   size storage for snapshots/audit retention (configurable via
   `AUDIT_RETENTION_DAYS`).
 - **TLS**: the **API Gateway (internal ALB)** terminates TLS for users - self-signed at
-  first, your PKI certificate once issued. The ALB-to-pod hop has two models: recommended
-  **`TLS_ENABLED=false`** (§6.9) where the pod serves plain HTTP on :8000, or
-  **`TLS_ENABLED=true`** (§6.10) where the pod serves HTTPS on :8443 and terminates TLS
-  again itself. Either way the app trusts `X-Forwarded-*` (uvicorn `proxy_headers=True`),
-  and the HTTP→HTTPS redirect is done by the gateway's redirect route, never the app.
+  first, your PKI certificate once issued. The ALB-to-pod hop is plain HTTP to :8000
+  (§6.9): the app never terminates TLS (ADR 0013). It trusts `X-Forwarded-*` (uvicorn
+  `proxy_headers=True`), and the HTTP→HTTPS redirect is done by the gateway's redirect
+  route, never the app.
 
 See also `docs/05-security.md` and `docs/06-operations-runbook.md`.

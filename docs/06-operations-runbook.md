@@ -3,19 +3,13 @@
 ## Topology
 
 One **app** container (Uvicorn, serves API + SPA) + one **Postgres** container with a named volume
-`db_data`, both `restart: unless-stopped`. Exposed on a **single port**, and the protocol depends on
-where TLS is terminated:
+`db_data`, both `restart: unless-stopped`. The app is exposed on a **single port**, plain
+**HTTP** `:8000` (host side `${APP_HTTP_PORT:-8000}`): TLS is terminated by the
+infrastructure in front of it, GKE Gateway API + ALB in the documented model, and so is
+HTTP→HTTPS redirection (ADR 0013). The app trusts `X-Forwarded-Proto` (`proxy_headers`),
+so it still builds https URLs and secure cookies.
 
-| `TLS_ENABLED` | Listener | When |
-|---|---|---|
-| `false` (compose default) | plain **HTTP** `:8000`, host `${APP_HTTP_PORT:-8000}` | **recommended model**: the infrastructure terminates TLS (GKE Gateway API + ALB). The app trusts `X-Forwarded-Proto` (`proxy_headers`), so it still builds https URLs and secure cookies |
-| `true` | **HTTPS** `:8443`, host `${APP_HTTPS_PORT:-8443}` | the app terminates TLS itself (self-signed by default, or a certificate uploaded in Admin → TLS) |
-
-The mode is read from the DB toggle (**Admin → TLS**) and falls back to the `TLS_ENABLED` env.
-It is **bound at boot**: flipping the toggle needs a restart to take effect (see *Admin → Ops* below).
-HTTP→HTTPS redirection is never done by the app.
-
-**Listen port ≠ public URL.** The table above is what the container binds. The address
+**Listen port ≠ public URL.** The port above is what the container binds. The address
 users type is `PUBLIC_BASE_URL` (or the **URL publique** field in Admin →
 Authentification), and every OIDC/SAML callback URL is derived from it: with the
 recommended model the pod listens on plain `:8000` while the public URL is
@@ -35,7 +29,7 @@ On startup, `docker-entrypoint.sh` runs:
 1. wait for Postgres (60 attempts, 2 s apart),
 2. `alembic upgrade head` (idempotent migrations),
 3. `python -m app.init_db` (break-glass admin + demo seed if `SEED_DEMO=true`),
-4. `python -m app.server` (picks HTTP :8000 or HTTPS :8443 per the table above).
+4. `python -m app.server` (plain HTTP on `HTTP_PORT`, 8000 by default).
 
 A container restart is safe and idempotent. Health: `docker compose ps` shows `healthy`
 (healthcheck curls `/api/health`).
@@ -137,7 +131,7 @@ An empty list is the answer you want. Check it after every first deploy.
 | Locked out of admin | break-glass admin (`admin@local`) | reset its password via DB or `BREAKGLASS_PASSWORD` + restart |
 | Emails not sending | Admin → SMTP "test"; `smtp.enabled` | fix SMTP config; check app logs for send failures |
 | Weekly report not sent | scheduler single-replica? `weekly_report` enabled? SMTP on? | `POST /api/admin/progress/run-weekly`; verify `last_sent_week` |
-| SSO fails with `self signed certificate in certificate chain` | is the IdP issued by an internal authority? Admin → SSO "test the connection" | import the authority in Admin → HTTPS / Certificats → Autorités approuvées; applies at once, no restart ([05](05-security.md)) |
+| SSO fails with `self signed certificate in certificate chain` | is the IdP issued by an internal authority? Admin → SSO "test the connection" | import the authority in Admin → Autorités de certification; applies at once, no restart ([05](05-security.md)) |
 | SMTP or SAML metadata stopped working after the upgrade | same cause: both now verify the certificate, where they used not to | import the internal authority; do not look for a switch to disable the check, there is none |
 | TLS toggle changed, nothing happened | Admin → Ops: `restart_pending` true? | the listener is bound at boot: restart (Ops → Restart, or redeploy) |
 | Need to debug without shell access | Admin → Ops → logs | set the level to DEBUG (persist off), clear the buffer, reproduce, download, then set it back |

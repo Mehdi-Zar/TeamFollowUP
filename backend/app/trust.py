@@ -1,11 +1,10 @@
 """Outbound TLS trust: what the application accepts when it *calls* something.
 
-Deliberately separate from ``tls.py`` / ``tlsconfig.py``, which govern the
-certificate the application *serves*. The two concerns are independent, and
-conflating them is how an administrator ends up unable to trust an internal
-authority: a deployment where the infrastructure terminates TLS still calls an
-internal IdP, an internal SMTP relay and a log sink, and those endpoints are
-routinely issued by a private authority no public trust store knows about.
+The application does not serve TLS at all: an infrastructure component terminates
+it in front of the container (ADR 0013). It still *calls* an internal IdP, an
+internal SMTP relay and a log sink, and those endpoints are routinely issued by a
+private authority no public trust store knows about. This module is what makes
+them reachable.
 
 The CA store administrators fill from Administration is materialised here into a
 bundle (the public roots plus the imported authorities) that every outbound call
@@ -36,9 +35,8 @@ log = logging.getLogger("trt.tls")
 # instead of being silently replaced by it, and repeated applies never chain.
 BASE_CA_FILE = os.environ.get("SSL_CERT_FILE") or certifi.where()
 
-# Same scratch directory as the served certificate: the database is the source of
-# truth, this file is only what the SSL layer reads. Module-level so tests can
-# point it somewhere temporary.
+# A scratch file under CERT_DIR: the database is the source of truth, this is only
+# what the SSL layer reads. Module-level so tests can point it somewhere temporary.
 _CERT_DIR = os.environ.get("CERT_DIR") or os.path.join(os.path.dirname(__file__), "..", "certs")
 BUNDLE_PATH = os.path.abspath(os.path.join(_CERT_DIR, "trust_bundle.pem"))
 

@@ -15,7 +15,7 @@ omet les prérequis, les pièges et les vérifications.
 |---|---|
 | `make-pki.sh` | génère l'autorité interne et le certificat serveur dans `pki/` (jamais versionné) |
 | `10-base.yaml` | namespace, secrets du banc, PostgreSQL |
-| `20-app.yaml` | l'application, déployée comme la section 6.9 du guide de déploiement le prescrit (`TLS_ENABLED=false`, port unique en HTTP) |
+| `20-app.yaml` | l'application, déployée comme la section 6.9 du guide de déploiement le prescrit (port unique en HTTP simple, TLS assuré par la passerelle) |
 | `30-keycloak.yaml` | le fournisseur d'identité, royaume importé au démarrage |
 | `40-gateway.yaml` | la passerelle Envoy : terminaison TLS, en-têtes transmis comme le fait un ALB Google |
 | `realm-tribe.json` | le royaume Keycloak : client OIDC, client SAML, mappers, utilisateurs, groupe |

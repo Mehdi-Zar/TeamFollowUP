@@ -33,14 +33,12 @@ COPY --from=frontend /frontend/dist ./app/static
 
 RUN chmod +x ./docker-entrypoint.sh
 
-# TLS material is written here at boot (self-signed by default). The DB remains
-# the source of truth; this dir is just what uvicorn's SSLContext reads.
+# Scratch dir for the outbound trust bundle (the public roots merged with the
+# authorities imported in Administration). The DB stays the source of truth.
 ENV CERT_DIR=/app/certs
 RUN mkdir -p /app/certs
 
-# Two serving modes (see app/server.py, selected by TLS_ENABLED):
-#   8000 = plain HTTP  -> TLS_ENABLED=false, infra terminates TLS (GKE model)
-#   8443 = HTTPS        -> TLS_ENABLED=true  (default), app terminates TLS
-# HTTP->HTTPS redirection is always the infrastructure's job, not the app's.
-EXPOSE 8000 8443
+# One port, plain HTTP: TLS is terminated by the infrastructure in front of the
+# container, HTTP->HTTPS redirection included. See ADR 0013.
+EXPOSE 8000
 ENTRYPOINT ["./docker-entrypoint.sh"]

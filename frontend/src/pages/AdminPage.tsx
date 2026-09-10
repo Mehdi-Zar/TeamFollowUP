@@ -28,7 +28,7 @@ import { ADMIN_TABS_BY_ROLE, ALL_ROLES } from "../perms";
 import { useSetPageChrome } from "../components/pageChrome";
 
 // Label key for each admin tab (server decides which a role may open).
-import { ApiAdmin, AuthAdmin, SmtpAdmin, TlsAdmin } from "./admin/authentication";
+import { ApiAdmin, AuthAdmin, SmtpAdmin, TrustAdmin } from "./admin/authentication";
 import { LeavesAdmin, ModulesAdmin, ReportingAdmin, SettingsAdmin } from "./admin/configuration";
 import { ImportOrgAdmin, ImportSteercoAdmin, PptxTemplateAdmin } from "./admin/imports";
 import { MySquadsAdmin, PersonasAdmin, SquadsAdmin, TribeSelfAdmin, TribesAdmin, UsersAdmin } from "./admin/organisation";
@@ -47,7 +47,7 @@ const TAB_LABEL: Record<string, string> = {
   auth: "admin.tab.auth",
   api: "admin.tab.api",
   smtp: "admin.tab.smtp",
-  tls: "admin.tab.tls",
+  trust: "admin.tab.trust",
   report: "admin.tab.report",
   leaves: "admin.tab.leaves",
   logs: "admin.tab.logs",
@@ -60,7 +60,7 @@ const TAB_LABEL: Record<string, string> = {
 const ADMIN_GROUPS: { titleKey: string; items: string[] }[] = [
   { titleKey: "admin.group.org", items: ["tribes", "import", "tribe", "squads", "my_squads", "users", "personas"] },
   { titleKey: "admin.group.config", items: ["modules", "report", "leaves", "settings"] },
-  { titleKey: "admin.group.access", items: ["auth", "api", "smtp", "tls"] },
+  { titleKey: "admin.group.access", items: ["auth", "api", "smtp", "trust"] },
   { titleKey: "admin.group.oversight", items: ["moderation", "logs", "audit", "ops"] },
 ];
 
@@ -141,7 +141,7 @@ export default function AdminPage() {
         {tab === "auth" && <AuthAdmin />}
         {tab === "api" && <ApiAdmin />}
         {tab === "smtp" && <SmtpAdmin />}
-        {tab === "tls" && <TlsAdmin />}
+        {tab === "trust" && <TrustAdmin />}
         {tab === "logs" && <LogExportAdmin />}
         {tab === "settings" && <SettingsAdmin />}
         {tab === "audit" && <AuditAdmin />}

@@ -1,11 +1,10 @@
 """Operational runtime info + self-restart, for the Admin > Ops panel.
 
-The app binds its listener (HTTP vs in-app TLS on a fixed port) at boot, so changes
-like the TLS toggle only take effect on the next start. Rather than asking an admin
-to shell in and run ``docker compose up -d`` / roll the pod, the Ops panel exposes a
-"restart" button. In a container/orchestrated deployment the standard, safe way to
-"restart from inside" is simply to exit the process and let the supervisor bring it
-back: Docker (``restart: unless-stopped``) and Kubernetes (Deployment
+Configuration that is read at boot (environment variables, above all) only takes
+effect on the next start. Rather than asking an admin to shell in and run
+``docker compose up -d`` / roll the pod, the Ops panel exposes a "restart" button.
+In a container/orchestrated deployment the standard, safe way to "restart from
+inside" is simply to exit the process and let the supervisor bring it back: Docker (``restart: unless-stopped``) and Kubernetes (Deployment
 ``restartPolicy: Always``) both re-create the container automatically.
 
 ``request_restart`` therefore raises SIGTERM on our own PID after flushing the HTTP
@@ -22,8 +21,6 @@ import signal
 import socket
 import threading
 import time
-
-from sqlalchemy.orm import Session
 
 # Process start time, captured at import (module load ~= process start) for uptime.
 _START = time.time()
@@ -92,15 +89,8 @@ def insecure_defaults() -> list[dict]:
     return out
 
 
-def runtime_status(db: Session) -> dict:
-    """Read-only diagnostics for the Ops panel (identity, uptime, serving mode).
-
-    Includes the TLS effective-vs-running mismatch so the panel can flag that a
-    restart is needed to apply a pending change.
-    """
-    from . import tlsconfig  # lazy: avoids import cycle at module load
-
-    tls = tlsconfig.status(db)
+def runtime_status() -> dict:
+    """Read-only diagnostics for the Ops panel (identity, uptime, defaults)."""
     orchestrator = detect_orchestrator()
     return {
         "version": APP_VERSION,
@@ -113,10 +103,6 @@ def runtime_status(db: Session) -> dict:
         "auto_restart": orchestrator in ("kubernetes", "docker"),
         "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(_START)),
         "uptime_seconds": int(time.time() - _START),
-        # TLS serving mode: effective preference vs what the live process bound at boot.
-        "tls_enabled": tls.get("tls_enabled"),
-        "tls_running": tls.get("tls_running"),
-        "restart_pending": tls.get("tls_enabled") != tls.get("tls_running"),
         # Shipped defaults still in use. Empty is the answer you want.
         "insecure_defaults": insecure_defaults(),
     }

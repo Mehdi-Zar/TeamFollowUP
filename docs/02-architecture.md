@@ -47,9 +47,8 @@ flowchart LR
   SPA into `frontend/dist`, copied into `app/static`; stage 2 is the Python runtime.
 - `docker-entrypoint.sh`: waits for DB → `alembic upgrade head` → `python -m app.init_db` (break-glass
   admin + demo seed) → `python -m app.server`, which binds **one** port: plain HTTP
-  `:8000` by default (`TLS_ENABLED=false`, TLS terminated upstream), or HTTPS `:8443`
-  when the app terminates TLS itself. HTTP→HTTPS redirection is the infrastructure's
-  job either way, e.g. the GKE Gateway API.
+  `:8000`. TLS is terminated upstream, HTTP→HTTPS redirection included, e.g. by the
+  GKE Gateway API (ADR 0013).
 - The public URL the browser uses is independent of that listen port. It is
   `PUBLIC_BASE_URL` (or deduced from `X-Forwarded-Proto` / `-Host`), and every SSO
   callback URL is derived from it - see `docs/05` and `docs/12` §2.1.

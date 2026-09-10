@@ -120,18 +120,18 @@ async def _warn_on_insecure_defaults():
 async def _apply_outbound_trust():
     """Make the admin-managed CA store effective for the app's outbound TLS.
 
-    Runs whichever serving mode is active: trusting an internal authority is
-    about the calls the app *makes* (IdP, SMTP, log export), not about who
-    terminates the TLS in front of it. A failure here must not stop the app from
-    booting, it only means outbound calls keep the public trust store.
+    Trusting an internal authority is about the calls the app *makes* (IdP, SMTP,
+    log export), and has nothing to do with who terminates the TLS in front of
+    it. A failure here must not stop the app from booting, it only means outbound
+    calls keep the public trust store.
     """
     import logging
     log = logging.getLogger("trt.tls")
-    from . import tlsconfig
+    from . import trustconfig
     from .database import SessionLocal
     db = SessionLocal()
     try:
-        count = tlsconfig.ensure_trust(db)
+        count = trustconfig.ensure_trust(db)
         if count:
             log.info("Outbound TLS trust: %d admin-managed authority/ies applied.", count)
     except Exception as exc:

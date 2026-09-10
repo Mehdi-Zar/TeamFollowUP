@@ -3,8 +3,8 @@
 This router groups everything managed from the Admin area: user management,
 application settings, authentication (OIDC/SAML) and SMTP config, personas
 (custom roles + capabilities), feature modules, the weekly report and
-change-notification emails, log export, TLS/HTTPS certificates, and service
-API keys.
+change-notification emails, log export, the trusted certificate authorities used
+for outbound TLS, and service API keys.
 
 Access model: most endpoints are admin-only (``require_admin``). User management
 is the exception: it is opened to tribe leaders as well, but strictly scoped to
@@ -516,140 +516,33 @@ def flush_log_export(payload: dict = Body(default=None), db: Session = Depends(g
 
 
 # =============================================================================
-# HTTPS / TLS certificates
+# Trusted certificate authorities (outbound TLS)
 # =============================================================================
 
-async def _text_from(upload: UploadFile | None, pasted: str | None) -> str:
-    """Return PEM text either from an uploaded file or from a pasted string.
-
-    Every TLS endpoint accepts both an upload and a textarea; the upload wins."""
-    if upload is not None:
-        return (await upload.read()).decode("utf-8", errors="replace")
-    return pasted or ""
-
-
-@router.get("/tls-config")
-def read_tls_config(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
-    """GET /api/admin/tls-config: read the current TLS status (active cert +
-    trusted CAs). Admin only."""
-    from ..tlsconfig import status
+@router.get("/trust-store")
+def read_trust_store(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    """GET /api/admin/trust-store: list the trusted authorities, roots and
+    intermediates. Admin only."""
+    from ..trustconfig import status
     return status(db)
 
 
-@router.post("/tls-config/enabled")
-def tls_set_enabled(payload: dict = Body(default=None), db: Session = Depends(get_db),
-                    admin: User = Depends(require_admin)):
-    """POST /api/admin/tls-config/enabled - toggle in-app TLS termination.
-
-    Body: ``{"enabled": bool}``. When false the app serves plain HTTP and the
-    infrastructure (Gateway/ALB) terminates TLS. Applied at the next server start
-    (the listener is bound at boot), so the response's ``tls_running`` may still
-    differ from ``tls_enabled`` until then. Admin only. Audited."""
-    from ..tlsconfig import set_tls_enabled
-    enabled = bool((payload or {}).get("enabled"))
-    st = set_tls_enabled(db, enabled)
-    record_audit(db, admin.id, "tls_config.set_enabled", entity="tls", detail={"enabled": enabled})
-    db.commit()
-    return st
-
-
-@router.post("/tls-config/self-signed")
-def tls_regenerate_self_signed(payload: dict = Body(default=None), db: Session = Depends(get_db),
-                               admin: User = Depends(require_admin)):
-    """POST /api/admin/tls-config/self-signed: (re)generate a self-signed cert.
-    Admin only.
-
-    ``cn`` defaults to ``localhost``; ``sans`` may be a list or a comma/newline
-    separated string. Invalid input yields 400. Audited."""
-    from ..tlsconfig import regenerate_self_signed
-    payload = payload or {}
-    cn = (payload.get("cn") or "localhost").strip()
-    sans = payload.get("sans")
-    if isinstance(sans, str):
-        sans = [s.strip() for s in sans.replace("\n", ",").split(",")]
-    try:
-        cfg = regenerate_self_signed(db, cn=cn, sans=sans)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    record_audit(db, admin.id, "tls_config.self_signed", entity="tls", detail={"cn": cn})
-    db.commit()
-    return cfg
-
-
-@router.post("/tls-config/import-pem")
-async def tls_import_pem(
-    cert: UploadFile | None = File(default=None),
-    key: UploadFile | None = File(default=None),
-    cert_pem: str | None = Form(default=None),
-    key_pem: str | None = Form(default=None),
-    passphrase: str | None = Form(default=None),
-    db: Session = Depends(get_db),
-    admin: User = Depends(require_admin),
-):
-    """POST /api/admin/tls-config/import-pem: install a cert + private key from
-    PEM (uploaded files or pasted text). Admin only.
-
-    Both cert and key are required (400 otherwise); an optional ``passphrase``
-    decrypts the key. Parse/validation errors yield 400. Audited."""
-    from ..tlsconfig import import_pem
-    cert_text = await _text_from(cert, cert_pem)
-    key_text = await _text_from(key, key_pem)
-    if not cert_text.strip() or not key_text.strip():
-        raise HTTPException(status_code=400, detail="Certificat et clé privée requis (fichier ou texte).")
-    try:
-        cfg = import_pem(db, cert_text, key_text, passphrase or None)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"Import PEM impossible : {exc}")
-    record_audit(db, admin.id, "tls_config.import_pem", entity="tls",
-                 detail={"subject": (cfg.get("active") or {}).get("subject")})
-    db.commit()
-    return cfg
-
-
-@router.post("/tls-config/import-pfx")
-async def tls_import_pfx(
-    file: UploadFile = File(...),
-    password: str | None = Form(default=None),
-    db: Session = Depends(get_db),
-    admin: User = Depends(require_admin),
-):
-    """POST /api/admin/tls-config/import-pfx: install a cert + key from a PKCS#12
-    (.pfx) bundle. Admin only.
-
-    Empty file yields 400; a wrong password or malformed bundle also yields 400.
-    Audited."""
-    from ..tlsconfig import import_pfx
-    data = await file.read()
-    if not data:
-        raise HTTPException(status_code=400, detail="Fichier PFX vide.")
-    try:
-        cfg = import_pfx(db, data, password or None)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"Import PFX impossible (mot de passe ?) : {exc}")
-    record_audit(db, admin.id, "tls_config.import_pfx", entity="tls",
-                 detail={"subject": (cfg.get("active") or {}).get("subject")})
-    db.commit()
-    return cfg
-
-
-@router.post("/tls-config/ca")
-async def tls_add_ca(
+@router.post("/trust-store/ca")
+async def trust_add_ca(
     ca: UploadFile | None = File(default=None),
     ca_pem: str | None = Form(default=None),
     name: str | None = Form(default=None),
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
 ):
-    """POST /api/admin/tls-config/ca: add a trusted CA certificate (upload or
-    pasted text), with an optional friendly ``name``. Admin only.
+    """POST /api/admin/trust-store/ca: add a trusted CA certificate, uploaded or
+    pasted, with an optional friendly ``name``. Admin only.
 
-    Empty/invalid input yields 400. Audited."""
-    from ..tlsconfig import add_ca
-    pem = await _text_from(ca, ca_pem)
+    The authority is trusted for the app's outbound calls (IdP, SMTP, log export)
+    as soon as this returns, with no restart. Empty/invalid input yields 400.
+    Audited."""
+    from ..trustconfig import add_ca
+    pem = (await ca.read()).decode("utf-8", errors="replace") if ca is not None else (ca_pem or "")
     if not pem.strip():
         raise HTTPException(status_code=400, detail="Certificat d'autorité requis (fichier ou texte).")
     try:
@@ -658,30 +551,30 @@ async def tls_add_ca(
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Ajout d'autorité impossible : {exc}")
-    record_audit(db, admin.id, "tls_config.add_ca", entity="tls", detail={"name": name})
+    record_audit(db, admin.id, "trust_store.add_ca", entity="trust", detail={"name": name})
     db.commit()
     return cfg
 
 
-@router.delete("/tls-config/ca/{ca_id}")
-def tls_remove_ca(ca_id: str, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
-    """DELETE /api/admin/tls-config/ca/{ca_id}: remove a trusted CA. Admin only.
-    Unknown id yields 404. Audited."""
-    from ..tlsconfig import remove_ca
+@router.delete("/trust-store/ca/{ca_id}")
+def trust_remove_ca(ca_id: str, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    """DELETE /api/admin/trust-store/ca/{ca_id}: remove a trusted CA, withdrawing
+    the trust immediately. Admin only. Unknown id yields 404. Audited."""
+    from ..trustconfig import remove_ca
     try:
         cfg = remove_ca(db, ca_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
-    record_audit(db, admin.id, "tls_config.remove_ca", entity="tls", detail={"ca_id": ca_id})
+    record_audit(db, admin.id, "trust_store.remove_ca", entity="trust", detail={"ca_id": ca_id})
     db.commit()
     return cfg
 
 
-@router.get("/tls-config/ca/{ca_id}/download")
-def tls_download_ca(ca_id: str, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
-    """GET /api/admin/tls-config/ca/{ca_id}/download: download a trusted CA as a
+@router.get("/trust-store/ca/{ca_id}/download")
+def trust_download_ca(ca_id: str, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    """GET /api/admin/trust-store/ca/{ca_id}/download: download a trusted CA as a
     PEM attachment. Admin only. Unknown id yields 404."""
-    from ..tlsconfig import export_ca_pem
+    from ..trustconfig import export_ca_pem
     try:
         pem = export_ca_pem(db, ca_id)
     except ValueError as exc:
@@ -689,29 +582,17 @@ def tls_download_ca(ca_id: str, db: Session = Depends(get_db), admin: User = Dep
     return PlainTextResponse(pem, headers={"Content-Disposition": f'attachment; filename="ca-{ca_id}.pem"'})
 
 
-@router.get("/tls-config/active/download")
-def tls_download_active(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
-    """GET /api/admin/tls-config/active/download: download the active server
-    certificate as a PEM attachment. Admin only. 404 if none is set."""
-    from ..tlsconfig import export_active_cert_pem
-    try:
-        pem = export_active_cert_pem(db)
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
-    return PlainTextResponse(pem, headers={"Content-Disposition": 'attachment; filename="server-cert.pem"'})
-
-
 # ----- Ops / Maintenance (Admin -> Ops) --------------------------------------
-# Runtime diagnostics + a self-restart button. The listener (HTTP vs in-app TLS)
-# is bound at boot, so config like the TLS toggle needs a restart to take effect;
-# rather than shell in, an admin can trigger it here. See app/ops.py.
+# Runtime diagnostics + a self-restart button. Environment configuration is read
+# at boot, so applying a change needs a restart; rather than shell in, an admin
+# can trigger it here. See app/ops.py.
 
 @router.get("/runtime")
 def read_runtime(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     """GET /api/admin/runtime : read-only runtime diagnostics (version, host, uptime,
     serving mode, whether a restart is pending). Admin only."""
     from ..ops import runtime_status
-    return runtime_status(db)
+    return runtime_status()
 
 
 @router.post("/restart")

@@ -20,6 +20,7 @@ Risks, Future Evolution**.
 | [0010](0010-alembic-migrations.md) | Alembic migrations as schema source of truth | Accepted |
 | [0011](0011-api-keys-and-scopes.md) | API keys & scopes (read-only machine access) | Accepted |
 | [0012](0012-gcp-auth-keyless.md) | GCP auth for log export: keyless by default (ADC/WIF/impersonation, key last) | Accepted |
+| [0013](0013-tls-terminated-by-the-infrastructure.md) | TLS terminated by the infrastructure, never by the app | Accepted |
 
 ## Dependency map
 

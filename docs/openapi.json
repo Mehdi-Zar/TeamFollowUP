@@ -3839,14 +3839,14 @@
         }
       }
     },
-    "/api/admin/tls-config": {
+    "/api/admin/trust-store": {
       "get": {
         "tags": [
           "admin"
         ],
-        "summary": "Read Tls Config",
-        "description": "GET /api/admin/tls-config: read the current TLS status (active cert +\ntrusted CAs). Admin only.",
-        "operationId": "read_tls_config_api_admin_tls_config_get",
+        "summary": "Read Trust Store",
+        "description": "GET /api/admin/trust-store: list the trusted authorities, roots and\nintermediates. Admin only.",
+        "operationId": "read_trust_store_api_admin_trust_store_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -3859,99 +3859,19 @@
         }
       }
     },
-    "/api/admin/tls-config/enabled": {
+    "/api/admin/trust-store/ca": {
       "post": {
         "tags": [
           "admin"
         ],
-        "summary": "Tls Set Enabled",
-        "description": "POST /api/admin/tls-config/enabled - toggle in-app TLS termination.\n\nBody: ``{\"enabled\": bool}``. When false the app serves plain HTTP and the\ninfrastructure (Gateway/ALB) terminates TLS. Applied at the next server start\n(the listener is bound at boot), so the response's ``tls_running`` may still\ndiffer from ``tls_enabled`` until then. Admin only. Audited.",
-        "operationId": "tls_set_enabled_api_admin_tls_config_enabled_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "title": "Payload"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/admin/tls-config/self-signed": {
-      "post": {
-        "tags": [
-          "admin"
-        ],
-        "summary": "Tls Regenerate Self Signed",
-        "description": "POST /api/admin/tls-config/self-signed: (re)generate a self-signed cert.\nAdmin only.\n\n``cn`` defaults to ``localhost``; ``sans`` may be a list or a comma/newline\nseparated string. Invalid input yields 400. Audited.",
-        "operationId": "tls_regenerate_self_signed_api_admin_tls_config_self_signed_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "title": "Payload"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/admin/tls-config/import-pem": {
-      "post": {
-        "tags": [
-          "admin"
-        ],
-        "summary": "Tls Import Pem",
-        "description": "POST /api/admin/tls-config/import-pem: install a cert + private key from\nPEM (uploaded files or pasted text). Admin only.\n\nBoth cert and key are required (400 otherwise); an optional ``passphrase``\ndecrypts the key. Parse/validation errors yield 400. Audited.",
-        "operationId": "tls_import_pem_api_admin_tls_config_import_pem_post",
+        "summary": "Trust Add Ca",
+        "description": "POST /api/admin/trust-store/ca: add a trusted CA certificate, uploaded or\npasted, with an optional friendly ``name``. Admin only.\n\nThe authority is trusted for the app's outbound calls (IdP, SMTP, log export)\nas soon as this returns, with no restart. Empty/invalid input yields 400.\nAudited.",
+        "operationId": "trust_add_ca_api_admin_trust_store_ca_post",
         "requestBody": {
           "content": {
             "multipart/form-data": {
               "schema": {
-                "$ref": "#/components/schemas/Body_tls_import_pem_api_admin_tls_config_import_pem_post"
+                "$ref": "#/components/schemas/Body_trust_add_ca_api_admin_trust_store_ca_post"
               }
             }
           }
@@ -3978,93 +3898,14 @@
         }
       }
     },
-    "/api/admin/tls-config/import-pfx": {
-      "post": {
-        "tags": [
-          "admin"
-        ],
-        "summary": "Tls Import Pfx",
-        "description": "POST /api/admin/tls-config/import-pfx: install a cert + key from a PKCS#12\n(.pfx) bundle. Admin only.\n\nEmpty file yields 400; a wrong password or malformed bundle also yields 400.\nAudited.",
-        "operationId": "tls_import_pfx_api_admin_tls_config_import_pfx_post",
-        "requestBody": {
-          "content": {
-            "multipart/form-data": {
-              "schema": {
-                "$ref": "#/components/schemas/Body_tls_import_pfx_api_admin_tls_config_import_pfx_post"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/admin/tls-config/ca": {
-      "post": {
-        "tags": [
-          "admin"
-        ],
-        "summary": "Tls Add Ca",
-        "description": "POST /api/admin/tls-config/ca: add a trusted CA certificate (upload or\npasted text), with an optional friendly ``name``. Admin only.\n\nEmpty/invalid input yields 400. Audited.",
-        "operationId": "tls_add_ca_api_admin_tls_config_ca_post",
-        "requestBody": {
-          "content": {
-            "multipart/form-data": {
-              "schema": {
-                "$ref": "#/components/schemas/Body_tls_add_ca_api_admin_tls_config_ca_post"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/admin/tls-config/ca/{ca_id}": {
+    "/api/admin/trust-store/ca/{ca_id}": {
       "delete": {
         "tags": [
           "admin"
         ],
-        "summary": "Tls Remove Ca",
-        "description": "DELETE /api/admin/tls-config/ca/{ca_id}: remove a trusted CA. Admin only.\nUnknown id yields 404. Audited.",
-        "operationId": "tls_remove_ca_api_admin_tls_config_ca__ca_id__delete",
+        "summary": "Trust Remove Ca",
+        "description": "DELETE /api/admin/trust-store/ca/{ca_id}: remove a trusted CA, withdrawing\nthe trust immediately. Admin only. Unknown id yields 404. Audited.",
+        "operationId": "trust_remove_ca_api_admin_trust_store_ca__ca_id__delete",
         "parameters": [
           {
             "name": "ca_id",
@@ -4098,14 +3939,14 @@
         }
       }
     },
-    "/api/admin/tls-config/ca/{ca_id}/download": {
+    "/api/admin/trust-store/ca/{ca_id}/download": {
       "get": {
         "tags": [
           "admin"
         ],
-        "summary": "Tls Download Ca",
-        "description": "GET /api/admin/tls-config/ca/{ca_id}/download: download a trusted CA as a\nPEM attachment. Admin only. Unknown id yields 404.",
-        "operationId": "tls_download_ca_api_admin_tls_config_ca__ca_id__download_get",
+        "summary": "Trust Download Ca",
+        "description": "GET /api/admin/trust-store/ca/{ca_id}/download: download a trusted CA as a\nPEM attachment. Admin only. Unknown id yields 404.",
+        "operationId": "trust_download_ca_api_admin_trust_store_ca__ca_id__download_get",
         "parameters": [
           {
             "name": "ca_id",
@@ -4133,26 +3974,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
                 }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/admin/tls-config/active/download": {
-      "get": {
-        "tags": [
-          "admin"
-        ],
-        "summary": "Tls Download Active",
-        "description": "GET /api/admin/tls-config/active/download: download the active server\ncertificate as a PEM attachment. Admin only. 404 if none is set.",
-        "operationId": "tls_download_active_api_admin_tls_config_active_download_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
               }
             }
           }
@@ -8775,7 +8596,7 @@
         ],
         "title": "Body_set_squad_enabled_api_steerco_squad__squad_id__enabled_put"
       },
-      "Body_tls_add_ca_api_admin_tls_config_ca_post": {
+      "Body_trust_add_ca_api_admin_trust_store_ca_post": {
         "properties": {
           "ca": {
             "anyOf": [
@@ -8813,95 +8634,7 @@
           }
         },
         "type": "object",
-        "title": "Body_tls_add_ca_api_admin_tls_config_ca_post"
-      },
-      "Body_tls_import_pem_api_admin_tls_config_import_pem_post": {
-        "properties": {
-          "cert": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "binary"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Cert"
-          },
-          "key": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "binary"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Key"
-          },
-          "cert_pem": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Cert Pem"
-          },
-          "key_pem": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Key Pem"
-          },
-          "passphrase": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Passphrase"
-          }
-        },
-        "type": "object",
-        "title": "Body_tls_import_pem_api_admin_tls_config_import_pem_post"
-      },
-      "Body_tls_import_pfx_api_admin_tls_config_import_pfx_post": {
-        "properties": {
-          "file": {
-            "type": "string",
-            "format": "binary",
-            "title": "File"
-          },
-          "password": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Password"
-          }
-        },
-        "type": "object",
-        "required": [
-          "file"
-        ],
-        "title": "Body_tls_import_pfx_api_admin_tls_config_import_pfx_post"
+        "title": "Body_trust_add_ca_api_admin_trust_store_ca_post"
       },
       "Body_upsert_history_api_steerco_squad__squad_id__history_put": {
         "properties": {

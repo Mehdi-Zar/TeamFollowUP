@@ -37,15 +37,15 @@ qui satisfait la spec ».
   supprime une couche de configuration et garantit que l'origine est identique
   pour le front et l'API (cookies de session sans CORS). Le compose comporte donc
   deux services : `app` et `db`. Critère « mono-commande » pleinement respecté.
-- **Port unique, protocole selon `TLS_ENABLED`.** Le conteneur n'ouvre jamais qu'un
-  seul port : **HTTP 8000** par défaut, le TLS étant terminé par l'infrastructure
-  (Gateway API sur GKE, ALB, reverse proxy) - c'est le modèle recommandé ; ou
-  **HTTPS 8443** avec `TLS_ENABLED=true`, l'app terminant le TLS elle-même
-  (certificat auto-signé par défaut, remplaçable via l'admin) pour un déploiement
-  autonome. Dans les deux cas la redirection HTTP→HTTPS est déléguée à
-  l'infrastructure : l'app n'a pas de listener dédié.
+- **Port unique, HTTP simple, TLS délégué à l'infrastructure.** Le conteneur n'ouvre
+  qu'un seul port, **HTTP 8000**, et ne termine jamais le TLS : c'est le répartiteur
+  de charge devant lui (Gateway API sur GKE, ALB, reverse proxy) qui s'en charge, y
+  compris la redirection HTTP→HTTPS. Voir [ADR-0013](docs/adr/0013-tls-terminated-by-the-infrastructure.md)
+  pour le retrait du mode HTTPS intégré : un second listener, un toggle qui ne
+  s'appliquait qu'au redémarrage, et surtout une clé privée stockée en clair en base
+  donc embarquée dans chaque sauvegarde.
   *(Historique : v1 = hôte 8080 → conteneur 8000 ; v2 = 8443 HTTPS + 8080 redirigeant
-  en 301, listener retiré ; v3 = les deux modes ci-dessus, HTTP simple par défaut.)*
+  en 301, listener retiré ; v3 = les deux modes coexistant ; v4 = HTTP simple seul.)*
 - **Une seule URL publique, les URL SSO en dérivent.** Le port d'écoute ne dit rien
   de l'adresse vue par le navigateur : derrière une Gateway, le pod écoute en HTTP
   8000 alors que les utilisateurs tapent `https://…` sur 443. Plutôt que de faire

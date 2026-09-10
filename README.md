@@ -43,12 +43,8 @@ docker compose up -d --build
 
 Puis ouvrez **http://localhost:8000**. L'app sert l'UI et l'API sur ce **port
 unique**, en **HTTP simple**, et laisse le **TLS à l'infrastructure** en amont
-(Gateway API sur GKE, ALB, reverse proxy) : c'est le modèle recommandé et le
-défaut. Pour un déploiement autonome sans infrastructure de terminaison TLS,
-`TLS_ENABLED=true` fait terminer le TLS par l'app elle-même sur le port **8443**
-(certificat auto-signé au premier démarrage, remplaçable depuis
-**Administration → HTTPS / Certificats**). Dans les deux cas la redirection
-HTTP→HTTPS n'est pas gérée par l'app.
+(Gateway API sur GKE, ALB, reverse proxy), redirection HTTP→HTTPS comprise. C'est
+le seul modèle : l'application ne termine jamais le TLS elle-même (ADR 0013).
 
 > **Une seule URL à connaître.** Dès que l'application est déployée derrière une
 > vraie adresse, renseignez `PUBLIC_BASE_URL` (ou le champ **URL publique** dans
@@ -119,10 +115,11 @@ Tous les comptes de démonstration utilisent le mot de passe `demo`.
   activation des KPIs).
 - **Exports** : rapport imprimable / PDF (dashboard et par squad, format unifié, via
   l'impression du navigateur) et export CSV.
-- **HTTPS optionnel dans l'app** (`TLS_ENABLED=true`, pour un déploiement sans
-  infrastructure de terminaison TLS) : depuis **Administration → HTTPS / Certificats**,
-  import d'un certificat **PEM + clé** ou **PFX/PKCS#12**, gestion des **CA racines et
-  intermédiaires**, régénération auto-signée (CN/SAN).
+- **Autorités de certification** : depuis **Administration → Autorités de
+  certification**, import des **CA racines et intermédiaires** internes. Elles servent
+  à vérifier les appels sortants de l'app (IdP OIDC ou SAML, SMTP, export de journaux),
+  ce qui permet de joindre un point d'accès émis par une autorité privée sans jamais
+  désactiver la vérification.
 - **API REST documentée** : Swagger sur **/docs** (`http://localhost:8000/docs` en local).
 
 ## Statut d'une squad (calculé côté serveur)
@@ -151,8 +148,7 @@ Toutes les variables ont un défaut fonctionnel (voir `.env.example`).
 
 | Variable | Défaut | Rôle |
 |----------|--------|------|
-| `APP_HTTP_PORT` | `8000` | Port hôte (port unique de l'app, HTTP simple). |
-| `TLS_ENABLED` | `false` *(valeur du `.env` livré)* | `true` = l'app termine le TLS elle-même sur `8443` (exposez alors `APP_HTTPS_PORT`). Non renseignée, l'app retombe sur `true`, d'où l'intérêt de la fixer explicitement. |
+| `APP_HTTP_PORT` | `8000` | Port hôte (port unique de l'app, HTTP simple). L'app ne termine jamais le TLS : c'est le répartiteur de charge devant elle (ADR 0013). |
 | `PUBLIC_BASE_URL` | *(vide → déduit de la requête)* | URL publique de l'app (`https://teamfollowup.exemple.com`). Base de toutes les URL de rappel SSO. |
 | `COOKIE_SECURE` | `false` | Passez à `true` dès que l'app est publiée en HTTPS (y compris si le TLS est terminé en amont). |
 | `POSTGRES_DB` / `POSTGRES_USER` / `POSTGRES_PASSWORD` | `tribe` | Base PostgreSQL (interne). |

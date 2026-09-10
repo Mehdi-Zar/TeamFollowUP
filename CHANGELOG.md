@@ -3,6 +3,26 @@
 ## Unreleased
 
 ### Removed
+- **In-app TLS termination, and with it the private key that lived in the database.** The
+  app shipped two serving modes: plain HTTP on :8000 with the Gateway/ALB doing TLS, which
+  is what every real deployment ran, and HTTPS on :8443 with a certificate an administrator
+  generated or imported from Admin. The second one was the default in code and the path
+  nobody used, and it cost: the unencrypted server key sat in the `tls` settings row, so it
+  followed every `pg_dump` into the backups; the toggle could not apply itself, since the
+  listener is bound at boot, which is where the "pending restart" banner and the
+  `restart_pending` field came from; flipping it on a Gateway-fronted deployment moved the
+  pod to 8443 in front of a Gateway still expecting 8000; and the cookie policy had to track
+  a mode changeable from a web page. A load balancer does TLS better and one is already
+  there. So the app now serves plain HTTP only, `proxy_headers` giving it the original
+  scheme and host, and HTTP→HTTPS redirection stays where it always belonged.
+  `TLS_ENABLED`, `HTTPS_PORT`, `APP_HTTPS_PORT`, the Admin toggle, self-signed generation,
+  PEM/PFX import and the served-chain assembly are gone, along with `tls.py` and
+  `tlsconfig.py`, replaced by `certinfo.py` (reading certificates) and `trustconfig.py` (the
+  store). Migration `0028_trust_store` rewrites the settings row keeping only the
+  authorities: **the certificate and its key are dropped, which is the point.** Export a
+  certificate you only kept in the app before upgrading. See
+  [ADR-0013](docs/adr/0013-tls-terminated-by-the-infrastructure.md).
+
 - **142 dead translation keys, and a test so they do not come back.** 1165 keys, 1023 of them
   actually reachable: the rest were leftovers from an OTD screen, an older dashboard, a
   reporting and subscription UI and an export menu that had each been redesigned. Dead labels
@@ -17,6 +37,15 @@
   in the dictionary may be unreachable. It discovers the dynamic prefixes from the source
   rather than from a list, so a new family is protected without anyone remembering, and both
   halves were checked against a planted violation.
+
+### Changed
+- **Admin → HTTPS / Certificats becomes Admin → Autorités de certification**, and manages one
+  thing: the authorities the app verifies its own outbound calls against (OIDC, SAML, SMTP,
+  log export). That was always the half of the screen that had nothing to do with who
+  terminates the inbound TLS, and importing an internal root is still what makes a privately
+  issued IdP reachable without ever disabling verification. The API moves from
+  `/api/admin/tls-config` to `/api/admin/trust-store`, the audit actions from `tls_config.*`
+  to `trust_store.*`.
 
 ### Fixed
 - **Deleting a user returned 500 for anyone who had ever logged in.** Nineteen columns

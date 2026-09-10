@@ -205,7 +205,7 @@ Le dump contient la base, et **seulement** la base. Ne sont pas dedans :
 | Ce qui manque | Où c'est | Conséquence |
 |---|---|---|
 | `SECRET_KEY` | variable d'environnement | restaurer avec une autre clé **déconnecte tout le monde** (les cookies de session ne sont plus vérifiables). Ce n'est pas une perte de données, mais prévenez. |
-| Le certificat TLS | `CERT_DIR` (`TLS_ENABLED=true`) ou l'infrastructure | à réinstaller séparément si l'application terminait le TLS elle-même |
+| Le certificat TLS | l'infrastructure (répartiteur de charge, passerelle) | l'application n'en porte pas : la restauration ne change rien de ce côté |
 | Le modèle PPTX téléversé | dans la base (`app_settings`) | **est** restauré |
 | Les fichiers de `backups/` | volume monté sur l'hôte | si vous perdez la machine, vous perdez les sauvegardes : voir §8 |
 

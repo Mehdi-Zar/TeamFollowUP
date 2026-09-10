@@ -33,12 +33,10 @@ class Settings(BaseSettings):
     cookie_secure: bool = False
     cookie_samesite: str = "lax"  # lax | strict | none
 
-    # --- Serving / TLS termination ---
-    # tls_enabled=True (default, local/standalone): uvicorn terminates TLS itself
-    # on HTTPS_PORT (see server.py + tls.py). tls_enabled=False: the app serves
-    # plain HTTP on http_port and lets the infrastructure terminate TLS - the
-    # supported GKE model (Gateway API + ALB do TLS, the pod speaks HTTP).
-    tls_enabled: bool = True
+    # --- Serving ---
+    # The app serves plain HTTP on this port and never terminates TLS: the
+    # infrastructure (Gateway API + ALB on GKE, any reverse proxy elsewhere) does
+    # it in front of the container. See ADR 0013 and app/server.py.
     http_port: int = 8000
 
     # --- Public URL ---

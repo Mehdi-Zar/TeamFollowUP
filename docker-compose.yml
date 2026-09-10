@@ -51,15 +51,15 @@ services:
       SAML_ACS_URL: ${SAML_ACS_URL:-}
       SAML_SP_CERT: ${SAML_SP_CERT:-}
       SAML_SP_KEY: ${SAML_SP_KEY:-}
-      # Local serves plain HTTP (no in-app TLS), so Secure cookies must be OFF -
-      # a browser won't send a Secure cookie over http://localhost.
+      # The app always serves plain HTTP; locally there is no TLS in front of it
+      # either, so Secure cookies must be OFF: a browser won't send a Secure
+      # cookie over http://localhost. Set COOKIE_SECURE=true behind a real LB.
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
       COOKIE_SAMESITE: ${COOKIE_SAMESITE:-lax}
       LOGIN_MAX_ATTEMPTS: ${LOGIN_MAX_ATTEMPTS:-10}
       LOGIN_WINDOW_SECONDS: ${LOGIN_WINDOW_SECONDS:-300}
       AUDIT_RETENTION_DAYS: ${AUDIT_RETENTION_DAYS:-0}
       # --- Serving: plain HTTP, TLS is the infra's job (same model as GKE) ---
-      TLS_ENABLED: ${TLS_ENABLED:-false}
       HTTP_PORT: ${HTTP_PORT:-8000}
       LOG_FORMAT: ${LOG_FORMAT:-json}   # GCP Cloud Logging structured logs
       # --- Metrics: see ops/docker-compose.observability.yml and docs/17 ---
@@ -67,7 +67,7 @@ services:
       METRICS_TOKEN: ${METRICS_TOKEN:-}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}    # boot level; changeable live in Admin > Ops
     ports:
-      # Plain HTTP: the app no longer terminates TLS (that's the infra's job).
+      # Plain HTTP: the app does not terminate TLS (that's the infra's job).
       - "${APP_HTTP_PORT:-8000}:8000"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/health"]

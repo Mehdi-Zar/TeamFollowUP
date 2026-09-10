@@ -28,10 +28,10 @@ def test_request_restart_disabled_is_noop(monkeypatch):
     assert r["reason"] == "disabled"
 
 
-def test_runtime_status_shape(db):
-    st = ops.runtime_status(db)
+def test_runtime_status_shape():
+    st = ops.runtime_status()
     for key in ("version", "hostname", "pid", "python", "orchestrator",
-                "uptime_seconds", "tls_enabled", "tls_running", "restart_pending"):
+                "uptime_seconds", "insecure_defaults"):
         assert key in st
     assert isinstance(st["uptime_seconds"], int)
 

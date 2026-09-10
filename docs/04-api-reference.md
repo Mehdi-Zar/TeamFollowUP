@@ -152,22 +152,16 @@ PPTX export template: `GET /pptx-template` (status), `POST /pptx-template` (uplo
 `GET /pptx-template/download`, `DELETE /pptx-template` - when set, every PPTX export is built on it
 (masters/theme/branding); see `app/pptxtpl.py`
 
-**HTTPS / certificates** (`/api/admin/tls-config`, admin only, every mutation audited as
-`tls_config.*`). `GET ""` returns the status: active certificate (subject, SANs, expiry), serving
-mode (`tls_enabled` wanted vs `tls_running` actual), and the trusted-authority store. The private
-key is never returned by any of these.
-`POST /enabled` (body `{enabled: bool}`) toggles in-app TLS termination; the listener is bound at
-boot, so `tls_running` keeps its old value until a restart.
-`POST /self-signed` (body `{cn, sans}`) mints a fresh self-signed certificate.
-`POST /import-pem` (multipart: `cert`/`key` files or `cert_pem`/`key_pem` text, optional
-`passphrase`) and `POST /import-pfx` (`pfx` file, optional `password`) install a server
-certificate; both hot-reload the live `SSLContext`, with no restart.
-`POST /ca` (multipart: `ca` file or `ca_pem` text, optional `name`) and `DELETE /ca/{id}` manage
-the **trusted authorities**, which apply in **both** serving modes: they feed the outbound trust
-bundle used to verify OIDC, SAML, SMTP and log-export connections, and intermediates additionally
-extend the served chain. Effective on the next outbound call, without a restart
+**Trusted certificate authorities** (`/api/admin/trust-store`, admin only, every mutation audited
+as `trust_store.*`). These are the authorities the app verifies its **outbound** calls against
+(OIDC, SAML, SMTP, log export); the certificate served to browsers is not the app's business, a
+load balancer terminates TLS in front of it (ADR 0013).
+`GET ""` lists the store, split into `roots` and `intermediates`, without the PEM bodies.
+`POST /ca` (multipart: `ca` file or `ca_pem` text, optional `name`) imports one or more
+authorities; a PEM that holds several certificates adds them all, and duplicates are ignored.
+`DELETE /ca/{id}` removes one, `GET /ca/{id}/download` returns its PEM as an attachment.
+Add and remove are effective on the next outbound call, without a restart
 ([05](05-security.md)).
-`GET /ca/{id}/download` and `GET /active/download` return public PEM material.
 
 ### audit (`/api/audit-log`) - admin
 `GET ""` - one page, newest first: `?limit` (1..500, default 50) `&offset` `&action` (case-insensitive

@@ -45,7 +45,7 @@ flowchart LR
   V["Votre navigateur<br/>et run-tests.py"]
   subgraph K["Cluster minikube, namespace tfu"]
     G["Passerelle Envoy<br/>termine le TLS sur :8443<br/>route selon le nom d'hôte"]
-    A["TeamFollowUP<br/>HTTP simple sur :8000<br/>TLS_ENABLED=false"]
+    A["TeamFollowUP<br/>HTTP simple sur :8000"]
     I["Keycloak 26<br/>OIDC + SAML 2.0<br/>royaume tribe"]
     D[("PostgreSQL 16")]
     G -->|"Host: app.localtest.me"| A
@@ -61,7 +61,7 @@ Quatre pods, deux noms publics sur un seul certificat :
 | Brique | Rôle dans le banc | Ce qu'elle remplace en production |
 |---|---|---|
 | **Envoy** | termine le TLS, route sur le nom d'hôte, pose `x-forwarded-proto`, transmet le `Host` du client inchangé | l'Application Load Balancer interne de GKE (Gateway API, contrôleur `gke-l7-rilb`). Envoy est justement le moteur sur lequel les ALB de Google sont construits, donc le traitement des en-têtes est le vrai. |
-| **TeamFollowUP** | l'image du dépôt, déployée exactement comme le prescrit la section 6.9 du [guide de déploiement](12-deployment-guide.md) | le déploiement recommandé : `TLS_ENABLED=false`, port unique en HTTP |
+| **TeamFollowUP** | l'image du dépôt, déployée exactement comme le prescrit la section 6.9 du [guide de déploiement](12-deployment-guide.md) | le déploiement recommandé : port unique en HTTP simple, TLS assuré par la passerelle |
 | **Keycloak** | fournisseur d'identité, parle OIDC **et** SAML sur le même royaume et le même utilisateur | votre IdP d'entreprise (PingFederate, Entra ID, Okta) |
 | **PostgreSQL** | la base | votre instance managée |
 
@@ -467,8 +467,7 @@ variables d'environnement sont celles du §6.9 du guide de déploiement :
 
 | Variable | Valeur | Pourquoi |
 |---|---|---|
-| `TLS_ENABLED` | `false` | le pod sert du HTTP simple, la passerelle fait le TLS |
-| `HTTP_PORT` | `8000` | le port unique que le conteneur ouvre |
+| `HTTP_PORT` | `8000` | le port unique que le conteneur ouvre, en HTTP simple : la passerelle fait le TLS |
 | `PUBLIC_BASE_URL` | `https://app.localtest.me` | **l'adresse que l'utilisateur tape**, pas le port du conteneur. Toutes les URL de rappel SSO en découlent. |
 | `COOKIE_SECURE` | `true` | le client atteint la passerelle en HTTPS, le cookie de session peut donc être marqué Secure |
 
@@ -490,7 +489,7 @@ Deux ajouts propres au banc, tous deux commentés dans le fichier :
   `httpx`, rejetterait notre certificat émis par une autorité privée.
 
   L'application offre aussi le chemin normal pour un client : importer l'autorité
-  depuis **Administration > HTTPS / Certificats > Autorités approuvées**, ce qui
+  depuis **Administration > Autorités de certification**, ce qui
   s'applique sans redémarrage (voir [05](05-security.md)). Le banc garde
   l'ajustement par fichier parce qu'il doit être opérationnel **avant** qu'un
   administrateur se connecte : les pilotes de tests enchaînent le déploiement et
@@ -968,7 +967,7 @@ kubectl -n tfu logs deploy/teamfollowup-app --previous   # l'exécution qui a pl
 ### Ce que le pod voit vraiment, de l'intérieur
 
 ```bash
-kubectl -n tfu exec deploy/teamfollowup-app -- env | grep -E "PUBLIC_BASE_URL|TLS_ENABLED"
+kubectl -n tfu exec deploy/teamfollowup-app -- env | grep -E "PUBLIC_BASE_URL|HTTP_PORT"
 kubectl -n tfu exec deploy/teamfollowup-app -- curl -s http://localhost:8000/api/health
 ```
 

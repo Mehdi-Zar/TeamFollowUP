@@ -41,56 +41,35 @@ against it: the internal pod URL would fail that check behind a TLS-terminating 
 
 ## Transport security (TLS termination)
 
-Two supported models, selected by `TLS_ENABLED`:
+**The app serves plain HTTP on `HTTP_PORT` (default 8000) and never terminates
+TLS.** A load balancer, a GKE Gateway, an ALB or any reverse proxy does it in
+front of the container, HTTP→HTTPS redirection included. See ADR 0013 for why the
+in-app HTTPS mode (a second listener on 8443, with a certificate and its private
+key stored in the database) was removed.
 
-- **`false` (default, recommended)** - the app serves **plain HTTP on `:8000`** and
-  the infrastructure terminates TLS (GKE Gateway API, ALB, reverse proxy). This is
-  the deployment model documented in `docs/12`.
-- **`true`** - the app **terminates TLS itself** on a single port, **8443**, with no
-  external reverse proxy required.
+`app/server.py` binds that single listener with `proxy_headers=True` and
+`forwarded_allow_ips="*"`, so `X-Forwarded-Proto` / `-Host` give the app the
+original scheme and host: redirects, SSO callback URLs and the `Secure` cookie
+decision all follow the public URL, not the container port. The flip side is that
+the port must be reachable **through the proxy only**; a client that could reach
+it directly could forge those headers.
 
-In both cases there is **no HTTP→HTTPS redirect listener**: redirection is an
-infrastructure concern (e.g. the GKE Gateway API redirect route), never the app's.
-
-With `TLS_ENABLED=true` (`app/server.py` + `app/tls.py`):
-
-- **Out of the box:** if no certificate is configured, a **self-signed** cert is
-  generated on first boot (`tls.generate_self_signed`, CN `localhost` + SANs), so
-  the site is HTTPS immediately. Browsers warn until it is trusted - expected for
-  internal use.
-- **Bring your own cert** from **Administration → HTTPS / Certificats** (admin-only):
-  - import a **PEM** certificate (+ intermediates) and its private key (optionally
-    passphrase-protected), or a **PFX / PKCS#12** bundle;
-  - regenerate a self-signed cert with a custom CN/SAN.
-  - (Intermediates in the trusted-authority store below are also appended to the
-    served chain, which is the only part of that store tied to this mode.)
-- **Source of truth = the database** (`AppSetting` key `tls`); on boot and on every
-  change the material is written to `CERT_DIR` (`/app/certs`) and the **live
-  `SSLContext` is hot-reloaded** (`ssl.SSLContext.load_cert_chain`), so a new
-  certificate takes effect **without restarting the container**. The private key
-  is never returned by the API; uploads are audited (`tls_config.*`).
-
-Set **`COOKIE_SECURE=true`** as soon as the site is reachable over HTTPS, whichever
-model terminates it, so session cookies are `Secure`. It must stay `false` for a
-plain-HTTP local run (the compose default): a browser will not send a `Secure` cookie
-over `http://localhost`, and login would silently fail. Endpoints: `GET /api/admin/tls-config`,
-`POST /api/admin/tls-config/{self-signed,import-pem,import-pfx,ca}`,
-`DELETE /api/admin/tls-config/ca/{id}`.
+Set **`COOKIE_SECURE=true`** as soon as the site is reachable over HTTPS, so
+session cookies are `Secure`. It must stay `false` for a plain-HTTP local run (the
+compose default): a browser will not send a `Secure` cookie over
+`http://localhost`, and login would silently fail.
 
 ### Outbound TLS trust (the certificates the app *accepts*)
 
-Serving TLS and trusting TLS are different problems, and only the first depends on
-`TLS_ENABLED`. Whoever terminates the inbound connection, the app still **calls**
-an OIDC/SAML IdP, an SMTP relay and a log sink, and on an internal network those
-are routinely issued by a private authority no public trust store knows about.
+Serving TLS and trusting TLS are different problems, and the app only has the
+second one. Whoever terminates the inbound connection, the app still **calls** an
+OIDC/SAML IdP, an SMTP relay and a log sink, and on an internal network those are
+routinely issued by a private authority no public trust store knows about.
 Without that authority the very first OIDC call, the discovery fetch, fails with
 `self signed certificate in certificate chain`, and SSO simply cannot work.
 
-**Administration → HTTPS / Certificats → Autorités approuvées** is the supported
-answer. It is shown in **both** serving modes on purpose: it used to be hidden
-behind the in-app TLS toggle, which meant an administrator had to flip the serving
-mode (and restart on another port, in front of a Gateway that expects 8000) just
-to import a root CA.
+**Administration → Autorités de certification** is the supported answer, and the
+only certificate screen the app has.
 
 - Imported roots and intermediates are merged with the public roots into
   `CERT_DIR/trust_bundle.pem` (`app/trust.py`).
@@ -100,7 +79,10 @@ to import a root CA.
 - `SSL_CERT_FILE` and `REQUESTS_CA_BUNDLE` point at the same bundle for clients we
   do not construct ourselves (google-auth in `app/logexport.py`).
 - Add and remove take effect on the **next outbound call, without a restart**, and
-  are audited (`tls_config.add_ca`, `tls_config.remove_ca`).
+  are audited (`trust_store.add_ca`, `trust_store.remove_ca`). Endpoints:
+  `GET /api/admin/trust-store`, `POST /api/admin/trust-store/ca`,
+  `DELETE /api/admin/trust-store/ca/{id}`,
+  `GET /api/admin/trust-store/ca/{id}/download`.
 
 The public roots are always kept: replacing them would make the internal IdP
 reachable and break every public endpoint in the same move. A bundle supplied at

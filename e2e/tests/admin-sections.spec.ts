@@ -17,7 +17,7 @@ import { BREAKGLASS, expect, signIn, test } from "./helpers";
 const SECTIONS = [
   "tribes", "import", "squads", "users", "personas", "my_squads",
   "modules", "report", "leaves", "settings",
-  "auth", "api", "smtp", "tls",
+  "auth", "api", "smtp", "trust",
   "moderation", "logs", "audit", "ops",
 ];
 

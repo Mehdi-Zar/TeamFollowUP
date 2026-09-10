@@ -1,5 +1,5 @@
 # The application, deployed the way docs/12 section 6.9 prescribes:
-# TLS_ENABLED=false, one plain-HTTP port :8000, TLS terminated by the gateway.
+# one plain-HTTP port :8000, TLS terminated by the gateway.
 #
 # Two additions specific to this bench, both flagged:
 #   * hostAliases, so the pod resolves the two public hostnames to the in-cluster
@@ -39,9 +39,7 @@ spec:
             - containerPort: 8000
               name: http
           env:
-            - name: TLS_ENABLED          # infra terminates TLS; the pod serves plain HTTP
-              value: "false"
-            - name: HTTP_PORT
+            - name: HTTP_PORT            # the pod serves plain HTTP; the gateway does TLS
               value: "8000"
             - name: PUBLIC_BASE_URL      # public address, NOT the container port
               value: "https://app.localtest.me"

@@ -276,10 +276,8 @@ export function OpsAdmin() {
 
   if (!rt) return <div className="spinner">{t("common.loading")}</div>;
 
-  const servingMode = rt.tls_running ? t("ops.mode_https") : t("ops.mode_http");
   const rows: Array<[string, any]> = [
     [t("ops.field.version"), rt.git_sha ? `${rt.version} (${rt.git_sha})` : rt.version],
-    [t("ops.field.serving_mode"), servingMode],
     [t("ops.field.orchestrator"), rt.orchestrator],
     [t("ops.field.hostname"), rt.hostname],
     [t("ops.field.uptime"), fmtUptime(rt.uptime_seconds)],
@@ -293,12 +291,6 @@ export function OpsAdmin() {
     <div className="stack" style={{ maxWidth: 720, gap: 16 }}>
       {restartErr && <ErrorBanner message={restartErr} />}
       <div className="banner">{t("ops.intro")}</div>
-
-      {rt.restart_pending && (
-        <div className="banner" style={{ borderLeft: "4px solid var(--orange)" }}>
-          ⚠️ {t("ops.restart_pending")}
-        </div>
-      )}
 
       {/* Shipped defaults still in use. The startup guard logs these too, but a log
           line is read once by whoever deployed and never again. */}

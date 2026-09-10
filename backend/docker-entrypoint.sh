@@ -33,10 +33,7 @@ echo "[entrypoint] Bootstrap (compte de secours) + seed de démonstration..."
 python -m app.init_db
 
 echo "[entrypoint] Démarrage de l'API..."
-# server.py choisit le mode selon TLS_ENABLED :
-#   - TLS_ENABLED=false : HTTP simple sur HTTP_PORT (8000) ; c'est l'infra
-#     (Gateway API + ALB sur GKE) qui termine le TLS. Modèle recommandé.
-#   - TLS_ENABLED=true (défaut) : l'app termine le TLS elle-même sur 8443
-#     (certificat auto-signé par défaut, ou importé via l'admin).
-# La redirection HTTP->HTTPS reste gérée par l'infra, jamais par l'app.
+# HTTP simple sur HTTP_PORT (8000). Le TLS est terminé par l'infrastructure
+# devant le conteneur (Gateway API + ALB sur GKE, reverse proxy ailleurs), y
+# compris la redirection HTTP->HTTPS. Voir ADR 0013.
 exec python -m app.server

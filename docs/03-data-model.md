@@ -84,7 +84,7 @@ erDiagram
 | `smtp` | `smtpconfig.py` | SMTP host/port/credentials/enabled |
 | `weekly_report` | `reportconfig.py` | enabled, recipients, weekday, hour, since_days, last_sent_week |
 | `auth_config` | `authconfig.py` | OIDC/SAML runtime toggles |
-| `tls` | `tlsconfig.py` | server certificate + key, trusted-authority store, self-signed metadata (materialized to `CERT_DIR`: the served chain, plus the outbound trust bundle in both serving modes) |
+| `trust` | `trustconfig.py` | the trusted-authority store, roots and intermediates, merged with the public roots into the outbound trust bundle under `CERT_DIR` |
 | `log_export` | `logexportconfig.py` | audit-log export configuration |
 | `change_notify` / `change_notify_state` | `changeconfig.py` | change-notification config + send state |
 | `log_level` | `logbuffer.py` | runtime log level set in Admin → Ops with "persist", re-applied at boot (single value, not JSON) |
