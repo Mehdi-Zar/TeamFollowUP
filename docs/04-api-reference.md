@@ -153,9 +153,8 @@ PPTX export template: `GET /pptx-template` (status), `POST /pptx-template` (uplo
 (masters/theme/branding); see `app/pptxtpl.py`
 
 **Trusted certificate authorities** (`/api/admin/trust-store`, admin only, every mutation audited
-as `trust_store.*`). These are the authorities the app verifies its **outbound** calls against
-(OIDC, SAML, SMTP, log export); the certificate served to browsers is not the app's business, a
-load balancer terminates TLS in front of it (ADR 0013).
+as `trust_store.*`). These are the authorities the app verifies its **outbound** calls against:
+OIDC, SAML, SMTP, log export.
 `GET ""` lists the store, split into `roots` and `intermediates`, without the PEM bodies.
 `POST /ca` (multipart: `ca` file or `ca_pem` text, optional `name`) imports one or more
 authorities; a PEM that holds several certificates adds them all, and duplicates are ignored.

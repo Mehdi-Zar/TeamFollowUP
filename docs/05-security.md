@@ -43,9 +43,8 @@ against it: the internal pod URL would fail that check behind a TLS-terminating 
 
 **The app serves plain HTTP on `HTTP_PORT` (default 8000) and never terminates
 TLS.** A load balancer, a GKE Gateway, an ALB or any reverse proxy does it in
-front of the container, HTTP→HTTPS redirection included. See ADR 0013 for why the
-in-app HTTPS mode (a second listener on 8443, with a certificate and its private
-key stored in the database) was removed.
+front of the container, HTTP→HTTPS redirection included. The reasoning is in
+[ADR-0013](adr/0013-tls-terminated-by-the-infrastructure.md).
 
 `app/server.py` binds that single listener with `proxy_headers=True` and
 `forwarded_allow_ips="*"`, so `X-Forwarded-Proto` / `-Host` give the app the
@@ -89,14 +88,14 @@ reachable and break every public endpoint in the same move. A bundle supplied at
 deploy time (`SSL_CERT_FILE` baked into the image, as the Kubernetes bench does)
 is used as the base, so it composes with the store instead of being replaced.
 
-**There is no "skip verification" switch, by design.** Two existed in effect and
-are gone: SAML metadata was fetched with `validate_cert=False`, and SMTP called
-`starttls()` with no context, which makes smtplib fall back to
-`ssl._create_stdlib_context()`, that is `check_hostname=False` and
-`verify_mode=CERT_NONE`, handing the SMTP credentials to whatever answered on that
-host and port. **Upgrade note:** an internal SMTP relay or metadata URL with a
-privately issued certificate stops working until its authority is imported. That
-is the intended outcome, since neither was ever actually verified before.
+**There is no "skip verification" switch, by design.** Every outbound call gets an
+explicit verifying context, including the two that are easy to get wrong: SAML
+metadata is fetched verified, and SMTP `starttls()` is handed a context rather
+than letting smtplib fall back to `ssl._create_stdlib_context()`, which means
+`check_hostname=False` and `verify_mode=CERT_NONE`, that is the SMTP credentials
+handed to whatever answered on that host and port. **The consequence to plan for:**
+an internal SMTP relay or metadata URL with a privately issued certificate is
+unreachable until its authority is imported above. That is the supported path.
 
 ## SSO provisioning & access approval
 
@@ -200,7 +199,7 @@ type and detail are public.
 | # | Risk | Status |
 |---|------|--------|
 | A01 Broken Access Control | **Mitigated** - layered server-side guards + tribe scoping + tests (`test_rbac*`, `test_personas`, `test_review_access`). |
-| A02 Cryptographic Failures | **Partial** - Argon2 for passwords; **session cookie `https_only=False`** and a **default `secret_key`** must be overridden in prod (see TD/risks). Outbound TLS now verifies against the admin-managed trust store (`app/trust.py`): the `CERT_NONE` fallback on SMTP and the unverified SAML metadata fetch are gone. |
+| A02 Cryptographic Failures | **Partial** - Argon2 for passwords; **session cookie `https_only=False`** and a **default `secret_key`** must be overridden in prod (see TD/risks). Outbound TLS verifies against the admin-managed trust store (`app/trust.py`), SMTP and SAML metadata included, with no way to switch verification off. |
 | A03 Injection | **Mitigated** - SQLAlchemy ORM/parameterized queries; Pydantic validation; SPA escapes; report HTML uses `html.escape`. |
 | A04 Insecure Design | **Mitigated** - explicit RBAC, derived statuses, immutable snapshots. |
 | A05 Security Misconfiguration | **Action needed** - prod must set `SECRET_KEY`, `POSTGRES_PASSWORD`, `BREAKGLASS_PASSWORD`, HTTPS, and `https_only` cookie. See `.env.example`. |

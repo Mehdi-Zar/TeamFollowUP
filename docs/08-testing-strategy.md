@@ -98,6 +98,6 @@ flowchart TB
 3. **CI gate** (in `.github/workflows/ci.yml`): backend pytest with the coverage ratchet and the
    OpenAPI snapshot check, FE typecheck + Vitest + build, Playwright e2e on the real Docker
    stack, the image build, and a non-blocking dependency audit. The i18n parity rule lives in
-   Vitest only; the duplicated inline node script that used to sit beside it is gone.
+   Vitest only, in one place.
 4. **`pip-audit` / `npm audit`** in CI for dependency CVEs.
 </content>

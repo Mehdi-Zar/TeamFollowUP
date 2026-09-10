@@ -42,9 +42,9 @@ docker compose up -d --build
 ```
 
 Puis ouvrez **http://localhost:8000**. L'app sert l'UI et l'API sur ce **port
-unique**, en **HTTP simple**, et laisse le **TLS à l'infrastructure** en amont
-(Gateway API sur GKE, ALB, reverse proxy), redirection HTTP→HTTPS comprise. C'est
-le seul modèle : l'application ne termine jamais le TLS elle-même (ADR 0013).
+unique**, en **HTTP simple**. Le **TLS est assuré par l'infrastructure** en amont
+(Gateway API sur GKE, ALB, reverse proxy), redirection HTTP→HTTPS comprise
+([ADR-0013](docs/adr/0013-tls-terminated-by-the-infrastructure.md)).
 
 > **Une seule URL à connaître.** Dès que l'application est déployée derrière une
 > vraie adresse, renseignez `PUBLIC_BASE_URL` (ou le champ **URL publique** dans
@@ -148,7 +148,7 @@ Toutes les variables ont un défaut fonctionnel (voir `.env.example`).
 
 | Variable | Défaut | Rôle |
 |----------|--------|------|
-| `APP_HTTP_PORT` | `8000` | Port hôte (port unique de l'app, HTTP simple). L'app ne termine jamais le TLS : c'est le répartiteur de charge devant elle (ADR 0013). |
+| `APP_HTTP_PORT` | `8000` | Port hôte (port unique de l'app, en HTTP simple). |
 | `PUBLIC_BASE_URL` | *(vide → déduit de la requête)* | URL publique de l'app (`https://teamfollowup.exemple.com`). Base de toutes les URL de rappel SSO. |
 | `COOKIE_SECURE` | `false` | Passez à `true` dès que l'app est publiée en HTTPS (y compris si le TLS est terminé en amont). |
 | `POSTGRES_DB` / `POSTGRES_USER` / `POSTGRES_PASSWORD` | `tribe` | Base PostgreSQL (interne). |

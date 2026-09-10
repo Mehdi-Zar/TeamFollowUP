@@ -130,7 +130,7 @@ ou recouvert par autre chose.
 | `tests/login.spec.ts` | l'écran de connexion est servi et ses champs sont atteignables par leur libellé ; de mauvais identifiants sont refusés **sans dire lequel des deux est faux** (pas d'énumération de comptes) ; le compte de secours entre ; la déconnexion invalide vraiment la session côté serveur ; une URL interne tapée par un visiteur non connecté ramène à la connexion |
 | `tests/admin-org.spec.ts` | créer une tribu, la voir apparaître dans l'écran, la supprimer ; le journal d'audit enregistre l'action, la retrouve par filtre et affiche **le nom** de l'auteur et non son identifiant ; un filtre qui ne correspond à rien le dit au lieu de tout montrer ; la pagination avance et recule sans répéter de ligne |
 | `tests/admin-sections.spec.ts` | les **dix-huit sections** de l'administration : chacune s'affiche, sans bandeau d'erreur, sans panneau vide et sans erreur JavaScript en console. C'est le filet qui a rendu défendable le découpage d'`AdminPage.tsx` : vert avant, vert après |
-| `tests/admin-trust-store.spec.ts` | l'écran **Autorités de certification** : rien n'y gère un certificat que l'app servirait (le TLS est terminé par l'infrastructure, ADR 0013) et les autorités approuvées sont administrables, boutons actifs. C'est la régression qui rendait impossible l'import d'une AC interne sans basculer le mode de service, donc sans changer de port |
+| `tests/admin-trust-store.spec.ts` | l'écran **Autorités de certification** : les autorités approuvées sont listées et administrables, boutons actifs, et rien sur cet écran ne gère un certificat que l'application servirait, puisque le TLS est terminé par l'infrastructure (ADR 0013) |
 | `tests/language.spec.ts` | un visiteur qui n'a jamais choisi de langue obtient celle de l'instance (`default_lang`, français par défaut), et rien n'est écrit dans `trt_lang` tant qu'il n'a pas choisi ; son choix, lui, survit au rechargement. Seule spec à importer `test` depuis `@playwright/test` : l'absence de choix stocké **est** le cas testé, et la fixture partagée la supprimerait |
 | `tests/roles.spec.ts` | un membre ne se voit pas proposer l'administration, ne l'obtient pas en tapant l'URL, et l'API la lui refuse aussi ; l'administrateur voit bien les sections ; le tableau de bord s'affiche sans bandeau d'erreur |
 
@@ -164,10 +164,6 @@ depuis `./helpers` et non depuis `@playwright/test` : en les prenant à la sourc
 on contournerait le verrou et la suite dépendrait d'un réglage qu'un administrateur
 peut changer.
 
-Note historique : jusqu'à la correction de `default_lang`, l'interface était
-anglaise quoi qu'on configure, parce que le fournisseur i18n écrivait `trt_lang=en`
-au montage, avant même la réponse de `/api/config`. La suite s'appuyait donc sur un
-bug, ce qui ne se voyait pas.
 
 ### Les liens profonds de l'administration utilisent `?section=`
 

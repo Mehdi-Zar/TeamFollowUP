@@ -13,10 +13,9 @@ docker compose up -d --build      # http://localhost:8000 (single port, plain HT
 Demo data is seeded on first boot (`SEED_DEMO=true`). Break-glass admin: `admin@local` (password from
 `BREAKGLASS_PASSWORD`, or the random one printed in the app logs at first boot).
 
-Compose serves plain HTTP and leaves TLS to the infrastructure, which is the only
-model the app supports (ADR 0013, `docs/06` §Topology). To exercise a real
-TLS-terminating front end locally, use the Envoy of the GKE simulation rather than
-putting a listener back in the app.
+Compose serves plain HTTP and leaves TLS to the infrastructure (`docs/06` §Topology).
+To exercise a real TLS-terminating front end locally, run the Envoy of the GKE
+simulation in front of it.
 
 ## Frontend dev (hot reload)
 

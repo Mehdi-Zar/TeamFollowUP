@@ -147,13 +147,10 @@ Artifact Registry + GKE wiring.
 Now you're on the prod side. The app is still serving users on **1.0.0**. The data
 is in PostgreSQL. Here is the safe sequence - **the order matters.**
 
-> ⚠️ **Check which port the new image binds.** The container serves a **single**
-> port, plain **HTTP** on `HTTP_PORT` (8000 by default), with TLS terminated by the
-> Gateway/ALB (ADR 0013). There has never been a `:8080` listener nor an in-app
-> HTTP→HTTPS redirect (that is the Gateway's job, deployment guide §6.9.2). An image
-> from before 2.2.0 could also bind **HTTPS :8443**; if you are upgrading from one,
-> make port mappings, monitoring probes and K8s `containerPort` / probe `scheme`
-> follow the pod back to plain HTTP :8000.
+> ⚠️ **The port the image binds.** The container serves a **single** port, plain
+> **HTTP** on `HTTP_PORT` (8000 by default); the Gateway/ALB terminates TLS and does
+> the HTTP→HTTPS redirect (deployment guide §6.9, Step 3). Port mappings, monitoring probes
+> and the K8s `containerPort` / probe `scheme` all point at plain HTTP :8000.
 >
 > ⚠️ **SSO after a hostname change.** Callback URLs are derived from the public URL,
 > so a new hostname changes them. Update `PUBLIC_BASE_URL` (or the **URL publique**

@@ -44,8 +44,6 @@ qui satisfait la spec ».
   pour le retrait du mode HTTPS intégré : un second listener, un toggle qui ne
   s'appliquait qu'au redémarrage, et surtout une clé privée stockée en clair en base
   donc embarquée dans chaque sauvegarde.
-  *(Historique : v1 = hôte 8080 → conteneur 8000 ; v2 = 8443 HTTPS + 8080 redirigeant
-  en 301, listener retiré ; v3 = les deux modes coexistant ; v4 = HTTP simple seul.)*
 - **Une seule URL publique, les URL SSO en dérivent.** Le port d'écoute ne dit rien
   de l'adresse vue par le navigateur : derrière une Gateway, le pod écoute en HTTP
   8000 alors que les utilisateurs tapent `https://…` sur 443. Plutôt que de faire

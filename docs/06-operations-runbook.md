@@ -76,7 +76,7 @@ audited (`ops.*`).
 
 | What | Endpoint | Notes |
 |---|---|---|
-| Runtime diagnostics | `GET /api/admin/runtime` | version, git sha, hostname (pod/container), pid, uptime, detected orchestrator, serving mode, and **`restart_pending`** when the TLS toggle differs from what the process bound at boot |
+| Runtime diagnostics | `GET /api/admin/runtime` | version, git sha, hostname (pod/container), pid, uptime, detected orchestrator, and the shipped defaults still in use (`insecure_defaults`) |
 | **Restart** | `POST /api/admin/restart` | sends `SIGTERM` to our own pid after the response is flushed; uvicorn drains and exits, the supervisor re-creates the container with the new config. Reports `auto_restart: false` when no supervisor is detected (bare `python -m app.server`), where exiting would **not** come back. Set `OPS_DISABLE_RESTART=1` to make it a no-op |
 | Recent logs | `GET /api/admin/logs?limit=&level=` | last 2000 records from an in-memory ring buffer fed by the root **and** uvicorn loggers |
 | Download logs | `GET /api/admin/logs/download?fmt=txt\|json` | text or NDJSON attachment |
@@ -132,8 +132,8 @@ An empty list is the answer you want. Check it after every first deploy.
 | Emails not sending | Admin → SMTP "test"; `smtp.enabled` | fix SMTP config; check app logs for send failures |
 | Weekly report not sent | scheduler single-replica? `weekly_report` enabled? SMTP on? | `POST /api/admin/progress/run-weekly`; verify `last_sent_week` |
 | SSO fails with `self signed certificate in certificate chain` | is the IdP issued by an internal authority? Admin → SSO "test the connection" | import the authority in Admin → Autorités de certification; applies at once, no restart ([05](05-security.md)) |
-| SMTP or SAML metadata stopped working after the upgrade | same cause: both now verify the certificate, where they used not to | import the internal authority; do not look for a switch to disable the check, there is none |
-| TLS toggle changed, nothing happened | Admin → Ops: `restart_pending` true? | the listener is bound at boot: restart (Ops → Restart, or redeploy) |
+| SMTP or SAML metadata unreachable, certificate error in the logs | the endpoint is issued by an internal authority | import that authority in Admin → Autorités de certification; do not look for a switch to disable the check, there is none |
+| An environment variable was changed and nothing happened | env config is read at boot | restart (Admin → Ops → Restart, or redeploy) |
 | Need to debug without shell access | Admin → Ops → logs | set the level to DEBUG (persist off), clear the buffer, reproduce, download, then set it back |
 
 ## Rollback
