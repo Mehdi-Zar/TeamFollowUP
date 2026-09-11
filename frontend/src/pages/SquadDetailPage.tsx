@@ -117,6 +117,11 @@ export default function SquadDetailPage() {
           </div>
           <div className="inline" style={{ marginTop: 4 }}>
             <span className="muted small">{t("squad.squad_leader")} : <span className="strong">{squad.leader?.display_name || "-"}</span></span>
+            {!!squad.co_leaders?.length && (
+              <span className="muted small">
+                {t("squad.co_leaders")} : <span className="strong">{squad.co_leaders.map((c) => c.display_name).join(", ")}</span>
+              </span>
+            )}
             <FreshnessBadge freshness={squad.freshness} />
           </div>
           {(squad.products?.length ?? 0) > 0 && (

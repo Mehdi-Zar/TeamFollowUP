@@ -26,6 +26,8 @@ from .. import status as st
 from ..database import get_db
 from ..deps import (
     ADMIN,
+    MEMBER,
+    SQUAD,
     TRIBE,
     assert_can_edit_squad,
     assert_leads_squad,
@@ -66,6 +68,32 @@ from ..schemas import (
 from ..serializers import budget_out, squad_detail
 
 router = APIRouter(prefix="/api/squads", tags=["squads"])
+
+
+def _set_co_leaders(db: Session, squad: Squad, user_ids: list[int]) -> None:
+    """Replace a squad's co-leaders, refusing anyone outside its tribe.
+
+    A co-leader of another tribe would read that tribe's squad through a door the
+    tribe scope is supposed to close.
+
+    Naming somebody co-leader promotes a plain member to ``squad_leader``: without
+    it the account would be listed as a leader and refused by every squad-level
+    check, which reads as the feature being broken. An admin or a tribe leader keeps
+    their role, the higher one wins (same rule as the org import).
+    """
+    people = []
+    for uid in dict.fromkeys(user_ids):
+        target = db.get(User, int(uid))
+        if target is None:
+            raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+        if target.tribe_id is not None and target.tribe_id != squad.tribe_id:
+            raise HTTPException(status_code=400,
+                                detail=f"{target.display_name} n'appartient pas a la tribe de cette squad")
+        if target.role == MEMBER:
+            target.role = SQUAD
+            target.tribe_id = target.tribe_id or squad.tribe_id
+        people.append(target)
+    squad.co_leaders = people
 
 
 @router.get("", response_model=list[SquadOut])
@@ -230,11 +258,17 @@ def update_squad(squad_id: int, payload: SquadUpdate, db: Session = Depends(get_
     if "tribe_id" in data and user.role != ADMIN:
         raise HTTPException(status_code=403, detail="Seul l'administrateur peut déplacer une squad de tribe")
     # KPI / budget on/off is a tribe-leader decision (like leader assignment & ordering).
-    structural = {"leader_user_id", "display_order", "kpis_enabled", "budget_enabled"}
+    structural = {"leader_user_id", "co_leader_user_ids", "display_order",
+                  "kpis_enabled", "budget_enabled"}
     if user.role not in (ADMIN, TRIBE):
         assert_can_edit_squad(db, user, squad_id)
         if structural & data.keys():
             raise HTTPException(status_code=403, detail="Champs réservés au tribe leader")
+    # Co-leaders are a relationship, not a column, and naming one has a side effect
+    # on the account (see _set_co_leaders), so it is applied apart from the plain
+    # field copy below.
+    if "co_leader_user_ids" in data:
+        _set_co_leaders(db, squad, data.pop("co_leader_user_ids") or [])
     for k, v in data.items():
         setattr(squad, k, v)
     record_audit(db, user.id, "squad.update", entity="squad", entity_id=squad.id, detail=data)

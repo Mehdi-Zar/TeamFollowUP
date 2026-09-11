@@ -486,7 +486,12 @@ class SquadUpdate(BaseModel):
     leader_user_id: Optional[int] = None
     display_order: Optional[int] = None
     kpis_enabled: Optional[bool] = None
-    steerco_enabled: Optional[bool] = None
+    # steerco_enabled is deliberately absent: it is derived from platform
+    # membership (app/platforms.py:sync_squad_flags) and would drift the moment a
+    # squad edit set it by hand. It stays readable on SquadOut.
+    # Co-leaders hold the same rights as the leader over this squad. Replacing the
+    # list is structural, like assigning the leader: a tribe leader's call.
+    co_leader_user_ids: Optional[list[int]] = None
     budget_enabled: Optional[bool] = None
     tribe_id: Optional[int] = None
     squad_type: Optional[SquadType] = None
@@ -505,6 +510,10 @@ class SquadOut(ORMModel):
     kpis_enabled: bool
     steerco_enabled: bool = False
     budget_enabled: bool = False
+    # Same rights as the leader over this squad, without being its named leader.
+    # Fed from the ORM relationship by a validator so every endpoint returning a
+    # SquadOut carries it without building the list by hand.
+    co_leader_user_ids: list[int] = []
     squad_type: SquadType = "product"
     products: list[str] = []
     hardware: list[str] = []
@@ -580,6 +589,7 @@ class SquadDetail(SquadOut):
     leader, admins); other viewers receive it as None.
     """
     leader: Optional[LeaderInfo] = None
+    co_leaders: list[LeaderInfo] = []
     year: int
     annual_progress: int
     freshness: dict
