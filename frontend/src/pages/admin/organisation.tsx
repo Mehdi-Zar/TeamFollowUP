@@ -624,7 +624,9 @@ export function MySquadsAdmin() {
 
   async function load() {
     const all = await wrap(() => api.get<Squad[]>("/api/squads"));
-    if (all) setSquads(all.filter((s) => s.leader_user_id === user?.id));
+    // Led as leader OR as co-leader: the two carry the same rights.
+    if (all) setSquads(all.filter((s) => s.leader_user_id === user?.id
+                                      || (s.co_leader_user_ids ?? []).includes(user?.id ?? -1)));
   }
   useEffect(() => { load(); }, []);
 

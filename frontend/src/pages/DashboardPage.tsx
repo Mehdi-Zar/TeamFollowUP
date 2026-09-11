@@ -58,7 +58,7 @@ export default function DashboardPage() {
   const tab: "overview" | "steerco" = params.get("tab") === "steerco" ? "steerco" : "overview";
   // Steerco view filters, lifted here so the chrome ExportMenu can target them.
   const [steercoPeriod, setSteercoPeriod] = useState<string>(currentSteercoPeriod());
-  const [steercoSquad, setSteercoSquad] = useState<string>("");   // "" = all squads
+  const [steercoPlatform, setSteercoPlatform] = useState<string>("");   // "" = all platforms
   const [data, setData] = useState<DashboardOut | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [year, setYear] = useState<number | null>(null);
@@ -125,7 +125,7 @@ export default function DashboardPage() {
           actions: tab === "steerco" ? (
             <>
               <ReportingButton />
-              <ExportMenu docs={["steerco", "report"]} steerco={{ period: steercoPeriod, squadId: steercoSquad }} />
+              <ExportMenu docs={["steerco", "report"]} steerco={{ period: steercoPeriod, platformId: steercoPlatform }} />
             </>
           ) : (
             <>
@@ -140,13 +140,13 @@ export default function DashboardPage() {
           ),
         }
       : {},
-    [data?.year, showInitiatives, steercoTabOn, tab, steercoPeriod, steercoSquad, t]
+    [data?.year, showInitiatives, steercoTabOn, tab, steercoPeriod, steercoPlatform, t]
   );
 
   if (error) return <ErrorBanner message={error} />;
   if (!data) return <Spinner />;
   if (tab === "steerco" && steercoTabOn)
-    return <SteercoConsolidation period={steercoPeriod} setPeriod={setSteercoPeriod} squadId={steercoSquad} setSquadId={setSteercoSquad} />;
+    return <SteercoConsolidation period={steercoPeriod} setPeriod={setSteercoPeriod} platformId={steercoPlatform} setPlatformId={setSteercoPlatform} />;
 
   const s = data.summary;
 

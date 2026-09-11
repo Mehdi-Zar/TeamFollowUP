@@ -835,24 +835,24 @@ async def import_org_upload(
 # file and upload it here; parsed in memory and written to SteercoEntry rows.
 
 @router.get("/import-steerco/template")
-def download_steerco_template(squad_id: int | None = None, db: Session = Depends(get_db),
+def download_steerco_template(platform_id: int | None = None, db: Session = Depends(get_db),
                               admin: User = Depends(require_admin)):
-    """GET /api/admin/import-steerco/template?squad_id= : download the Steerco Excel
+    """GET /api/admin/import-steerco/template?platform_id= : download the Steerco Excel
     template (Infos / KPIs / SLA / Incidents / Evenements) to fill in. Admin only.
 
-    With ``squad_id`` the workbook is built *for that squad*: its name is pre-filled
-    and the KPI / SLA rows are the ones it actually reports, so the file matches the
-    app instead of proposing a canned list. Without it, the standard structure."""
-    from ..models import Squad
-    from ..steerco_import import structure_for_squad, template_bytes
+    With ``platform_id`` the workbook is built *for that platform*: its name is
+    pre-filled and the KPI / SLA rows come from its slide template, so the file asks
+    for exactly what will be rendered. Without it, the standard structure."""
+    from ..models import Platform
+    from ..steerco_import import structure_for_platform, template_bytes
     kpis = services = None
     name = ""
-    if squad_id is not None:
-        squad = db.get(Squad, squad_id)
-        if squad is None:
-            raise HTTPException(status_code=404, detail="Squad introuvable")
-        kpis, services = structure_for_squad(db, squad_id)
-        name = squad.name
+    if platform_id is not None:
+        platform = db.get(Platform, platform_id)
+        if platform is None:
+            raise HTTPException(status_code=404, detail="Plateforme introuvable")
+        kpis, services = structure_for_platform(db, platform_id)
+        name = platform.name
     slug = "".join(c if c.isalnum() else "-" for c in name).strip("-").lower() or "template"
     return Response(
         content=template_bytes(None, kpis, services, name),
@@ -868,8 +868,8 @@ async def import_steerco_upload(
     admin: User = Depends(require_admin),
 ):
     """POST /api/admin/import-steerco : upload a filled Steerco Excel and write the
-    squad's monthly snapshots (12-month history + full current month). Admin only.
-    Idempotent per (squad, period). 400 on wrong format / unknown squad. Audited."""
+    platform's monthly snapshots (12-month history + full current month). Admin only.
+    Idempotent per (platform, period). 400 on wrong format / unknown platform. Audited."""
     from ..steerco_import import import_steerco
 
     content = await file.read()
@@ -881,8 +881,8 @@ async def import_steerco_upload(
     except Exception as exc:  # malformed cells, etc.
         db.rollback()
         raise HTTPException(status_code=400, detail=f"Import impossible : {exc}")
-    record_audit(db, admin.id, "steerco.import", entity="squad",
-                 entity_id=summary.get("squad_id"), detail=summary)
+    record_audit(db, admin.id, "steerco.import", entity="platform",
+                 entity_id=summary.get("platform_id"), detail=summary)
     db.commit()
     return summary
 

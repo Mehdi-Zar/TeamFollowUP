@@ -15,12 +15,14 @@ from datetime import date, datetime, timezone
 
 from sqlalchemy import (
     Boolean,
+    Column,
     Date,
     DateTime,
     ForeignKey,
     Integer,
     Numeric,
     String,
+    Table,
     Text,
     JSON,
     UniqueConstraint,
@@ -105,6 +107,22 @@ class User(Base):
     # Squads this user leads (via Squad.leader_user_id); explicit FK because
     # Squad references users more than once.
     led_squads: Mapped[list["Squad"]] = relationship(back_populates="leader", foreign_keys="Squad.leader_user_id")
+    # Squads this user co-leads: the same rights, without being the named leader.
+    co_led_squads: Mapped[list["Squad"]] = relationship(secondary="squad_coleaders",
+                                                        back_populates="co_leaders")
+
+
+# Co-leaders of a squad. The squad keeps ONE named leader (``leader_user_id``, the
+# person a report or an OTD is addressed to); co-leaders hold exactly the same rights
+# over the squad without disputing that identity. Holidays, a squad piloted by two
+# people, a handover in progress: all of them used to mean sharing an account or
+# moving the leader field back and forth.
+squad_coleaders = Table(
+    "squad_coleaders",
+    Base.metadata,
+    Column("squad_id", ForeignKey("squads.id", ondelete="CASCADE"), primary_key=True),
+    Column("user_id", ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
+)
 
 
 class Squad(Base):
@@ -125,10 +143,11 @@ class Squad(Base):
     leader_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     display_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     kpis_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    # Steerco (steering-committee) reporting is opt-in per squad and self-service:
-    # the squad leader flips it on when they want to prepare their steerco input for
-    # a period (recurring but at no fixed cadence, ~monthly). Off by default; when on,
-    # a Steerco section appears in the reporting screen and feeds the consolidated PPTX.
+    # True when this squad contributes to at least one platform's steerco. Derived
+    # from ``platforms`` and kept in sync on every contributor change (see
+    # app/platforms.py:sync_squad_flags): the reporting screen reads this one boolean
+    # to decide whether to show the Steerco step, and it has no business loading the
+    # platform graph for that.
     steerco_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     # Budget tracking is opt-in per squad: the tribe leader turns it on, then the
     # squad leader reports the figures. The amounts (SquadBudget) are visible only
@@ -144,6 +163,17 @@ class Squad(Base):
 
     tribe: Mapped["Tribe"] = relationship(back_populates="squads")
     leader: Mapped["User | None"] = relationship(back_populates="led_squads", foreign_keys=[leader_user_id])
+    # Same rights as ``leader`` over this squad (see deps.leads_this_squad), without
+    # being the squad's named leader.
+    co_leaders: Mapped[list["User"]] = relationship(secondary=squad_coleaders,
+                                                    back_populates="co_led_squads")
+
+    @property
+    def co_leader_user_ids(self) -> list[int]:
+        """The co-leaders as plain ids, read straight by the API schemas."""
+        return [u.id for u in self.co_leaders]
+    platforms: Mapped[list["Platform"]] = relationship(secondary="platform_contributors",
+                                                       back_populates="contributors")
     objectives: Mapped[list["Objective"]] = relationship(back_populates="squad", cascade="all, delete-orphan")
     roadmap_items: Mapped[list["RoadmapItem"]] = relationship(
         back_populates="squad", cascade="all, delete-orphan",
@@ -665,23 +695,76 @@ class ApiKey(Base):
     created_by: Mapped["User | None"] = relationship(foreign_keys=[created_by_user_id])
 
 
-class SteercoEntry(Base):
-    """One squad's Steering-Committee (steerco) monthly snapshot.
+# Which squads feed a platform. A squad may serve several platforms (Managed
+# Services contributes to more than one), hence a link table rather than a column
+# on either side.
+platform_contributors = Table(
+    "platform_contributors",
+    Base.metadata,
+    Column("platform_id", ForeignKey("platforms.id", ondelete="CASCADE"), primary_key=True),
+    Column("squad_id", ForeignKey("squads.id", ondelete="CASCADE"), primary_key=True),
+)
 
-    A squad has at most one entry per month (unique constraint). The one-pager
-    (HTML / PPTX) is not stored: it is rebuilt on the fly from the last 12 of these
-    rows, so the charts and the "last 12 months" SLA row stay in sync by construction.
+
+class Platform(Base):
+    """A platform: what the steering committee actually looks at, one slide each.
+
+    The unit of steerco reporting used to be the squad, so a platform served by two
+    squads produced two slides and nothing in the model knew they described the same
+    thing. A platform groups its contributing squads and owns the **shape** of its
+    slide (``template``): which KPI cards, which SLA columns, and for each of them
+    which contributing squad is responsible for the figure.
+
+    Ownership is per item rather than per slide, which is what makes this work for
+    any number of contributors: every value on the slide has exactly one author, so
+    nothing is ever merged and no figure is anonymous.
+
+    ``template`` shape (see app/platforms.py, which is the authority on it):
+        {"kpis": [{"label": "K8aaS", "owner_squad_id": 9, "sub": ["GitLab", ...]}],
+         "sla":  [{"label": "Gitlab", "owner_squad_id": 8}],
+         "incidents": {"owner_squad_id": 8}}
+    """
+    __tablename__ = "platforms"
+    __table_args__ = (UniqueConstraint("tribe_id", "name", name="uq_platform_tribe_name"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tribe_id: Mapped[int] = mapped_column(ForeignKey("tribes.id", ondelete="CASCADE"),
+                                          nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    display_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # Off means the platform keeps its data but produces no slide in the pack.
+    steerco_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    template: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+
+    tribe: Mapped["Tribe"] = relationship()
+    contributors: Mapped[list["Squad"]] = relationship(secondary=platform_contributors,
+                                                       back_populates="platforms")
+    entries: Mapped[list["SteercoEntry"]] = relationship(back_populates="platform",
+                                                         cascade="all, delete-orphan")
+
+
+class SteercoEntry(Base):
+    """One platform's Steering-Committee (steerco) monthly snapshot.
+
+    A platform has at most one entry per month (unique constraint), whatever the
+    number of squads feeding it: the row is the slide, and each contributor writes
+    only the items the platform's template assigns to it (see
+    ``app/platforms.py:merge_owned``). The one-pager (HTML / PPTX) is not stored: it
+    is rebuilt on the fly from the year's rows, so the charts and the annual SLA row
+    stay in sync by construction.
 
     The snapshot fields live in the schemaless ``data`` JSON blob rather than in
     columns, so the input shape can evolve without a migration per field. See
-    ``app/routers/steerco.py`` and ``frontend/src/steerco.ts`` for that shape.
+    ``app/routers/steerco.py`` and ``frontend/src/steerco.ts`` for that shape, which
+    is positional: ``data["kpis"][i]`` holds the value of ``template["kpis"][i]``.
     """
     __tablename__ = "steerco_entries"
-    __table_args__ = (UniqueConstraint("squad_id", "period", name="uq_steerco_squad_period"),)
+    __table_args__ = (UniqueConstraint("platform_id", "period", name="uq_steerco_platform_period"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    squad_id: Mapped[int] = mapped_column(ForeignKey("squads.id", ondelete="CASCADE"),
-                                          index=True, nullable=False)
+    platform_id: Mapped[int] = mapped_column(ForeignKey("platforms.id", ondelete="CASCADE"),
+                                             index=True, nullable=False)
     # Reporting month, "YYYY-MM".
     period: Mapped[str] = mapped_column(String(32), nullable=False)
     # The month's snapshot: {"kpis": [...], "sla": {...}, "incidents": "13",
@@ -691,5 +774,5 @@ class SteercoEntry(Base):
                                                  default=utcnow, onupdate=utcnow)
     updated_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
 
-    squad: Mapped["Squad"] = relationship(foreign_keys=[squad_id])
+    platform: Mapped["Platform"] = relationship(back_populates="entries")
     updated_by: Mapped["User | None"] = relationship(foreign_keys=[updated_by_user_id])

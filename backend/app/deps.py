@@ -132,6 +132,26 @@ def assert_tribe_scope(user: User, tribe_id: int | None) -> None:
         raise HTTPException(status_code=403, detail="Cette tribe n'est pas dans votre périmètre")
 
 
+def leads_this_squad(squad: Squad, user: User) -> bool:
+    """True when ``user`` is this squad's named leader OR one of its co-leaders.
+
+    A squad has one leader for identity (an OTD is committed on them, the report is
+    addressed to them) and any number of co-leaders holding the same rights. Every
+    squad-level permission goes through this one function, so adding a co-leader
+    cannot grant a right in one screen and forget it in another.
+    """
+    return squad.leader_user_id == user.id or any(u.id == user.id for u in squad.co_leaders)
+
+
+def led_squad_ids(db: Session, user: User):
+    """Ids of the squads ``user`` leads, as leader or co-leader (query side)."""
+    from sqlalchemy import or_, select as _select
+
+    from .models import squad_coleaders
+    co = _select(squad_coleaders.c.squad_id).where(squad_coleaders.c.user_id == user.id)
+    return _select(Squad.id).where(or_(Squad.leader_user_id == user.id, Squad.id.in_(co)))
+
+
 def can_edit_squad(db: Session, user: User, squad_id: int) -> bool:
     """Roadmap / KPIs / members / progress of a squad (tribe-scoped).
 
@@ -146,7 +166,7 @@ def can_edit_squad(db: Session, user: User, squad_id: int) -> bool:
     if user.role == TRIBE:
         return squad.tribe_id == user.tribe_id
     if user.role == SQUAD:
-        return squad.leader_user_id == user.id
+        return leads_this_squad(squad, user)
     return False
 
 
@@ -167,7 +187,7 @@ def leads_squad(db: Session, user: User, squad_id: int) -> bool:
     if user.role == ADMIN:
         return True
     if user.role == SQUAD:
-        return squad.leader_user_id == user.id
+        return leads_this_squad(squad, user)
     return False
 
 
@@ -186,7 +206,7 @@ def is_squad_privileged(user: User, squad: Squad) -> bool:
     if user.role == TRIBE:
         return squad.tribe_id == user.tribe_id
     if user.role == SQUAD:
-        return squad.leader_user_id == user.id
+        return leads_this_squad(squad, user)
     return False
 
 
@@ -222,7 +242,7 @@ def can_manage_leave(db: Session, viewer: User, target_user_id: int) -> bool:
     if viewer.role == SQUAD:
         from sqlalchemy import select
         from .models import Member
-        led = db.scalars(select(Squad.id).where(Squad.leader_user_id == viewer.id)).all()
+        led = db.scalars(led_squad_ids(db, viewer)).all()
         if not led:
             return False
         member = db.scalar(select(Member.id).where(

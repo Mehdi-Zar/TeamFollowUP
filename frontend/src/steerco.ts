@@ -1,8 +1,14 @@
-// Shared Steerco types. A squad reports a monthly SNAPSHOT (this month's KPI counts,
-// this month's SLA per COTS, this month's incident count, plus events). Snapshots
-// accumulate one per (squad, period); the backend aggregates the last 12 to build the
-// KPI/incident charts and the "last 12 months" SLA row automatically. Keep field names
+// Shared Steerco types. A PLATFORM reports a monthly SNAPSHOT (this month's KPI
+// counts, this month's SLA per COTS, this month's incident count, plus events).
+// Snapshots accumulate one per (platform, period); the backend aggregates the year to
+// build the KPI/incident charts and the annual SLA row automatically. Keep field names
 // in sync with backend/app/routers/steerco.py.
+//
+// A platform is fed by one or more squads, and its TEMPLATE says which contributing
+// squad owns each KPI card and each SLA column. The snapshot is positional against
+// that template: data.kpis[i] is the value of template.kpis[i]. The form shows the
+// whole slide and only lets you type in the items you own, so two squad leaders can
+// fill one slide without ever overwriting each other.
 
 export type Trend = "up" | "down" | "flat";
 export type SlaStatus = "ok" | "warn" | "ko";
@@ -14,8 +20,11 @@ export type EventSev = "red" | "amber" | "green" | "ice";
 export type SteercoKpi = { label: string; value: string; unit?: string; trend?: Trend; delta?: string; sub?: { label: string; value: string }[] };
 /** One SLA cell: a displayed value + a RAG status COMPUTED from that value. */
 export type SlaCell = { v: string; s?: SlaStatus | null };
-/** A timeline event (last / next): date label, text, short tag, severity colour. */
-export type SteercoEvent = { date: string; text: string; tag?: string; sev?: EventSev };
+/** A timeline event (last / next): date label, text, short tag, severity colour, and
+ *  the contributing squad that wrote it. Events are the one shared section of a
+ *  platform slide, so each line carries its author: everybody adds, nobody can
+ *  rewrite a colleague's line. */
+export type SteercoEvent = { date: string; text: string; tag?: string; sev?: EventSev; squad_id?: number | string | null };
 
 /** The monthly snapshot stored per (squad, period). */
 export type SteercoData = {
@@ -34,10 +43,38 @@ export const SLA_ICON: Record<SlaStatus, string> = { ok: "🟢", warn: "🟠", k
 // Severity and series colours live only in the backend renderer: the one-pager and
 // its charts are server-rendered (SVG / PPTX), the frontend only collects values.
 
-/** The standard monthly structure (KPI labels + SLA service columns). */
-export const STEERCO_KPI_LABELS = ["Cloud Users", "Landing Zone", "K8aaS", "DBaaS", "Software Factory"];
-export const STEERCO_SWF_SUB = ["GitLab", "Artifactory", "SonarQube"];
-export const STEERCO_SLA_SERVICES = ["Incidents", "Gitlab", "Artifactory", "Sonarqube"];
+/** One item of a platform's slide: a label, and the contributing squad that owes
+ *  the figure (null = nobody assigned yet, only leadership can fill it). */
+export type TemplateItem = { label: string; owner_squad_id: number | null; sub?: string[] };
+/** A platform's slide definition, owned by the tribe leader. */
+export type PlatformTemplate = { kpis: TemplateItem[]; sla: TemplateItem[]; incidents: { owner_squad_id: number | null } };
+/** Which items the signed-in user may type in, by index. */
+export type EditableItems = { kpis: number[]; sla: number[]; incidents: boolean; events: boolean };
+/** A platform as the API returns it. */
+export type Platform = {
+  id: number; tribe_id: number; name: string; description?: string | null;
+  display_order: number; steerco_enabled: boolean;
+  template: PlatformTemplate;
+  contributors: { id: number; name: string }[];
+  editable_squad_ids: number[];
+  can_manage: boolean;
+  editable: EditableItems;
+};
+
+/** The empty snapshot matching a template: labels in place, values empty.
+ *  Mirrors app/platforms.py:blank_data, which is the authority. */
+export function dataFromTemplate(tpl: PlatformTemplate): SteercoData {
+  return {
+    kpis: (tpl.kpis ?? []).map((k) => ({
+      label: k.label, value: "",
+      ...(k.sub?.length ? { sub: k.sub.map((l) => ({ label: l, value: "" })) } : {}),
+    })),
+    sla: { services: (tpl.sla ?? []).map((x) => x.label), cells: (tpl.sla ?? []).map(() => ({ v: "", s: null })) },
+    incidents: "",
+    last_events: [],
+    next_events: [],
+  };
+}
 
 /** Default period label for a steerco input: the current month, "YYYY-MM" (monthly). */
 export function currentSteercoPeriod(): string {
@@ -65,29 +102,6 @@ export function monthLongLabel(period: string, lang: string): string {
   if (!y || !m) return period;
   const s = new Date(y, m - 1, 1).toLocaleDateString(lang === "fr" ? "fr-FR" : "en-US", { month: "long", year: "numeric" });
   return s.charAt(0).toUpperCase() + s.slice(1);
-}
-
-/** The standard blank monthly snapshot, pre-structured so the squad leader only fills
- *  values: 5 KPI counts, the Incidents + SwF-per-COTS SLA row, an incident count. */
-export function defaultSteercoData(): SteercoData {
-  return {
-    kpis: STEERCO_KPI_LABELS.map((label) => ({
-      label, value: "",
-      ...(label === "Software Factory" ? { sub: STEERCO_SWF_SUB.map((l) => ({ label: l, value: "" })) } : {}),
-    })),
-    sla: { services: [...STEERCO_SLA_SERVICES], cells: STEERCO_SLA_SERVICES.map(() => ({ v: "", s: null })) },
-    incidents: "",
-    last_events: [],
-    next_events: [],
-  };
-}
-
-/** Ensure the "Cloud Users" KPI is present as the first card (older entries may lack it,
- *  or may still carry the previous "Users" label - both count as present, no duplicate). */
-export function ensureUsersKpi(d: SteercoData): SteercoData {
-  const kpis = d.kpis ?? [];
-  if (kpis.some((k) => ["users", "cloud users"].includes((k.label || "").trim().toLowerCase()))) return d;
-  return { ...d, kpis: [{ label: "Cloud Users", value: "" }, ...kpis] };
 }
 
 /** Parse a number from a cell (accepts "%", commas). Returns null when not a number. */
