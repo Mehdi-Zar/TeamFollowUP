@@ -33,7 +33,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .database import SessionLocal
-from .deps import SQUAD, TRIBE
+from .deps import ADMIN, SQUAD, TRIBE
 from .models import Initiative, Otd, Squad, Tribe, User
 from .security import hash_password
 
@@ -94,10 +94,16 @@ def _get_or_create_user(db: Session, email: str | None, name: str | None,
         db.flush()
         log.info("User created: %s (%s)", email, role)
         return u, True
-    # Keep the existing account but align it with the file.
+    # Keep the existing account but align it with the file. An administrator is
+    # the exception: naming one as a squad leader in the file used to demote them
+    # to squad_leader on the spot, and since the importer is reached from the
+    # admin section, the person running the import could lock themselves out of
+    # it with their own file. Leading a squad and administering the app are not
+    # exclusive, so the higher role wins.
     if name:
         u.display_name = name
-    u.role = role
+    if u.role != ADMIN:
+        u.role = role
     u.tribe_id = tribe_id
     return u, False
 
@@ -108,6 +114,12 @@ def import_org(db: Session, data: dict) -> dict:
     a summary of what was processed (for the API response / CLI log)."""
     year = int(data.get("year") or datetime.now(timezone.utc).year)
     created = {"users": 0, "squads": 0, "initiatives": 0, "otds": 0}
+    # Everything the file asked for that the import could not do as written. A
+    # summary that only counts successes reads as a success: an OTD naming a
+    # squad that does not exist is imported with no owner, which makes it
+    # invisible in every screen, and the administrator is told "49 OTD" with no
+    # hint that one of them landed nowhere.
+    warnings: list[str] = []
 
     # --- Tribe (matched by name) + its tribe leader ---
     # Fail with a sentence somebody can act on. Without this the missing name
@@ -158,9 +170,59 @@ def import_org(db: Session, data: dict) -> dict:
                 setattr(squad, k, v)
         squads_by_name[squad.name] = squad
 
+    def _referenced_squad(name: str | None) -> Squad | None:
+        """The squad a row points at, whether or not the file restates it.
+
+        The Squads sheet is where a squad is created or updated, not a condition
+        for referring to one. Resolving a reference only against that sheet meant
+        a file carrying an OTD for a squad that already exists in the app
+        imported an OTD attached to nobody: no owner, no milestones, so it
+        matched neither branch of the squad panel's filter and the whole import
+        looked like it had done nothing at all.
+
+        An unknown name stays tolerated (the row lands at tribe level, which is a
+        valid shape for an initiative) but is logged, because silence is what
+        made the case above so hard to read.
+        """
+        name = (name or "").strip()
+        if not name:
+            return None
+        sq = squads_by_name.get(name)
+        if sq is None:
+            sq = db.scalar(select(Squad).where(Squad.tribe_id == tribe.id, Squad.name == name))
+        if sq is None:
+            msg = (f"Squad « {name} » introuvable dans la tribu {tribe.name} : "
+                   f"la ligne a ete importee sans squad, donc sans proprietaire.")
+            log.warning(msg)
+            if msg not in warnings:
+                warnings.append(msg)
+        return sq
+
+    def _warn_duplicate_titles(rows: list, label: str) -> None:
+        """Two rows sharing a title are one row after import, not two.
+
+        A row is identified by tribe + year + title, so the second occurrence
+        updates the first instead of creating anything. The file claims a count
+        the database will never hold, and nothing said so.
+        """
+        seen, dupes = set(), []
+        for r in rows or []:
+            title = (r.get("title") or "").strip()
+            if not title:
+                continue
+            if title in seen and title not in dupes:
+                dupes.append(title)
+            seen.add(title)
+        for title in dupes:
+            warnings.append(f"{label} « {title} » apparait plusieurs fois dans le fichier : "
+                            f"seule la derniere ligne a ete conservee.")
+
+    _warn_duplicate_titles(data.get("initiatives"), "Initiative")
+    _warn_duplicate_titles(data.get("otds"), "OTD")
+
     # --- Initiatives (tribe-level, optionally assigned to a squad) ---
     for i, it in enumerate(data.get("initiatives", []) or [], start=1):
-        squad = squads_by_name.get(it.get("squad")) if it.get("squad") else None
+        squad = _referenced_squad(it.get("squad"))
         fields = dict(
             tribe_id=tribe.id, year=year, title=it["title"], description=it.get("description"),
             squad_id=squad.id if squad else None, owner=it.get("owner"),
@@ -170,6 +232,11 @@ def import_org(db: Session, data: dict) -> dict:
             Initiative.tribe_id == tribe.id, Initiative.year == year, Initiative.title == it["title"]))
         if init is None:
             db.add(Initiative(**fields))
+            # Flushed, not just staged: the session does not autoflush, so a
+            # second row with the same title would not see this one and would be
+            # inserted a second time. The import then duplicated exactly what it
+            # promises never to duplicate, inside a single file.
+            db.flush()
             created["initiatives"] += 1
             log.info("Initiative created: %s", it["title"])
         else:
@@ -178,7 +245,7 @@ def import_org(db: Session, data: dict) -> dict:
 
     # --- OTDs (On-Time Delivery): the owner is the referenced squad's leader ---
     for i, o in enumerate(data.get("otds", []) or [], start=1):
-        squad = squads_by_name.get(o.get("squad")) if o.get("squad") else None
+        squad = _referenced_squad(o.get("squad"))
         fields = dict(
             tribe_id=tribe.id, year=year, title=o["title"], description=o.get("description"),
             committed_date=_to_datetime(o.get("committed_date")),
@@ -189,6 +256,7 @@ def import_org(db: Session, data: dict) -> dict:
             Otd.tribe_id == tribe.id, Otd.year == year, Otd.title == o["title"]))
         if otd is None:
             db.add(Otd(**fields))
+            db.flush()  # same reason as the initiatives above
             created["otds"] += 1
             log.info("OTD created: %s", o["title"])
         else:
@@ -203,6 +271,7 @@ def import_org(db: Session, data: dict) -> dict:
         "initiatives": len(data.get("initiatives") or []),
         "otds": len(data.get("otds") or []),
         "created": created,
+        "warnings": warnings,
     }
     log.info("Import terminé: %s", summary)
     return summary
