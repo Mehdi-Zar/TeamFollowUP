@@ -17,8 +17,8 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..deps import (ADMIN, SQUAD, TRIBE, can_manage_leave, can_see_leaves_of,
-                    get_current_user, record_audit, require_admin, require_capability,
-                    require_module)
+                    get_current_user, led_squad_ids, record_audit, require_admin,
+                    require_capability, require_module)
 from ..leavesconfig import ACTIVE_STATUSES, leave_days
 from ..models import Leave, LeaveType, Member, Squad, Tribe, User, utcnow
 from ..schemas import (LeaveConfigIn, LeaveConfigOut, LeaveDecisionIn, LeaveIn,
@@ -255,7 +255,7 @@ def fileable_people(db: Session = Depends(get_db), user: User = Depends(get_curr
                                                User.status == "active")).all():
             people[u.id] = u.display_name
     elif user.role == SQUAD:
-        led = db.scalars(select(Squad.id).where(Squad.leader_user_id == user.id)).all()
+        led = db.scalars(led_squad_ids(db, user)).all()
         if led:
             for uid in db.scalars(select(Member.user_id).where(
                     Member.squad_id.in_(led), Member.user_id.isnot(None))).all():
@@ -464,7 +464,7 @@ def overlaps(
     elif user.role == TRIBE:
         squads = db.scalars(select(Squad).where(Squad.tribe_id == user.tribe_id)).all()
     elif user.role == SQUAD:
-        squads = db.scalars(select(Squad).where(Squad.leader_user_id == user.id)).all()
+        squads = db.scalars(select(Squad).where(Squad.id.in_(led_squad_ids(db, user)))).all()
     else:
         return []
     if (date_to - date_from).days > 366:

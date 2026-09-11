@@ -30,7 +30,7 @@ type Props = {
   docs?: DocKind[];
   // Steerco one-pager export: the current period and (optional) selected squad.
   // When "" / omitted the squad, the consolidated all-squads document is exported.
-  steerco?: { period: string; squadId?: string };
+  steerco?: { period: string; platformId?: string };
 };
 
 type View = "menu" | "emailReport";
@@ -101,8 +101,8 @@ export default function ExportMenu({ year, squadId, sinceDays = 7, docs, steerco
   const roadmapQs = squadId ? `${year ? `year=${year}&` : ""}lang=${lang}` : rqs;
   // Steerco one-pager: a single squad's, or the consolidated all-squads document.
   const steercoPq = steerco ? encodeURIComponent(steerco.period) : "";
-  const steercoHtml = steerco?.squadId
-    ? `/api/steerco/onepager.html?squad_id=${steerco.squadId}&period=${steercoPq}&lang=${lang}`
+  const steercoHtml = steerco?.platformId
+    ? `/api/steerco/onepager.html?platform_id=${steerco.platformId}&period=${steercoPq}&lang=${lang}`
     : `/api/steerco/document.html?period=${steercoPq}&lang=${lang}`;
   const steercoPptx = `/api/steerco/document.pptx?period=${steercoPq}&lang=${lang}`;
 

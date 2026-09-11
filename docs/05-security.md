@@ -189,6 +189,16 @@ Three independent layers, all enforced **server-side** (the SPA only hides UI):
 Plus **tribe scoping** (`assert_tribe_scope`, `visible_tribe_id`) and **ownership**
 (`assert_can_edit_squad`) for data-level isolation. Every privileged mutation writes to `audit_log`.
 
+**Co-leaders.** A squad has one named leader (`leader_user_id`, the identity an OTD is
+committed on) and any number of **co-leaders** (`squad_coleaders`) holding exactly the
+same rights over that squad. Every squad-level check goes through a single helper,
+`deps.leads_this_squad(squad, user)` (and `deps.led_squad_ids` on the query side), so
+naming a co-leader opens every door the leader has and not one more. Naming them is
+**structural**: reserved to the tribe leader and the admin, like assigning the leader,
+and a co-leader from another tribe is refused because it would open that squad through
+the door tribe scope closes. Naming a plain member promotes them to `squad_leader`,
+otherwise the account would be listed as a leader and refused by every check.
+
 **Leaves** add a dedicated guard `can_manage_leave(viewer, target)` (admin, the target's tribe leader, or
 a squad leader of a squad the target belongs to): it gates approve/edit/cancel-for-others and the
 visibility of the private motif. Absences are otherwise readable by anyone in the same tribe; the leave

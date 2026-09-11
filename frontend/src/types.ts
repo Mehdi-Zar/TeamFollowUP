@@ -307,6 +307,8 @@ export interface Squad {
   name: string;
   description?: string | null;
   leader_user_id?: number | null;
+  /** Same rights as the leader over this squad, without being its named leader. */
+  co_leader_user_ids?: number[];
   display_order: number;
   kpis_enabled: boolean;
   steerco_enabled?: boolean;
@@ -379,6 +381,8 @@ export interface QuarterCell {
  *  content (objectives, roadmap, KPIs, members, messages, committees, budget). */
 export interface SquadDetail extends Squad {
   leader?: LeaderInfo | null;
+  /** Identities of the co-leaders, for display next to the leader. */
+  co_leaders?: LeaderInfo[];
   year: number;
   annual_progress: number;
   freshness: Freshness;

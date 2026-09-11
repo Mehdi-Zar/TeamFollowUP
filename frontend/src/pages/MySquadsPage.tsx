@@ -110,14 +110,6 @@ function SquadCard({ squadId, leaders, onChanged, onError }: {
   useEffect(() => { load(); }, [squadId]);
   const kpisOn = useModule()("squad_content", "kpis");
   const steercoOn = useModule()("steerco");
-  // Steerco reporting on/off, toggled inline from the card (same self-service path
-  // as the squad-leader view) so it stays discoverable in the My Squads journey.
-  async function toggleSteerco(on: boolean) {
-    setBusy(true);
-    try { await api.put(`/api/squads/${squadId}`, { steerco_enabled: on }); await load(); }
-    catch (e) { onError(e instanceof ApiError ? e.message : "Erreur"); }
-    finally { setBusy(false); }
-  }
   if (!d) return <div className="card spinner">{t("common.loading")}</div>;
 
   return (
@@ -139,12 +131,8 @@ function SquadCard({ squadId, leaders, onChanged, onError }: {
         {d.budget_enabled && <span className="badge badge-navy">{t("budget.title")}</span>}
       </div>
 
-      {steercoOn && (
-        <label className="switch" title={t("steerco.enable_hint")}>
-          <input type="checkbox" checked={!!d.steerco_enabled} disabled={busy} onChange={(e) => toggleSteerco(e.target.checked)} />
-          <span className="track"><span className="knob" /></span>
-          <span className="small">{t("steerco.enable_label")}</span>
-        </label>
+      {steercoOn && d.steerco_enabled && (
+        <div className="small muted">{t("steerco.contributes")}</div>
       )}
 
       {edit && (
@@ -244,6 +232,27 @@ function EditSquadModal({ detail, leaders, onClose, onError }: {
               <SquadTypeField value={d.squad_type ?? "product"} onChange={(v) => patch({ squad_type: v })} t={t} />
             </div>
           </div>
+          {/* Co-leaders: the same rights on this squad, without disputing who the
+              squad's leader is. */}
+          <div>
+            <label>{t("squad.co_leaders")}</label>
+            <div className="small muted" style={{ marginBottom: 4 }}>{t("squad.co_leaders_hint")}</div>
+            <div className="inline" style={{ gap: 10, flexWrap: "wrap" }}>
+              {leaders.filter((u) => u.id !== d.leader_user_id).map((u) => {
+                const on = (d.co_leader_user_ids ?? []).includes(u.id);
+                return (
+                  <label key={u.id} className="inline small" style={{ gap: 4 }}>
+                    <input type="checkbox" checked={on} onChange={() => patch({
+                      co_leader_user_ids: on
+                        ? (d.co_leader_user_ids ?? []).filter((x) => x !== u.id)
+                        : [...(d.co_leader_user_ids ?? []), u.id],
+                    })} />
+                    {u.display_name}
+                  </label>
+                );
+              })}
+            </div>
+          </div>
           <div className="row" style={{ gap: 12 }}>
             <div style={{ flex: 1, minWidth: 200 }}>
               <label>{t("squad.products")}</label>
@@ -272,13 +281,6 @@ function EditSquadModal({ detail, leaders, onClose, onError }: {
               <input type="checkbox" checked={!!d.kpis_enabled} onChange={(e) => patch({ kpis_enabled: e.target.checked })} />
               <span className="track"><span className="knob" /></span>
               <span className="small">{t("admin.kpis_enabled")}</span>
-            </label>
-          )}
-          {steercoOn && (
-            <label className="switch" title={t("steerco.enable_hint")}>
-              <input type="checkbox" checked={!!d.steerco_enabled} onChange={(e) => patch({ steerco_enabled: e.target.checked })} />
-              <span className="track"><span className="knob" /></span>
-              <span className="small">{t("steerco.enable_label")}</span>
             </label>
           )}
           <div className="stack" style={{ gap: 6 }}>
@@ -413,20 +415,12 @@ function SLSquadCard({ squadId, onError }: { squadId: number; onError: (m: strin
   const steercoOn = useModule()("steerco");
   const [d, setD] = useState<SquadDetail | null>(null);
   const [open, setOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
 
   async function load() {
     try { setD(await api.get<SquadDetail>(`/api/squads/${squadId}`)); }
     catch (e) { onError(e instanceof ApiError ? e.message : "Erreur"); }
   }
   useEffect(() => { load(); }, [squadId]);
-  // Steerco on/off is self-service for the squad leader (standard squad update).
-  async function toggleSteerco(on: boolean) {
-    setBusy(true);
-    try { await api.put(`/api/squads/${squadId}`, { steerco_enabled: on }); await load(); }
-    catch (e) { onError(e instanceof ApiError ? e.message : "Erreur"); }
-    finally { setBusy(false); }
-  }
   if (!d) return <div className="card spinner">{t("common.loading")}</div>;
 
   return (
@@ -435,12 +429,8 @@ function SLSquadCard({ squadId, onError }: { squadId: number; onError: (m: strin
         <div className="strong" style={{ fontSize: 16 }}>{d.name}</div>
         <button className="btn-secondary btn-sm" onClick={() => setOpen(true)}>✎ {t("mysquad.manage_team")}</button>
       </div>
-      {steercoOn && (
-        <label className="switch" title={t("steerco.enable_hint")}>
-          <input type="checkbox" checked={!!d.steerco_enabled} disabled={busy} onChange={(e) => toggleSteerco(e.target.checked)} />
-          <span className="track"><span className="knob" /></span>
-          <span className="small">{t("steerco.enable_label")}</span>
-        </label>
+      {steercoOn && d.steerco_enabled && (
+        <div className="small muted">{t("steerco.contributes")}</div>
       )}
       <span className="badge badge-navy">{t("squad.team_collapsed_hint", { n: d.members.length }).split(" - ")[0]}</span>
       {d.members.length === 0 && <div className="small muted">{t("squad.no_members")}</div>}

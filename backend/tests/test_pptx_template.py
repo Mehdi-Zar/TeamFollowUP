@@ -114,13 +114,12 @@ def test_steerco_pptx_export_uses_the_uploaded_template(client, db, seeded):
     """Uploading a template must make the Steerco PPTX export inherit it (proves the
     export endpoint wires pptxtpl.use)."""
     from app.models import SteercoEntry
+    from tests.test_steerco import _platform
 
     login(client, "admin@test")
     client.put("/api/admin/modules-config", json={"steerco": {"enabled": True}})
-    sid = seeded["squad_a"]
-    login(client, seeded["sl_a"])
-    client.put(f"/api/steerco/squad/{sid}/enabled", json={"enabled": True})
-    db.add(SteercoEntry(squad_id=sid, period="2026-07",
+    pid = _platform(db, seeded)
+    db.add(SteercoEntry(platform_id=pid, period="2026-07",
                         data={"kpis": [{"label": "Cloud Users", "value": "10"}]}))
     db.commit()
 

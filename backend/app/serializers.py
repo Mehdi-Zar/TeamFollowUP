@@ -29,6 +29,12 @@ def leader_info(squad: Squad) -> LeaderInfo:
     return LeaderInfo(id=squad.leader.id, display_name=squad.leader.display_name, email=squad.leader.email)
 
 
+def co_leader_infos(squad: Squad) -> list[LeaderInfo]:
+    """Identity DTOs for a squad's co-leaders, by name."""
+    return [LeaderInfo(id=u.id, display_name=u.display_name, email=u.email)
+            for u in sorted(squad.co_leaders, key=lambda x: x.display_name or "")]
+
+
 def ref_quarter(year: int) -> int | None:
     """The quarter to highlight ("focus") for a year: the current quarter when the
     year is the current one, otherwise None (past/future years have no focus)."""
@@ -133,6 +139,8 @@ def squad_detail(squad: Squad, year: int, threshold: int, privileged: bool = Fal
         products=squad.products or [],
         hardware=squad.hardware or [],
         leader=leader_info(squad),
+        co_leader_user_ids=[u.id for u in squad.co_leaders],
+        co_leaders=co_leader_infos(squad),
         year=year,
         annual_progress=annual_progress(squad, year),
         freshness=st.freshness(squad, threshold),

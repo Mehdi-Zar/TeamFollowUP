@@ -1,10 +1,13 @@
 """Steerco data collection via Excel (Admin > Import), mirroring app/import_org.py.
 
-An admin downloads a blank workbook (:func:`template_bytes`), a squad fills it in,
+An admin downloads a blank workbook (:func:`template_bytes`), a platform fills it in,
 and the admin uploads it back (:func:`import_steerco`). The file is parsed in memory
 and written straight to ``SteercoEntry`` rows (the year's monthly snapshots for the
 charts + the full current-month snapshot with its events). No image rebuild, and the
-import merges (see ``import_steerco``): it never deletes what the squad entered in-app.
+import merges (see ``import_steerco``): it never deletes what was entered in-app.
+
+The workbook names a **platform**, not a squad: the slide is the platform's, and a
+platform fed by two squads has one workbook, not two.
 
 Only raw numbers are collected: the KPI variation vs M-1 and the SLA colours are
 computed from the values themselves when the one-pager is rendered (see
@@ -23,7 +26,7 @@ from datetime import date
 
 from sqlalchemy.orm import Session
 
-from .models import SteercoEntry, Squad
+from .models import Platform, SteercoEntry
 # Single source of truth for the calendar-year window, shared with the renderer so the
 # collected columns and the charted months can never drift apart.
 from .routers.steerco import year_months
@@ -80,22 +83,25 @@ def _pct(v):
 # ============================================================================
 # Template generation
 # ============================================================================
-def structure_for_squad(db: Session, squad_id: int) -> tuple[list[str], list[str]]:
-    """The KPI labels and SLA services a squad currently reports, read from its most
-    recent snapshot, so the workbook proposes *its* rows and not a canned list.
-    Falls back to the standard structure when the squad has never reported."""
-    rows = (db.query(SteercoEntry)
-            .filter(SteercoEntry.squad_id == squad_id)
-            .order_by(SteercoEntry.period.desc()).all())
-    kpis = next(([k.get("label") for k in (r.data or {}).get("kpis") or [] if k.get("label")]
-                 for r in rows if (r.data or {}).get("kpis")), None)
-    services = next(((((r.data or {}).get("sla") or {}).get("services") or [])
-                     for r in rows if ((r.data or {}).get("sla") or {}).get("services")), None)
+def structure_for_platform(db: Session, platform_id: int) -> tuple[list[str], list[str]]:
+    """The KPI labels and SLA services a platform reports, from its slide template.
+
+    The template is the authority on what the slide contains, so the workbook asks
+    for exactly the rows that will be rendered. A platform whose template is empty
+    falls back to the standard structure rather than producing a workbook with no
+    rows at all.
+    """
+    p = db.get(Platform, platform_id)
+    tpl = (p.template if p else None) or {}
+    kpis = [k.get("label") for k in (tpl.get("kpis") or []) if k.get("label")]
+    services = [x.get("label") for x in (tpl.get("sla") or []) if x.get("label")]
     return (kpis or list(KPI_LABELS)), (services or list(SLA_SERVICES))
 
 
 def build_template_workbook(period: str | None = None, kpi_labels: list[str] | None = None,
                             sla_services: list[str] | None = None, squad_name: str = ""):
+    """Build the collection workbook. ``squad_name`` names the PLATFORM the file is
+    for (the parameter keeps its old name so callers and tests do not all move)."""
     from openpyxl import Workbook
     from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
     from openpyxl.utils import get_column_letter
@@ -151,7 +157,7 @@ def build_template_workbook(period: str | None = None, kpi_labels: list[str] | N
         ("Rassemblez ici toutes les données d'un rapport Steerco mensuel (KPI, SLA, incidents, "
          "évènements). Une fois rempli, réimportez le fichier dans l'app (Admin > Import).", None), ("", None),
         ("Comment remplir :", LBL),
-        ("1) Onglet « Infos » : nom exact de la squad, mois du rapport en cours (AAAA-MM), "
+        ("1) Onglet « Infos » : nom exact de la plateforme, mois du rapport en cours (AAAA-MM), "
          "et les 3 sous-métriques Software Factory du mois en cours.", None),
         ("2) Onglet « KPIs » : une valeur par mois (le mois en cours est le dernier, marqué d'une *). "
          "La variation vs M-1 est calculée automatiquement, rien à saisir.", None),
@@ -175,7 +181,7 @@ def build_template_workbook(period: str | None = None, kpi_labels: list[str] | N
     ws = wb.create_sheet("Infos")
     ws.column_dimensions["A"].width = 42; ws.column_dimensions["B"].width = 26
     hrow(ws, 1, ["Champ", "Valeur"])
-    infos = [("Squad (nom exact dans l'app)", squad_name),
+    infos = [("Plateforme (nom exact dans l'app)", squad_name),
              ("Mois du rapport en cours (AAAA-MM)", period),
              ("", ""),
              ("Software Factory - sous-métriques (mois en cours)", ""),
@@ -277,14 +283,16 @@ def parse_workbook(content: bytes) -> dict:
         if not k:
             continue
         kl = str(k).strip().lower()
-        if kl.startswith("squad"):
+        # "Squad" is the label the workbook carried before platforms existed. Files
+        # already in circulation must keep importing, so both labels are accepted.
+        if kl.startswith(("plateforme", "platform", "squad")):
             squad = str(v).strip() if v else None
         elif "mois du rapport" in kl:
             period = str(v).strip() if v else None
         elif kl in _SWF_KEYS and v is not None and str(v).strip():
             subs[str(k).strip()] = _count(v)
     if not squad:
-        raise ValueError("Renseignez le nom de la squad (onglet 'Infos').")
+        raise ValueError("Renseignez le nom de la plateforme (onglet 'Infos').")
     if not period:
         raise ValueError("Renseignez le mois du rapport en cours (onglet 'Infos', format AAAA-MM).")
     try:
@@ -452,30 +460,35 @@ def _merge_month(old: dict, new: dict) -> dict:
 
 
 def import_steerco(db: Session, content: bytes, user_id: int | None = None) -> dict:
-    """Parse a filled workbook and merge it into the squad's Steerco entries.
+    """Parse a filled workbook and merge it into the platform's Steerco entries.
 
-    Idempotent per (squad, period) and **non-destructive**: values present in the
-    file are written, everything else the squad already reported is preserved (see
-    the merge rules above). Enables Steerco on the squad. Returns a summary dict."""
+    Idempotent per (platform, period) and **non-destructive**: values present in the
+    file are written, everything else already reported is preserved (see the merge
+    rules above). Returns a summary dict.
+
+    The merge is by label rather than by owner: this path is admin-only and bulk, so
+    the file is taken at face value. A contributor filling its own share goes through
+    the API, where ownership is enforced item by item.
+    """
     parsed = parse_workbook(content)
     name = parsed["squad"]
     # Case-insensitive exact match. `%`/`_` in a name would be LIKE wildcards, so the
     # comparison is done on the lowered value rather than with ilike().
-    matches = [s for s in db.query(Squad).all() if s.name.strip().lower() == name.lower()]
+    matches = [p for p in db.query(Platform).all() if p.name.strip().lower() == name.lower()]
     if not matches:
-        raise ValueError(f"Squad introuvable : « {name} ». Vérifiez le nom exact dans l'app.")
+        raise ValueError(f"Plateforme introuvable : « {name} ». Vérifiez le nom exact dans l'app.")
     if len(matches) > 1:
-        raise ValueError(f"Plusieurs squads s'appellent « {name} ». Renommez-en une pour lever l'ambiguïté.")
-    squad = matches[0]
-    squad.steerco_enabled = True
+        raise ValueError(f"Plusieurs plateformes s'appellent « {name} ». Renommez-en une pour lever l'ambiguïté.")
+    platform = matches[0]
     kept = set()          # labels the app had and the workbook did not mention
     for period, data in parsed["months"].items():
         entry = (db.query(SteercoEntry)
-                 .filter(SteercoEntry.squad_id == squad.id, SteercoEntry.period == period)
+                 .filter(SteercoEntry.platform_id == platform.id,
+                         SteercoEntry.period == period)
                  .one_or_none())
         if entry is None:
-            db.add(SteercoEntry(squad_id=squad.id, period=period, data=_merge_month({}, data),
-                                updated_by_user_id=user_id))
+            db.add(SteercoEntry(platform_id=platform.id, period=period,
+                                data=_merge_month({}, data), updated_by_user_id=user_id))
             continue
         in_file = {(k.get("label") or "").strip().lower() for k in (data.get("kpis") or [])}
         kept |= {k.get("label") for k in ((entry.data or {}).get("kpis") or [])
@@ -483,7 +496,7 @@ def import_steerco(db: Session, content: bytes, user_id: int | None = None) -> d
         entry.data = _merge_month(entry.data or {}, data)
         entry.updated_by_user_id = user_id
     db.flush()
-    return {"squad": squad.name, "squad_id": squad.id, "period": parsed["period"],
+    return {"platform": platform.name, "platform_id": platform.id, "period": parsed["period"],
             # KPIs the app already carried that the workbook did not cover: preserved,
             # and reported back so the admin sees the file was not the whole picture.
             "kept_kpis": sorted(kept), **parsed["counts"]}

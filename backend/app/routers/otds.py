@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session, selectinload
 from .. import status as st
 from ..database import get_db
 from ..deps import (ADMIN, SQUAD, TRIBE, assert_can_manage_tribe_reporting,
-                    get_current_user, record_audit, require_tribe_or_admin)
+                    get_current_user, led_squad_ids, record_audit, require_tribe_or_admin)
 from ..models import Otd, RoadmapItem, Squad, Tribe, User
 from ..schemas import OtdCreate, OtdMembers, OtdOut, OtdUpdate
 
@@ -87,7 +87,7 @@ def list_otds(tribe_id: int | None = Query(default=None), year: int | None = Que
     elif user.role == SQUAD:
         # A squad leader sees the OTDs assigned to them (owner_user_id), plus any
         # that group a milestone of a squad they lead.
-        led_squads = select(Squad.id).where(Squad.leader_user_id == user.id)
+        led_squads = led_squad_ids(db, user)
         concerned = (select(RoadmapItem.otd_id)
                      .where(RoadmapItem.squad_id.in_(led_squads), RoadmapItem.otd_id.is_not(None)))
         q = q.where(or_(Otd.owner_user_id == user.id, Otd.id.in_(concerned)))

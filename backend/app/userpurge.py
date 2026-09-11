@@ -54,6 +54,10 @@ OWNED_BY_USER: set[tuple[str, str]] = {
     ("feed_reactions", "user_id"),
     ("notifications", "user_id"),
     ("report_subscriptions", "user_id"),
+    # Co-leading a squad is a link to the person, not a piece of the squad: once
+    # the account is gone the row means nothing, and the squad keeps its leader
+    # and its other co-leaders.
+    ("squad_coleaders", "user_id"),
 }
 
 

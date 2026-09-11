@@ -149,6 +149,9 @@ DELETE FROM feed_posts     WHERE author_user_id = <id>;
 
 -- Presence dans l'organigramme.
 DELETE FROM org_members WHERE full_name = 'Nom Prenom';
+
+-- Co-pilotage de squads : un lien vers la personne, pas un morceau de la squad.
+DELETE FROM squad_coleaders WHERE user_id = <id>;
 ```
 
 ### Le compte lui-même
