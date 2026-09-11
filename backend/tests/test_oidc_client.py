@@ -47,3 +47,31 @@ def test_pkce_is_requested():
 def test_scopes_fall_back_to_the_openid_minimum():
     client = get_oauth({**CFG, "oidc_scopes": ""}).oidc
     assert client.client_kwargs["scope"] == "openid email profile"
+
+
+def test_scopes_survive_the_separators_people_actually_type():
+    """A scope list is space separated. The config field collects worse than that.
+
+    Commas, a line break, or the non breaking space a word processor leaves in a
+    pasted string all glue the list into a single unknown scope, and the IdP
+    then answers invalid_scope: the error names the scopes while the fault is in
+    the separator.
+    """
+    from app.oidc import DEFAULT_SCOPES, scope_string
+
+    assert scope_string("openid profile email") == "openid profile email"
+    assert scope_string("openid,profile,email") == "openid profile email"
+    assert scope_string("openid, profile,  email") == "openid profile email"
+    assert scope_string("openid\nprofile\temail") == "openid profile email"
+    assert scope_string("  openid  profile email  ") == "openid profile email"
+    # A scope with punctuation in it (Thales hub) must come out untouched.
+    assert scope_string("openid,oxs:pub:groups") == "openid oxs:pub:groups"
+    # Nothing usable falls back rather than sending an OIDC request without openid.
+    assert scope_string("") == DEFAULT_SCOPES
+    assert scope_string(None) == DEFAULT_SCOPES
+    assert scope_string(" , ; ") == DEFAULT_SCOPES
+
+
+def test_the_client_sends_the_normalized_scope():
+    client = get_oauth({**CFG, "oidc_scopes": "openid,profile,email"}).oidc
+    assert client.client_kwargs["scope"] == "openid profile email"

@@ -13,6 +13,7 @@ SSO: it creates or updates the local account behind an IdP identity while
 enforcing the account lifecycle (pending/active/disabled), the email-domain gate
 and the IdP-group→role remap. See docs/05-security.md.
 """
+import logging
 import time
 from collections import defaultdict, deque
 
@@ -30,6 +31,7 @@ from ..schemas import AuthConfig, LoginIn, UserOut
 from ..security import create_session_token, decode_session, verify_password
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+log = logging.getLogger("trt.auth")
 
 
 def _set_session(response: Response, user_id: int, impersonator_id: int | None = None) -> None:
@@ -295,12 +297,18 @@ async def oidc_login(request: Request, db: Session = Depends(get_db)):
     404s when OIDC is disabled or incompletely configured, keeping the endpoint
     indistinguishable from a non-existent one. Authlib stashes the state/PKCE
     verifier in the server-side session for the callback to consume.
+
+    The scope set actually sent is logged: when an IdP answers ``invalid_scope``,
+    the first question is always what was requested, and the answer is otherwise
+    only visible in the browser's address bar during a redirect nobody catches.
     """
     cfg = get_auth_config(db, request)
     if not cfg["oidc_enabled"] or not cfg["oidc_issuer_url"] or not cfg["oidc_client_id"]:
         raise HTTPException(status_code=404, detail="OIDC désactivé ou mal configuré")
-    from ..oidc import get_oauth
+    from ..oidc import get_oauth, scope_string
     oauth = get_oauth(cfg)
+    log.info("OIDC login: scopes=%r redirect_uri=%s",
+             scope_string(cfg.get("oidc_scopes")), cfg["oidc_redirect_uri"])
     request.session["_oidc_cfg"] = True
     return await oauth.oidc.authorize_redirect(request, cfg["oidc_redirect_uri"])
 
@@ -308,6 +316,12 @@ async def oidc_login(request: Request, db: Session = Depends(get_db)):
 @router.get("/oidc/callback")
 async def oidc_callback(request: Request, db: Session = Depends(get_db)):
     """OIDC redirect target: exchange the code, provision the user, set the session.
+
+    An IdP that refuses the authorization redirects here with ``error`` instead
+    of ``code``. That case is answered with the provider's own message and a 400:
+    handing it to Authlib raises deep inside the token exchange, and the admin
+    reads "Internal Server Error" for what is a configuration answer from the
+    IdP, most often an unauthorized scope.
 
     Authlib validates state/PKCE and the ID-token signature during
     ``authorize_access_token``. We then extract identity (sub/email/name/groups,
@@ -317,6 +331,14 @@ async def oidc_callback(request: Request, db: Session = Depends(get_db)):
     cfg = get_auth_config(db, request)
     if not cfg["oidc_enabled"]:
         raise HTTPException(status_code=404, detail="OIDC désactivé")
+    error = request.query_params.get("error")
+    if error:
+        description = (request.query_params.get("error_description") or "").strip()
+        log.warning("OIDC callback refusé par le fournisseur d'identité: %s (%s)", error, description)
+        detail = f"Le fournisseur d'identité a refusé la connexion ({error})."
+        if description:
+            detail += " " + description
+        raise HTTPException(status_code=400, detail=detail)
     from ..oidc import get_oauth
     oauth = get_oauth(cfg)
     token = await oauth.oidc.authorize_access_token(request)
