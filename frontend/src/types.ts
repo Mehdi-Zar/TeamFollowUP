@@ -623,10 +623,26 @@ export interface AuditPage {
   offset: number;
 }
 
-/** Which SSO methods are enabled, so the login page shows the right buttons. */
+/** One way in, as the sign-in page should present it. */
+export interface LoginMethod {
+  key: "oidc" | "saml" | "password";
+  enabled: boolean;
+  label?: string;
+  hint?: string;
+  logo?: string;
+  primary?: boolean;
+}
+
+/** What the sign-in page needs to draw itself. The two `*_enabled` flags stay for
+ *  the screens that only ask "is SSO on"; `methods` is what the page renders, in
+ *  order, with the wording and logo the deployment chose. */
 export interface AuthConfig {
   oidc_enabled: boolean;
   saml_enabled: boolean;
+  intro?: string;
+  methods?: LoginMethod[];
+  /** visible | collapsed (behind a link) | secret (only with the secret link). */
+  password_mode?: "visible" | "collapsed" | "secret";
 }
 
 // ---- Feed (tweet zone) ----

@@ -20,7 +20,9 @@ registration mandates a specific value; an override that merely restates what we
 would derive is collapsed back to "empty" on save, so it keeps following the base
 URL instead of silently freezing a hostname.
 """
+import hmac
 import json
+import secrets
 
 from sqlalchemy.orm import Session
 
@@ -62,10 +64,83 @@ DEFAULTS_FROM_ENV = lambda: {
     #    be validated by an admin / tribe leader / squad leader before access.
     "allowed_email_domains": [],
     "require_approval": True,
+    # --- Login screen -------------------------------------------------------
+    # What the sign-in page offers, in which order, and how each entry reads.
+    # The default reproduces what the page did before this existed: the password
+    # form first, then the SSO buttons that are configured.
+    #
+    # Enterprise sign-in screens converged on the same shape: the method people
+    # are supposed to use is the primary button, the others are secondary, and
+    # what nobody should use by default is not shown at all. Leaving an email and
+    # password form in front of a company that signs in with its IdP teaches the
+    # wrong gesture to every new arrival, which is exactly the complaint here.
+    "login_intro": "",
+    "login_methods": [],           # normalized by ``normalize_login_methods``
+    # visible | collapsed (behind a link) | secret (only with the secret link)
+    "password_mode": "visible",
+    # Random token that reveals the password form when ``password_mode`` is
+    # "secret". Never returned by the public config: the page sends it and is
+    # told yes or no. Hiding the form is discoverability, not access control, and
+    # the brute-force throttle on /login is what actually guards the account.
+    "password_secret": "",
 }
 
 EDITABLE_KEYS = set(DEFAULTS_FROM_ENV().keys())
 VALID_ROLES = {"admin", "tribe_leader", "squad_leader", "member"}
+
+# The three ways in, in the order the page falls back to when nothing is set.
+LOGIN_METHODS = ("oidc", "saml", "password")
+PASSWORD_MODES = ("visible", "collapsed", "secret")
+# A logo is stored inline in the settings blob (a data URI or an URL). Capped so a
+# 4 MB PNG cannot turn every read of the auth config into a 4 MB read.
+MAX_LOGO_CHARS = 300_000
+
+
+def normalize_login_methods(raw, cfg: dict) -> list[dict]:
+    """Clean the per-method presentation and put the list in display order.
+
+    Every known method always comes back, even the ones that are turned off: the
+    admin screen lists them to be toggled, and a method missing from the stored
+    blob (added by a later version) must appear rather than vanish.
+
+    ``enabled`` only says "offer it on the page". An SSO method that is not
+    configured is never offered whatever it says, because a button that leads to a
+    404 is worse than no button.
+    """
+    stored = {}
+    for item in (raw or []):
+        if isinstance(item, dict) and item.get("key") in LOGIN_METHODS:
+            stored[item["key"]] = item
+    out = []
+    for i, key in enumerate(LOGIN_METHODS):
+        item = stored.get(key, {})
+        configured = True
+        if key == "oidc":
+            configured = bool(cfg.get("oidc_enabled"))
+        elif key == "saml":
+            configured = bool(cfg.get("saml_enabled"))
+        logo = str(item.get("logo") or "").strip()
+        out.append({
+            "key": key,
+            "enabled": bool(item.get("enabled", True)) and configured,
+            "order": int(item.get("order", i)) if str(item.get("order", i)).lstrip("-").isdigit() else i,
+            "label": str(item.get("label") or "").strip()[:120],
+            "hint": str(item.get("hint") or "").strip()[:300],
+            "logo": logo[:MAX_LOGO_CHARS] if key != "password" else "",
+            "primary": bool(item.get("primary", False)),
+        })
+    out.sort(key=lambda m: (m["order"], LOGIN_METHODS.index(m["key"])))
+    # Exactly one primary: the first enabled one wins when nobody was marked, and
+    # a page with two primary buttons tells the reader nothing.
+    enabled = [m for m in out if m["enabled"]]
+    marked = [m for m in enabled if m["primary"]]
+    for m in out:
+        m["primary"] = False
+    if marked:
+        marked[0]["primary"] = True
+    elif enabled:
+        enabled[0]["primary"] = True
+    return out
 
 
 def normalize_base_url(value: str | None) -> str:
@@ -131,6 +206,9 @@ def _stored_auth_config(db: Session) -> dict:
         except (json.JSONDecodeError, TypeError):
             pass
     cfg["public_base_url"] = normalize_base_url(cfg.get("public_base_url"))
+    cfg["login_methods"] = normalize_login_methods(cfg.get("login_methods"), cfg)
+    if cfg.get("password_mode") not in PASSWORD_MODES:
+        cfg["password_mode"] = "visible"
     return cfg
 
 
@@ -204,6 +282,17 @@ def set_auth_config(db: Session, patch: dict, request=None) -> dict:
             domains.append(d)
     cfg["allowed_email_domains"] = domains
     cfg["require_approval"] = bool(cfg.get("require_approval", True))
+    # Login screen: presentation only, but it decides what a person sees first.
+    cfg["login_intro"] = str(cfg.get("login_intro") or "").strip()[:500]
+    cfg["login_methods"] = normalize_login_methods(cfg.get("login_methods"), cfg)
+    mode = cfg.get("password_mode")
+    cfg["password_mode"] = mode if mode in PASSWORD_MODES else "visible"
+    secret = str(cfg.get("password_secret") or "").strip()
+    if cfg["password_mode"] == "secret" and not secret:
+        # Generated rather than asked for: a secret somebody types is a secret
+        # somebody reuses.
+        secret = secrets.token_urlsafe(12)
+    cfg["password_secret"] = secret[:64]
 
     stored = {k: v for k, v in cfg.items() if k in EDITABLE_KEYS}
     # Saving the admin page must not silently freeze the deployment's
@@ -224,6 +313,32 @@ def set_auth_config(db: Session, patch: dict, request=None) -> dict:
     # Resolve from the in-memory config: the row above is staged, not flushed, so
     # re-reading it through the session would miss a first-time insert.
     return _resolve({**DEFAULTS_FROM_ENV(), **stored}, request)
+
+
+def login_screen(cfg: dict, secret: str | None = None) -> dict:
+    """What the sign-in page needs, and nothing more.
+
+    Served unauthenticated, so it carries labels, logos and order (all meant to be
+    read by anyone) and never the secret itself: the page sends what it was given
+    and is told whether the local form opens. The comparison is constant-time so
+    the endpoint cannot be used to guess the token character by character.
+    """
+    stored = str(cfg.get("password_secret") or "")
+    unlocked = bool(stored and secret and hmac.compare_digest(stored, str(secret)))
+    methods = [
+        {k: m[k] for k in ("key", "enabled", "label", "hint", "logo", "primary")}
+        for m in cfg.get("login_methods") or []
+        if m.get("enabled")
+    ]
+    mode = cfg.get("password_mode", "visible")
+    password = next((m for m in methods if m["key"] == "password"), None)
+    if password and mode == "secret" and not unlocked:
+        methods = [m for m in methods if m["key"] != "password"]
+    return {
+        "intro": cfg.get("login_intro") or "",
+        "methods": methods,
+        "password_mode": "visible" if unlocked else mode,
+    }
 
 
 def email_domain_allowed(cfg: dict, email: str) -> bool:
