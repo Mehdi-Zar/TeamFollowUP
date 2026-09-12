@@ -15,7 +15,8 @@ import { useAuth } from "../auth";
 import { useI18n } from "../i18n";
 import { useConfig, useModule } from "../config";
 import { Initiative, Kpi, Member, Objective, RoadmapItem, RoadmapStatus, Squad, SquadDetail, Tribe, Trend, Role } from "../types";
-import { Dot, FreshnessBadge, Spinner, ErrorBanner, EmptyState } from "../components/ui";
+import { Dot, FreshnessBadge, Spinner, ErrorBanner, EmptyState, SectionCard as Card } from "../components/ui";
+import { QuarterProgressEditor, ReviewActionsEditor } from "../components/EntryExtras";
 import { InitiativesCard } from "../components/InitiativesCard";
 import { canEditSquad, canManageObjectives } from "../perms";
 import { useSetPageChrome } from "../components/pageChrome";
@@ -39,6 +40,9 @@ export default function EntryPage() {
   const objectivesOn = moduleOn("squad_content", "objectives");
   const kpisOn = moduleOn("squad_content", "kpis");
   const steercoOn = moduleOn("steerco");
+  // Review actions (COPIL) ride the same module as the rest of the review feature,
+  // exactly like the API that serves them.
+  const reviewOn = moduleOn("review");
   const role = (effectiveRole ?? "member") as Role;
   const [squads, setSquads] = useState<Squad[]>([]);
   const [tribes, setTribes] = useState<Tribe[]>([]);
@@ -160,6 +164,10 @@ export default function EntryPage() {
           {objectivesOn && <div id="sec-obj"><ObjectivesEditor squad={squad} year={year} onChange={reload} editable={objAllowed} t={t} rag={rag} /></div>}
           {roadmapOn && <div id="sec-roadmap"><RoadmapEditor squad={squad} year={year} onChange={reload} readonly={!writeAllowed} t={t} roadmap={roadmap} squads={squads} tribes={tribes} /></div>}
           {kpisOn && squad.kpis_enabled && <div id="sec-kpis"><KpisEditor squad={squad} onChange={reload} readonly={!writeAllowed} t={t} trend={trend} /></div>}
+          <div id="sec-progress">
+            <QuarterProgressEditor squad={squad} year={year} readonly={!writeAllowed} onChange={reload} t={t} />
+          </div>
+          {reviewOn && <div id="sec-actions"><ReviewActionsEditor squad={squad} readonly={!writeAllowed} t={t} /></div>}
           {steercoOn && <div id="sec-steerco"><SteercoSection squad={squad} readonly={!writeAllowed} t={t} /></div>}
         </>
       )}
@@ -205,20 +213,6 @@ function SubmitRecap({ squad, onConfirm, onCancel, t }: any) {
           </button>
         </div>
       </div>
-    </div>
-  );
-}
-
-/** Small section wrapper used by the editors: title, optional hint + action slot. */
-function Card({ title, hint, action, children }: any) {
-  return (
-    <div className="card">
-      <div className="between">
-        <h2 style={{ marginBottom: hint ? 2 : 12 }}>{title}</h2>
-        {action}
-      </div>
-      {hint && <div className="small muted" style={{ marginBottom: 10 }}>{hint}</div>}
-      {children}
     </div>
   );
 }

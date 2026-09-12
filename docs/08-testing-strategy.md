@@ -17,11 +17,36 @@
 
 ### Backend test modules
 `test_access`, `test_access_history`, `test_actions`, `test_api_keys`, `test_audit_api`, `test_authconfig_urls`, `test_budget`, `test_changenotify`, `test_committees`, `test_freshness`, `test_hardening`, `test_import_org`, `test_initiatives_otd`, `test_insecure_defaults`, `test_leaves`, `test_logconfig`, `test_logexport`, `test_metrics`, `test_modules`, `test_notifications`, `test_oidc_client`, `test_ops`, `test_otds`, `test_personas`, `test_pptx_template`, `test_rbac`, `test_rbac_admin`, `test_report`, `test_report_surface`, `test_retention`, `test_review_access`, `test_roadmap_deps`, `test_saml_settings`, `test_snapshot`, `test_squad_products`, `test_ssotest`, `test_status`, `test_steerco`,
-`test_trust`, `test_trust_store`, `test_typography`, `test_report_typography`.
+`test_trust`, `test_trust_store`, `test_typography`, `test_report_typography`,
+`test_coleaders`, `test_data_reset`, `test_oidc_callback`, `test_api_ui_parity`.
 
 They cover RBAC/persona capabilities, derived objective status, roadmap dependency + EA/GA,
 report/roadmap rendering (incl. the single-page guarantee), snapshots, freshness, the SSO URL
 derivation and SAML settings assembly, TLS material handling, log export and the Steerco module.
+
+### Parite API / interface
+
+`test_api_ui_parity` compare les chemins servis par FastAPI et les chemins cites par
+les sources du SPA, **dans les deux sens**.
+
+Une route qu'aucun ecran n'appelle est une fonctionnalite que personne ne peut
+utiliser: elle a coute son code, ses tests et sa maintenance, et elle ment sur ce que
+l'application sait faire. C'est ainsi que l'avancement trimestriel a vecu, affiche
+par le tableau de bord, les exports et la liste de controle avant soumission, et
+modifiable par aucun ecran. Les actions de revue avaient de meme un CRUD complet, un
+type TypeScript et un module, sans un seul composant pour les appeler.
+
+L'inverse est un bouton qui repondra 404 le jour ou quelqu'un cliquera dessus.
+
+La comparaison porte sur les chemins et non sur les verbes: les appels passent par
+des generiques TypeScript, des litteraux de gabarit et des concatenations, et vouloir
+en extraire le verbe produit surtout du faux positif. Un suffixe construit a
+l'execution est reconnu (`/api/org/export.${fmt}`, `/api/admin/log-export-config/${action}`)
+mais reste limite au dernier segment, sinon `/api/squads/{id}` couvrirait tout ce qui
+pend dessous et le test ne verrait plus aucun orphelin.
+
+Une route qui ne doit deliberement pas avoir d'ecran se declare dans
+`NO_SCREEN_ON_PURPOSE`, avec sa raison. La liste est vide aujourd'hui.
 
 ## Gaps (prioritized)
 
