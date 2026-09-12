@@ -233,6 +233,25 @@ export function QuarterBars({ progress, currentQuarter }: { progress: Record<str
 
 /** Inline loading indicator with a polite live region; defaults to a translated
  *  "loading…" label when none is supplied. */
+/** Section wrapper used by the reporting editors: title, optional hint + action slot.
+ *  Lives here rather than in EntryPage so a section can be written in its own file
+ *  without importing the page that renders it. */
+export function SectionCard({ title, hint, action, children }: {
+  title: ReactNode; hint?: ReactNode; action?: ReactNode; children: ReactNode;
+}) {
+  return (
+    <div className="card">
+      <div className="between">
+        <h2 style={{ marginBottom: hint ? 2 : 12 }}>{title}</h2>
+        {action}
+      </div>
+      {hint && <div className="small muted" style={{ marginBottom: 10 }}>{hint}</div>}
+      {children}
+    </div>
+  );
+}
+
+
 export function Spinner({ label }: { label?: string }) {
   const { t } = useI18n();
   return <div className="spinner" role="status" aria-live="polite">{label ?? t("common.loading")}</div>;

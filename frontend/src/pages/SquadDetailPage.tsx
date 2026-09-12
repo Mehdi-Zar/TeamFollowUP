@@ -851,10 +851,20 @@ function History({ squadId, snapshots }: { squadId: number; snapshots: SnapshotM
   const [selected, setSelected] = useState<number | null>(null);
   const [compare, setCompare] = useState<any | null>(null);
 
+  const [frozen, setFrozen] = useState<any | null>(null);
+
   function open(snapId: number) {
     setSelected(snapId);
-    setCompare(null);
+    setCompare(null); setFrozen(null);
     api.get<any>(`/api/squads/${squadId}/snapshots/${snapId}/compare`).then(setCompare).catch(() => {});
+  }
+
+  // The comparison says what MOVED between two submissions; it cannot say what was
+  // submitted. The frozen payload could only be read through the API until now.
+  function openFrozen(snapId: number) {
+    setSelected(snapId);
+    setCompare(null); setFrozen(null);
+    api.get<any>(`/api/squads/${squadId}/snapshots/${snapId}`).then(setFrozen).catch(() => {});
   }
 
   return (
@@ -868,11 +878,17 @@ function History({ squadId, snapshots }: { squadId: number; snapshots: SnapshotM
                 <div className="strong">{s.cycle_label}</div>
                 <div className="small muted">{formatDateTime(s.submitted_at)}</div>
               </div>
-              <button className="btn-secondary btn-sm" onClick={() => open(s.id)}>
-                {t("squad.compare")}
-              </button>
+              <div className="inline" style={{ gap: 6 }}>
+                <button className="btn-secondary btn-sm" onClick={() => open(s.id)}>
+                  {t("squad.compare")}
+                </button>
+                <button className="btn-secondary btn-sm" onClick={() => openFrozen(s.id)}>
+                  {t("squad.view_frozen")}
+                </button>
+              </div>
             </div>
-            {selected === s.id && <Compare compare={compare} />}
+            {selected === s.id && compare && <Compare compare={compare} />}
+            {selected === s.id && frozen && <FrozenReport snapshot={frozen} />}
           </div>
         ))}
       </div>
@@ -932,6 +948,41 @@ function Compare({ compare }: { compare: any | null }) {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+
+/**
+ * The frozen report of one submission, as it was sent.
+ *
+ * A snapshot stores the whole payload; the history only ever showed the diff with
+ * the previous one. Reading what was actually submitted, three months later and
+ * without a database client, is the point of keeping the payload at all.
+ */
+function FrozenReport({ snapshot }: { snapshot: any }) {
+  const { t } = useI18n();
+  const data = snapshot?.payload ?? snapshot?.data ?? snapshot;
+  const jalons = data?.roadmap_items ?? data?.jalons ?? [];
+  const objectives = data?.objectives ?? [];
+  const kpis = data?.kpis ?? [];
+  return (
+    <div className="stack small" style={{ gap: 6, marginTop: 8 }}>
+      <div className="strong">{t("squad.frozen_title")}</div>
+      <div className="muted">
+        {t("squad.frozen_counts", {
+          jalons: String(jalons.length), objectives: String(objectives.length), kpis: String(kpis.length),
+        })}
+      </div>
+      {objectives.map((o: any, i: number) => (
+        <div key={`o${i}`}>• {o.title ?? o.name ?? JSON.stringify(o)}</div>
+      ))}
+      {jalons.map((j: any, i: number) => (
+        <div key={`j${i}`} className="muted">T{j.quarter} : {j.title} ({j.status})</div>
+      ))}
+      {kpis.map((k: any, i: number) => (
+        <div key={`k${i}`} className="muted">{k.name} : {k.value ?? "-"}</div>
+      ))}
     </div>
   );
 }

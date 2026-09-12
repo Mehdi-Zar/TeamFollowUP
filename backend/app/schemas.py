@@ -332,10 +332,21 @@ class DependentItemOut(BaseModel):
 
 # ---------- Quarter progress ----------
 class QuarterProgressIn(BaseModel):
-    """Upsert a squad's completion percentage (0-100) for one year/quarter."""
+    """Upsert the COMMENT that explains one quarter of a squad's year.
+
+    The percentage is not typed in any more: it is derived from the quarter's
+    milestones (``status.year_progress``, "the share of that quarter's jalons that
+    are done") and that derived value is what every screen shows. Accepting a
+    hand-entered number here stored something nobody read back, which is exactly
+    the kind of figure that drifts from reality without anybody noticing.
+
+    ``progress_pct`` stays accepted for an API caller that still sends it, and is
+    otherwise filled with the derived value so what is stored matches what is
+    shown.
+    """
     year: int
     quarter: Quarter
-    progress_pct: int = Field(ge=0, le=100)
+    progress_pct: Optional[int] = Field(default=None, ge=0, le=100)
     comment: Optional[str] = None
 
 

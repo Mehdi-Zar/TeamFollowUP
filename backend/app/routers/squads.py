@@ -301,8 +301,11 @@ def delete_squad(squad_id: int, db: Session = Depends(get_db), user: User = Depe
 @router.put("/{squad_id}/quarter-progress", response_model=QuarterProgressOut)
 def set_quarter_progress(squad_id: int, payload: QuarterProgressIn, db: Session = Depends(get_db),
                          user: User = Depends(get_current_user)):
-    """PUT /api/squads/{squad_id}/quarter-progress: set the squad's progress %
-    and comment for a given year/quarter (upsert).
+    """PUT /api/squads/{squad_id}/quarter-progress: record a quarter's comment.
+
+    The percentage is derived from the quarter's milestones and is what the screens
+    display; it is stored here so the row matches what was shown, and only an
+    explicit ``progress_pct`` from an API caller overrides it.
 
     Squad-leader reporting: requires ``assert_can_edit_squad``. Audited, then
     emits ``notify_change(..., "progress", ...)``."""
@@ -317,15 +320,18 @@ def set_quarter_progress(squad_id: int, payload: QuarterProgressIn, db: Session 
             QuarterProgress.quarter == payload.quarter,
         )
     )
+    pct = payload.progress_pct
+    if pct is None:
+        pct = st.year_progress(squad, payload.year).get(payload.quarter, 0)
     if row is None:
         row = QuarterProgress(squad_id=squad_id, year=payload.year, quarter=payload.quarter,
-                              progress_pct=payload.progress_pct, comment=payload.comment)
+                              progress_pct=pct, comment=payload.comment)
         db.add(row)
     else:
-        row.progress_pct = payload.progress_pct
+        row.progress_pct = pct
         row.comment = payload.comment
     record_audit(db, user.id, "quarter_progress.set", entity="squad", entity_id=squad_id,
-                 detail={"year": payload.year, "quarter": payload.quarter, "progress_pct": payload.progress_pct})
+                 detail={"year": payload.year, "quarter": payload.quarter, "progress_pct": pct})
     db.commit()
     db.refresh(row)
     notify_change(squad_id, "progress", user.display_name, payload.year)

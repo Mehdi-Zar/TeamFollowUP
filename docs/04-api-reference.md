@@ -60,7 +60,14 @@ SAML: `GET /saml/metadata`,`GET /saml/login`,`POST /saml/acs`; `POST /impersonat
 
 ### squads (`/api/squads`)
 `GET ""`; `GET /{id}` (detail); `GET /{id}/dependents`; `GET /{id}/roadmap.pptx`; `GET /{id}/roadmap.html`;
-`POST ""`; `PUT /{id}`; `DELETE /{id}`; `PUT /{id}/quarter-progress`
+`POST ""`; `PUT /{id}`; `DELETE /{id}`; `PUT /{id}/quarter-progress`.
+
+`PUT /{id}/quarter-progress` records the quarter's **comment**. The percentage is
+derived from that quarter's milestones (`status.year_progress`) and is what every
+screen displays; it is stored alongside so the row matches what was shown. A caller
+that still sends `progress_pct` overrides it, which is the only reason the field is
+still accepted. `co_leader_user_ids` on `PUT /{id}` replaces the squad's co-leaders
+(structural: tribe leader or admin).
 
 ### dashboard (`/api/dashboard`)
 `GET ""` - consolidated cards + summary. Gated by module `dashboard` + capability `dashboard`.
