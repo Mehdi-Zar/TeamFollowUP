@@ -96,7 +96,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     (async () => {
       try {
-        setConfig(await api.get<AuthConfig>("/api/auth/config"));
+        // The secret link's token travels to the server, which compares it and
+        // answers whether the local form opens. It is never returned, so it
+        // cannot be read back out of the config.
+        const k = new URLSearchParams(window.location.search).get("k");
+        setConfig(await api.get<AuthConfig>(`/api/auth/config${k ? `?k=${encodeURIComponent(k)}` : ""}`));
       } catch {
         /* ignore */
       }

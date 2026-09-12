@@ -22,7 +22,8 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..authconfig import email_domain_allowed, get_auth_config, role_from_groups
+from ..authconfig import (email_domain_allowed, get_auth_config, login_screen,
+                          role_from_groups)
 from ..config import settings
 from ..database import get_db
 from ..deps import get_current_user, get_current_user_any_status, record_audit, require_admin
@@ -100,10 +101,19 @@ def _check_login_rate(ip: str) -> None:
 
 
 @router.get("/config", response_model=AuthConfig)
-def auth_config(request: Request, db: Session = Depends(get_db)):
-    """Public login-screen config: which SSO buttons (OIDC/SAML) to show."""
+def auth_config(request: Request, k: str | None = None, db: Session = Depends(get_db)):
+    """Public sign-in config: what the page offers, in which order, how it reads.
+
+    ``k`` is the secret link's token. It is compared here (constant-time) rather
+    than returned, so the page can be told "the local form opens" without the
+    token ever leaving the server. Hiding that form is discoverability, not access
+    control: ``POST /login`` keeps working for the break-glass account, guarded by
+    the per-IP throttle."""
     cfg = get_auth_config(db, request)
-    return AuthConfig(oidc_enabled=bool(cfg["oidc_enabled"]), saml_enabled=bool(cfg["saml_enabled"]))
+    screen = login_screen(cfg, k)
+    return AuthConfig(oidc_enabled=bool(cfg["oidc_enabled"]), saml_enabled=bool(cfg["saml_enabled"]),
+                      intro=screen["intro"], methods=screen["methods"],
+                      password_mode=screen["password_mode"])
 
 
 @router.post("/login", response_model=UserOut)
