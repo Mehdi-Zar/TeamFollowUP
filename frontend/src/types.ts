@@ -525,6 +525,8 @@ export interface PublicConfig {
   feed_post_scope: "leaders" | "everyone";
   smtp_enabled: boolean;
   modules: ModulesConfig;
+  /** Couleurs, logos, typographie et densite (voir app/branding.py). */
+  branding?: Branding;
 }
 
 /** A single in-app notification (new feed post or a reply to the user). */
@@ -621,6 +623,17 @@ export interface AuditPage {
   total: number;
   limit: number;
   offset: number;
+}
+
+/** L'apparence choisie par le deploiement, telle que la page l'applique.
+ *  `css` porte les variables CSS deja validees cote serveur (une couleur part
+ *  dans une feuille de style, elle ne peut pas etre une chaine libre). */
+export interface Branding {
+  css: Record<string, string>;
+  logo?: string;
+  favicon?: string;
+  login_background?: string;
+  density?: "comfortable" | "compact";
 }
 
 /** One way in, as the sign-in page should present it. */

@@ -830,6 +830,38 @@ async def import_org_upload(
     return summary
 
 
+# ----- Apparence (Admin -> Personnalisation) -----------------------------------
+
+@router.get("/branding")
+def read_branding(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    """GET /api/admin/branding : le theme complet, tel qu'il est stocke. Admin.
+
+    La configuration publique n'en publie que ce que la page applique; cet
+    endpoint rend tout, parce que l'ecran de personnalisation doit pouvoir
+    reafficher ce qui a ete choisi."""
+    from ..branding import get_branding
+    return get_branding(db)
+
+
+@router.put("/branding")
+def update_branding(payload: dict = Body(...), db: Session = Depends(get_db),
+                    admin: User = Depends(require_admin)):
+    """PUT /api/admin/branding : change l'apparence. Admin uniquement. Audite.
+
+    Modification partielle; ``{"reset": true}`` revient au theme livre, ce qui est
+    la seule sortie sure d'une combinaison devenue illisible. Les valeurs sont
+    validees par forme cote serveur (voir app/branding.py): elles finissent dans
+    une feuille de style."""
+    from ..branding import set_branding
+    cfg = set_branding(db, payload)
+    # Le detail d'audit ne porte pas les images: une data URI de 400 ko dans le
+    # journal le rendrait illisible et le ferait grossir a chaque essai.
+    record_audit(db, admin.id, "branding.update", entity="settings",
+                 detail={k: v for k, v in cfg.items() if not str(v).startswith("data:")})
+    db.commit()
+    return cfg
+
+
 # ----- Steerco import (Admin -> Import) ---------------------------------------
 # Collect a squad's Steerco data (KPI/SLA/incidents/events, 12 months) in an Excel
 # file and upload it here; parsed in memory and written to SteercoEntry rows.

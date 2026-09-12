@@ -45,6 +45,11 @@ def get_smtp(db: Session) -> dict:
             cfg.update({k: v for k, v in json.loads(row.value).items() if k in KEYS})
         except (json.JSONDecodeError, TypeError):
             pass
+    # Le pied de page des emails est un reglage d'apparence, pas un reglage SMTP.
+    # Il voyage ici parce que tout ce qui envoie un email lit deja cette config,
+    # et qu'un reglage que personne ne transporte est un reglage decoratif.
+    from .branding import get_branding
+    cfg["email_footer"] = get_branding(db).get("email_footer", "")
     return cfg
 
 
@@ -59,7 +64,8 @@ def set_smtp(db: Session, patch: dict) -> dict:
     except (TypeError, ValueError):
         cfg["port"] = 587
     row = db.get(AppSetting, SMTP_KEY)
-    payload = json.dumps(cfg)
+    # email_footer vient de la personnalisation, il ne se range pas ici.
+    payload = json.dumps({k: v for k, v in cfg.items() if k in KEYS})
     if row is None:
         db.add(AppSetting(key=SMTP_KEY, value=payload))
     else:

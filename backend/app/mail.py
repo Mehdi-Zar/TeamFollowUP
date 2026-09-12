@@ -3,6 +3,7 @@ import logging
 import smtplib
 import threading
 from email.message import EmailMessage
+from html import escape
 
 from . import trust
 
@@ -26,6 +27,13 @@ def send_email(cfg: dict, to: str, subject: str, body: str, attachment: tuple | 
     if cc:
         msg["Cc"] = ", ".join(cc)
     msg["Subject"] = subject
+    # Le pied de page choisi dans Administration > Personnalisation. Passe par le
+    # parametre plutot que lu ici: mail.py ne connait pas la base, et c'est ce qui
+    # lui permet d'etre teste sans elle.
+    footer = (cfg.get("email_footer") or "").strip()
+    if footer:
+        body += (f'<p style="color:#64748B;font-size:12px">{escape(footer)}</p>'
+                 if html else "\n\n" + footer)
     if html:
         msg.set_content("Ce rapport nécessite un client mail compatible HTML.")
         msg.add_alternative(body, subtype="html")
