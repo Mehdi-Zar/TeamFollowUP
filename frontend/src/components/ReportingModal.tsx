@@ -35,7 +35,10 @@ export function ReportingModal({ onClose }: { onClose: () => void }) {
           <ReportingAdmin />
         </div>
       ) : (
-        <MySchedule smtpOn={smtp_enabled} />
+        <div className="stack" style={{ gap: 16 }}>
+          <MySchedule smtpOn={smtp_enabled} />
+          <MySubscriptions />
+        </div>
       )}
     </Modal>
   );
@@ -56,6 +59,62 @@ export function ReportingButton({ className = "btn-secondary btn-sm" }: { classN
       <button className={className} onClick={() => setOpen(true)}>{t("reporting.subscribe_btn")}</button>
       {open && <ReportingModal onClose={() => setOpen(false)} />}
     </>
+  );
+}
+
+/** Everything the application emails this person, listed.
+ *
+ *  The schedule above only covers the dashboard report. A per-squad subscription
+ *  could exist (set by an API key, or by an earlier version) and the person had no
+ *  way to see it, let alone stop it: the endpoint that lists them was served and
+ *  never called. Being emailed by a system is exactly the kind of thing one should
+ *  be able to enumerate. */
+function MySubscriptions() {
+  const { t } = useI18n();
+  const [rows, setRows] = useState<Sub[] | null>(null);
+  const [squads, setSquads] = useState<Record<number, string>>({});
+
+  async function load() {
+    try {
+      const subs = await api.get<Sub[]>("/api/reports/subscriptions");
+      setRows(subs);
+      if (subs.some((s) => s.squad_id)) {
+        const list = await api.get<{ id: number; name: string }[]>("/api/squads");
+        setSquads(Object.fromEntries(list.map((s) => [s.id, s.name])));
+      }
+    } catch { setRows([]); }
+  }
+  useEffect(() => { load(); }, []);
+
+  const active = (rows ?? []).filter((s) => (s.weekdays?.length ?? 0) > 0 || s.interval_days > 0);
+  if (rows === null) return <Spinner />;
+
+  return (
+    <div className="stack" style={{ gap: 6 }}>
+      <div className="strong">{t("reporting.my_subscriptions")}</div>
+      {active.length === 0 ? (
+        <div className="small muted">{t("reporting.no_subscription")}</div>
+      ) : active.map((s, i) => (
+        <div key={i} className="between small" style={{ borderBottom: "1px solid var(--line)", paddingBottom: 4 }}>
+          <span>
+            {s.squad_id ? (squads[s.squad_id] ?? `#${s.squad_id}`) : t("reporting.scope_dashboard")}
+            {" : "}
+            {(s.weekdays?.length ?? 0) > 0
+              ? s.weekdays.map((d) => t(`sub.day.${WEEKDAY_KEYS[d]}`)).join(", ")
+              : t("reporting.every_n_days", { n: String(s.interval_days) })}
+            {`, ${String(s.hour).padStart(2, "0")}h`}
+          </span>
+          <button className="btn-ghost btn-sm"
+                  onClick={async () => {
+                    await api.put("/api/reports/subscription",
+                                  { squad_id: s.squad_id, weekdays: [], hour: s.hour });
+                    load();
+                  }}>
+            {t("reporting.stop")}
+          </button>
+        </div>
+      ))}
+    </div>
   );
 }
 
