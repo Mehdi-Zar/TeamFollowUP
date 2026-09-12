@@ -34,6 +34,7 @@ import { ImportOrgAdmin, ImportSteercoAdmin, PptxTemplateAdmin } from "./admin/i
 import { MySquadsAdmin, PersonasAdmin, SquadsAdmin, TribeSelfAdmin, TribesAdmin, UsersAdmin } from "./admin/organisation";
 import { PlatformsAdmin } from "./admin/platforms";
 import { DataAdmin } from "./admin/data";
+import { BrandingAdmin } from "./admin/branding";
 import { AuditAdmin, LogExportAdmin, ModerationAdmin, OpsAdmin } from "./admin/oversight";
 
 const TAB_LABEL: Record<string, string> = {
@@ -55,6 +56,7 @@ const TAB_LABEL: Record<string, string> = {
   leaves: "admin.tab.leaves",
   logs: "admin.tab.logs",
   settings: "admin.tab.settings",
+  branding: "admin.tab.branding",
   data: "admin.tab.data",
   audit: "admin.tab.audit",
   ops: "admin.tab.ops",
@@ -63,7 +65,7 @@ const TAB_LABEL: Record<string, string> = {
 // Admin sections grouped by purpose (only the items a role may open are shown).
 const ADMIN_GROUPS: { titleKey: string; items: string[] }[] = [
   { titleKey: "admin.group.org", items: ["tribes", "import", "tribe", "squads", "platforms", "my_squads", "users", "personas"] },
-  { titleKey: "admin.group.config", items: ["modules", "report", "leaves", "settings"] },
+  { titleKey: "admin.group.config", items: ["modules", "report", "leaves", "settings", "branding"] },
   { titleKey: "admin.group.access", items: ["auth", "api", "smtp", "trust"] },
   { titleKey: "admin.group.oversight", items: ["moderation", "logs", "data", "audit", "ops"] },
 ];
@@ -150,6 +152,7 @@ export default function AdminPage() {
         {tab === "logs" && <LogExportAdmin />}
         {tab === "settings" && <SettingsAdmin />}
         {tab === "data" && <DataAdmin />}
+        {tab === "branding" && <BrandingAdmin />}
         {tab === "audit" && <AuditAdmin />}
         {tab === "ops" && <OpsAdmin />}
       </div>
