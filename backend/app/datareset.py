@@ -128,7 +128,7 @@ def counts(db: Session) -> dict[str, dict]:
     return out
 
 
-def detach_external_refs(db: Session, emptied: set[str]) -> list[tuple]:
+def detach_external_refs(db: Session, emptied: set[str], exempt: set[tuple] = frozenset()) -> list[tuple]:
     """NULL every reference from a SURVIVING table into a table being emptied.
 
     Deleting the tribes while the accounts still point at them fails on the
@@ -142,6 +142,14 @@ def detach_external_refs(db: Session, emptied: set[str]) -> list[tuple]:
     that cannot exist. Raising here says which pair, instead of surfacing as an
     integrity error mid-transaction.
 
+``exempt`` lists the (table, column) pairs somebody else has already dealt with.
+    Erasing the accounts runs ``userpurge`` first, which is the authority on what is
+    personal: it deletes the rows that belong to the person (a co-leadership, a
+    notification) and detaches the others. Those columns must not be checked again
+    here, and checking them was exactly the bug: the guard fired on the SCHEMA
+    (``squad_coleaders.user_id`` is NOT NULL) for rows that no longer existed, and
+    "erase the accounts" answered 500.
+
     Returns what was cut, so a restore can put it back (see datasnapshots.restore);
     a reset has nothing to put back.
     """
@@ -150,13 +158,22 @@ def detach_external_refs(db: Session, emptied: set[str]) -> list[tuple]:
         if table.name in emptied:
             continue
         for col in table.columns:
+            if (table.name, col.name) in exempt:
+                continue
             targets = {fk.column.table.name for fk in col.foreign_keys}
             if not targets & emptied:
                 continue
             if not col.nullable:
+                # Only a row that would really be left dangling is a problem. A
+                # table that happens to declare such a column but holds nothing is
+                # not a reason to refuse the whole operation.
+                remaining = db.scalar(select(func.count()).select_from(table)) or 0
+                if remaining == 0:
+                    continue
                 raise RuntimeError(
                     f"{table.name}.{col.name} pointe vers {sorted(targets & emptied)} et ne peut "
-                    f"pas etre detache : les deux doivent etre effaces ensemble."
+                    f"pas etre detache : les deux doivent etre effaces ensemble "
+                    f"({remaining} ligne(s) concernee(s))."
                 )
             pk = list(table.primary_key.columns)
             rows = db.execute(select(*pk, col).where(col.is_not(None))).all() if pk else []
@@ -205,7 +222,14 @@ def erase(db: Session, keys) -> dict[str, int]:
             purge_user_references(db, uid)
         db.flush()
 
-    detach_external_refs(db, set(names) | ({"users"} if erase_users else set()))
+    # The references to users have already been settled one account at a time,
+    # above: OWNED_BY_USER says which are the person's own, and the rest were
+    # detached there.
+    exempt = set()
+    if erase_users:
+        from .userpurge import OWNED_BY_USER
+        exempt = set(OWNED_BY_USER)
+    detach_external_refs(db, set(names) | ({"users"} if erase_users else set()), exempt)
 
     for table in reversed(Base.metadata.sorted_tables):
         if table.name in NEVER_ERASED:

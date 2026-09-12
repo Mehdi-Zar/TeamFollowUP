@@ -103,6 +103,47 @@ def test_a_full_wipe_keeps_the_configuration_and_the_break_glass_login(client, d
     assert remaining[0].role == "admin"
 
 
+def test_erasing_the_accounts_alone_works_too(client, db, seeded):
+    """Le cas qui repondait 500 en production.
+
+    Effacer les comptes sans effacer la structure laissait le garde-fou se
+    declencher sur le schema (``squad_coleaders.user_id`` est NOT NULL) alors que
+    ces lignes venaient d'etre supprimees, compte par compte, par la politique de
+    suppression. Le test precedent choisissait « structure + comptes », ce qui
+    rangeait la table dans le lot efface et masquait le probleme.
+    """
+    _content(db, seeded)
+    sl_b = db.scalar(select(User).where(User.email == seeded["sl_b"]))
+    login(client, seeded["tribe"])
+    client.put(f"/api/squads/{seeded['squad_a']}", json={"co_leader_user_ids": [sl_b.id]})
+
+    login(client, "admin@test")
+    r = client.post("/api/admin/data/reset",
+                    json={"domains": ["users"], "confirm": True, "snapshot_first": False})
+    assert r.status_code == 200, r.text
+
+    db.expire_all()
+    assert [u.email for u in db.scalars(select(User)).all()] == ["admin@local"]
+    squad = db.get(Squad, seeded["squad_a"])
+    assert squad is not None                      # la squad survit
+    assert squad.co_leaders == []                 # son co-responsable est parti avec son compte
+    assert squad.leader_user_id is None           # le responsable aussi, detache
+    assert len(db.scalars(select(Tribe)).all()) == 2
+
+
+def test_erasing_the_accounts_keeps_the_snapshots_and_their_authors_detached(client, db, seeded):
+    """Une sauvegarde survit a la disparition de qui l'a prise."""
+    _content(db, seeded)
+    login(client, "admin@test")
+    snap = client.post("/api/admin/data/snapshots", json={"name": "avant"}).json()
+
+    r = client.post("/api/admin/data/reset",
+                    json={"domains": ["users"], "confirm": True, "snapshot_first": False})
+    assert r.status_code == 200, r.text
+    rows = client.get("/api/admin/data/snapshots").json()
+    assert [s["id"] for s in rows] == [snap["id"]]
+
+
 # ---- snapshots -----------------------------------------------------------------
 
 def test_a_snapshot_then_a_restore_puts_everything_back(client, db, seeded):
