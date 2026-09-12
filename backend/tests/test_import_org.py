@@ -202,12 +202,96 @@ def test_an_otd_owner_is_the_referenced_squads_leader(db):
     assert otd.owner_user_id == bob.id
 
 
+def test_an_otd_finds_a_squad_the_file_does_not_restate(db):
+    """The Squads sheet creates squads; it is not a condition for naming one.
+
+    A file that only carries an OTD for a squad already in the app used to import
+    an OTD owned by nobody, invisible in that squad's panel (which shows an OTD
+    committed on its leader or covering one of its milestones). The import
+    reported success and the screen stayed empty.
+    """
+    mod.import_org(db, mod.read_upload("org.xlsx", _minimal_workbook()))
+    bob = db.scalar(select(User).where(User.email == "bob@example.com"))
+
+    # Second file: same tribe, Squads sheet left empty, one more OTD on that squad.
+    rows = {"Squads": [HEADERS["Squads"]],
+            "Initiatives": [HEADERS["Initiatives"], ["Suite du socle", "Landing Zone", None, None, None]],
+            "OTD": [HEADERS["OTD"], ["Livrer la LZ v3", "Landing Zone", datetime(2026, 11, 30), None]]}
+    mod.import_org(db, mod.read_upload("org.xlsx", _minimal_workbook(**rows)))
+
+    otd = db.scalar(select(Otd).where(Otd.title == "Livrer la LZ v3"))
+    assert otd.owner_user_id == bob.id
+    lz = db.scalar(select(Squad).where(Squad.name == "Landing Zone"))
+    init = db.scalar(select(Initiative).where(Initiative.title == "Suite du socle"))
+    assert init.squad_id == lz.id
+    # The squad itself is untouched by a file that does not describe it.
+    assert lz.products == ["LZ", "Guardrails"] and lz.kpis_enabled is True
+
+
 def test_an_initiative_pointing_at_an_unknown_squad_stays_tribe_level(db):
     rows = {"Initiatives": [HEADERS["Initiatives"],
                             ["Sans squad", "Squad Fantome", None, None, None]]}
     mod.import_org(db, mod.read_upload("org.xlsx", _minimal_workbook(**rows)))
     init = db.scalar(select(Initiative).where(Initiative.title == "Sans squad"))
     assert init is not None and init.squad_id is None
+
+
+def test_an_unknown_squad_name_is_reported_not_swallowed(db):
+    """The counts alone told the administrator nothing had gone wrong.
+
+    An OTD naming a squad that does not exist is imported without an owner, and
+    an OTD without an owner appears in no screen at all. The import still says
+    "1 OTD" and looks like a success. One mistyped cell was enough to lose a
+    commitment silently, which is exactly how a real file was lost.
+    """
+    rows = {"OTD": [HEADERS["OTD"], ["Livrer la LZ v2", "Justine Cuenot", datetime(2026, 9, 30), None]]}
+    summary = mod.import_org(db, mod.read_upload("org.xlsx", _minimal_workbook(**rows)))
+
+    assert summary["otds"] == 1
+    assert any("Justine Cuenot" in w for w in summary["warnings"])
+    otd = db.scalar(select(Otd).where(Otd.title == "Livrer la LZ v2"))
+    assert otd is not None and otd.owner_user_id is None
+
+
+def test_a_title_repeated_in_the_file_is_reported(db):
+    """Same tribe, same year, same title is one row: the second updates the first."""
+    rows = {"OTD": [HEADERS["OTD"],
+                    ["Livrer la LZ v2", "Landing Zone", datetime(2026, 9, 30), None],
+                    ["Livrer la LZ v2", "Landing Zone", datetime(2026, 9, 30), None]]}
+    summary = mod.import_org(db, mod.read_upload("org.xlsx", _minimal_workbook(**rows)))
+
+    assert any("Livrer la LZ v2" in w and "plusieurs fois" in w for w in summary["warnings"])
+    assert len(db.scalars(select(Otd).where(Otd.title == "Livrer la LZ v2")).all()) == 1
+
+
+def test_a_clean_file_reports_no_warning(db):
+    assert mod.import_org(db, mod.read_upload("org.xlsx", _minimal_workbook()))["warnings"] == []
+
+
+def test_an_administrator_named_as_a_squad_leader_stays_an_administrator(db, seeded):
+    """The import is reached from the admin section; it must not close the door.
+
+    Naming an account as a squad leader used to set its role to squad_leader,
+    admin included. The person running the import could lose the admin section
+    with their own file, on the row describing their own squad.
+    """
+    rows = {"Squads": [HEADERS["Squads"],
+                       ["Landing Zone", "product", "Admin", "admin@test", None, None, "oui", "non"]]}
+    mod.import_org(db, mod.read_upload("org.xlsx", _minimal_workbook(**rows)))
+
+    admin = db.scalar(select(User).where(User.email == "admin@test"))
+    assert admin.role == "admin"
+    # The squad still points at them: leading a squad and administering coexist.
+    lz = db.scalar(select(Squad).where(Squad.name == "Landing Zone"))
+    assert lz.leader_user_id == admin.id
+
+
+def test_a_squad_leader_named_in_the_file_is_still_promoted(db, seeded):
+    """The guard above is about admins only, not about every existing account."""
+    rows = {"Squads": [HEADERS["Squads"],
+                       ["Landing Zone", "product", "Member", "member@test", None, None, "oui", "non"]]}
+    mod.import_org(db, mod.read_upload("org.xlsx", _minimal_workbook(**rows)))
+    assert db.scalar(select(User).where(User.email == "member@test")).role == "squad_leader"
 
 
 def test_nothing_outside_the_described_org_is_touched(db, seeded):

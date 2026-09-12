@@ -307,6 +307,8 @@ export interface Squad {
   name: string;
   description?: string | null;
   leader_user_id?: number | null;
+  /** Same rights as the leader over this squad, without being its named leader. */
+  co_leader_user_ids?: number[];
   display_order: number;
   kpis_enabled: boolean;
   steerco_enabled?: boolean;
@@ -379,6 +381,8 @@ export interface QuarterCell {
  *  content (objectives, roadmap, KPIs, members, messages, committees, budget). */
 export interface SquadDetail extends Squad {
   leader?: LeaderInfo | null;
+  /** Identities of the co-leaders, for display next to the leader. */
+  co_leaders?: LeaderInfo[];
   year: number;
   annual_progress: number;
   freshness: Freshness;
@@ -521,6 +525,8 @@ export interface PublicConfig {
   feed_post_scope: "leaders" | "everyone";
   smtp_enabled: boolean;
   modules: ModulesConfig;
+  /** Couleurs, logos, typographie et densite (voir app/branding.py). */
+  branding?: Branding;
 }
 
 /** A single in-app notification (new feed post or a reply to the user). */
@@ -619,10 +625,37 @@ export interface AuditPage {
   offset: number;
 }
 
-/** Which SSO methods are enabled, so the login page shows the right buttons. */
+/** L'apparence choisie par le deploiement, telle que la page l'applique.
+ *  `css` porte les variables CSS deja validees cote serveur (une couleur part
+ *  dans une feuille de style, elle ne peut pas etre une chaine libre). */
+export interface Branding {
+  css: Record<string, string>;
+  logo?: string;
+  favicon?: string;
+  login_background?: string;
+  density?: "comfortable" | "compact";
+}
+
+/** One way in, as the sign-in page should present it. */
+export interface LoginMethod {
+  key: "oidc" | "saml" | "password";
+  enabled: boolean;
+  label?: string;
+  hint?: string;
+  logo?: string;
+  primary?: boolean;
+}
+
+/** What the sign-in page needs to draw itself. The two `*_enabled` flags stay for
+ *  the screens that only ask "is SSO on"; `methods` is what the page renders, in
+ *  order, with the wording and logo the deployment chose. */
 export interface AuthConfig {
   oidc_enabled: boolean;
   saml_enabled: boolean;
+  intro?: string;
+  methods?: LoginMethod[];
+  /** visible | collapsed (behind a link) | secret (only with the secret link). */
+  password_mode?: "visible" | "collapsed" | "secret";
 }
 
 // ---- Feed (tweet zone) ----

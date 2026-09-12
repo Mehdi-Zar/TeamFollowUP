@@ -17,6 +17,10 @@ import { useErr } from "./shared";
 export type ImportSummary = {
   tribe: string; year: number; squads: number; initiatives: number; otds: number;
   created: { users: number; squads: number; initiatives: number; otds: number };
+  // What the file asked for that the import could not do as written (an unknown
+  // squad name, a title repeated twice). Counting only successes made a partly
+  // wrong file look like a clean import.
+  warnings?: string[];
 };
 
 
@@ -90,6 +94,14 @@ export function ImportOrgAdmin() {
               otds: String(result.created.otds),
             })}
           </div>
+          {!!result.warnings?.length && (
+            <div className="banner stack" style={{ gap: 4 }}>
+              <div className="strong">{t("import.warnings")}</div>
+              <ul style={{ margin: 0, paddingLeft: 18 }}>
+                {result.warnings.map((w, i) => <li key={i} className="small">{w}</li>)}
+              </ul>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -98,22 +110,22 @@ export function ImportOrgAdmin() {
 
 
 export type SteercoImportSummary = {
-  squad: string; period: string; months: number; kpis: number; services: number; events: number;
-  /** KPIs the squad already reported that the file did not cover: kept, not deleted. */
+  platform: string; period: string; months: number; kpis: number; services: number; events: number;
+  /** KPIs already reported that the file did not cover: kept, not deleted. */
   kept_kpis: string[];
 };
 
 
-/** Admin > Import: collect a squad's Steerco data (KPI/SLA/incidents/events over 12
- *  months) in an Excel file, upload it here, and it is merged into the squad's monthly
- *  snapshots (history + current month). Idempotent per (squad, period). Admin only.
- *  Picking a squad before downloading yields a template pre-filled with its name and
- *  with the KPI / SLA rows it actually reports, instead of the standard structure. */
+/** Admin > Import: collect a PLATFORM's Steerco data (KPI/SLA/incidents/events over
+ *  12 months) in an Excel file, upload it here, and it is merged into that platform's
+ *  monthly snapshots (history + current month). Idempotent per (platform, period).
+ *  Admin only. Picking a platform before downloading yields a template pre-filled with
+ *  its name and with the rows of its slide, instead of the standard structure. */
 export function ImportSteercoAdmin() {
   const { t } = useI18n();
   const steercoOn = useModule()("steerco");
-  const [squads, setSquads] = useState<{ id: number; name: string }[]>([]);
-  const [squadId, setSquadId] = useState("");
+  const [platforms, setPlatforms] = useState<{ id: number; name: string }[]>([]);
+  const [platformId, setPlatformId] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<SteercoImportSummary | null>(null);
@@ -121,7 +133,7 @@ export function ImportSteercoAdmin() {
 
   useEffect(() => {
     if (!steercoOn) return;
-    api.get<{ id: number; name: string }[]>("/api/squads").then(setSquads).catch(() => {});
+    api.get<{ id: number; name: string }[]>("/api/steerco/platforms").then(setPlatforms).catch(() => {});
   }, [steercoOn]);
 
   if (!steercoOn) return null;
@@ -149,12 +161,12 @@ export function ImportSteercoAdmin() {
         <ol className="stack" style={{ gap: 6, margin: 0, paddingLeft: 18 }}>
           <li>
             {t("import.steerco.step_pick")}{" "}
-            <select aria-label={t("a11y.template_squad")} value={squadId} onChange={(e) => setSquadId(e.target.value)} style={{ minWidth: 190 }}>
+            <select aria-label={t("a11y.template_platform")} value={platformId} onChange={(e) => setPlatformId(e.target.value)} style={{ minWidth: 190 }}>
               <option value="">{t("import.steerco.generic_template")}</option>
-              {squads.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              {platforms.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
             <a className="btn-secondary btn-sm" style={{ marginLeft: 8 }}
-               href={`/api/admin/import-steerco/template${squadId ? `?squad_id=${squadId}` : ""}`}>
+               href={`/api/admin/import-steerco/template${platformId ? `?platform_id=${platformId}` : ""}`}>
               {t("import.download")}
             </a>
             <div className="small muted" style={{ marginTop: 4 }}>{t("import.steerco.prefilled_hint")}</div>
@@ -175,7 +187,7 @@ export function ImportSteercoAdmin() {
       {result && (
         <div className="card stack" style={{ gap: 6 }}>
           <h3 style={{ margin: 0 }}>{t("import.done")}</h3>
-          <div>{t("import.steerco.result_squad")} <strong>{result.squad}</strong>, {result.period}</div>
+          <div>{t("import.steerco.result_platform")} <strong>{result.platform}</strong>, {result.period}</div>
           <div className="small">
             {t("import.steerco.result_counts", {
               months: String(result.months), kpis: String(result.kpis),

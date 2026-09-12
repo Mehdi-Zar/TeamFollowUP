@@ -24,11 +24,14 @@ MANAGER_ROLES = (ADMIN, TRIBE, SQUAD)
 
 # Admin tabs each role may open. Global-config tabs are admin-only.
 ADMIN_TABS = {
-    ADMIN: ["tribes", "import", "squads", "users", "personas", "modules", "report", "leaves", "moderation",
-            "auth", "api", "smtp", "trust", "logs", "settings", "audit", "ops"],
+    ADMIN: ["tribes", "import", "squads", "platforms", "users", "personas", "modules", "report", "leaves",
+            "moderation", "auth", "api", "smtp", "trust", "logs", "settings", "branding", "data",
+            "audit", "ops"],
     # Tribe & squad leaders manage their squads on the dedicated "my squads"
     # page, not in Administration. Tribe leaders may set their own tribe's leave rules.
-    TRIBE: ["tribe", "users", "leaves"],
+    # Platforms are theirs too: a steerco slide and who owes each figure on it is a
+    # tribe-level decision, not something a squad leader hands itself.
+    TRIBE: ["tribe", "platforms", "users", "leaves"],
     SQUAD: [],
     MEMBER: [],
 }
@@ -76,12 +79,14 @@ def can_manage_squads_in_tribe(user: User, tribe_id: int | None) -> bool:
 
 
 def leads_squad(user: User, squad: Squad) -> bool:
-    """True if the user is the assigned leader of this specific squad.
+    """True if the user leads this specific squad, as leader or co-leader.
 
     Note it requires the SQUAD role: admins and tribe leaders are handled by the
     tribe-level checks, not by direct squad leadership.
     """
-    return user.role == SQUAD and squad.leader_user_id == user.id
+    if user.role != SQUAD:
+        return False
+    return squad.leader_user_id == user.id or any(u.id == user.id for u in squad.co_leaders)
 
 
 # ----- users --------------------------------------------------------------------

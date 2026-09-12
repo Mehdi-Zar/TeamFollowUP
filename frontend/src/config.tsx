@@ -10,7 +10,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { api } from "./api";
 import { useI18n } from "./i18n";
-import { ModuleKey, ModulesConfig, PublicConfig } from "./types";
+import { Branding, ModuleKey, ModulesConfig, PublicConfig } from "./types";
 
 /** Default module map: everything on except committees, steerco and squad KPIs. Used
  *  until the server config loads, and as the fallback when config is missing. */
@@ -44,6 +44,36 @@ const DEFAULTS: PublicConfig = {
 const ConfigContext = createContext<PublicConfig>(DEFAULTS);
 const ReloadContext = createContext<() => void>(() => {});
 
+/**
+ * Applique le theme publie par le serveur.
+ *
+ * Les variables sont ecrites sur l'element racine plutot que dans une balise
+ * <style> injectee: pas de feuille a nettoyer, pas d'ordre de cascade a arbitrer,
+ * et un reglage retire revient tout seul a la valeur de theme.css. Le serveur a
+ * deja valide chaque valeur par forme, ce qui est ce qui rend l'operation sure.
+ */
+function applyBranding(branding?: Branding) {
+  const root = document.documentElement;
+  // Ce qui a ete pose au passage precedent est retire d'abord, sinon une couleur
+  // remise par defaut resterait a l'ecran jusqu'au rechargement suivant.
+  for (const name of Array.from(root.style)) {
+    if (name.startsWith("--")) root.style.removeProperty(name);
+  }
+  for (const [name, value] of Object.entries(branding?.css ?? {})) {
+    root.style.setProperty(name, value);
+  }
+  root.dataset.density = branding?.density ?? "comfortable";
+  if (branding?.favicon) {
+    let link = document.querySelector<HTMLLinkElement>("link[rel~='icon']");
+    if (!link) {
+      link = document.createElement("link");
+      link.rel = "icon";
+      document.head.appendChild(link);
+    }
+    link.href = branding.favicon;
+  }
+}
+
 /** Fetches /api/config on mount and exposes it (plus a reload fn) to the tree. */
 export function ConfigProvider({ children }: { children: ReactNode }) {
   const { applyServerDefault } = useI18n();
@@ -54,6 +84,9 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
       .get<PublicConfig>("/api/config")
       .then((c) => {
         setCfg(c);
+        // Applique des le premier chargement: la page de connexion doit deja
+        // porter les couleurs du deploiement, sans clignoter par le theme livre.
+        applyBranding(c.branding);
         // The instance's default language, applied only while the viewer has
         // made no choice of their own. The "has the viewer chosen" test lives in
         // i18n.tsx, next to the storage key it depends on.

@@ -112,7 +112,8 @@ def led_squads(db: Session, actor: User) -> list[Squad]:
         return list(db.scalars(select(Squad).where(Squad.tribe_id == actor.tribe_id)
                                .order_by(Squad.display_order, Squad.id)).all())
     if actor.role == SQUAD:
-        return list(db.scalars(select(Squad).where(Squad.leader_user_id == actor.id)
+        from .deps import led_squad_ids
+        return list(db.scalars(select(Squad).where(Squad.id.in_(led_squad_ids(db, actor)))
                                .order_by(Squad.display_order, Squad.id)).all())
     return []
 
@@ -142,8 +143,9 @@ def approve(db: Session, actor: User, target: User, *, role: str,
     else:  # SQUAD leader: must place the person into one of their own squads.
         if squad_id is None:
             raise HTTPException(status_code=400, detail="Choisissez la squad d'accueil.")
+        from .deps import leads_this_squad
         sq = db.get(Squad, squad_id)
-        if sq is None or sq.leader_user_id != actor.id:
+        if sq is None or not leads_this_squad(sq, actor):
             raise HTTPException(status_code=403, detail="Vous ne pouvez valider que pour vos squads.")
         scope_tribe = sq.tribe_id
 

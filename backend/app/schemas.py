@@ -51,10 +51,29 @@ class LoginIn(BaseModel):
     password: str
 
 
+class LoginMethodOut(BaseModel):
+    """One way in, as the sign-in page should present it."""
+    key: str
+    enabled: bool
+    label: str = ""
+    hint: str = ""
+    logo: str = ""
+    primary: bool = False
+
+
 class AuthConfig(BaseModel):
-    """Which SSO backends are enabled, so the SPA can show the right login options."""
+    """What the unauthenticated sign-in page needs to draw itself.
+
+    The two ``*_enabled`` flags stay for compatibility; ``methods`` is what the
+    page actually renders, in order, with the wording and logo an administrator
+    chose. ``password_mode`` says whether the local form is shown, folded behind a
+    link, or reserved to whoever holds the secret link.
+    """
     oidc_enabled: bool
     saml_enabled: bool
+    intro: str = ""
+    methods: list[LoginMethodOut] = []
+    password_mode: str = "visible"
 
 
 class UserOut(ORMModel):
@@ -332,10 +351,21 @@ class DependentItemOut(BaseModel):
 
 # ---------- Quarter progress ----------
 class QuarterProgressIn(BaseModel):
-    """Upsert a squad's completion percentage (0-100) for one year/quarter."""
+    """Upsert the COMMENT that explains one quarter of a squad's year.
+
+    The percentage is not typed in any more: it is derived from the quarter's
+    milestones (``status.year_progress``, "the share of that quarter's jalons that
+    are done") and that derived value is what every screen shows. Accepting a
+    hand-entered number here stored something nobody read back, which is exactly
+    the kind of figure that drifts from reality without anybody noticing.
+
+    ``progress_pct`` stays accepted for an API caller that still sends it, and is
+    otherwise filled with the derived value so what is stored matches what is
+    shown.
+    """
     year: int
     quarter: Quarter
-    progress_pct: int = Field(ge=0, le=100)
+    progress_pct: Optional[int] = Field(default=None, ge=0, le=100)
     comment: Optional[str] = None
 
 
@@ -486,7 +516,12 @@ class SquadUpdate(BaseModel):
     leader_user_id: Optional[int] = None
     display_order: Optional[int] = None
     kpis_enabled: Optional[bool] = None
-    steerco_enabled: Optional[bool] = None
+    # steerco_enabled is deliberately absent: it is derived from platform
+    # membership (app/platforms.py:sync_squad_flags) and would drift the moment a
+    # squad edit set it by hand. It stays readable on SquadOut.
+    # Co-leaders hold the same rights as the leader over this squad. Replacing the
+    # list is structural, like assigning the leader: a tribe leader's call.
+    co_leader_user_ids: Optional[list[int]] = None
     budget_enabled: Optional[bool] = None
     tribe_id: Optional[int] = None
     squad_type: Optional[SquadType] = None
@@ -505,6 +540,10 @@ class SquadOut(ORMModel):
     kpis_enabled: bool
     steerco_enabled: bool = False
     budget_enabled: bool = False
+    # Same rights as the leader over this squad, without being its named leader.
+    # Fed from the ORM relationship by a validator so every endpoint returning a
+    # SquadOut carries it without building the list by hand.
+    co_leader_user_ids: list[int] = []
     squad_type: SquadType = "product"
     products: list[str] = []
     hardware: list[str] = []
@@ -580,6 +619,7 @@ class SquadDetail(SquadOut):
     leader, admins); other viewers receive it as None.
     """
     leader: Optional[LeaderInfo] = None
+    co_leaders: list[LeaderInfo] = []
     year: int
     annual_progress: int
     freshness: dict

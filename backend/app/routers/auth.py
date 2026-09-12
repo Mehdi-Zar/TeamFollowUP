@@ -13,6 +13,7 @@ SSO: it creates or updates the local account behind an IdP identity while
 enforcing the account lifecycle (pending/active/disabled), the email-domain gate
 and the IdP-group→role remap. See docs/05-security.md.
 """
+import logging
 import time
 from collections import defaultdict, deque
 
@@ -21,7 +22,8 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..authconfig import email_domain_allowed, get_auth_config, role_from_groups
+from ..authconfig import (email_domain_allowed, get_auth_config, login_screen,
+                          role_from_groups)
 from ..config import settings
 from ..database import get_db
 from ..deps import get_current_user, get_current_user_any_status, record_audit, require_admin
@@ -30,6 +32,7 @@ from ..schemas import AuthConfig, LoginIn, UserOut
 from ..security import create_session_token, decode_session, verify_password
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+log = logging.getLogger("trt.auth")
 
 
 def _set_session(response: Response, user_id: int, impersonator_id: int | None = None) -> None:
@@ -98,10 +101,19 @@ def _check_login_rate(ip: str) -> None:
 
 
 @router.get("/config", response_model=AuthConfig)
-def auth_config(request: Request, db: Session = Depends(get_db)):
-    """Public login-screen config: which SSO buttons (OIDC/SAML) to show."""
+def auth_config(request: Request, k: str | None = None, db: Session = Depends(get_db)):
+    """Public sign-in config: what the page offers, in which order, how it reads.
+
+    ``k`` is the secret link's token. It is compared here (constant-time) rather
+    than returned, so the page can be told "the local form opens" without the
+    token ever leaving the server. Hiding that form is discoverability, not access
+    control: ``POST /login`` keeps working for the break-glass account, guarded by
+    the per-IP throttle."""
     cfg = get_auth_config(db, request)
-    return AuthConfig(oidc_enabled=bool(cfg["oidc_enabled"]), saml_enabled=bool(cfg["saml_enabled"]))
+    screen = login_screen(cfg, k)
+    return AuthConfig(oidc_enabled=bool(cfg["oidc_enabled"]), saml_enabled=bool(cfg["saml_enabled"]),
+                      intro=screen["intro"], methods=screen["methods"],
+                      password_mode=screen["password_mode"])
 
 
 @router.post("/login", response_model=UserOut)
@@ -295,12 +307,18 @@ async def oidc_login(request: Request, db: Session = Depends(get_db)):
     404s when OIDC is disabled or incompletely configured, keeping the endpoint
     indistinguishable from a non-existent one. Authlib stashes the state/PKCE
     verifier in the server-side session for the callback to consume.
+
+    The scope set actually sent is logged: when an IdP answers ``invalid_scope``,
+    the first question is always what was requested, and the answer is otherwise
+    only visible in the browser's address bar during a redirect nobody catches.
     """
     cfg = get_auth_config(db, request)
     if not cfg["oidc_enabled"] or not cfg["oidc_issuer_url"] or not cfg["oidc_client_id"]:
         raise HTTPException(status_code=404, detail="OIDC désactivé ou mal configuré")
-    from ..oidc import get_oauth
+    from ..oidc import get_oauth, scope_string
     oauth = get_oauth(cfg)
+    log.info("OIDC login: scopes=%r redirect_uri=%s",
+             scope_string(cfg.get("oidc_scopes")), cfg["oidc_redirect_uri"])
     request.session["_oidc_cfg"] = True
     return await oauth.oidc.authorize_redirect(request, cfg["oidc_redirect_uri"])
 
@@ -308,6 +326,12 @@ async def oidc_login(request: Request, db: Session = Depends(get_db)):
 @router.get("/oidc/callback")
 async def oidc_callback(request: Request, db: Session = Depends(get_db)):
     """OIDC redirect target: exchange the code, provision the user, set the session.
+
+    An IdP that refuses the authorization redirects here with ``error`` instead
+    of ``code``. That case is answered with the provider's own message and a 400:
+    handing it to Authlib raises deep inside the token exchange, and the admin
+    reads "Internal Server Error" for what is a configuration answer from the
+    IdP, most often an unauthorized scope.
 
     Authlib validates state/PKCE and the ID-token signature during
     ``authorize_access_token``. We then extract identity (sub/email/name/groups,
@@ -317,6 +341,14 @@ async def oidc_callback(request: Request, db: Session = Depends(get_db)):
     cfg = get_auth_config(db, request)
     if not cfg["oidc_enabled"]:
         raise HTTPException(status_code=404, detail="OIDC désactivé")
+    error = request.query_params.get("error")
+    if error:
+        description = (request.query_params.get("error_description") or "").strip()
+        log.warning("OIDC callback refusé par le fournisseur d'identité: %s (%s)", error, description)
+        detail = f"Le fournisseur d'identité a refusé la connexion ({error})."
+        if description:
+            detail += " " + description
+        raise HTTPException(status_code=400, detail=detail)
     from ..oidc import get_oauth
     oauth = get_oauth(cfg)
     token = await oauth.oidc.authorize_access_token(request)

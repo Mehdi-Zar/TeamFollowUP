@@ -93,7 +93,9 @@ def public_config(db: Session) -> dict:
     """
     from .smtpconfig import get_smtp
     from .modulesconfig import get_modules
+    from .branding import css_variables, get_branding
     cfg = get_general(db)
+    theme = get_branding(db)
     return {
         "app_name": cfg["app_name"],
         "app_subtitle": cfg["app_subtitle"],
@@ -102,4 +104,14 @@ def public_config(db: Session) -> dict:
         "feed_post_scope": cfg["feed_post_scope"],
         "smtp_enabled": bool(get_smtp(db).get("enabled")),
         "modules": get_modules(db),
+        # L'apparence voyage avec la configuration publique: la page de connexion
+        # en a besoin avant toute authentification, et la faire charger par un
+        # second appel ferait clignoter le theme par defaut a chaque ouverture.
+        "branding": {
+            "css": css_variables(theme),
+            "logo": theme["logo"],
+            "favicon": theme["favicon"],
+            "login_background": theme["login_background"],
+            "density": theme["density"],
+        },
     }

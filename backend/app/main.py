@@ -23,6 +23,7 @@ from .routers import (
     auth,
     committees,
     dashboard,
+    data,
     feed,
     initiatives,
     kpis,
@@ -68,7 +69,7 @@ if settings.metrics_enabled:
 
 for r in (auth, tribes, squads, dashboard, org, orgexport, objectives, roadmap, roadmapview, kpis,
           members, snapshots, feed, notifications, admin, audit, reports,
-          actions, initiatives, otds, access, leaves, committees, steerco):
+          actions, initiatives, otds, access, leaves, committees, steerco, data):
     app.include_router(r.router)
 
 
@@ -207,6 +208,13 @@ async def _start_weekly_progress_scheduler():
                             if subs:
                                 logging.getLogger("trt.report").info("Personal report subscriptions emailed: %s", subs)
                             purge_old_records(db)
+                            # Automatic data snapshot when one is due (off by
+                            # default, see app/datasnapshots.py).
+                            from .datasnapshots import run_due_snapshot
+                            took = run_due_snapshot(db)
+                            if took:
+                                logging.getLogger('trt.datasnapshots').info(
+                                    'automatic snapshot: %s', took)
                             _tick_metric("ok")
                         finally:
                             db.close()

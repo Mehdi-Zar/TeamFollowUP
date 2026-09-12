@@ -60,7 +60,14 @@ SAML: `GET /saml/metadata`,`GET /saml/login`,`POST /saml/acs`; `POST /impersonat
 
 ### squads (`/api/squads`)
 `GET ""`; `GET /{id}` (detail); `GET /{id}/dependents`; `GET /{id}/roadmap.pptx`; `GET /{id}/roadmap.html`;
-`POST ""`; `PUT /{id}`; `DELETE /{id}`; `PUT /{id}/quarter-progress`
+`POST ""`; `PUT /{id}`; `DELETE /{id}`; `PUT /{id}/quarter-progress`.
+
+`PUT /{id}/quarter-progress` records the quarter's **comment**. The percentage is
+derived from that quarter's milestones (`status.year_progress`) and is what every
+screen displays; it is stored alongside so the row matches what was shown. A caller
+that still sends `progress_pct` overrides it, which is the only reason the field is
+still accepted. `co_leader_user_ids` on `PUT /{id}` replaces the squad's co-leaders
+(structural: tribe leader or admin).
 
 ### dashboard (`/api/dashboard`)
 `GET ""` - consolidated cards + summary. Gated by module `dashboard` + capability `dashboard`.
@@ -121,12 +128,16 @@ simply never appears); `GET /export.csv`. Visibility is tribe-scoped (admins: al
 returned only to the person, their leader and admins.
 
 ### steerco (`/api/steerco`) - module `steerco` (off by default)
-Opt-in: `PUT /squad/{id}/enabled` (writer + can-edit-squad; also settable via `PUT /api/squads/{id}`
-with `steerco_enabled`); Snapshots: `GET /squad/{id}?period=` (fill status + who/when);
-`PUT /squad/{id}?period=` (upsert the month); `GET /squad/{id}/history?period=`;
-`PUT /squad/{id}/history` (backfill several months at once); `POST /squad/{id}/preview.html?period=`
-(renders the **unsaved** body, persists nothing, squad-leader accessible); Documents
-(**`require_tribe_or_admin`**, tribe-scoped): `GET /entries?period=`; `GET /onepager.html?squad_id=&period=`;
+The reporting unit is the **platform**, fed by one or more squads ([15](15-steerco.md)).
+Platforms: `GET /platforms` (any signed-in caller: a contributor must see the whole slide);
+`POST /platforms`, `PUT /platforms/{id}`, `DELETE /platforms/{id}` (**`require_tribe_or_admin`**,
+tribe-scoped; the tribe is taken from the payload, the caller, or the first contributing squad).
+Snapshots: `GET /platform/{id}?period=` (data + template + what the caller owns + who is missing);
+`PUT /platform/{id}?period=` (writes **only the items the caller owns**, the rest is kept);
+`GET /platform/{id}/history?period=`; `PUT /platform/{id}/history` (backfill, same ownership rule);
+`POST /platform/{id}/preview.html?period=` (renders the **unsaved** body, persists nothing,
+contributor accessible); Documents
+(**`require_tribe_or_admin`**, tribe-scoped): `GET /entries?period=`; `GET /onepager.html?platform_id=&period=`;
 `GET /document.html?period=`; `GET /document.pptx?period=` (`501` without `python-pptx`).
 All documents accept `lang=fr|en` (default English). `period` is `YYYY-MM`; every window (charts,
 history, SLA average) is the report's calendar year, January to December, so the charts always start

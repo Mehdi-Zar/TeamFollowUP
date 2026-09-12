@@ -1,7 +1,11 @@
 """OIDC integration via Authlib (Authorization Code + PKCE), configured at runtime."""
+import re
+
 from authlib.integrations.starlette_client import OAuth
 
 from . import trust
+
+DEFAULT_SCOPES = "openid email profile"
 
 
 def discovery_url(issuer: str) -> str:
@@ -12,6 +16,23 @@ def discovery_url(issuer: str) -> str:
     for a private attribute breaks on the next release for no good reason.
     """
     return (issuer or "").rstrip("/") + "/.well-known/openid-configuration"
+
+
+def scope_string(raw: str | None) -> str:
+    """The scope parameter to send, from whatever was typed in the config field.
+
+    OAuth separates scopes with single spaces. The field is filled by hand, so it
+    also collects commas, line breaks and the non breaking spaces a word
+    processor leaves in a copied string. Any of those makes the whole list read
+    as one unknown scope, and the IdP answers ``invalid_scope``, which looks
+    exactly like the scopes being refused: the wrong diagnosis, on a value that
+    was correct. Splitting on every plausible separator removes that trap.
+
+    An empty result falls back to the default set rather than sending no scope at
+    all, which would not even be an OIDC request.
+    """
+    tokens = [t for t in re.split(r"[\s,;]+", (raw or "").strip()) if t]
+    return " ".join(tokens) or DEFAULT_SCOPES
 
 
 def get_oauth(cfg: dict) -> OAuth:
@@ -35,7 +56,7 @@ def get_oauth(cfg: dict) -> OAuth:
         client_secret=cfg.get("oidc_client_secret"),
         server_metadata_url=discovery_url(cfg.get("oidc_issuer_url")),
         client_kwargs={
-            "scope": cfg.get("oidc_scopes") or "openid email profile",
+            "scope": scope_string(cfg.get("oidc_scopes")),
             "code_challenge_method": "S256",
             "verify": trust.context(),
         },

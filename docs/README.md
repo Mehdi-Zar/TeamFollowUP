@@ -30,6 +30,9 @@ understand, run, operate and extend the product **without further explanation**.
 | 18 | [Tests de bout en bout (Playwright)](18-tests-e2e.md) | QA / Engineers |
 | 19 | [Plan de reprise (sauvegardes, restauration, exercices)](19-plan-de-reprise.md) | Ops / SRE |
 | 20 | [Données personnelles et rétention (RGPD)](20-donnees-personnelles-et-retention.md) | DPO / Ops / Exec |
+| 21 | [Donnees : remise a zero et sauvegardes](21-donnees-remise-a-zero-et-sauvegardes.md) | Admins |
+| 22 | [Ecran de connexion (ordre, libelles, lien de secours)](22-ecran-de-connexion.md) | Admins |
+| 23 | [Personnalisation (couleurs, logos, densite)](23-personnalisation.md) | Admins |
 | - | [Architecture Decision Records (ADR)](adr/README.md) | Engineers / Architects |
 
 ## At a glance

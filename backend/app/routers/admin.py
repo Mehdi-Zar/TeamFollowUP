@@ -830,29 +830,61 @@ async def import_org_upload(
     return summary
 
 
+# ----- Apparence (Admin -> Personnalisation) -----------------------------------
+
+@router.get("/branding")
+def read_branding(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    """GET /api/admin/branding : le theme complet, tel qu'il est stocke. Admin.
+
+    La configuration publique n'en publie que ce que la page applique; cet
+    endpoint rend tout, parce que l'ecran de personnalisation doit pouvoir
+    reafficher ce qui a ete choisi."""
+    from ..branding import get_branding
+    return get_branding(db)
+
+
+@router.put("/branding")
+def update_branding(payload: dict = Body(...), db: Session = Depends(get_db),
+                    admin: User = Depends(require_admin)):
+    """PUT /api/admin/branding : change l'apparence. Admin uniquement. Audite.
+
+    Modification partielle; ``{"reset": true}`` revient au theme livre, ce qui est
+    la seule sortie sure d'une combinaison devenue illisible. Les valeurs sont
+    validees par forme cote serveur (voir app/branding.py): elles finissent dans
+    une feuille de style."""
+    from ..branding import set_branding
+    cfg = set_branding(db, payload)
+    # Le detail d'audit ne porte pas les images: une data URI de 400 ko dans le
+    # journal le rendrait illisible et le ferait grossir a chaque essai.
+    record_audit(db, admin.id, "branding.update", entity="settings",
+                 detail={k: v for k, v in cfg.items() if not str(v).startswith("data:")})
+    db.commit()
+    return cfg
+
+
 # ----- Steerco import (Admin -> Import) ---------------------------------------
 # Collect a squad's Steerco data (KPI/SLA/incidents/events, 12 months) in an Excel
 # file and upload it here; parsed in memory and written to SteercoEntry rows.
 
 @router.get("/import-steerco/template")
-def download_steerco_template(squad_id: int | None = None, db: Session = Depends(get_db),
+def download_steerco_template(platform_id: int | None = None, db: Session = Depends(get_db),
                               admin: User = Depends(require_admin)):
-    """GET /api/admin/import-steerco/template?squad_id= : download the Steerco Excel
+    """GET /api/admin/import-steerco/template?platform_id= : download the Steerco Excel
     template (Infos / KPIs / SLA / Incidents / Evenements) to fill in. Admin only.
 
-    With ``squad_id`` the workbook is built *for that squad*: its name is pre-filled
-    and the KPI / SLA rows are the ones it actually reports, so the file matches the
-    app instead of proposing a canned list. Without it, the standard structure."""
-    from ..models import Squad
-    from ..steerco_import import structure_for_squad, template_bytes
+    With ``platform_id`` the workbook is built *for that platform*: its name is
+    pre-filled and the KPI / SLA rows come from its slide template, so the file asks
+    for exactly what will be rendered. Without it, the standard structure."""
+    from ..models import Platform
+    from ..steerco_import import structure_for_platform, template_bytes
     kpis = services = None
     name = ""
-    if squad_id is not None:
-        squad = db.get(Squad, squad_id)
-        if squad is None:
-            raise HTTPException(status_code=404, detail="Squad introuvable")
-        kpis, services = structure_for_squad(db, squad_id)
-        name = squad.name
+    if platform_id is not None:
+        platform = db.get(Platform, platform_id)
+        if platform is None:
+            raise HTTPException(status_code=404, detail="Plateforme introuvable")
+        kpis, services = structure_for_platform(db, platform_id)
+        name = platform.name
     slug = "".join(c if c.isalnum() else "-" for c in name).strip("-").lower() or "template"
     return Response(
         content=template_bytes(None, kpis, services, name),
@@ -868,8 +900,8 @@ async def import_steerco_upload(
     admin: User = Depends(require_admin),
 ):
     """POST /api/admin/import-steerco : upload a filled Steerco Excel and write the
-    squad's monthly snapshots (12-month history + full current month). Admin only.
-    Idempotent per (squad, period). 400 on wrong format / unknown squad. Audited."""
+    platform's monthly snapshots (12-month history + full current month). Admin only.
+    Idempotent per (platform, period). 400 on wrong format / unknown platform. Audited."""
     from ..steerco_import import import_steerco
 
     content = await file.read()
@@ -881,8 +913,8 @@ async def import_steerco_upload(
     except Exception as exc:  # malformed cells, etc.
         db.rollback()
         raise HTTPException(status_code=400, detail=f"Import impossible : {exc}")
-    record_audit(db, admin.id, "steerco.import", entity="squad",
-                 entity_id=summary.get("squad_id"), detail=summary)
+    record_audit(db, admin.id, "steerco.import", entity="platform",
+                 entity_id=summary.get("platform_id"), detail=summary)
     db.commit()
     return summary
 
