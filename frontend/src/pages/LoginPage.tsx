@@ -32,7 +32,7 @@ const SSO_HREF: Record<string, string> = {
 export default function LoginPage() {
   const { user, loading, config, login } = useAuth();
   const { t } = useI18n();
-  const { app_name } = useConfig();
+  const { app_name, branding } = useConfig();
   const [params] = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -82,8 +82,13 @@ export default function LoginPage() {
   );
 
   return (
-    <div className="login-page">
+    <div className="login-page"
+         style={branding?.login_background
+           ? { backgroundImage: `url(${branding.login_background})`, backgroundSize: "cover",
+               backgroundPosition: "center" }
+           : undefined}>
       <div className="card login-card">
+        {branding?.logo && <img src={branding.logo} alt="" className="login-brand" />}
         <h1 style={{ fontSize: 22, marginBottom: 2 }}>{app_name}</h1>
         <p className="muted small" style={{ marginTop: 0 }}>{cfg.intro || t("login.subtitle")}</p>
 

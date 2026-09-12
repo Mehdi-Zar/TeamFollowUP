@@ -74,7 +74,7 @@ const COLLAPSE_KEY = "sidebar.collapsed";
 export default function Layout() {
   const { user, logout, effectiveRole, isPreview, impersonate, stopImpersonation, can, pendingAccessCount } = useAuth();
   const { t, role: roleLabel, lang, setLang } = useI18n();
-  const { app_name, modules } = useConfig();
+  const { app_name, modules, branding } = useConfig();
   const [people, setPeople] = useState<{ id: number; display_name: string; role: string }[]>([]);
   // Only a real admin (not already impersonating) may pick someone to view as.
   const canImpersonate = user?.role === "admin" && !isPreview;
@@ -132,7 +132,12 @@ export default function Layout() {
       {mobileOpen && <div className="sidebar-overlay no-print" onClick={() => setMobileOpen(false)} />}
       <aside className={`sidebar no-print${mobileOpen ? " mobile-open" : ""}`}>
         <div className="sidebar-brand" onClick={() => navigate("/")} title={app_name}>
-          <span className="sidebar-logo">{app_name.slice(0, 1).toUpperCase()}</span>
+          {/* Le logo televerse remplace l'initiale. Une initiale est un defaut
+              acceptable, pas une identite: une organisation qui a un logo veut le
+              voir la. */}
+          {branding?.logo
+            ? <img className="sidebar-logo-img" src={branding.logo} alt="" />
+            : <span className="sidebar-logo">{app_name.slice(0, 1).toUpperCase()}</span>}
           {!collapsed && <span className="sidebar-brand-text">{app_name}</span>}
         </div>
 
