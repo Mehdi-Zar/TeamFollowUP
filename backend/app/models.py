@@ -20,6 +20,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
+    LargeBinary,
     Numeric,
     String,
     Table,
@@ -776,3 +777,32 @@ class SteercoEntry(Base):
 
     platform: Mapped["Platform"] = relationship(back_populates="entries")
     updated_by: Mapped["User | None"] = relationship(foreign_keys=[updated_by_user_id])
+
+
+class DataSnapshot(Base):
+    """A point-in-time copy of the business data, taken from the admin screen.
+
+    The rows of every table a reset can erase, serialized to JSON and gzipped into
+    ``payload``. Stored in the database rather than on a volume so it follows the
+    pg_dump backups and survives a container rebuild, which is the whole point of
+    taking one before an import or a reset.
+
+    ``kind`` separates what the scheduler took (``auto``, pruned by retention) from
+    what somebody took on purpose (``manual``, never pruned). See app/snapshots.py.
+    """
+    __tablename__ = "data_snapshots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False, default="manual")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow,
+                                                 nullable=False, index=True)
+    # The author is kept for the listing, and detached (not deleted) when their
+    # account goes: a snapshot outliving its author is still worth restoring.
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # {table: row count} so the listing can say what is inside without unzipping it.
+    row_counts: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    payload: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+
+    created_by: Mapped["User | None"] = relationship(foreign_keys=[created_by_user_id])

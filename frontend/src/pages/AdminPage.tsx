@@ -33,6 +33,7 @@ import { LeavesAdmin, ModulesAdmin, ReportingAdmin, SettingsAdmin } from "./admi
 import { ImportOrgAdmin, ImportSteercoAdmin, PptxTemplateAdmin } from "./admin/imports";
 import { MySquadsAdmin, PersonasAdmin, SquadsAdmin, TribeSelfAdmin, TribesAdmin, UsersAdmin } from "./admin/organisation";
 import { PlatformsAdmin } from "./admin/platforms";
+import { DataAdmin } from "./admin/data";
 import { AuditAdmin, LogExportAdmin, ModerationAdmin, OpsAdmin } from "./admin/oversight";
 
 const TAB_LABEL: Record<string, string> = {
@@ -54,6 +55,7 @@ const TAB_LABEL: Record<string, string> = {
   leaves: "admin.tab.leaves",
   logs: "admin.tab.logs",
   settings: "admin.tab.settings",
+  data: "admin.tab.data",
   audit: "admin.tab.audit",
   ops: "admin.tab.ops",
 };
@@ -63,7 +65,7 @@ const ADMIN_GROUPS: { titleKey: string; items: string[] }[] = [
   { titleKey: "admin.group.org", items: ["tribes", "import", "tribe", "squads", "platforms", "my_squads", "users", "personas"] },
   { titleKey: "admin.group.config", items: ["modules", "report", "leaves", "settings"] },
   { titleKey: "admin.group.access", items: ["auth", "api", "smtp", "trust"] },
-  { titleKey: "admin.group.oversight", items: ["moderation", "logs", "audit", "ops"] },
+  { titleKey: "admin.group.oversight", items: ["moderation", "logs", "data", "audit", "ops"] },
 ];
 
 /**
@@ -147,6 +149,7 @@ export default function AdminPage() {
         {tab === "trust" && <TrustAdmin />}
         {tab === "logs" && <LogExportAdmin />}
         {tab === "settings" && <SettingsAdmin />}
+        {tab === "data" && <DataAdmin />}
         {tab === "audit" && <AuditAdmin />}
         {tab === "ops" && <OpsAdmin />}
       </div>
