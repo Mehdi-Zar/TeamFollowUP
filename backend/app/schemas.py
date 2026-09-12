@@ -51,10 +51,29 @@ class LoginIn(BaseModel):
     password: str
 
 
+class LoginMethodOut(BaseModel):
+    """One way in, as the sign-in page should present it."""
+    key: str
+    enabled: bool
+    label: str = ""
+    hint: str = ""
+    logo: str = ""
+    primary: bool = False
+
+
 class AuthConfig(BaseModel):
-    """Which SSO backends are enabled, so the SPA can show the right login options."""
+    """What the unauthenticated sign-in page needs to draw itself.
+
+    The two ``*_enabled`` flags stay for compatibility; ``methods`` is what the
+    page actually renders, in order, with the wording and logo an administrator
+    chose. ``password_mode`` says whether the local form is shown, folded behind a
+    link, or reserved to whoever holds the secret link.
+    """
     oidc_enabled: bool
     saml_enabled: bool
+    intro: str = ""
+    methods: list[LoginMethodOut] = []
+    password_mode: str = "visible"
 
 
 class UserOut(ORMModel):

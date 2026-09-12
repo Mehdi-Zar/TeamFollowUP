@@ -437,6 +437,8 @@ export function AuthAdmin() {
         </details>
       </div>
 
+      <LoginScreenPanel cfg={cfg} set={set} t={t} copy={copy} copied={copied} />
+
       <div className="card">
         <h3>{t("auth.mappings")}</h3>
         <div className="small muted" style={{ marginBottom: 10 }}>{t("auth.mappings_hint")}</div>
@@ -710,6 +712,160 @@ export function ApiAdmin() {
             ))}
           </tbody>
         </table>
+      )}
+    </div>
+  );
+}
+
+
+/**
+ * Administration > Authentification > Ecran de connexion.
+ *
+ * Ce que la page de connexion propose, dans quel ordre, et comment chaque entree
+ * se lit. Le probleme qu'il resout est concret: une organisation qui se connecte
+ * par son IdP mais dont l'ecran affiche un formulaire email/mot de passe apprend
+ * le mauvais geste a chaque nouvel arrivant, qui reclame ensuite un mot de passe
+ * que personne ne lui donnera.
+ *
+ * Le mot de passe local a trois etats: visible, replie derriere un lien, ou
+ * reserve a qui detient le lien secret. Le masquer releve de la lisibilite, pas
+ * du controle d'acces: le compte de secours doit rester utilisable, et c'est la
+ * limitation par IP qui le protege.
+ */
+function LoginScreenPanel({ cfg, set, t, copy, copied }: {
+  cfg: any; set: (k: string, v: any) => void; t: (k: string, p?: any) => string;
+  copy: (v: string) => void; copied: string | null;
+}) {
+  const methods: any[] = cfg.login_methods ?? [];
+  const mode: string = cfg.password_mode ?? "visible";
+
+  const update = (key: string, patch: any) =>
+    set("login_methods", methods.map((m) => (m.key === key ? { ...m, ...patch } : m)));
+
+  const move = (i: number, delta: number) => {
+    const next = [...methods];
+    const j = i + delta;
+    if (j < 0 || j >= next.length) return;
+    [next[i], next[j]] = [next[j], next[i]];
+    set("login_methods", next.map((m, k) => ({ ...m, order: k })));
+  };
+
+  // Le logo part en data URI dans la configuration: pas de stockage de fichier a
+  // gerer, et il suit les sauvegardes comme le reste du reglage. Plafonne, parce
+  // qu'un PNG de 4 Mo rendrait chaque lecture de la config aussi lourde que lui.
+  const onLogo = (key: string, file?: File) => {
+    if (!file) return;
+    if (file.size > 200 * 1024) { window.alert(t("auth.login_logo_too_big")); return; }
+    const reader = new FileReader();
+    reader.onload = () => update(key, { logo: String(reader.result || "") });
+    reader.readAsDataURL(file);
+  };
+
+  const secretUrl = cfg.password_secret
+    ? `${(cfg.base_url_effective || window.location.origin).replace(/\/$/, "")}/login?k=${cfg.password_secret}`
+    : "";
+
+  return (
+    <div className="card stack" style={{ gap: 12 }}>
+      <div>
+        <h3 style={{ margin: 0 }}>{t("auth.login_title")}</h3>
+        <div className="small muted">{t("auth.login_hint")}</div>
+      </div>
+
+      <div>
+        <label htmlFor="login-intro">{t("auth.login_intro_label")}</label>
+        <input id="login-intro" value={cfg.login_intro ?? ""} placeholder={t("auth.login_intro_ph")}
+               onChange={(e) => set("login_intro", e.target.value)} />
+      </div>
+
+      <table className="table">
+        <thead>
+          <tr>
+            <th style={{ width: 70 }}>{t("auth.login_order")}</th>
+            <th>{t("auth.login_method")}</th>
+            <th style={{ width: 90 }}>{t("auth.login_shown")}</th>
+            <th style={{ width: 90 }}>{t("auth.login_primary")}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {methods.map((m, i) => (
+            <tr key={m.key}>
+              <td>
+                <button className="btn-ghost btn-sm" aria-label={t("auth.login_up")}
+                        disabled={i === 0} onClick={() => move(i, -1)}>↑</button>
+                <button className="btn-ghost btn-sm" aria-label={t("auth.login_down")}
+                        disabled={i === methods.length - 1} onClick={() => move(i, 1)}>↓</button>
+              </td>
+              <td>
+                <div className="strong">{t(`login.${m.key}`)}</div>
+                <div className="row" style={{ gap: 8, marginTop: 4, flexWrap: "wrap" }}>
+                  <input style={{ flex: 1, minWidth: 160 }} placeholder={t("auth.login_label_ph")}
+                         aria-label={t("auth.login_label_ph")} value={m.label ?? ""}
+                         onChange={(e) => update(m.key, { label: e.target.value })} />
+                  <input style={{ flex: 2, minWidth: 200 }} placeholder={t("auth.login_hint_ph")}
+                         aria-label={t("auth.login_hint_ph")} value={m.hint ?? ""}
+                         onChange={(e) => update(m.key, { hint: e.target.value })} />
+                </div>
+                {m.key !== "password" && (
+                  <div className="inline" style={{ gap: 8, marginTop: 6, alignItems: "center" }}>
+                    {m.logo ? <img src={m.logo} alt="" style={{ height: 20 }} /> : null}
+                    <label className="btn-secondary btn-sm" style={{ cursor: "pointer" }}>
+                      {t("auth.login_logo")}
+                      <input type="file" accept="image/*" style={{ display: "none" }}
+                             onChange={(e) => { onLogo(m.key, e.target.files?.[0]); e.target.value = ""; }} />
+                    </label>
+                    {m.logo && (
+                      <button className="btn-ghost btn-sm" onClick={() => update(m.key, { logo: "" })}>
+                        {t("action.delete")}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </td>
+              <td>
+                <input type="checkbox" aria-label={t("auth.login_shown")}
+                       checked={m.enabled !== false}
+                       onChange={(e) => update(m.key, { enabled: e.target.checked })} />
+              </td>
+              <td>
+                <input type="radio" name="login-primary" aria-label={t("auth.login_primary")}
+                       checked={!!m.primary}
+                       onChange={() => set("login_methods", methods.map((x) => ({ ...x, primary: x.key === m.key })))} />
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <div className="stack" style={{ gap: 6 }}>
+        <label htmlFor="pwd-mode">{t("auth.login_password_mode")}</label>
+        <select id="pwd-mode" style={{ maxWidth: 320 }} value={mode}
+                onChange={(e) => set("password_mode", e.target.value)}>
+          <option value="visible">{t("auth.login_mode_visible")}</option>
+          <option value="collapsed">{t("auth.login_mode_collapsed")}</option>
+          <option value="secret">{t("auth.login_mode_secret")}</option>
+        </select>
+        <div className="small muted">{t(`auth.login_mode_${mode}_hint`)}</div>
+      </div>
+
+      {mode === "secret" && (
+        <div className="banner stack" style={{ gap: 6 }}>
+          <div className="strong">{t("auth.login_secret_title")}</div>
+          <div className="small">{t("auth.login_secret_hint")}</div>
+          {secretUrl ? (
+            <div className="inline" style={{ gap: 8, flexWrap: "wrap" }}>
+              <code className="small" style={{ wordBreak: "break-all" }}>{secretUrl}</code>
+              <button className="btn-secondary btn-sm" onClick={() => copy(secretUrl)}>
+                {copied === secretUrl ? t("action.copied") : t("action.copy")}
+              </button>
+              <button className="btn-ghost btn-sm" onClick={() => set("password_secret", "")}>
+                {t("auth.login_secret_renew")}
+              </button>
+            </div>
+          ) : (
+            <div className="small muted">{t("auth.login_secret_pending")}</div>
+          )}
+        </div>
       )}
     </div>
   );

@@ -903,3 +903,24 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); width
 .sc-status-ic { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; font-size: 15px; flex: 0 0 auto; }
 .sc-status.todo .sc-status-ic { background: var(--ice-blue); color: var(--navy); }
 .sc-status.done .sc-status-ic { background: var(--green); color: #fff; }
+
+/* ---- Sign-in screen -------------------------------------------------------
+   One primary way in, the others secondary, and the local form only where the
+   deployment wants it. The logo an administrator uploads sits inside the button
+   so the method is recognised before the label is read. */
+.login-page {
+  min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, #141B47, #1E2761); padding: 16px;
+}
+.login-card { width: 100%; max-width: 380px; }
+.login-method {
+  width: 100%; display: inline-flex; align-items: center; justify-content: center;
+  gap: 10px; text-align: center;
+}
+.login-logo { height: 20px; width: auto; max-width: 90px; object-fit: contain; display: block; }
+/* A labelled rule between the SSO buttons and the credentials form. */
+.login-sep { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 12px; }
+.login-sep::before, .login-sep::after {
+  content: ""; flex: 1; height: 1px; background: var(--line);
+}
+.login-other { width: 100%; margin-top: 12px; }
