@@ -55,16 +55,18 @@ se verifie pas.
 - **Le commentaire du moral** existait en base, partait dans les documents, et
   aucun ecran ne permettait de l'ecrire. Il arrive sur l'etape Moral, la ou la
   question est posee : dans un coin d'entete, un champ de texte n'aurait eu ni la
-  place ni le sens.
+  place ni le sens. Cette etape vient **apres les messages cles** : on dit d'abord
+  ce qui s'est passe, puis comment l'equipe le vit, plutot que de se prononcer
+  avant d'avoir relu sa semaine.
 - **La liste de controle d'avant-envoi** ne s'affichait que dans la fenetre de
   confirmation, c'est a dire au moment ou il est trop tard pour y faire quelque
   chose. Elle est montree aussi sur la derniere etape, ou l'on peut encore revenir
   en arriere.
 
-## 2. Les trois onglets du tableau de bord se pilotent pareil
+## 2. Quatre ecrans de liste, une seule facon de les piloter
 
-L'apercu avait une recherche, un tri visible et une vue liste. Le steerco et les
-initiatives n'avaient rien. Les trois montrent pourtant la meme chose : une
+L'apercu avait une recherche, un tri visible et une vue liste. Le steerco, les
+initiatives et la roadmap n'avaient rien. Les trois montrent pourtant la meme chose : une
 collection d'objets qu'on parcourt. Trois ecrans qui se ressemblent doivent se
 piloter pareil, sinon chacun s'invente sa convention et l'on reapprend a chaque
 onglet.
@@ -74,11 +76,17 @@ un tri en boutons dont le critere actif porte le sens et le retourne au reclic, 
 un choix entre cartes et liste. Le tri, son sens et la densite sont retenus d'une
 visite a l'autre, par ecran, dans le navigateur de celui qui regarde.
 
-| Onglet | Tri | Vue par defaut |
+| Ecran | Tri | Vue par defaut |
 |---|---|---|
 | Apercu | risque, avancement, nom, fraicheur | cartes |
 | Steerco | nom, etat, mise a jour | cartes |
 | Initiatives | intitule, owner, squad, echeance | liste (une initiative se lit en colonnes) |
+| Roadmap | tribu, nom, avancement | la matrice, qui est deja une vue |
+
+La roadmap ajoute ce qui lui manquait le plus : **le choix des squads affichees**.
+A onze squads sur quatre trimestres, la matrice se lit en diagonale et l'on cherche
+la sienne du doigt ; on coche desormais celles qu'on veut voir. Rien de coche veut
+dire toutes, et le bouton le dit.
 
 ### Le steerco se replie
 
