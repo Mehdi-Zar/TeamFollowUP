@@ -907,33 +907,6 @@ class AuditPage(BaseModel):
 
 
 # ---------- Review actions ----------
-class ReviewActionOut(ORMModel):
-    """A review/COPIL action item as returned by the API."""
-    id: int
-    squad_id: int
-    text: str
-    owner: Optional[str] = None
-    due_date: Optional[datetime] = None
-    done: bool
-    created_at: Optional[datetime] = None
-
-
-class ReviewActionCreate(BaseModel):
-    """Fields to record a new review action item."""
-    text: str
-    owner: Optional[str] = None
-    due_date: Optional[datetime] = None
-
-
-class ReviewActionUpdate(BaseModel):
-    """Partial edit of a review action (incl. marking it done)."""
-    text: Optional[str] = None
-    owner: Optional[str] = None
-    due_date: Optional[datetime] = None
-    done: Optional[bool] = None
-
-
-# ---------- Settings ----------
 class SettingsOut(BaseModel):
     """Editable application settings exposed to the admin UI."""
     staleness_threshold_days: int
