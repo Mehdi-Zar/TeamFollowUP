@@ -9,6 +9,7 @@ import { useState } from "react";
 import { api } from "../api";
 import { useI18n } from "../i18n";
 import { KeyMessageKind, SquadDetail } from "../types";
+import { Collapsible } from "./ui";
 
 /** Map a key-message kind to its badge colour class (success/risk/alert). */
 function kmKindClass(k: KeyMessageKind): string {
@@ -51,8 +52,8 @@ export default function KeyMessagesPanel({ squad, canEdit, onChange }:
     api.del(`/api/squads/${squad.id}/key-messages/${id}`).then(onChange).catch(() => {});
 
   return (
-    <div className="card">
-      <h2>{t("km.title")}</h2>
+    <Collapsible title={t("km.title")} defaultOpen
+                 subtitle={t("km.collapsed_hint", { n: squad.key_messages.length })}>
       <div className="small muted" style={{ marginBottom: 8 }}>{t("km.hint")}</div>
       {squad.key_messages.length === 0 && <div className="small muted">{t("km.none")}</div>}
       {squad.key_messages.map((m) => (
@@ -101,6 +102,6 @@ export default function KeyMessagesPanel({ squad, canEdit, onChange }:
           + {t("km.add")}
         </button>
       ))}
-    </div>
+    </Collapsible>
   );
 }

@@ -216,13 +216,13 @@ _DEP_T = {
            "c_jalon": "Jalon", "c_squad": "Squad (tribu)", "c_trim": "Trim.",
            "c_owner": "Owner", "c_status": "Statut",
            "t_tribe": "Tribu", "t_squad": "Squad", "t_text": "Externe",
-           "gcount": "{n} jalon(s)"},
+           "gcount": "{n} jalon(s)", "cross_only": "hors tribu uniquement"},
     "en": {"title": "Milestone dependencies", "suite": " (cont.)",
            "total": "{n} dependency(ies)", "none": "No dependency",
            "c_jalon": "Milestone", "c_squad": "Squad (tribe)", "c_trim": "Qtr",
            "c_owner": "Owner", "c_status": "Status",
            "t_tribe": "Tribe", "t_squad": "Squad", "t_text": "External",
-           "gcount": "{n} milestone(s)"},
+           "gcount": "{n} milestone(s)", "cross_only": "cross-tribe only"},
 }
 
 

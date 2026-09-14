@@ -3,6 +3,7 @@
 // so both stay in sync; always shown, with an explicit empty state.
 import { Initiative } from "../types";
 import { useI18n } from "../i18n";
+import { Collapsible } from "./ui";
 
 /** Read-only Initiatives card (assigned to the squad by the tribe leader). Always
  *  shown - even when empty - so the exact same rendering appears at the top of the
@@ -10,8 +11,8 @@ import { useI18n } from "../i18n";
 export function InitiativesCard({ initiatives }: { initiatives: Initiative[] }) {
   const { t } = useI18n();
   return (
-    <div className="card">
-      <h2>{t("nav.initiatives")}</h2>
+    <Collapsible title={t("nav.initiatives")} defaultOpen
+                 subtitle={t("init.collapsed_hint", { n: initiatives.length })}>
       {initiatives.length === 0 ? (
         <div className="small muted">{t("init.empty")}</div>
       ) : (
@@ -30,6 +31,6 @@ export function InitiativesCard({ initiatives }: { initiatives: Initiative[] }) 
           </tbody>
         </table>
       )}
-    </div>
+    </Collapsible>
   );
 }

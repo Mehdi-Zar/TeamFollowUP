@@ -236,6 +236,34 @@ def test_dependencies_export_endpoints(client, seeded):
     assert ("Dépendances des jalons" in h.text) or ("Milestone dependencies" in h.text)
 
 
+def test_the_dependencies_export_shows_dependencies_inside_a_tribe(client, seeded):
+    """Le menu d'export ne demande pas de mode, donc c'est le defaut qui decide.
+
+    Il valait « hors tribu uniquement », et une installation d'une seule tribu n'a
+    par construction aucune dependance inter-tribu: le document s'ouvrait sur
+    « Aucune dependance » alors que les jalons en portaient. Un document qui dit
+    « aucune » est pire qu'un document vide, il repond a la question."""
+    from app.models import RoadmapItem
+    year = st.current_year_quarter()[0]
+    login(client, seeded["admin"])
+    r = client.post("/api/roadmap-items", json={
+        "squad_id": seeded["squad_a"], "year": year, "quarter": 1, "theme": "Socle",
+        "title": "Attend le socle de B", "release_stage": "GA", "status": "at_risk",
+        "dependency_kind": "squad", "dependency_squad_id": seeded["squad_b"]})
+    assert r.status_code == 201, r.text
+
+    h = client.get("/api/reports/dependencies.html")
+    assert h.status_code == 200
+    assert "Attend le socle de B" in h.text
+    assert "Aucune dépendance" not in h.text
+
+    # Le mode reste disponible, et un document filtre doit dire qu'il l'est.
+    f = client.get("/api/reports/dependencies.html?mode=cross_tribe")
+    assert f.status_code == 200
+    assert "Attend le socle de B" not in f.text
+    assert "hors tribu uniquement" in f.text
+
+
 # ---- config sanitization -------------------------------------------------------
 
 def test_report_config_sanitizes(db, seeded):

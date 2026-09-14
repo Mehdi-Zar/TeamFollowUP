@@ -1413,10 +1413,16 @@ def send_personal_subscriptions(db: Session, now: datetime | None = None) -> int
 
 def build_dependencies_data(db: Session, scope_tribe: int | None, year: int | None = None,
                             squad_ids: list[int] | None = None, viewer=None,
-                            lang: str | None = None, mode: str = "cross_tribe") -> dict:
+                            lang: str | None = None, mode: str = "all") -> dict:
     """Collect the jalons that carry a dependency, grouped by the entity they wait
-    on. mode='cross_tribe' keeps only dependencies that point outside the source
-    squad's tribe; mode='all' keeps every dependency (incl. same-tribe + free text)."""
+    on. mode='all' (what the export menu asks for) keeps every dependency;
+    mode='cross_tribe' keeps only those pointing outside the source squad's tribe.
+
+    Le document partait en ``cross_tribe``, et une installation d'une seule tribu
+    n'a par construction aucune dependance inter-tribu: l'export s'ouvrait donc sur
+    « Aucune dependance » alors que les jalons en portaient. Un document qui dit
+    « aucune » est pire qu'un document vide, il repond a la question.
+    """
     from .models import RoadmapItem  # noqa: F401  (ensures mapper import)
     now = utcnow()
     cfg = get_general(db)
@@ -1496,9 +1502,12 @@ def render_dependencies_html(data: dict, *, standalone: bool = True) -> str:
     e = html.escape
     lang = _lang(data.get("lang", "fr"))
     T = _DEP_T[lang]
+    # Un document filtre doit dire qu'il l'est, sinon il se lit comme complet et
+    # son « aucune dependance » repond a une question qu'on n'a pas posee.
+    filt = f', {T["cross_only"]}' if data.get("mode") == "cross_tribe" else ""
     parts = [f'<div class="hdr"><h1>{e(T["title"])} - {e(data["scope_name"])}</h1>',
              f'<div class="sub">{e(rt(lang, "year"))} {data["year"]}, '
-             f'{e(T["total"].format(n=data["total"]))}</div></div>']
+             f'{e(T["total"].format(n=data["total"]))}{e(filt)}</div></div>']
     if data["total"] == 0:
         parts.append(f'<div class="muted small">{e(T["none"])}</div>')
     for g in data["groups"]:
