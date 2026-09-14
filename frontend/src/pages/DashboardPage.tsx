@@ -295,15 +295,34 @@ function Card({ card, showTribe }: { card: SquadCard; showTribe?: boolean }) {
   const h = healthOf(card);
   const sClass = h === "blocked" ? "s-red" : h === "at_risk" ? "s-orange" : "s-green";
   const statusDot = h === "blocked" ? "red" : h === "at_risk" ? "amber" : "green";
-  // Simplified card: identity + annual progress + a one-line health readout.
-  // The full quarter-by-quarter breakdown lives on the squad detail page.
+  // La carte se plie, comme l'equipe et l'historique sur la page d'une squad, et
+  // par le meme geste: on clique l'en-tete, le chevron tourne. Elle s'ouvre par
+  // defaut, a la difference de celles-la: un tableau de bord dont toutes les
+  // cartes seraient fermees ne montrerait plus rien de ce qu'on vient y voir.
+  //
+  // Ce qui reste visible plie est ce qui se lit de loin: le point de statut, le
+  // nom, le moral. Ce qui se plie est le detail, avancement et compte de jalons.
+  const [open, setOpen] = useState(true);
+  const toggle = () => setOpen((o) => !o);
   return (
-    <button className={`squad-card ${sClass}`} onClick={() => navigate(`/squads/${card.squad_id}`)}>
-      <div className="between" style={{ alignItems: "flex-start" }}>
+    <div className={`squad-card ${sClass}`}>
+      <div className="between collapsible-head" role="button" tabIndex={0} aria-expanded={open}
+           style={{ alignItems: "flex-start", cursor: "pointer", gap: 10 }}
+           onClick={toggle}
+           onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } }}>
         <div className="inline" style={{ gap: 8, alignItems: "flex-start" }}>
+          <span className="collapsible-caret"
+                style={{ transition: "transform .15s", transform: open ? "rotate(90deg)" : "none",
+                         color: "var(--accent)", lineHeight: 1.4 }}>▸</span>
           <Dot status={statusDot} />
           <div>
-            <div className="strong sc-name" style={{ color: "var(--navy)" }}>{card.name}</div>
+            {/* Le nom ouvre la squad. C'etait toute la carte auparavant, mais une
+                carte qui se plie ne peut pas aussi naviguer d'un seul clic: il
+                fallait choisir ou porter chacun des deux gestes. */}
+            <button className="sc-open strong sc-name" style={{ color: "var(--navy)" }}
+                    onClick={(e) => { e.stopPropagation(); navigate(`/squads/${card.squad_id}`); }}>
+              {card.name}
+            </button>
             <div className="muted small" style={{ marginTop: 2 }}>
               {card.leader?.display_name || t("card.no_leader")}, {card.members_count} {t("card.members")}
             </div>
@@ -311,32 +330,37 @@ function Card({ card, showTribe }: { card: SquadCard; showTribe?: boolean }) {
         </div>
         <span className="inline" style={{ gap: 6, alignItems: "center" }}>
           {/* Le moral, en tete de carte: c'est la seule donnee de cette grille
-              qu'aucun calcul ne produit, et celle qui explique souvent les autres. */}
+              qu'aucun calcul ne produit, et celle qui explique souvent les autres.
+              Il reste visible carte pliee, pour la meme raison. */}
           <MoodBadge mood={card.mood} moodAt={card.mood_at} />
           {showTribe && card.tribe_name && <span className="badge badge-navy">{card.tribe_name}</span>}
         </span>
       </div>
 
-      {/* Annual progress */}
-      <div style={{ marginTop: 12 }}>
-        <div className="between" style={{ marginBottom: 4 }}>
-          <span className="small strong" style={{ color: "var(--navy)" }}>{t("dash.annual")}</span>
-          <span className="small muted">{card.annual_progress}%</span>
-        </div>
-        <ProgressBar pct={card.annual_progress} />
-      </div>
+      {open && (
+        <>
+          {/* Annual progress */}
+          <div style={{ marginTop: 12 }}>
+            <div className="between" style={{ marginBottom: 4 }}>
+              <span className="small strong" style={{ color: "var(--navy)" }}>{t("dash.annual")}</span>
+              <span className="small muted">{card.annual_progress}%</span>
+            </div>
+            <ProgressBar pct={card.annual_progress} />
+          </div>
 
-      {/* One-line health readout */}
-      <div className="between" style={{ marginTop: 12, gap: 8, flexWrap: "wrap" }}>
-        <span className="inline" style={{ gap: 8 }}>
-          {card.blocked_count > 0 && <span className="badge badge-red">{card.blocked_count} {t("card.blocked")}</span>}
-          {card.at_risk_count > 0 && <span className="badge badge-orange">{card.at_risk_count} {t("card.atrisk")}</span>}
-          {card.blocked_count === 0 && card.at_risk_count === 0 && (
-            <span className="small muted">{roadmap("on_track")}</span>
-          )}
-        </span>
-        <FreshnessBadge freshness={card.freshness} />
-      </div>
-    </button>
+          {/* One-line health readout */}
+          <div className="between" style={{ marginTop: 12, gap: 8, flexWrap: "wrap" }}>
+            <span className="inline" style={{ gap: 8 }}>
+              {card.blocked_count > 0 && <span className="badge badge-red">{card.blocked_count} {t("card.blocked")}</span>}
+              {card.at_risk_count > 0 && <span className="badge badge-orange">{card.at_risk_count} {t("card.atrisk")}</span>}
+              {card.blocked_count === 0 && card.at_risk_count === 0 && (
+                <span className="small muted">{roadmap("on_track")}</span>
+              )}
+            </span>
+            <FreshnessBadge freshness={card.freshness} />
+          </div>
+        </>
+      )}
+    </div>
   );
 }

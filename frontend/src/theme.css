@@ -186,7 +186,6 @@ tr:last-child td { border-bottom: none; }
   border-radius: var(--radius);
   box-shadow: var(--shadow);
   padding: 20px;
-  cursor: pointer;
   transition: transform .12s, box-shadow .12s;
   text-align: left;
   width: 100%;
@@ -198,6 +197,14 @@ tr:last-child td { border-bottom: none; }
   transform: translateY(-2px);
   box-shadow: 0 4px 10px rgba(20,27,71,.12), 0 10px 24px rgba(20,27,71,.10);
 }
+/* Le nom d'une squad, sur sa carte du tableau de bord: il ouvre la squad, la
+   carte se contentant de se plier. Bouton nu, parce que la regle generale des
+   boutons (fond navy, texte blanc) donnerait un pave au milieu d'une carte. */
+.sc-open {
+  background: none; border: 0; padding: 0; text-align: left;
+  font: inherit; cursor: pointer;
+}
+.sc-open:hover { text-decoration: underline; }
 .squad-grid-2 { display: grid; gap: 20px; grid-template-columns: repeat(auto-fill, minmax(440px, 1fr)); }
 .squad-card-lg { padding: 24px; }
 .squad-card-lg .sc-name { font-size: 21px; }
@@ -996,7 +1003,10 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); width
 /* Le parcours de reporting: une barre d'etapes, puis l'etape courante.
    La barre remplace une bande decorative qui annoncait la meme demarche sans
    permettre de la suivre: elle mene quelque part, et elle dit ce qui est fait. */
-.step-rail { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
+.step-rail {
+  display: flex; align-items: center; gap: 6px;
+  overflow-x: auto; padding: 0 0 4px; margin: 0; list-style: none;
+}
 .step-chip {
   display: flex; align-items: center; gap: 10px; flex: 0 0 auto;
   background: #fff; color: var(--text); border: 1px solid var(--line);
@@ -1004,20 +1014,38 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); width
 }
 .step-chip:hover { border-color: var(--accent); }
 .step-chip.on { border-color: var(--navy); box-shadow: 0 0 0 3px rgba(30, 39, 97, .08); }
-/* L'icone d'une etape ne porte qu'un etat: courante, faite, ou a venir. Une
+/* Le chevron entre deux etapes. Des cartes posees cote a cote se lisent comme un
+   menu, ou l'on choisit; une suite flechee se lit comme un parcours, ou l'on
+   avance. Purement decoratif, donc masque aux lecteurs d'ecran: la liste
+   numerotee leur dit deja la meme chose. */
+.step-arrow {
+  flex: 0 0 auto; color: var(--grey);
+  font-size: 20px; line-height: 1; user-select: none;
+}
+/* Le rang de l'etape, ou son coche quand elle est remplie. Il porte aussi l'etat:
+   encre pour l'etape courante, vert pour ce qui est fait, gris pour la suite. Une
    couleur par etape aurait decore sans rien dire, et aurait affaibli celles qui
    disent quelque chose (un jalon bloque, un engagement en retard). */
-.step-ico {
+.step-num {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 30px; height: 30px; border-radius: 9px; flex: 0 0 auto;
+  width: 28px; height: 28px; border-radius: 50%; flex: 0 0 auto;
   background: var(--ice-soft); color: var(--grey);
+  font-size: 13px; font-weight: 800; font-variant-numeric: tabular-nums;
 }
-.step-ico.on { background: var(--navy); color: #fff; }
-.step-ico.done { background: var(--ice-soft); color: var(--green); }
+.step-num.on { background: var(--navy); color: #fff; }
+.step-num.done { background: var(--ice-soft); color: var(--green); }
 .step-body { display: flex; flex-direction: column; gap: 1px; }
 .step-title { font-size: 13px; font-weight: 700; color: var(--navy); }
 .step-state { font-size: 11px; color: var(--grey); }
-.step-check { color: var(--green); font-weight: 800; }
+/* Le rang, repete en tete du panneau: on doit pouvoir dire ou l'on est sans
+   remonter les yeux jusqu'a la barre. */
+.step-panel-num {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; border-radius: 50%; margin-right: 10px;
+  background: var(--navy); color: #fff;
+  font-size: 14px; font-weight: 800; font-variant-numeric: tabular-nums;
+  vertical-align: middle;
+}
 .step-panel {
   background: #fff; border-radius: var(--radius); box-shadow: var(--shadow); padding: 20px;
 }

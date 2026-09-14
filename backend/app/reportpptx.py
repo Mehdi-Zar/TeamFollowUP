@@ -345,27 +345,35 @@ def render_pptx(data: dict) -> bytes:
         card(s, Inches(0.4), Inches(1.22), Inches(12.53), Inches(4.76),
              rt(lang, "h_timeline", year=data["year"]))
 
+        # Un trimestre, son avancement, sa barre. Rien d'autre: le commentaire du
+        # trimestre s'inserait entre l'en-tete et la bande des mois, ou il coupait
+        # la lecture de l'axe juste la ou elle commence. Il reste dans l'ecran et
+        # dans le rapport HTML, qui n'ont pas de hauteur a tenir.
         quarters = {qd["q"]: qd for qd in det.get("quarters") or []}
         qy = 1.62
         for i, q in enumerate((1, 2, 3, 4)):
-            qd = quarters.get(q) or {"pct": 0, "comment": None}
+            qd = quarters.get(q) or {"pct": 0}
             pct = max(0, min(100, int(qd.get("pct") or 0)))
             x = AX0 + i * QW
-            qc = rrect(s, Inches(x), Inches(qy), Inches(QW - 0.06), Inches(0.52),
+            qc = rrect(s, Inches(x), Inches(qy), Inches(QW - 0.06), Inches(0.44),
                        rgb("#E8F0FE"), line=B["line"], radius=0.08)
             place(qc, [(f'Q{q}    {pct} %', 12, B["navy"], True, PP_ALIGN.LEFT, 0)],
-                  anchor=MSO_ANCHOR.TOP, ml=0.08, mt=0.05, mr=0.08)
-            pbar(s, Inches(x + 0.08), Inches(qy + 0.26), Inches(QW - 0.22), pct, B["accent"])
-            if qd.get("comment"):
-                textbox(s, Inches(x + 0.08), Inches(qy + 0.39), Inches(QW - 0.22), Inches(0.13),
-                        qd["comment"][:60], 7.5, color=B["muted"])
+                  anchor=MSO_ANCHOR.TOP, ml=0.08, mt=0.04, mr=0.08)
+            pbar(s, Inches(x + 0.08), Inches(qy + 0.25), Inches(QW - 0.22), pct, B["accent"])
 
-        # Les mois, qui donnent la resolution de l'axe.
+        # Les mois, qui donnent la resolution de l'axe. Sur une bande, et non sur
+        # le blanc de la carte: douze mots poses dans le vide ne forment pas une
+        # regle, et c'est une regle qu'on cherche quand on suit une date. Un mois
+        # sur deux est legerement plus fonce, pour que l'oeil compte les colonnes
+        # sans avoir a lire les noms.
         months = _MONTHS[_lang(lang)]
+        rect(s, Inches(AX0), Inches(2.10), Inches(AX1 - AX0), Inches(0.24), rgb("#EEF2F7"))
         for i, m in enumerate(months):
-            textbox(s, Inches(AX0 + i * MW), Inches(2.15), Inches(MW), Inches(0.18), m, 9,
-                    color=B["muted"], align=PP_ALIGN.CENTER)
-        rect(s, Inches(LBL_X), Inches(2.35), Inches(AX1 - LBL_X), Inches(0.012), B["line"])
+            if i % 2:
+                rect(s, Inches(AX0 + i * MW), Inches(2.10), Inches(MW), Inches(0.24), rgb("#E3E9F2"))
+            textbox(s, Inches(AX0 + i * MW), Inches(2.155), Inches(MW), Inches(0.18), m, 9,
+                    color=B["ink"], align=PP_ALIGN.CENTER)
+        rect(s, Inches(LBL_X), Inches(2.34), Inches(AX1 - LBL_X), Inches(0.012), B["line"])
 
         # ----- les engagements OTD, poses a leur date -----
         textbox(s, Inches(LBL_X), Inches(2.42), Inches(LBL_W), Inches(0.2),
