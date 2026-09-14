@@ -82,8 +82,8 @@ def test_the_rendered_weekly_report_carries_neither_character(db, rich, lang):
 
 
 def test_the_single_squad_export_too(db, rich):
-    """A squad-scoped export uses its own slide builder, with its own budget,
-    initiative and objective lines. Nothing reached it before this test."""
+    """A squad-scoped export drops the summary page and keeps the squad slides,
+    with their own budget, initiative and milestone lines."""
     squad_id, viewer = rich
     data = report_mod.build_report_data(db, None, YEAR, 7, squad_id=squad_id, viewer=viewer)
     assert data["squad_scoped"] is True
@@ -91,7 +91,9 @@ def test_the_single_squad_export_too(db, rich):
 
     deck = _deck_text(report_mod.render_pptx(data))
     _assert_clean(deck, "the single-squad PPTX")
-    assert "(Alice Martin, échéance 2026-06-30)" in deck   # metadata, comma inside parentheses
+    # L'owner et l'echeance ont quitte les parentheses pour la ligne sous le nom
+    # de l'initiative, ce qui ne les autorise pas a disparaitre.
+    assert "Alice Martin, échéance 2026-06-30" in deck
     assert "(80%)" in deck and "(125%)" in deck            # percentage after its amount
 
 

@@ -47,6 +47,16 @@ _RT = {
         "h_jalon": "Jalon", "h_stage": "Phase", "h_otd": "OTD (engagements de livraison)",
         "no_otd": "Aucun OTD", "otd_commit": "engagé",
         "h_otd_section": "OTD", "h_freshness_ok": "Données à jour",
+        # --- Frise annuelle (trimestres + engagements OTD + initiatives/jalons) ---
+        "h_timeline": "Frise {year}", "tl_hint": "Les engagements OTD sur l'axe, puis les jalons de chaque initiative",
+        "tl_orphans": "Jalons hors initiative", "tl_empty": "Aucune initiative, aucun jalon",
+        "tl_jalons_n": "{n} jalon(s)", "tl_deadline": "échéance {d}",
+        "tl_no_date": "Engagements sans date",
+        "otd_on_track": "À l'heure", "otd_at_risk": "À risque", "otd_late": "En retard",
+        "otd_delivered": "Livré",
+        # --- Moral de l'equipe ---
+        "h_mood": "Moral de l'équipe", "mood_good": "Ça va bien", "mood_mixed": "Moyen",
+        "mood_bad": "Ça ne va pas", "mood_none": "Non renseigné", "mood_at": "déclaré le {d}",
         "h_key_messages": "Messages clés", "no_key_message": "Aucun message clé",
         "km_success": "Succès", "km_alert": "Alerte", "km_risk": "Risque",
         "h_budget": "Budget", "no_budget": "Budget non renseigné",
@@ -93,6 +103,16 @@ _RT = {
         "h_jalon": "Milestone", "h_stage": "Stage", "h_otd": "OTD (delivery commitments)",
         "no_otd": "No OTD", "otd_commit": "committed",
         "h_otd_section": "OTD", "h_freshness_ok": "Up to date",
+        # --- Annual timeline (quarters + OTD commitments + initiatives/milestones) ---
+        "h_timeline": "Timeline {year}", "tl_hint": "OTD commitments on the axis, then each initiative's milestones",
+        "tl_orphans": "Milestones with no initiative", "tl_empty": "No initiative, no milestone",
+        "tl_jalons_n": "{n} milestone(s)", "tl_deadline": "due {d}",
+        "tl_no_date": "Commitments with no date",
+        "otd_on_track": "On time", "otd_at_risk": "At risk", "otd_late": "Late",
+        "otd_delivered": "Delivered",
+        # --- Team mood ---
+        "h_mood": "Team mood", "mood_good": "Good", "mood_mixed": "Mixed",
+        "mood_bad": "Not good", "mood_none": "Not declared", "mood_at": "declared on {d}",
         "h_key_messages": "Key messages", "no_key_message": "No key message",
         "km_success": "Success", "km_alert": "Alert", "km_risk": "Risk",
         "h_budget": "Budget", "no_budget": "Budget not set",
@@ -211,3 +231,92 @@ _MONTHS = {
     "fr": ["Janv", "Févr", "Mars", "Avr", "Mai", "Juin", "Juil", "Août", "Sept", "Oct", "Nov", "Déc"],
     "en": ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],
 }
+
+
+# =============================================================================
+# La frise annuelle, partagee par les trois exports (HTML, JPG, PPTX).
+#
+# Les initiatives, les engagements OTD et les jalons repondaient a la meme
+# question, "ou en est l'annee", dans trois blocs separes. Ici ils sont ramenes
+# sur un seul axe: le temps est la seule chose qu'ils ont en commun, et c'est ce
+# qui permet de les lire d'un regard.
+#
+# Le regroupement ne cree aucune donnee: le chainage existe deja en base, une
+# initiative porte des objectifs et un objectif porte des jalons. Cette fonction
+# se contente de le suivre.
+# =============================================================================
+
+# Les trois niveaux du moral, et le visage qui les porte. Fermes: un quatrieme
+# niveau arriverait par l'API et aucun export ne saurait l'afficher.
+MOOD_EMOJI = {"good": "\U0001F600", "mixed": "\U0001F610", "bad": "\U0001F641"}
+MOOD_COLOR = {"good": "green", "mixed": "amber", "bad": "red"}
+
+
+def mood_label(mood: str | None, lang: str) -> str:
+    """Libelle du moral declare, ou « non renseigne » quand il ne l'est pas."""
+    return rt(lang, f"mood_{mood}") if mood in MOOD_EMOJI else rt(lang, "mood_none")
+
+
+def timeline_rows(det: dict, lang: str) -> list[dict]:
+    """Une ligne par initiative, portant les jalons qui la servent.
+
+    Le chemin passe par l'objectif: un jalon repond a un objectif de squad, qui
+    sert une initiative de tribu. Les jalons qui ne repondent a rien, et ceux qui
+    servent une initiative portee par une autre squad, se retrouvent dans une
+    ligne « hors initiative » plutot que de disparaitre de la frise: un jalon
+    absent d'un export se lit comme un jalon qui n'existe pas.
+    """
+    obj_to_init = {o["id"]: o.get("initiative_id") for o in det.get("objectives") or []}
+    groups: dict[object, list[dict]] = {}
+    for qd in det.get("quarters") or []:
+        for it in qd.get("items") or []:
+            key = obj_to_init.get(it.get("objective_id")) or "none"
+            groups.setdefault(key, []).append(dict(it, quarter=qd["q"]))
+
+    rows: list[dict] = []
+    known = set()
+    for ini in det.get("initiatives") or []:
+        known.add(ini["id"])
+        rows.append({"key": ini["id"], "title": ini["title"], "owner": ini.get("owner"),
+                     "deadline": ini.get("deadline"), "items": groups.get(ini["id"], [])})
+    orphans = [it for key, items in groups.items() if key not in known for it in items]
+    if orphans:
+        rows.append({"key": "none", "title": rt(lang, "tl_orphans"), "owner": None,
+                     "deadline": None, "items": orphans})
+    return rows
+
+
+def pack_otds(otds: list[dict], *, chars_per_month: float, min_span: int = 2,
+              max_span: int = 6, max_rows: int | None = None):
+    """Range les engagements dates en bandes qui ne se chevauchent pas.
+
+    La largeur d'un engagement suit la longueur de son titre, exprimee en mois:
+    ``chars_per_month`` dit combien de caracteres tiennent dans une case, ce qui
+    n'est pas la meme chose en HTML et sur une slide. Le bord gauche reste sur la
+    date, qui est ce que la frise raconte; seule la largeur s'adapte.
+
+    Rend (places, caches): places est une liste de (engagement, mois, largeur,
+    bande), et caches compte ceux qui n'ont pas trouve de bande quand leur nombre
+    est limite (la hauteur d'une slide, elle, ne s'etire pas).
+    """
+    placed: list[tuple[dict, int, int, int]] = []
+    bands: list[list[tuple[int, int]]] = []
+    hidden = 0
+    for o in sorted((x for x in otds if x.get("month") is not None), key=lambda x: x["month"]):
+        start = o["month"]
+        need = -(-len(o.get("title") or "") // max(1, int(chars_per_month)))  # arrondi au mois superieur
+        width = max(1, min(max(min_span, min(max_span, need)), 12 - start))
+        end = start + width
+        row = 0
+        while True:
+            if max_rows is not None and row >= max_rows:
+                hidden += 1
+                break
+            if row == len(bands):
+                bands.append([])
+            if all(end <= a or start >= b for a, b in bands[row]):
+                bands[row].append((start, end))
+                placed.append((o, start, width, row))
+                break
+            row += 1
+    return placed, hidden

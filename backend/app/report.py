@@ -20,8 +20,9 @@ from .models import Squad, Tribe, utcnow
 from .serializers import annual_progress, budget_out, dependency_label
 
 # Shared with the PPTX renderers; see reportcommon.
-from .reportcommon import (STAGE_COLOR, _DEP_T, _INIT_T, _MONTHS, _lang,  # noqa: F401
-                           _status_label, _status_rag, group_by_theme, rt)
+from .reportcommon import (MOOD_EMOJI, STAGE_COLOR, _DEP_T, _INIT_T, _MONTHS, _lang,  # noqa: F401
+                           _status_label, _status_rag, group_by_theme, mood_label,
+                           pack_otds, rt, timeline_rows)
 # Re-exported so `from .report import render_pptx` keeps working; the decks
 # themselves live in reportpptx.
 from .reportpptx import (_pptx_toolkit, render_dependencies_pptx,  # noqa: F401
@@ -148,7 +149,7 @@ def build_report_data(db: Session, scope_tribe: int | None, year: int | None = N
         squads.append(s)
 
     # Initiatives assigned to each squad (shown in that squad's report/dashboard).
-    from .models import Initiative
+    from .models import Initiative, Otd
     init_by_squad: dict[int, list[dict]] = {}
     sq_ids = [s.id for s in squads]
     if sq_ids:
@@ -157,8 +158,40 @@ def build_report_data(db: Session, scope_tribe: int | None, year: int | None = N
             .order_by(Initiative.display_order, Initiative.id)).all()
         for it in irows:
             init_by_squad.setdefault(it.squad_id, []).append({
-                "title": it.title, "owner": it.owner,
+                "id": it.id, "title": it.title, "owner": it.owner,
                 "deadline": it.deadline.date().isoformat() if it.deadline else None})
+
+    # Les engagements OTD vivent au niveau de la tribu, pas de la squad: on les
+    # charge une fois pour toutes les tribus concernees, puis chaque squad garde
+    # les siens. Meme regle que la page d'une squad (engages sur son responsable,
+    # ou couvrant l'un de ses jalons), pour que les deux ne racontent pas deux
+    # histoires.
+    otd_rows = []
+    tribe_ids = {s.tribe_id for s in squads}
+    if tribe_ids:
+        otd_rows = db.scalars(
+            select(Otd).where(Otd.year == year, Otd.tribe_id.in_(tribe_ids))
+            .options(selectinload(Otd.roadmap_items), selectinload(Otd.owner))
+            .order_by(Otd.display_order, Otd.id)).all()
+
+    def _otds_of(sq) -> list[dict]:
+        out = []
+        for o in otd_rows:
+            if o.tribe_id != sq.tribe_id:
+                continue
+            if not (o.owner_user_id and o.owner_user_id == sq.leader_user_id) and                not any(j.squad_id == sq.id for j in o.roadmap_items):
+                continue
+            d = _aware(o.committed_date)
+            out.append({
+                "id": o.id, "title": o.title,
+                "date": d.date().isoformat() if d else None,
+                # Le rang du mois est ce qui pose l'engagement sur l'axe; une date
+                # d'une autre annee n'a pas de place sur cette frise.
+                "month": (d.month - 1) if d is not None and d.year == year else None,
+                "status": st.otd_status(o.roadmap_items, o.committed_date, now),
+                "owner": o.owner.display_name if o.owner else None,
+            })
+        return out
 
     by_tribe: dict[int | None, list[dict]] = {}
     totals = {"squads": 0, "blocked": 0, "at_risk": 0, "objectives_red": 0,
@@ -173,19 +206,24 @@ def build_report_data(db: Session, scope_tribe: int | None, year: int | None = N
         # Full per-squad content (objectives + roadmap by quarter + advancement),
         # so the report/PPTX can show everything, not just the dashboard summary.
         detail = {
+            "year": year,
             "initiatives": init_by_squad.get(s.id, []),
             "objectives": [
-                {"title": o.title,
+                {"id": o.id, "title": o.title,
                  "rag": st.objective_status(o, s, now),
+                 # Le maillon qui rattache un jalon a une initiative sur la frise.
+                 "initiative_id": o.initiative_id,
                  "target_date": o.target_date.date().isoformat() if o.target_date else None}
                 for o in sorted(s.objectives, key=lambda x: x.id)
                 if o.year == year and o.is_active
             ],
+            "otds": _otds_of(s),
             "quarters": [
                 {"q": q, "pct": prog[q], "comment": comments.get(q),
                  "items": [
-                     {"title": r.title, "status": r.status, "owner": r.owner,
+                     {"id": r.id, "title": r.title, "status": r.status, "owner": r.owner,
                       "stage": r.release_stage, "theme": r.theme,
+                      "objective_id": r.objective_id,
                       "dependency": dependency_label(r)}
                      for r in sorted(s.roadmap_items, key=lambda x: (x.display_order, x.id))
                      if r.year == year and r.quarter == q
@@ -208,6 +246,11 @@ def build_report_data(db: Session, scope_tribe: int | None, year: int | None = N
             "leader": s.leader.display_name if s.leader else "",
             "status": st.squad_status(s, year),
             "status_rag": _status_rag(st.squad_status(s, year)),
+            # Le moral declare par la squad: la seule donnee du rapport qu'aucun
+            # calcul ne produit, et celle qui explique souvent les autres.
+            "mood": s.mood,
+            "mood_at": _aware(s.mood_at).date().isoformat() if s.mood_at else None,
+            "mood_comment": s.mood_comment,
             "quarters": {q: prog[q] for q in (1, 2, 3, 4)},
             "annual_pct": ann,
             "blocked": c["roadmap_blocked"],
@@ -347,58 +390,19 @@ def _delta_html(delta: int) -> str:
 
 
 def _squad_detail_parts(r: dict, lang: str, e, *, with_title: bool = True) -> list[str]:
-    """One squad's detail block, in the exact order of the squad page:
-    Initiatives → OTD → Roadmap → Key messages → Budget."""
+    """One squad's detail block, in the order of the squad page: the annual
+    timeline (quarters, OTD commitments, initiatives and their milestones), then
+    key messages and budget."""
     det = r.get("detail") or {}
     parts: list[str] = ['<div class="sq-detail">']
     if with_title:
-        parts.append(f'<h3>{e(r["name"])} <span class="muted">({r["annual_pct"]}%)</span></h3>')
+        parts.append(f'<h3>{e(r["name"])} <span class="muted">({r["annual_pct"]}%)</span> '
+                     f'{_mood_html(r, lang, e)}</h3>')
 
-    # Initiatives
-    inits = det.get("initiatives") or []
-    if inits:
-        parts.append(f'<div class="d-sub">{e(rt(lang, "h_initiatives"))}</div><ul class="d-obj">')
-        for ini in inits:
-            meta = []
-            if ini.get("owner"):
-                meta.append(e(ini["owner"]))
-            if ini.get("deadline"):
-                meta.append(f'{e(rt(lang, "deadline"))} {e(ini["deadline"])}')
-            tail = f' <span class="muted">({e(", ".join(meta))})</span>' if meta else ""
-            parts.append(f'<li>{e(ini["title"])}{tail}</li>')
-        parts.append('</ul>')
-
-    # OTD (annual objectives)
-    parts.append(f'<div class="d-sub">{e(rt(lang, "h_otd_section"))}</div>')
-    if det.get("objectives"):
-        parts.append('<ul class="d-obj">')
-        for o in det["objectives"]:
-            rag = _status_rag(o["rag"])
-            dl = f', {e(rt(lang, "deadline"))} {e(o["target_date"])}' if o.get("target_date") else ""
-            parts.append(f'<li><span class="dot" style="background:{RAG_COLOR[rag]}"></span>'
-                         f'{e(o["title"])} <span class="muted">({e(_status_label(o["rag"], lang))}{dl})</span></li>')
-        parts.append('</ul>')
-    else:
-        parts.append(f'<div class="muted small">{e(rt(lang, "no_obj"))}</div>')
-
-    # Roadmap by quarter
-    parts.append(f'<div class="d-sub">{e(rt(lang, "h_roadmap"))}</div><div class="d-quarters">')
-    for qd in det.get("quarters", []):
-        parts.append(f'<div class="d-q"><div class="d-q-head">Q{qd["q"]} '
-                     f'<span class="muted">{qd["pct"]}%</span></div>')
-        if qd["items"]:
-            parts.append('<ul>')
-            for it in qd["items"]:
-                rag = _status_rag(it["status"])
-                stage = f' <strong>({e(it["stage"])})</strong>' if it.get("stage") else ""
-                dep = f' <span class="muted">({e(rt(lang, "dep"))} {e(it["dependency"])})</span>' if it.get("dependency") else ""
-                parts.append(f'<li><span class="dot" style="background:{RAG_COLOR[rag]}"></span>'
-                             f'{e(it["title"])}{stage}{dep}</li>')
-            parts.append('</ul>')
-        else:
-            parts.append(f'<div class="muted small">{e(rt(lang, "no_jalon"))}</div>')
-        parts.append('</div>')
-    parts.append('</div>')  # .d-quarters
+    # La frise: les trimestres, les engagements OTD poses a leur date, puis une
+    # ligne par initiative avec les jalons qui la servent. Un seul bloc la ou il y
+    # en avait trois, parce qu'ils repondaient tous a la meme question.
+    parts.append(_timeline_html(det, lang, e, det.get("year") or 0))
 
     # Key messages
     kms = det.get("key_messages") or []
@@ -445,9 +449,6 @@ def _squad_detail_parts(r: dict, lang: str, e, *, with_title: bool = True) -> li
 _STATIC_ASSETS = os.path.join(os.path.dirname(__file__), "static", "assets")
 
 
-_DOT_CLASS = {"green": "dot-green", "amber": "dot-orange", "red": "dot-red", "grey": "dot-grey"}
-
-
 _KM_BADGE = {"success": "badge-green", "alert": "badge-orange", "risk": "badge-red"}
 
 
@@ -468,65 +469,14 @@ def _app_css() -> str:
     return _CSS
 
 
-def _dot(rag: str) -> str:
-    """Small coloured status dot using the application's own CSS classes."""
-    return f'<span class="dot {_DOT_CLASS.get(rag, "dot-green")}"></span>'
-
-
 def _squad_app_cards(det: dict, lang: str, e, year: int) -> list[str]:
-    """The squad page's cards, in page order: Initiatives → OTD → Roadmap →
-    Key messages → Budget, using the application's own component classes."""
+    """The squad page's cards, in page order: the annual timeline, then key
+    messages and budget, using the application's own component classes."""
     fmtn = lambda v: "-" if v is None else f"{v:,.0f} €"
     C: list[str] = []
 
-    # Initiatives - always shown (even empty), to mirror the squad page.
-    inits = det.get("initiatives") or []
-    C.append(f'<div class="card"><h2>{e(rt(lang, "h_initiatives"))}</h2>')
-    if inits:
-        C.append('<table class="init-tbl"><thead><tr>'
-                 f'<th>{e(rt(lang, "h_initiatives"))}</th><th>{e(rt(lang, "h_leader"))}</th>'
-                 f'<th>{e(rt(lang, "deadline"))}</th></tr></thead><tbody>')
-        for ini in inits:
-            C.append(f'<tr><td><strong>{e(ini["title"])}</strong></td>'
-                     f'<td>{e(ini.get("owner") or "-")}</td><td>{e(ini.get("deadline") or "-")}</td></tr>')
-        C.append('</tbody></table>')
-    else:
-        C.append(f'<div class="muted small">{e(rt(lang, "no_initiative"))}</div>')
-    C.append('</div>')
-
-    # OTD (annual objectives)
-    C.append(f'<div class="card"><h2>{e(rt(lang, "h_otd_section"))} {year}</h2>')
-    if det.get("objectives"):
-        for o in det["objectives"]:
-            dl = f', {e(rt(lang, "deadline"))} {e(o["target_date"])}' if o.get("target_date") else ""
-            C.append(f'<div class="item-row">{_dot(_status_rag(o["rag"]))}'
-                     f'<div class="grow"><div>{e(o["title"])}</div></div>'
-                     f'<span class="small muted">{e(_status_label(o["rag"], lang))}{dl}</span></div>')
-    else:
-        C.append(f'<div class="small muted">{e(rt(lang, "no_obj"))}</div>')
-    C.append('</div>')
-
-    # Roadmap by quarter
-    C.append(f'<div class="card"><h2>{e(rt(lang, "h_roadmap"))} {year}</h2>'
-             '<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px">')
-    for qd in det.get("quarters", []):
-        pct = max(0, min(100, int(qd["pct"] or 0)))
-        C.append(f'<div class="quarter-block"><div class="between"><h4 style="margin:0">Q{qd["q"]}</h4>'
-                 f'<span class="small muted">{qd["pct"]}%</span></div>'
-                 f'<div class="progress"><div style="width:{pct}%"></div></div>')
-        if qd.get("comment"):
-            C.append(f'<div class="small muted" style="margin-top:6px">{e(qd["comment"])}</div>')
-        C.append('<div style="margin-top:8px">')
-        if not qd["items"]:
-            C.append(f'<div class="small muted">{e(rt(lang, "no_jalon"))}</div>')
-        for it in qd["items"]:
-            stage = f'<span class="badge badge-navy" style="font-size:10px">{e(it["stage"])}</span>' if it.get("stage") else ""
-            dep = f'<span class="small muted">({e(rt(lang, "dep"))} {e(it["dependency"])})</span>' if it.get("dependency") else ""
-            C.append(f'<div class="item-row">{_dot(_status_rag(it["status"]))}'
-                     f'<span class="grow small">{e(it["title"])}</span>{stage}'
-                     f'<span class="small muted">{e(_status_label(it["status"], lang))}</span>{dep}</div>')
-        C.append('</div></div>')
-    C.append('</div></div>')
+    # La frise annuelle, dans sa propre carte: le meme bloc unique que la page.
+    C.append(f'<div class="card">{_timeline_html(det, lang, e, year)}</div>')
 
     # Key messages
     C.append(f'<div class="card"><h2>{e(rt(lang, "h_key_messages"))}</h2>')
@@ -568,6 +518,166 @@ def _squad_app_cards(det: dict, lang: str, e, year: int) -> list[str]:
     return C
 
 
+# ----- La frise annuelle (HTML) ---------------------------------------------------
+#
+# Le meme bloc que la page d'une squad, rendu en HTML autonome: son style ne
+# depend pas de la feuille de l'application, parce que ce meme HTML sert aussi
+# l'export JPG et le rapport multi-squads, qui eux ne la chargent pas. Les
+# couleurs restent prises dans les variables du theme quand elles existent, pour
+# qu'un export garde la charte choisie dans Administration > Personnalisation.
+
+_TIMELINE_CSS = """<style>
+.xtl{margin-top:10px}
+.xtl-legend{display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--grey,#64748B)}
+.xtl-legend i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px}
+.xtl-scroll{overflow-x:auto;margin-top:10px}
+.xtl-grid{min-width:880px}
+.xtl-row{display:grid;grid-template-columns:190px repeat(12,1fr);gap:6px;align-items:start}
+.xtl-label{min-width:0;padding:4px 8px 4px 0;font-size:13px}
+.xtl-q{background:var(--ice-soft,#E8F0FE);border:1px solid var(--line,#E2E8F0);border-radius:10px;
+  padding:6px 8px;margin-bottom:4px}
+.xtl-q-head{display:flex;justify-content:space-between;align-items:baseline}
+.xtl-q-head b{color:var(--navy,#1E2761);font-size:13px}
+.xtl-q-head span{font-size:12px;color:var(--grey,#64748B)}
+.xtl-bar{height:5px;background:var(--line,#E2E8F0);border-radius:99px;margin-top:5px;overflow:hidden}
+.xtl-bar>span{display:block;height:100%;background:var(--accent,#175CD3);border-radius:99px}
+.xtl-qc{margin-top:4px;font-size:12px;color:var(--grey,#64748B);overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.xtl-months{border-bottom:1px solid var(--line,#E2E8F0);padding-bottom:4px;margin-bottom:6px}
+.xtl-m{text-align:center;font-size:12px;color:var(--grey,#64748B)}
+.xtl-cell{min-width:0;min-height:8px;display:flex;flex-direction:column;gap:4px}
+.xtl-otds{padding-bottom:8px;row-gap:4px}
+.xtl-otd{display:flex;align-items:center;gap:6px;padding:5px 8px;border-radius:10px;
+  background:var(--navy,#1E2761);color:#fff;font-size:12px;font-weight:600;line-height:1.2}
+.xtl-otd i{width:8px;height:8px;border-radius:50%;background:#fff;flex:0 0 auto;opacity:.9}
+.xtl-otd span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.xtl-otd.st-late{background:var(--red,#B42318)}
+.xtl-otd.st-at_risk{background:var(--orange,#B54708)}
+.xtl-otd.st-delivered{background:var(--green,#027A48)}
+.xtl-init{border-top:1px solid var(--line,#E2E8F0);padding:8px 0}
+.xtl-init-name{font-weight:600;color:var(--navy,#1E2761)}
+.xtl-jalon{display:flex;align-items:center;gap:6px;background:#fff;
+  border:1px solid var(--line,#E2E8F0);border-left:3px solid var(--line,#E2E8F0);
+  border-radius:8px;padding:5px 8px;font-size:12px}
+.xtl-jalon.rag-green{border-left-color:var(--green,#027A48)}
+.xtl-jalon.rag-amber{border-left-color:var(--orange,#B54708)}
+.xtl-jalon.rag-red{border-left-color:var(--red,#B42318)}
+.xtl-jalon>span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.xtl-jalon em{font-style:normal;font-size:10px;color:var(--grey,#64748B);flex:0 0 auto}
+.xtl-none{font-size:12px;color:var(--grey,#64748B);grid-column:span 12;padding:4px 0}
+.xtl-mood{display:inline-flex;align-items:center;gap:8px}
+.xtl-mood b{font-size:22px;line-height:1}
+.xtl .between{display:flex;justify-content:space-between;gap:16px}
+.xtl .small,.xtl-mood .small{font-size:12px}
+.xtl .muted,.xtl-mood .muted{color:var(--grey,#64748B)}
+.xtl .strong{font-weight:700}
+.xtl h2{font-size:16px;margin:0 0 2px;padding:0;border:0;color:var(--navy,#1E2761);
+  text-transform:none;letter-spacing:normal}
+</style>"""
+
+
+def _mood_html(r: dict, lang: str, e) -> str:
+    """Le moral declare, avec sa date: un moral de mars affiche en septembre ment
+    plus surement qu'une case vide."""
+    mood = r.get("mood")
+    face = MOOD_EMOJI.get(mood or "", "")
+    when = f' <span class="muted small">{e(rt(lang, "mood_at", d=r["mood_at"]))}</span>' if r.get("mood_at") else ""
+    note = f' <span class="muted small">{e(r["mood_comment"])}</span>' if r.get("mood_comment") else ""
+    return (f'<span class="xtl-mood"><b>{face}</b>'
+            f'<span class="small">{e(rt(lang, "h_mood"))} : {e(mood_label(mood, lang))}</span>'
+            f'{when}{note}</span>')
+
+
+def _timeline_html(det: dict, lang: str, e, year: int) -> str:
+    """Le bloc unique: les trimestres, les engagements OTD poses a leur date, puis
+    une ligne par initiative avec les jalons qui la servent."""
+    months = _MONTHS[_lang(lang)]
+    otds = det.get("otds") or []
+    quarters = {qd["q"]: qd for qd in det.get("quarters") or []}
+    P = [f'<div class="xtl"><div class="between" style="align-items:flex-start">'
+         f'<div><h2 style="margin:0">{e(rt(lang, "h_timeline", year=year))}</h2>'
+         f'<div class="small muted">{e(rt(lang, "tl_hint"))}</div></div>'
+         f'<div class="xtl-legend">'
+         f'<span><i style="background:{RAG_COLOR["green"]}"></i>{e(_status_label("on_track", lang))}</span>'
+         f'<span><i style="background:{RAG_COLOR["amber"]}"></i>{e(_status_label("at_risk", lang))}</span>'
+         f'<span><i style="background:{RAG_COLOR["red"]}"></i>{e(_status_label("blocked", lang))}</span>'
+         f'</div></div><div class="xtl-scroll"><div class="xtl-grid">']
+
+    # Les trimestres, avec l'avancement calcule de chacun et son commentaire.
+    P.append('<div class="xtl-row"><div class="xtl-label"></div>')
+    for q in (1, 2, 3, 4):
+        qd = quarters.get(q) or {"pct": 0, "comment": None}
+        pct = max(0, min(100, int(qd.get("pct") or 0)))
+        cm = f'<div class="xtl-qc">{e(qd["comment"])}</div>' if qd.get("comment") else ""
+        P.append(f'<div style="grid-column:span 3"><div class="xtl-q">'
+                 f'<div class="xtl-q-head"><b>Q{q}</b><span>{pct} %</span></div>'
+                 f'<div class="xtl-bar"><span style="width:{pct}%"></span></div>{cm}</div></div>')
+    P.append('</div>')
+
+    # Les mois, qui donnent la resolution de l'axe.
+    P.append('<div class="xtl-row xtl-months"><div class="xtl-label"></div>')
+    P.extend(f'<div class="xtl-m">{e(m)}</div>' for m in months)
+    P.append('</div>')
+
+    # Les engagements OTD, poses a leur date juste sous les trimestres. Chacun
+    # occupe deux mois pour rester lisible, et descend d'une bande quand la place
+    # est prise: c'est la grille qui garantit qu'aucun n'en recouvre un autre.
+    # Une case de mois porte environ huit caracteres a cette taille de texte.
+    placed, _ = pack_otds(otds, chars_per_month=8)
+    bands = max((row for _, _, _, row in placed), default=-1) + 1
+    P.append(f'<div class="xtl-row xtl-otds">'
+             f'<div class="xtl-label small strong">{e(rt(lang, "h_otd_section"))}</div>')
+    for o, month, width, row in placed:
+        P.append(f'<div class="xtl-otd st-{e(o["status"])}" title="{e(o["title"])}"'
+                 f' style="grid-column:{2 + month} / span {width};grid-row:{row + 1}">'
+                 f'<i></i><span>{e(o["title"])}</span></div>')
+    if bands == 0:
+        P.append('<div class="xtl-cell"></div>')
+    P.append('</div>')
+    # Un engagement sans date n'a pas de place sur l'axe, ce qui n'est pas une
+    # raison de le taire: il est cite sous la bande.
+    undated = [o for o in otds if o.get("month") is None]
+    if undated:
+        names = ", ".join(o["title"] for o in undated)
+        P.append(f'<div class="xtl-row"><div class="xtl-label"></div>'
+                 f'<div class="xtl-none">{e(rt(lang, "tl_no_date"))} : {e(names)}</div></div>')
+    if not otds:
+        P.append(f'<div class="xtl-row"><div class="xtl-label"></div>'
+                 f'<div class="xtl-none">{e(rt(lang, "no_otd"))}</div></div>')
+
+    # Une ligne par initiative, avec ses jalons dans leur trimestre.
+    rows = timeline_rows(det, lang)
+    for row in rows:
+        # Owner et echeance restent sur la ligne de l'initiative: la frise remplace
+        # trois blocs, elle ne se permet pas d'en perdre le contenu au passage.
+        meta = [x for x in (row.get("owner"),
+                            rt(lang, "tl_deadline", d=row["deadline"]) if row.get("deadline") else None,
+                            rt(lang, "tl_jalons_n", n=len(row["items"])))
+                if x]
+        P.append(f'<div class="xtl-row xtl-init"><div class="xtl-label">'
+                 f'<div class="xtl-init-name">{e(row["title"])}</div>'
+                 f'<div class="small muted">{e(", ".join(meta))}</div></div>')
+        for q in (1, 2, 3, 4):
+            P.append('<div class="xtl-cell" style="grid-column:span 3">')
+            for it in row["items"]:
+                if it.get("quarter") != q:
+                    continue
+                stage = f'<em>{e(it["stage"])}</em>' if it.get("stage") else ""
+                # La dependance est souvent la seule ligne qui explique un glissement.
+                dep = (f'<em>({e(rt(lang, "dep"))} {e(it["dependency"])})</em>'
+                       if it.get("dependency") else "")
+                P.append(f'<div class="xtl-jalon rag-{_status_rag(it["status"])}">'
+                         f'<span>{e(it["title"])}</span>{dep}{stage}</div>')
+            P.append('</div>')
+        P.append('</div>')
+    if not rows:
+        P.append(f'<div class="xtl-row"><div class="xtl-label"></div>'
+                 f'<div class="xtl-none">{e(rt(lang, "tl_empty"))}</div></div>')
+
+    P.append('</div></div></div>')
+    return "".join(P)
+
+
 def _render_squad_page(data: dict, standalone: bool, e, lang: str) -> str:
     """Single-squad export rendered with the application's own stylesheet and
     component markup, so it looks exactly like the squad page."""
@@ -585,6 +695,7 @@ def _render_squad_page(data: dict, standalone: bool, e, lang: str) -> str:
         if r["at_risk"]:
             badges.append(f'<span class="badge badge-orange">{r["at_risk"]} {e(rt(lang, "h_atrisk"))}</span>')
         badges.append(f'<span class="badge {fresh_cls}">{e(fresh_lbl)}</span>')
+        badges.append(_mood_html(r, lang, e))
         P = [f'<div class="export-page"><h1 style="color:var(--navy);margin:0 0 8px">{e(r["name"])}</h1>',
              f'<div class="inline" style="gap:10px;flex-wrap:wrap;margin-bottom:6px">{"".join(badges)}</div>',
              f'<div class="muted small" style="margin-bottom:16px">{e(rt(lang, "h_leader"))} : '
@@ -599,11 +710,11 @@ def _render_squad_page(data: dict, standalone: bool, e, lang: str) -> str:
                 '.init-tbl{width:100%;border-collapse:collapse}'
                 '.init-tbl th,.init-tbl td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line,#E2E8F0)}</style>')
     if not standalone:
-        return f'{style}{page_css}{body}'
+        return f'{style}{page_css}{_TIMELINE_CSS}{body}'
     title = e(r["name"]) if r else e(data["scope_name"])
     return (f'<!doctype html><html lang="{e(lang)}"><head><meta charset="utf-8">'
             f'<meta name="viewport" content="width=device-width, initial-scale=1">'
-            f'<title>{title}</title>{style}{page_css}</head><body>{body}</body></html>')
+            f'<title>{title}</title>{style}{page_css}{_TIMELINE_CSS}</head><body>{body}</body></html>')
 
 
 # =============================================================================
@@ -885,11 +996,11 @@ def render_html(data: dict, *, standalone: bool = True, changes: dict | None = N
 
     body = "\n".join(parts)
     if not standalone:
-        return f'<div class="tc-report">{_CSS}{body}</div>'
+        return f'<div class="tc-report">{_CSS}{_TIMELINE_CSS}{body}</div>'
     return (
         f'<!doctype html><html lang="{e(lang)}"><head><meta charset="utf-8">'
         f'<title>{e(data["app_name"])} - {e(rt(lang, "report"))}</title>'
-        f'{_CSS}</head><body><div class="tc-report">{body}</div></body></html>'
+        f'{_CSS}{_TIMELINE_CSS}</head><body><div class="tc-report">{body}</div></body></html>'
     )
 
 
@@ -992,11 +1103,6 @@ _CSS = """<style>
 .tc-report .d-sub{font-size:12px;font-weight:700;color:#374151;margin:10px 0 4px;text-transform:uppercase;letter-spacing:.03em}
 .tc-report ul.d-obj{list-style:none;padding:0;margin:0}
 .tc-report ul.d-obj li{padding:3px 0;font-size:13px}
-.tc-report .d-quarters{display:flex;flex-wrap:wrap;gap:10px}
-.tc-report .d-q{flex:1;min-width:170px;border:1px solid #eef0f3;border-radius:8px;padding:8px 10px;background:#f9fafb}
-.tc-report .d-q-head{font-weight:700;font-size:13px;margin-bottom:4px}
-.tc-report .d-q ul{list-style:none;padding:0;margin:0}
-.tc-report .d-q li{padding:2px 0;font-size:12px}
 .tc-report .rm-legend{display:flex;gap:16px;margin:14px 0 8px;font-size:12px;color:#374151}
 .tc-report table.rm{table-layout:fixed;border-collapse:separate;border-spacing:3px}
 .tc-report table.rm th.rm-q{background:#304957;color:#fff;text-align:center;font-size:15px;padding:7px}

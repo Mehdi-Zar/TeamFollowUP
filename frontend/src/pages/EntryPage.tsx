@@ -18,6 +18,7 @@ import { Initiative, Kpi, Member, Objective, RoadmapItem, RoadmapStatus, Squad, 
 import { Dot, FreshnessBadge, Spinner, ErrorBanner, EmptyState, SectionCard as Card } from "../components/ui";
 import { QuarterProgressEditor, ReviewActionsEditor } from "../components/EntryExtras";
 import { InitiativesCard } from "../components/InitiativesCard";
+import TeamMood from "../components/TeamMood";
 import { canEditSquad, canManageObjectives } from "../perms";
 import { useSetPageChrome } from "../components/pageChrome";
 import { roadmapRag } from "../labels";
@@ -39,6 +40,7 @@ export default function EntryPage() {
   const roadmapOn = moduleOn("squad_content", "roadmap");
   const objectivesOn = moduleOn("squad_content", "objectives");
   const kpisOn = moduleOn("squad_content", "kpis");
+  const progressOn = moduleOn("squad_content", "quarter_progress");
   const steercoOn = moduleOn("steerco");
   // Review actions (COPIL) ride the same module as the rest of the review feature,
   // exactly like the API that serves them.
@@ -154,7 +156,13 @@ export default function EntryPage() {
                 {", "}{t("entry.last_submit")} : {freshness(squad.freshness)}
               </div>
             </div>
-            <FreshnessBadge freshness={squad.freshness} />
+            <div className="inline" style={{ gap: 12, alignItems: "center" }}>
+              {/* Le moral de l'equipe, declare la ou l'on rend compte: une
+                  seconde a repondre, et c'est ce qui explique souvent le reste. */}
+              <TeamMood squadId={squad.id} mood={squad.mood as any} moodAt={squad.mood_at}
+                        comment={squad.mood_comment} canEdit={writeAllowed} onChange={reload} />
+              <FreshnessBadge freshness={squad.freshness} />
+            </div>
           </div>
           {!writeAllowed && <div className="banner" style={{ background: "var(--ice-soft)" }}>{t("entry.readonly")}</div>}
 
@@ -164,9 +172,13 @@ export default function EntryPage() {
           {objectivesOn && <div id="sec-obj"><ObjectivesEditor squad={squad} year={year} onChange={reload} editable={objAllowed} t={t} rag={rag} /></div>}
           {roadmapOn && <div id="sec-roadmap"><RoadmapEditor squad={squad} year={year} onChange={reload} readonly={!writeAllowed} t={t} roadmap={roadmap} squads={squads} tribes={tribes} /></div>}
           {kpisOn && squad.kpis_enabled && <div id="sec-kpis"><KpisEditor squad={squad} onChange={reload} readonly={!writeAllowed} t={t} trend={trend} /></div>}
-          <div id="sec-progress">
-            <QuarterProgressEditor squad={squad} year={year} readonly={!writeAllowed} onChange={reload} t={t} />
-          </div>
+          {/* Le commentaire de trimestre, derriere son interrupteur de module:
+              eteint par defaut tant que la section n'est pas jugee prete. */}
+          {progressOn && (
+            <div id="sec-progress">
+              <QuarterProgressEditor squad={squad} year={year} readonly={!writeAllowed} onChange={reload} t={t} />
+            </div>
+          )}
           {reviewOn && <div id="sec-actions"><ReviewActionsEditor squad={squad} readonly={!writeAllowed} t={t} /></div>}
           {steercoOn && <div id="sec-steerco"><SteercoSection squad={squad} readonly={!writeAllowed} t={t} /></div>}
         </>

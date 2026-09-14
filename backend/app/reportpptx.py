@@ -23,8 +23,9 @@ from . import status as st
 from .generalconfig import get_general
 from .models import Squad, Tribe, utcnow
 from .serializers import annual_progress, budget_out, dependency_label
-from .reportcommon import (STAGE_COLOR, _DEP_T, _INIT_T, _MONTHS, _lang, _status_label,
-                           _status_rag, group_by_theme, rt)
+from .reportcommon import (MOOD_COLOR, MOOD_EMOJI, STAGE_COLOR, _DEP_T, _INIT_T, _MONTHS,
+                           _lang, _status_label, _status_rag, group_by_theme, mood_label,
+                           pack_otds, rt, timeline_rows)
 
 
 # ----- PPTX rendering -------------------------------------------------------------
@@ -60,9 +61,11 @@ def _pptx_toolkit():
 
 def render_pptx(data: dict) -> bytes:
     """Render the weekly report as a branded deck (requires python-pptx):
-    a summary one-pager + one full detail slide per squad (annual objectives +
-    roadmap/milestones by quarter + advancement). The roadmap-only swimlane deck
-    is produced separately by render_roadmap_pptx."""
+    a summary one-pager (dropped for a single-squad export) followed by one slide
+    per squad, each built on the year's timeline: quarters and their progress, OTD
+    commitments placed on their date, then one row per initiative carrying the
+    milestones that serve it, with key messages and budget along the bottom. The
+    roadmap-only swimlane deck is produced separately by render_roadmap_pptx."""
     Presentation, Inches, Pt, Emu, RGBColor, PP_ALIGN, MSO_ANCHOR, MSO_SHAPE = _pptx_toolkit()
 
     def rgb(hexstr: str) -> RGBColor:
@@ -281,258 +284,231 @@ def render_pptx(data: dict) -> bytes:
             for ci in range(1, len(headers)):
                 style_cell(tbl.cell(last, ci), " ", 9, B["muted"])
 
-    # ---------------- Per-squad detail slide --------------------------------------
-    def detail_slide(r, *, with_objectives):
+    # ---------------- Une slide par squad: la frise de l'annee --------------------
+    #
+    # Meme bloc que la page d'une squad et que l'export HTML: les trimestres avec
+    # leur avancement, les engagements OTD poses a leur date juste dessous, puis
+    # une ligne par initiative portant les jalons qui la servent. Les positions
+    # sont calculees en pouces sur un axe unique, donc tout s'aligne: un jalon du
+    # Q3 tombe sous l'entete du Q3, sans reglage a la main.
+    LBL_X, LBL_W = 0.55, 1.55          # colonne des libelles, a gauche de l'axe
+    AX0, AX1 = 2.20, 12.80             # l'axe des douze mois
+    MW = (AX1 - AX0) / 12.0            # largeur d'un mois
+    QW = MW * 3                        # un trimestre vaut trois mois
+    OTD_ROWS = 3                       # bandes d'engagements superposables
+    OTD_FILL = {"late": "red", "at_risk": "amber", "delivered": "green"}
+    CPM = 16                           # caracteres tenant dans un mois, en 7,5 pt
+
+    def fit(text: str, chars: int) -> str:
+        """Coupe a la largeur disponible. PowerPoint ne sait pas mettre de points
+        de suspension: sans coupe il passe a la ligne et sort de la forme."""
+        text = text or ""
+        return text if len(text) <= chars else text[:max(1, chars - 1)].rstrip() + "\u2026"
+
+    def squad_slide(r):
         det = r.get("detail") or {}
         s = new_slide()
-        band = rect(s, Inches(0), Inches(0), prs.slide_width, Inches(0.92), B["navy"])
-        place(band, [
-            (r["name"], 22, B["white"], True, PP_ALIGN.LEFT, 4),
-            (f'{rt(lang, "year")} {data["year"]}, {rt(lang, "h_progress_long")} {r["annual_pct"]}%',
-             12, rgb("#C7D2FE"), False, PP_ALIGN.LEFT, 0),
-        ], anchor=MSO_ANCHOR.TOP, ml=0.5, mt=0.12, mr=0.5)
+        rect(s, Inches(0), Inches(0), prs.slide_width, prs.slide_height, rgb("#F5F7FA"))
 
-        # Budget line (status + figures), just under the header band.
-        bud = det.get("budget")
-        if bud is not None:
-            f = lambda v: "-" if v is None else f"{v:,.0f} €"
-            st_color = {"on_track": "green", "at_risk": "amber", "over": "red"}[bud["status"]]
-            st_lbl = rt(lang, {"on_track": "b_on_track", "at_risk": "b_at_risk", "over": "b_over"}[bud["status"]])
-            bline = f'{rt(lang, "h_budget")}: {st_lbl}, {rt(lang, "b_total")} {f(bud["total"])}'
-            if bud["spent"] is not None:
-                pc = f' ({bud["spent_pct"]}%)' if bud.get("spent_pct") is not None else ""
-                bline += f', {rt(lang, "b_spent")} {f(bud["spent"])}{pc}'
-            if bud["forecast"] is not None:
-                pc = f' ({bud["forecast_pct"]}%)' if bud.get("forecast_pct") is not None else ""
-                bline += f', {rt(lang, "b_forecast")} {f(bud["forecast"])}{pc}'
-            if bud["status"] == "over":
-                bline += f', +{f(bud["overrun"])} ({bud["overrun_pct"]}%)'
-            textbox(s, margin, Inches(0.96), Inches(12.3), Inches(0.22), bline, 10, bold=True,
-                    color=rgb(_RAG_BRAND[st_color]))
+        # ----- entete: la squad, son responsable, et le moral a droite -----
+        hdr = rrect(s, Inches(0.4), Inches(0.26), Inches(10.72), Inches(0.81), B["navy"], radius=0.08)
+        place(hdr, [
+            (r["name"], 19, B["white"], True, PP_ALIGN.LEFT, 3),
+            (f'{rt(lang, "h_leader")} : {r["leader"] or "-"}, {rt(lang, "year")} {data["year"]}, '
+             f'{rt(lang, "h_progress_long")} {r["annual_pct"]}%', 10, rgb("#C7D2FE"), False, PP_ALIGN.LEFT, 0),
+        ], anchor=MSO_ANCHOR.MIDDLE, ml=0.28, mr=0.28)
 
-        top = Inches(1.22) if bud is not None else Inches(1.15)
-        if with_objectives:
-            textbox(s, margin, top, Inches(12.3), Inches(0.3),
-                    rt(lang, "h_otd_section"), 13, bold=True, color=B["navy"])
-            objs = det.get("objectives", [])
-            if objs:
-                lines = []
-                for o in objs[:6]:
-                    rag = _status_rag(o["rag"])
-                    dl = f', {rt(lang, "deadline")} {o["target_date"]}' if o.get("target_date") else ""
-                    lines.append((f'•  {o["title"]}   ({_status_label(o["rag"], lang)}{dl})',
-                                  rgb(_RAG_BRAND[rag]), False))
-                if len(objs) > 6:
-                    lines.append((f'+{len(objs) - 6}…', B["muted"], False))
-                bullets(s, margin, Inches(1.5), Inches(12.3), Inches(1.4), lines, 11)
-            else:
-                textbox(s, margin, Inches(1.5), Inches(12.3), Inches(0.3),
-                        rt(lang, "no_obj"), 11, color=B["muted"])
-            top = Inches(3.05)
+        # Le moral: trois niveaux, et la date qui les date. Un moral de mars
+        # projete en septembre ment plus surement qu'une case vide.
+        mood = r.get("mood")
+        # Pas de visage quand rien n'est declare: un point d'interrogation se lirait
+        # comme un quatrieme niveau.
+        mlines = []
+        if mood in MOOD_EMOJI:
+            mlines.append((MOOD_EMOJI[mood], 18, B["ink"], False, PP_ALIGN.CENTER, 1))
+        mlines.append((mood_label(mood, lang), 8,
+                       rgb(_RAG_BRAND[MOOD_COLOR.get(mood or "", "grey")]), True, PP_ALIGN.CENTER, 0))
+        if r.get("mood_at"):
+            mlines.append((rt(lang, "mood_at", d=r["mood_at"]), 6.5, B["muted"], False, PP_ALIGN.CENTER, 0))
+        place(rrect(s, Inches(11.20), Inches(0.26), Inches(1.73), Inches(0.81),
+                    B["white"], line=B["line"], radius=0.08),
+              mlines, anchor=MSO_ANCHOR.MIDDLE, ml=0.04, mr=0.04, mt=0.04, mb=0.04)
 
-        textbox(s, margin, top, Inches(12.3), Inches(0.3),
-                rt(lang, "h_roadmap"), 13, bold=True, color=B["navy"])
-        qtop = Emu(int(top) + int(Inches(0.42)))
-        gap = Inches(0.2)
-        n = 4
-        total_w = prs.slide_width - margin * 2
-        col_w = Emu(int((total_w - gap * (n - 1)) / n))
-        # Reserve a band at the bottom for key messages when there are any.
-        kms = det.get("key_messages") or []
-        roadmap_bottom = int(Inches(6.35)) if kms else int(Inches(7.5))
-        qh = Emu(roadmap_bottom - int(qtop) - int(Inches(0.3)))
-        for i, qd in enumerate(det.get("quarters", [])):
-            left = Emu(int(margin) + i * (int(col_w) + int(gap)))
-            qc = rect(s, left, qtop, col_w, qh, B["card"], line=B["line"])
-            items = qd.get("items", [])
-            lines = []
-            for it in items[:10]:
-                rag = _status_rag(it["status"])
-                dep = f'   ({rt(lang, "dep")} {it["dependency"]})' if it.get("dependency") else ""
-                lines.append((f'•  {it["title"]}{dep}', rgb(_RAG_BRAND[rag]), False))
-            if not items:
-                lines.append((rt(lang, "no_jalon"), B["muted"], False))
-            elif len(items) > 10:
-                lines.append((f'+{len(items) - 10}…', B["muted"], False))
-            # Header + milestones are the card's own text.
-            paras = [(f'Q{qd["q"]} - {qd["pct"]}%', 12, B["ink"], True, PP_ALIGN.LEFT, 6)]
-            paras += [(txt, 9.5, color, bold, PP_ALIGN.LEFT, 2) for (txt, color, bold) in lines]
-            place(qc, paras, anchor=MSO_ANCHOR.TOP, ml=0.1, mt=0.08, mr=0.1)
+        # ----- la carte de la frise -----
+        card(s, Inches(0.4), Inches(1.22), Inches(12.53), Inches(4.76),
+             rt(lang, "h_timeline", year=data["year"]))
 
-        # Key messages band (success / alert / risk) along the bottom.
-        if kms:
-            ktop = Emu(roadmap_bottom + int(Inches(0.05)))
-            textbox(s, margin, ktop, Inches(12.3), Inches(0.3),
-                    rt(lang, "h_key_messages"), 12, bold=True, color=B["navy"])
-            km_rag = {"success": "green", "alert": "amber", "risk": "red"}
-            klines = []
-            for m in kms[:4]:
-                rag = km_rag.get(m["kind"], "grey")
-                ts = f'   ({m["created_at"]})' if m.get("created_at") else ""
-                klines.append((f'•  [{rt(lang, "km_" + m["kind"])}] {m["text"]}{ts}',
-                               rgb(_RAG_BRAND[rag]), False))
-            if len(kms) > 4:
-                klines.append((f'+{len(kms) - 4}…', B["muted"], False))
-            bullets(s, margin, Emu(int(ktop) + int(Inches(0.32))), Inches(12.3), Inches(0.7), klines, 9.5)
+        quarters = {qd["q"]: qd for qd in det.get("quarters") or []}
+        qy = 1.62
+        for i, q in enumerate((1, 2, 3, 4)):
+            qd = quarters.get(q) or {"pct": 0, "comment": None}
+            pct = max(0, min(100, int(qd.get("pct") or 0)))
+            x = AX0 + i * QW
+            qc = rrect(s, Inches(x), Inches(qy), Inches(QW - 0.06), Inches(0.52),
+                       rgb("#E8F0FE"), line=B["line"], radius=0.08)
+            place(qc, [(f'Q{q}    {pct} %', 10, B["navy"], True, PP_ALIGN.LEFT, 0)],
+                  anchor=MSO_ANCHOR.TOP, ml=0.08, mt=0.05, mr=0.08)
+            pbar(s, Inches(x + 0.08), Inches(qy + 0.26), Inches(QW - 0.22), pct, B["accent"])
+            if qd.get("comment"):
+                textbox(s, Inches(x + 0.08), Inches(qy + 0.38), Inches(QW - 0.22), Inches(0.13),
+                        qd["comment"][:70], 6.5, color=B["muted"])
 
-    # ---------------- Single-squad page slide (mirrors the squad page order) ------
-    def squad_page_slide(r):
-        det = r.get("detail") or {}
-        s = new_slide()
-        SW = prs.slide_width
-        rect(s, Inches(0), Inches(0), SW, prs.slide_height, rgb("#F5F7FA"))  # app background
-        L = Inches(0.4)
-        FULLW = Emu(int(SW) - 2 * int(L))
-        colw = Emu((int(FULLW) - int(Inches(0.2))) // 2)
-        rcolx = Emu(int(L) + int(colw) + int(Inches(0.2)))
+        # Les mois, qui donnent la resolution de l'axe.
+        months = _MONTHS[_lang(lang)]
+        for i, m in enumerate(months):
+            textbox(s, Inches(AX0 + i * MW), Inches(2.16), Inches(MW), Inches(0.16), m, 8,
+                    color=B["muted"], align=PP_ALIGN.CENTER)
+        rect(s, Inches(LBL_X), Inches(2.35), Inches(AX1 - LBL_X), Inches(0.012), B["line"])
 
-        # ----- header card (navy) -----
-        hdr = rrect(s, L, Inches(0.32), FULLW, Inches(0.84), B["navy"], radius=0.08)
-        place(hdr, [(r["name"], 20, B["white"], True)], anchor=MSO_ANCHOR.MIDDLE, ml=0.3, mr=4.6)
-        textbox(s, Emu(int(SW) - int(Inches(4.6))), Inches(0.5), Inches(4.0), Inches(0.3),
-                f'{rt(lang, "h_leader")} : {r["leader"] or "-"}', 11, color=rgb("#C7D2FE"), align=PP_ALIGN.RIGHT)
+        # ----- les engagements OTD, poses a leur date -----
+        textbox(s, Inches(LBL_X), Inches(2.42), Inches(LBL_W), Inches(0.2),
+                rt(lang, "h_otd_section"), 9, bold=True, color=B["navy"])
+        otds = det.get("otds") or []
+        # Deux engagements proches ne peuvent pas occuper la meme place: ils
+        # s'empilent, plutot que de se superposer et d'en rendre un illisible. Le
+        # rangement est celui de l'export HTML, au pouce pres.
+        # Une case de mois fait 0,88 pouce, soit environ seize caracteres en 7,5 pt.
+        placed, hidden = pack_otds(otds, chars_per_month=CPM, max_rows=OTD_ROWS)
+        for o, month, width, row in placed:
+            x0 = AX0 + month * MW
+            fill = rgb(_RAG_BRAND[OTD_FILL[o["status"]]]) if o["status"] in OTD_FILL else B["navy"]
+            chipbox = rrect(s, Inches(x0), Inches(2.42 + row * 0.28), Inches(width * MW - 0.04),
+                            Inches(0.25), fill, radius=0.4)
+            place(chipbox, [(fit(o["title"], width * CPM - 2), 7.5, B["white"], True,
+                             PP_ALIGN.LEFT, 0)],
+                  anchor=MSO_ANCHOR.MIDDLE, ml=0.08, mr=0.06, mt=0.01, mb=0.01)
+            chipbox.text_frame.word_wrap = False
+        bands = max((row for _, _, _, row in placed), default=-1) + 1
+        otd_bottom = 2.42 + max(bands, 1) * 0.28
 
-        # ----- badges row (mirrors the page header) -----
-        items = [(f'{rt(lang, "h_progress_long")} {r["annual_pct"]}%', B["accent"])]
-        if r["blocked"]:
-            items.append((f'{r["blocked"]} {rt(lang, "h_blocked")}', B["red"]))
-        if r["at_risk"]:
-            items.append((f'{r["at_risk"]} {rt(lang, "h_atrisk")}', B["orange"]))
-        items.append((rt(lang, "stale") if r["is_stale"] else rt(lang, "h_freshness_ok"),
-                      B["orange"] if r["is_stale"] else B["green"]))
-        chips_row(s, L, Inches(1.3), items)
+        # Ce qui n'a pas de place sur l'axe est dit, pas tu: un engagement absent
+        # d'un export se lit comme un engagement qui n'existe pas.
+        notes = []
+        undated = [o["title"] for o in otds if o.get("month") is None]
+        if undated:
+            notes.append(f'{rt(lang, "tl_no_date")} : {", ".join(undated)}')
+        if hidden:
+            notes.append(f'+{hidden}')
+        if not otds:
+            notes.append(rt(lang, "no_otd"))
+        if notes:
+            textbox(s, Inches(AX0), Inches(otd_bottom), Inches(AX1 - AX0), Inches(0.16),
+                    ", ".join(notes)[:150], 7, color=B["muted"])
+            otd_bottom += 0.18
 
-        def list_card(x, y, w, h, title, lines, empty):
-            # Title + lines are all the card's own text (one shape, no overlay).
-            sh = rrect(s, x, y, w, h, B["white"], line=B["line"], radius=0.05)
-            paras = [(title, 12, B["navy"], True, PP_ALIGN.LEFT, 5)]
+        # ----- une ligne par initiative, ses jalons dans leur trimestre -----
+        rows = timeline_rows(det, lang)
+        y = otd_bottom + 0.06
+        BOTTOM = 5.86
+        drawn = 0
+        for row in rows:
+            per_q = {q: [it for it in row["items"] if it.get("quarter") == q] for q in (1, 2, 3, 4)}
+            tallest = max((len(v) for v in per_q.values()), default=0)
+            # Assez haut pour deux lignes de nom d'initiative et sa ligne de detail.
+            rh = max(0.48, 0.26 * tallest + 0.12)
+            if y + rh > BOTTOM:
+                break
+            rect(s, Inches(LBL_X), Inches(y), Inches(AX1 - LBL_X), Inches(0.012), B["line"])
+            meta = [x for x in (row.get("owner"),
+                                rt(lang, "tl_deadline", d=row["deadline"]) if row.get("deadline") else None,
+                                rt(lang, "tl_jalons_n", n=len(row["items"]))) if x]
+            lbl = textbox(s, Inches(LBL_X), Inches(y + 0.05), Inches(LBL_W), Inches(rh - 0.08),
+                          fit(row["title"], 46), 8.5, bold=True, color=B["navy"])
+            p = lbl.text_frame.add_paragraph()
+            rr = p.add_run(); rr.text = ", ".join(meta)
+            rr.font.size = Pt(6.5); rr.font.color.rgb = B["muted"]
+            for qi, q in enumerate((1, 2, 3, 4)):
+                for k, it in enumerate(per_q[q]):
+                    jx, jy = AX0 + qi * QW, y + 0.06 + k * 0.26
+                    jb = rrect(s, Inches(jx), Inches(jy), Inches(QW - 0.06), Inches(0.23),
+                               B["white"], line=B["line"], radius=0.2)
+                    # Le liset colore porte le statut, le texte reste lisible en
+                    # encre: un titre entierement rouge se lit moins bien qu'un
+                    # titre noir signale en rouge.
+                    rect(s, Inches(jx), Inches(jy), Inches(0.05), Inches(0.23),
+                         rgb(_RAG_BRAND[_status_rag(it["status"])]))
+                    dep = f'   ({rt(lang, "dep")} {it["dependency"]})' if it.get("dependency") else ""
+                    stage = f'   {it["stage"]}' if it.get("stage") else ""
+                    place(jb, [(fit(f'{it["title"]}{dep}{stage}', 3 * CPM - 2), 7.5, B["ink"],
+                                False, PP_ALIGN.LEFT, 0)],
+                          anchor=MSO_ANCHOR.MIDDLE, ml=0.12, mr=0.06, mt=0.01, mb=0.01)
+                    jb.text_frame.word_wrap = False
+            y += rh
+            drawn += 1
+        if not rows:
+            textbox(s, Inches(AX0), Inches(y + 0.06), Inches(AX1 - AX0), Inches(0.2),
+                    rt(lang, "tl_empty"), 9, color=B["muted"])
+        elif drawn < len(rows):
+            textbox(s, Inches(AX0), Inches(min(y, BOTTOM) + 0.02), Inches(AX1 - AX0), Inches(0.2),
+                    f'+{len(rows) - drawn}', 8, color=B["muted"])
+
+        # ----- bas de slide: messages cles et budget -----
+        def list_card(x, y2, w, h, title, lines, empty):
+            sh = rrect(s, x, y2, w, h, B["white"], line=B["line"], radius=0.05)
+            paras = [(title, 11, B["navy"], True, PP_ALIGN.LEFT, 4)]
             if lines:
-                paras += [(txt, 9.5, color, bold, PP_ALIGN.LEFT, 2) for (txt, color, bold) in lines]
+                paras += [(txt, 8.5, color, bold, PP_ALIGN.LEFT, 1) for (txt, color, bold) in lines]
             else:
-                paras.append((empty, 9.5, B["muted"], False, PP_ALIGN.LEFT, 0))
-            place(sh, paras, anchor=MSO_ANCHOR.TOP, ml=0.18, mt=0.12, mr=0.18, mb=0.1)
+                paras.append((empty, 8.5, B["muted"], False, PP_ALIGN.LEFT, 0))
+            place(sh, paras, anchor=MSO_ANCHOR.TOP, ml=0.16, mt=0.08, mr=0.16, mb=0.06)
 
-        # ----- Row 1: Initiatives | OTD -----
-        inits = det.get("initiatives") or []
-        ilines = []
-        for ini in inits[:3]:
-            meta = [x for x in (ini.get("owner"),
-                                (f'{rt(lang, "deadline")} {ini["deadline"]}' if ini.get("deadline") else None)) if x]
-            tail = f'   ({", ".join(meta)})' if meta else ""
-            ilines.append((f'{ini["title"]}{tail}', B["ink"], False))
-        if len(inits) > 3:
-            ilines.append((f'+{len(inits) - 3}…', B["muted"], False))
-        list_card(L, Inches(1.78), colw, Inches(1.22), rt(lang, "h_initiatives"), ilines, rt(lang, "no_initiative"))
-
-        objs = det.get("objectives", [])
-        olines = []
-        for o in objs[:3]:
-            rag = _status_rag(o["rag"])
-            dl = f', {rt(lang, "deadline")} {o["target_date"]}' if o.get("target_date") else ""
-            olines.append((f'●  {o["title"]}   ({_status_label(o["rag"], lang)}{dl})', rgb(_RAG_BRAND[rag]), False))
-        if len(objs) > 3:
-            olines.append((f'+{len(objs) - 3}…', B["muted"], False))
-        list_card(rcolx, Inches(1.78), colw, Inches(1.22),
-                  f'{rt(lang, "h_otd_section")} {data["year"]}', olines, rt(lang, "no_obj"))
-
-        # ----- Roadmap card with 4 quarter mini-cards + progress bars -----
-        ry, rh = Inches(3.18), Inches(2.4)
-        card(s, L, ry, FULLW, rh, f'{rt(lang, "h_roadmap")} {data["year"]}')
-        qn, qgap = 4, Inches(0.16)
-        inner_x = Emu(int(L) + int(Inches(0.18)))
-        inner_w = Emu(int(FULLW) - int(Inches(0.36)))
-        qw = Emu((int(inner_w) - (qn - 1) * int(qgap)) // qn)
-        qy = Emu(int(ry) + int(Inches(0.52)))
-        qh = Emu(int(rh) - int(Inches(0.68)))
-        quarters = det.get("quarters", [])
-        for i in range(qn):
-            qd = quarters[i] if i < len(quarters) else {"q": i + 1, "pct": 0, "items": []}
-            qx = Emu(int(inner_x) + i * (int(qw) + int(qgap)))
-            qcard = rrect(s, qx, qy, qw, qh, rgb("#F8FAFC"), line=B["line"], radius=0.04)
-            tx = Emu(int(qx) + int(Inches(0.1)))
-            tw = Emu(int(qw) - int(Inches(0.2)))
-            # Q label + percent live in the mini-card's own text frame (two runs).
-            qtf = qcard.text_frame
-            qtf.word_wrap = True; qtf.vertical_anchor = MSO_ANCHOR.TOP
-            qtf.margin_left = Inches(0.1); qtf.margin_right = Inches(0.1)
-            qtf.margin_top = Inches(0.07); qtf.margin_bottom = Inches(0.02)
-            qp = qtf.paragraphs[0]
-            r1 = qp.add_run(); r1.text = f'Q{qd["q"]}'
-            r1.font.size = Pt(11); r1.font.bold = True; r1.font.color.rgb = B["navy"]
-            r2 = qp.add_run(); r2.text = f'   {qd["pct"]}%'
-            r2.font.size = Pt(10); r2.font.color.rgb = B["muted"]
-            pbar(s, tx, Emu(int(qy) + int(Inches(0.42))), tw, qd["pct"], B["accent"])
-            items = qd.get("items", [])
-            lines = []
-            for it in items[:5]:
-                rag = _status_rag(it["status"])
-                lines.append((f'●  {it["title"]}', rgb(_RAG_BRAND[rag]), False))
-            if not items:
-                lines.append((rt(lang, "no_jalon"), B["muted"], False))
-            elif len(items) > 5:
-                lines.append((f'+{len(items) - 5}…', B["muted"], False))
-            bullets(s, tx, Emu(int(qy) + int(Inches(0.64))), tw, Emu(int(qh) - int(Inches(0.74))), lines, 8.5)
-
-        # ----- Row 3: Key messages | Budget -----
-        my, mh = Inches(5.68), Inches(1.5)
         kms = det.get("key_messages") or []
         klines = []
         for m in kms[:3]:
             rag = {"success": "green", "alert": "amber", "risk": "red"}.get(m["kind"], "grey")
-            ts = f'   ({m["created_at"]})' if m.get("created_at") else ""
-            klines.append((f'●  [{rt(lang, "km_" + m["kind"])}] {m["text"]}{ts}', rgb(_RAG_BRAND[rag]), False))
+            klines.append((f'{rt(lang, "km_" + m["kind"])} : {m["text"]}', rgb(_RAG_BRAND[rag]), False))
         if len(kms) > 3:
-            klines.append((f'+{len(kms) - 3}…', B["muted"], False))
-        list_card(L, my, colw, mh, rt(lang, "h_key_messages"), klines, rt(lang, "no_key_message"))
+            klines.append((f'+{len(kms) - 3}', B["muted"], False))
+        list_card(Inches(0.4), Inches(6.08), Inches(8.02), Inches(1.18),
+                  rt(lang, "h_key_messages"), klines, rt(lang, "no_key_message"))
 
-        # Budget card: title + figures are the card's own text; status stays a chip.
-        bsh = rrect(s, rcolx, my, colw, mh, B["white"], line=B["line"], radius=0.05)
-        place(bsh, [(rt(lang, "h_budget"), 12, B["navy"], True, PP_ALIGN.LEFT, 6)],
-              anchor=MSO_ANCHOR.TOP, ml=0.18, mt=0.12, mr=0.18)
+        bsh = rrect(s, Inches(8.61), Inches(6.08), Inches(4.32), Inches(1.18),
+                    B["white"], line=B["line"], radius=0.05)
+        place(bsh, [(rt(lang, "h_budget"), 11, B["navy"], True, PP_ALIGN.LEFT, 4)],
+              anchor=MSO_ANCHOR.TOP, ml=0.16, mt=0.08, mr=0.16)
         bud = det.get("budget")
         btf = bsh.text_frame
         if bud is None:
             p = btf.add_paragraph(); rr = p.add_run(); rr.text = rt(lang, "no_budget")
-            rr.font.size = Pt(9.5); rr.font.color.rgb = B["muted"]
+            rr.font.size = Pt(8.5); rr.font.color.rgb = B["muted"]
         else:
             f = lambda v: "-" if v is None else f"{v:,.0f} €"
             st_color = {"on_track": "green", "at_risk": "amber", "over": "red"}[bud["status"]]
-            st_lbl = rt(lang, {"on_track": "b_on_track", "at_risk": "b_at_risk", "over": "b_over"}[bud["status"]])
-            rows = [
+            st_lbl = rt(lang, {"on_track": "b_on_track", "at_risk": "b_at_risk",
+                               "over": "b_over"}[bud["status"]])
+            rows_b = [
                 (rt(lang, "b_total"), f(bud["total"])),
-                (rt(lang, "b_spent"), f(bud["spent"]) + (f' ({bud["spent_pct"]}%)' if bud.get("spent_pct") is not None else "")),
-                (rt(lang, "b_forecast"), f(bud["forecast"]) + (f' ({bud["forecast_pct"]}%)' if bud.get("forecast_pct") is not None else "")),
+                (rt(lang, "b_spent"), f(bud["spent"]) +
+                 (f' ({bud["spent_pct"]}%)' if bud.get("spent_pct") is not None else "")),
+                (rt(lang, "b_forecast"), f(bud["forecast"]) +
+                 (f' ({bud["forecast_pct"]}%)' if bud.get("forecast_pct") is not None else "")),
             ]
-            for label, val in rows:
-                p = btf.add_paragraph(); p.space_after = Pt(3)
+            for label, val in rows_b:
+                p = btf.add_paragraph(); p.space_after = Pt(1)
                 r1 = p.add_run(); r1.text = f'{label} : '
-                r1.font.size = Pt(10); r1.font.color.rgb = B["muted"]
+                r1.font.size = Pt(9); r1.font.color.rgb = B["muted"]
                 r2 = p.add_run(); r2.text = val
-                r2.font.size = Pt(10); r2.font.bold = True; r2.font.color.rgb = B["ink"]
+                r2.font.size = Pt(9); r2.font.bold = True; r2.font.color.rgb = B["ink"]
             cw = Inches(0.26 + 0.082 * len(st_lbl))
-            chip(s, Emu(int(rcolx) + int(colw) - int(cw) - int(Inches(0.16))), Emu(int(my) + int(Inches(0.12))),
-                 st_lbl, rgb(_RAG_BRAND[st_color]))
+            chip(s, Emu(int(Inches(8.61)) + int(Inches(4.32)) - int(cw) - int(Inches(0.14))),
+                 Inches(6.14), st_lbl, rgb(_RAG_BRAND[st_color]))
 
-    # --- Assemble the deck. A single-squad export mirrors the squad page (one
-    # focused slide in page order); the multi-squad report keeps summary + grid.
-    if data.get("squad_scoped"):
-        for r in squads[:_MAX_DETAIL_SLIDES]:
-            if r.get("detail"):
-                squad_page_slide(r)
-    else:
+    # --- Assemble the deck. Une squad, une slide, la meme dans les deux cas: un
+    # export d'une seule squad n'est que ce deck sans sa page de synthese.
+    if not data.get("squad_scoped"):
         summary_slide()
-        for r in squads[:_MAX_DETAIL_SLIDES]:
-            if r.get("detail"):
-                detail_slide(r, with_objectives=True)
-        # Never silently drop squads the user explicitly selected: if the runaway
-        # guard is ever hit, say how many were omitted instead of losing them.
-        omitted = len(squads) - _MAX_DETAIL_SLIDES
-        if omitted > 0:
-            s = new_slide()
-            rect(s, Inches(0), Inches(0), prs.slide_width, Inches(0.92), B["navy"])
-            textbox(s, margin, Inches(3.2), prs.slide_width - margin * 2, Inches(1),
-                    rt(lang, "more_squads", n=omitted), 24, bold=True,
-                    color=B["navy"], align=PP_ALIGN.CENTER)
+    for r in squads[:_MAX_DETAIL_SLIDES]:
+        if r.get("detail"):
+            squad_slide(r)
+    # Never silently drop squads the user explicitly selected: if the runaway
+    # guard is ever hit, say how many were omitted instead of losing them.
+    omitted = len(squads) - _MAX_DETAIL_SLIDES
+    if omitted > 0:
+        s = new_slide()
+        rect(s, Inches(0), Inches(0), prs.slide_width, Inches(0.92), B["navy"])
+        textbox(s, margin, Inches(3.2), prs.slide_width - margin * 2, Inches(1),
+                rt(lang, "more_squads", n=omitted), 24, bold=True,
+                color=B["navy"], align=PP_ALIGN.CENTER)
 
     buf = io.BytesIO()
     prs.save(buf)
