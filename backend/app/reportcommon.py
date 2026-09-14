@@ -56,7 +56,7 @@ _RT = {
         "otd_delivered": "Livré",
         # --- Moral de l'equipe ---
         "h_mood": "Moral de l'équipe", "mood_good": "Ça va bien", "mood_mixed": "Moyen",
-        "mood_bad": "Ça ne va pas", "mood_none": "Non renseigné", "mood_at": "déclaré le {d}",
+        "mood_bad": "Ça ne va pas", "mood_none": "Non renseigné", "mood_at": "soumis le {d}",
         "h_key_messages": "Messages clés", "no_key_message": "Aucun message clé",
         "km_success": "Succès", "km_alert": "Alerte", "km_risk": "Risque",
         "h_budget": "Budget", "no_budget": "Budget non renseigné",
@@ -112,7 +112,7 @@ _RT = {
         "otd_delivered": "Delivered",
         # --- Team mood ---
         "h_mood": "Team mood", "mood_good": "Good", "mood_mixed": "Mixed",
-        "mood_bad": "Not good", "mood_none": "Not declared", "mood_at": "declared on {d}",
+        "mood_bad": "Not good", "mood_none": "Not declared", "mood_at": "submitted on {d}",
         "h_key_messages": "Key messages", "no_key_message": "No key message",
         "km_success": "Success", "km_alert": "Alert", "km_risk": "Risk",
         "h_budget": "Budget", "no_budget": "Budget not set",

@@ -28,7 +28,9 @@ chose que ces trois objets ont en commun :
    laisse plus ressortir les jalons en dessous, dont la couleur dit un risque. Le
    statut reste ecrit, ce qui se lit aussi en noir et blanc.
 4. **Une ligne par initiative**, portant **les jalons qui la servent**, chacun
-   dans son trimestre.
+   dans son trimestre. La colonne de gauche est titree, comme l'est la bande des
+   engagements : sans ce mot, on y trouvait un nom suivi d'une personne et d'une
+   date, sans rien qui dise de quoi il s'agit.
 
 **Une ligne d'initiative, ce sont les jalons qui la servent**
 (`RoadmapItem.initiative_id`), et ce lien se pose dans « Mes squads », a l'etape
@@ -101,7 +103,10 @@ a pas de place a gauche non plus et le titre se coupe, ce qui reste honnete.
 ## 2. Le moral de l'equipe
 
 Chaque document porte le moral declare par la squad, en haut a droite : 😀 ça va
-bien, 😐 moyen, 🙁 ça ne va pas, avec la date de la declaration.
+bien, 😐 moyen, 🙁 ça ne va pas, avec la date, rangee en petit dans le coin de la
+carte. Elle date le moral, elle ne le dit pas : sous le visage, sur une troisieme
+ligne centree, elle prenait le meme rang que le niveau, qui est la seule chose a
+lire de loin.
 
 **Trois niveaux et pas cinq.** Une echelle fine invite a la nuance, or ce qu'on
 cherche ici est un signal. Trois choix se decident en une seconde, ce qui est la
