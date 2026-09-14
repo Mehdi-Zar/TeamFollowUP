@@ -55,45 +55,54 @@ export function OtdPanel({ squad, canManage, onChange }:
       ) : items.length === 0 ? (
         <div className="small muted">{t("otd.panel_empty")}</div>
       ) : (
-        items.map((o) => (
-          <div key={o.id} className="card stack" style={{ gap: 8, padding: 10 }}>
-            <div className="between" style={{ alignItems: "flex-start" }}>
-              {/* Le titre d'un engagement. Le style vit dans la feuille et non ici:
-                  en ligne, il annulait le fond du bouton sans annuler sa couleur
-                  de texte, et le titre s'ecrivait en blanc sur blanc. */}
-              <button className="otd-open" onClick={() => canManage && setEditing(o)}
-                      style={{ cursor: canManage ? "pointer" : "default" }}>
-                <span className="inline" style={{ gap: 8, alignItems: "center" }}>
-                  <span className="strong">{o.title}</span>
-                  <span className={`badge ${STATUS_CLASS[o.status] ?? "badge-grey"}`}>{t(`otd.status.${o.status}`)}</span>
-                </span>
-              </button>
-              {canManage && (
-                <div className="inline" style={{ gap: 4 }}>
-                  <button className="btn-ghost btn-sm" onClick={() => setEditing(o)}>{t("action.edit")}</button>
-                  <button className="btn-ghost btn-sm" onClick={async () => {
-                    if (confirm(t("otd.confirm_del"))) { await api.del(`/api/otds/${o.id}`); refresh(); }
-                  }}>✕</button>
-                </div>
-              )}
-            </div>
-            <div className="small muted">
-              {t("otd.committed")}: {fmtDate(o.committed_date)}
-              {", "}{t("otd.counts", { total: o.counts.total, done: o.counts.done, blocked: o.counts.blocked, at_risk: o.counts.at_risk })}
-            </div>
-            {o.jalons.length > 0 && (
-              <div className="stack" style={{ gap: 2 }}>
-                {o.jalons.map((j) => (
-                  <div key={j.id} className="small" style={{ display: "flex", gap: 8 }}>
-                    <span className="muted">Q{j.quarter}</span>
-                    <span style={{ flex: 1 }}>{j.title}</span>
-                    <span className="muted">{t(`otd.jstatus.${j.status}`)}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        ))
+        // Un tableau: on vient ici pour comparer des dates, et des colonnes
+        // alignees se comparent. Le detail des jalons couverts est dans la
+        // fenetre de l'engagement, qui est aussi la ou on les rattache.
+        <div style={{ overflowX: "auto" }}>
+          <table className="otd-tbl">
+            <thead>
+              <tr>
+                <th>{t("otd.h_title")}</th>
+                <th style={{ width: 140 }}>{t("otd.committed")}</th>
+                <th style={{ width: 120 }}>{t("otd.h_status")}</th>
+                <th style={{ width: 190 }}>{t("otd.h_jalons")}</th>
+                {canManage && <th style={{ width: 110 }} />}
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((o) => (
+                <tr key={o.id}>
+                  <td>
+                    <button className="otd-open" style={{ cursor: canManage ? "pointer" : "default" }}
+                            onClick={() => canManage && setEditing(o)}>
+                      <span className="strong">{o.title}</span>
+                    </button>
+                  </td>
+                  <td>{fmtDate(o.committed_date)}</td>
+                  <td>
+                    <span className={`badge ${STATUS_CLASS[o.status] ?? "badge-grey"}`}>
+                      {t(`otd.status.${o.status}`)}
+                    </span>
+                  </td>
+                  <td className="small muted">
+                    {t("otd.counts", { total: o.counts.total, done: o.counts.done,
+                                       blocked: o.counts.blocked, at_risk: o.counts.at_risk })}
+                  </td>
+                  {canManage && (
+                    <td>
+                      <div className="inline" style={{ gap: 4 }}>
+                        <button className="btn-ghost btn-sm" onClick={() => setEditing(o)}>{t("action.edit")}</button>
+                        <button className="btn-ghost btn-sm" aria-label={t("action.delete")} onClick={async () => {
+                          if (confirm(t("otd.confirm_del"))) { await api.del(`/api/otds/${o.id}`); refresh(); }
+                        }}>✕</button>
+                      </div>
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
 
       {editing && (
