@@ -25,7 +25,10 @@ def _defaults() -> dict:
         "dashboard": {"enabled": True},
         "org": {"enabled": True},
         "reporting": {"enabled": True},
-        "feed": {"enabled": True, "reactions": True, "replies": True, "pin": True, "kinds": True},
+        # Le fil et les conges sont des services en plus, pas le coeur du produit:
+        # une installation neuve montre ce dont elle a besoin et laisse allumer le
+        # reste.
+        "feed": {"enabled": False, "reactions": True, "replies": True, "pin": True, "kinds": True},
         "review": {"enabled": True, "weekly_report": True},
         # quarter_progress: le commentaire de trimestre, a cote du pourcentage que
         # l'application calcule. Eteint tant que la section n'est pas jugee prete.
@@ -38,7 +41,7 @@ def _defaults() -> dict:
         "steerco": {"enabled": False},
         "notifications": {"enabled": True, "inapp": True, "email": True},
         "getting_started": {"enabled": True},
-        "leaves": {"enabled": True, "overlap_alert": True},
+        "leaves": {"enabled": False, "overlap_alert": True},
     }
 
 

@@ -370,14 +370,20 @@ def render_pptx(data: dict) -> bytes:
         # Une case de mois fait 0,88 pouce, soit environ seize caracteres en 7,5 pt.
         placed, hidden = pack_otds(otds, chars_per_month=CPM, max_rows=OTD_ROWS)
         for o, month, width, row in placed:
+            # Le repere tombe sur le mois, le titre s'ecrit a cote. Une forme qui
+            # s'etire sur trois mois se lirait comme une periode, alors qu'un
+            # engagement est une date.
             x0 = AX0 + month * MW
-            fill = rgb(_RAG_BRAND[OTD_FILL[o["status"]]]) if o["status"] in OTD_FILL else B["navy"]
-            chipbox = rrect(s, Inches(x0), Inches(2.42 + row * 0.28), Inches(width * MW - 0.04),
-                            Inches(0.25), fill, radius=0.4)
-            place(chipbox, [(fit(o["title"], width * CPM - 2), 7.5, B["white"], True,
-                             PP_ALIGN.LEFT, 0)],
-                  anchor=MSO_ANCHOR.MIDDLE, ml=0.08, mr=0.06, mt=0.01, mb=0.01)
-            chipbox.text_frame.word_wrap = False
+            y0 = 2.42 + row * 0.28
+            ink = rgb(_RAG_BRAND[OTD_FILL[o["status"]]]) if o["status"] in OTD_FILL else B["navy"]
+            mark = s.shapes.add_shape(MSO_SHAPE.DIAMOND, Inches(x0 - 0.06), Inches(y0 + 0.05),
+                                      Inches(0.13), Inches(0.13))
+            mark.fill.solid(); mark.fill.fore_color.rgb = ink
+            mark.line.fill.background(); mark.shadow.inherit = False
+            label = textbox(s, Inches(x0 + 0.10), Inches(y0 + 0.03), Inches(width * MW - 0.10),
+                            Inches(0.20), fit(o["title"], width * CPM - 2), 7.5, bold=True,
+                            color=ink)
+            label.text_frame.word_wrap = False
         bands = max((row for _, _, _, row in placed), default=-1) + 1
         otd_bottom = 2.42 + max(bands, 1) * 0.28
 

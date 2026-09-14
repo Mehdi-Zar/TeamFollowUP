@@ -26,7 +26,6 @@ const SquadDetailPage = lazy(() => import("./pages/SquadDetailPage"));
 const EntryPage = lazy(() => import("./pages/EntryPage"));
 const OrgPage = lazy(() => import("./pages/OrgPage"));
 const FeedPage = lazy(() => import("./pages/FeedPage"));
-const TribesPage = lazy(() => import("./pages/TribesPage"));
 const PreferencesPage = lazy(() => import("./pages/PreferencesPage"));
 const AdminPage = lazy(() => import("./pages/AdminPage"));
 const MySquadsPage = lazy(() => import("./pages/MySquadsPage"));
@@ -131,7 +130,7 @@ export default function App() {
         <Route path="/prise-en-main" element={<ModuleGuard module="getting_started"><GettingStartedPage /></ModuleGuard>} />
         <Route path="/saisie" element={<Section module="reporting" cap="reporting"><EntryPage /></Section>} />
         <Route path="/organigramme" element={<Section module="org" cap="org"><OrgPage /></Section>} />
-        <Route path="/tribus" element={<Protected adminOnly><TribesPage /></Protected>} />
+
         <Route path="/mes-squads" element={<Section cap="mysquads"><MySquadsPage /></Section>} />
         <Route path="/admin" element={<Protected adminPage><AdminPage /></Protected>} />
       </Route>

@@ -173,7 +173,8 @@ def test_reimporting_the_same_file_changes_nothing(db):
     second = mod.import_org(db, mod.read_upload("org.xlsx", _minimal_workbook()))
 
     assert first["created"]["squads"] == 2
-    assert second["created"] == {"users": 0, "squads": 0, "initiatives": 0, "otds": 0}
+    assert second["created"] == {"users": 0, "squads": 0, "initiatives": 0, "otds": 0,
+                                 "platforms": 0}
     tribe = db.scalar(select(Tribe).where(Tribe.name == "Cloud Platform"))
     assert len(db.scalars(select(Squad).where(Squad.tribe_id == tribe.id)).all()) == 2
     assert len(db.scalars(select(User)).all()) == 2

@@ -57,25 +57,31 @@ def test_history_is_newest_first(client, seeded, db):
     assert emails == ["two@test", "one@test"]
 
 
-def test_a_squad_leader_only_sees_their_own_decisions(client, seeded, db):
-    """Scope follows the delegation model: gatekeepers see everything, a squad
-    leader sees what they decided themselves."""
+def test_a_gatekeeper_sees_every_decision(client, seeded, db):
+    """Les deux gardiens lisent la meme histoire.
+
+    L'historique repond a « qui a decide quoi, et quand »: la partager en deux
+    selon qui regarde donnerait deux recits d'un meme evenement, et l'arrivee SSO
+    qui n'a encore ni tribu ni decision disparaitrait de l'un des deux.
+    """
     theirs = _sso_user(db, email="theirs@test")
     others = _sso_user(db, email="others@test")
 
-    login(client, seeded["sl_a"])
+    login(client, seeded["tribe"])
     assert client.post(f"/api/access-requests/{theirs.id}/approve",
                        json={"role": "member", "squad_id": seeded["squad_a"]}).status_code == 200
     login(client, seeded["admin"])
     client.post(f"/api/access-requests/{others.id}/deny")
 
-    admin_emails = {e["email"] for e in client.get("/api/access-requests/history").json()["entries"]}
-    assert {"theirs@test", "others@test"} <= admin_emails
+    for who in (seeded["admin"], seeded["tribe"]):
+        login(client, who)
+        seen = {e["email"] for e in client.get("/api/access-requests/history").json()["entries"]}
+        assert {"theirs@test", "others@test"} <= seen
 
+
+def test_a_squad_leader_does_not_read_the_history(client, seeded, db):
     login(client, seeded["sl_a"])
-    sl_emails = {e["email"] for e in client.get("/api/access-requests/history").json()["entries"]}
-    assert "theirs@test" in sl_emails
-    assert "others@test" not in sl_emails
+    assert client.get("/api/access-requests/history").status_code == 403
 
 
 def test_history_needs_reviewer_rights(client, seeded):
