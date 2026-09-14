@@ -19,8 +19,9 @@ import { useI18n } from "../i18n";
 import { useConfig, useModule } from "../config";
 import { Initiative, Kpi, Member, Objective, RoadmapItem, RoadmapStatus, Squad, SquadDetail, Tribe, Trend, Role } from "../types";
 import { Dot, FreshnessBadge, Spinner, ErrorBanner, EmptyState, SectionCard as Card } from "../components/ui";
-import { QuarterProgressEditor, ReviewActionsEditor } from "../components/EntryExtras";
+import { QuarterProgressEditor } from "../components/EntryExtras";
 import { InitiativesCard } from "../components/InitiativesCard";
+import { OtdPanel } from "../components/OtdPanel";
 import TeamMood from "../components/TeamMood";
 import KeyMessagesPanel from "../components/KeyMessagesPanel";
 import { canEditSquad, canManageObjectives } from "../perms";
@@ -46,9 +47,6 @@ export default function EntryPage() {
   const kpisOn = moduleOn("squad_content", "kpis");
   const progressOn = moduleOn("squad_content", "quarter_progress");
   const steercoOn = moduleOn("steerco");
-  // Review actions (COPIL) ride the same module as the rest of the review feature,
-  // exactly like the API that serves them.
-  const reviewOn = moduleOn("review");
   const role = (effectiveRole ?? "member") as Role;
   const [squads, setSquads] = useState<Squad[]>([]);
   const [tribes, setTribes] = useState<Tribe[]>([]);
@@ -152,7 +150,7 @@ export default function EntryPage() {
   // etat: rien n'empeche de sauter une etape, on veut seulement qu'elle le dise.
   const steps: Step[] = squad ? [
     {
-      key: "mood", icon: FLOW_ICONS.mood, color: "#B54708",
+      key: "mood", icon: FLOW_ICONS.mood,
       done: !!squad.mood,
       node: (
         <div className="step-center">
@@ -162,48 +160,46 @@ export default function EntryPage() {
       ),
     },
     ...(objectivesOn ? [{
-      key: "otd", icon: FLOW_ICONS.target, color: "#1E2761",
+      key: "otd", icon: FLOW_ICONS.target,
       done: squad.objectives.length > 0,
       node: (
         <>
+          {/* Les engagements dates, d'abord: c'est ce que l'etape annonce. Les
+              objectifs qui les servent viennent apres. */}
+          <OtdPanel squad={squad} canManage={objAllowed} onChange={reload} />
           <InitiativesCard initiatives={initiatives} />
           <ObjectivesEditor squad={squad} year={year} onChange={reload} editable={objAllowed} t={t} rag={rag} />
         </>
       ),
     }] : []),
     ...(roadmapOn ? [{
-      key: "jalons", icon: FLOW_ICONS.flag, color: "#175CD3",
+      key: "jalons", icon: FLOW_ICONS.flag,
       done: squad.roadmap_items.length > 0,
       node: <RoadmapEditor squad={squad} year={year} onChange={reload} readonly={!writeAllowed}
                            t={t} roadmap={roadmap} squads={squads} tribes={tribes} />,
     }] : []),
     ...(kpisOn && squad.kpis_enabled ? [{
-      key: "kpis", icon: FLOW_ICONS.check, color: "#027A48",
+      key: "kpis", icon: FLOW_ICONS.check,
       done: squad.kpis.length > 0,
       node: <KpisEditor squad={squad} onChange={reload} readonly={!writeAllowed} t={t} trend={trend} />,
     }] : []),
     ...(progressOn ? [{
-      key: "progress", icon: FLOW_ICONS.check, color: "#027A48",
+      key: "progress", icon: FLOW_ICONS.check,
       done: [1, 2, 3, 4].some((q) => squad.quarter_progress?.[String(q)]?.comment),
       node: <QuarterProgressEditor squad={squad} year={year} readonly={!writeAllowed} onChange={reload} t={t} />,
     }] : []),
     {
-      key: "km", icon: FLOW_ICONS.message, color: "#6B21A8",
+      key: "km", icon: FLOW_ICONS.message,
       done: squad.key_messages.length > 0,
       node: <KeyMessagesPanel squad={squad} canEdit={writeAllowed} onChange={reload} />,
     },
-    ...(reviewOn ? [{
-      key: "actions", icon: FLOW_ICONS.message, color: "#6B21A8",
-      done: undefined,
-      node: <ReviewActionsEditor squad={squad} readonly={!writeAllowed} t={t} />,
-    }] : []),
     ...(steercoOn ? [{
-      key: "steerco", icon: FLOW_ICONS.target, color: "#1E2761",
+      key: "steerco", icon: FLOW_ICONS.target,
       done: undefined,
       node: <SteercoSection squad={squad} readonly={!writeAllowed} t={t} />,
     }] : []),
     {
-      key: "submit", icon: FLOW_ICONS.send, color: "#B42318",
+      key: "submit", icon: FLOW_ICONS.send,
       done: !squad.freshness?.is_stale,
       node: (
         <div className="step-center stack" style={{ gap: 14, alignItems: "center" }}>
@@ -267,7 +263,6 @@ export default function EntryPage() {
 type Step = {
   key: string;
   icon: ReactNode;
-  color: string;
   /** Rempli, vide, ou sans notion de « fait » (les actions, le steerco). */
   done: boolean | undefined;
   node: ReactNode;
@@ -289,7 +284,9 @@ function StepRail({ steps, at, onGo, t }: {
       {steps.map((s, i) => (
         <button key={s.key} className={`step-chip${i === at ? " on" : ""}`} onClick={() => onGo(i)}
                 aria-current={i === at ? "step" : undefined}>
-          <span className="step-ico" style={{ background: s.color }}>{s.icon}</span>
+          {/* L'icone ne porte qu'un etat: ou l'on en est. Une couleur par etape
+              n'aurait rien dit, et aurait noye celles qui disent quelque chose. */}
+          <span className={`step-ico${i === at ? " on" : s.done ? " done" : ""}`}>{s.icon}</span>
           <span className="step-body">
             <span className="step-title">{t(`entry.step.${s.key}_t`)}</span>
             <span className="step-state">

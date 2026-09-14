@@ -977,7 +977,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); width
    l'ecran parce que c'est ce qu'on verifie avant de saisir quoi que ce soit. */
 .reporting-banner {
   display: flex; justify-content: space-between; align-items: center; gap: 20px;
-  flex-wrap: wrap; background: linear-gradient(135deg, var(--navy), var(--navy-deep));
+  flex-wrap: wrap; background: var(--navy);
   color: #fff; border-radius: var(--radius); padding: 20px 24px; box-shadow: var(--shadow);
 }
 .rb-eyebrow {
@@ -1004,10 +1004,16 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); width
 }
 .step-chip:hover { border-color: var(--accent); }
 .step-chip.on { border-color: var(--navy); box-shadow: 0 0 0 3px rgba(30, 39, 97, .08); }
+/* L'icone d'une etape ne porte qu'un etat: courante, faite, ou a venir. Une
+   couleur par etape aurait decore sans rien dire, et aurait affaibli celles qui
+   disent quelque chose (un jalon bloque, un engagement en retard). */
 .step-ico {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 30px; height: 30px; border-radius: 9px; color: #fff; flex: 0 0 auto;
+  width: 30px; height: 30px; border-radius: 9px; flex: 0 0 auto;
+  background: var(--ice-soft); color: var(--grey);
 }
+.step-ico.on { background: var(--navy); color: #fff; }
+.step-ico.done { background: var(--ice-soft); color: var(--green); }
 .step-body { display: flex; flex-direction: column; gap: 1px; }
 .step-title { font-size: 13px; font-weight: 700; color: var(--navy); }
 .step-state { font-size: 11px; color: var(--grey); }
@@ -1021,3 +1027,12 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); width
 .mood-big { gap: 10px; }
 .mood-big .mood-btn { font-size: 40px; padding: 8px 14px; border-radius: 16px; }
 .mood-note { width: min(460px, 100%); margin-top: 10px; text-align: center; }
+
+/* Le titre d'un engagement OTD, cliquable pour l'ouvrir. Il herite sinon de la
+   regle generale des boutons, fond navy et texte blanc: annuler le fond sans
+   annuler la couleur donnait un titre blanc sur blanc, donc invisible. */
+.otd-open {
+  background: none; border: 0; padding: 0; text-align: left;
+  font: inherit; color: var(--text);
+}
+.otd-open:hover .strong { text-decoration: underline; }
