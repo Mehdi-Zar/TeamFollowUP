@@ -34,7 +34,9 @@ from .reportcommon import (MOOD_COLOR, MOOD_EMOJI, STAGE_COLOR, _DEP_T, _INIT_T,
 _BRAND = {
     "navy": "#1E2761", "navy_deep": "#141B47", "accent": "#175CD3",
     "green": "#027A48", "orange": "#B54708", "red": "#B42318",
-    "ink": "#1F2937", "muted": "#6B7280", "card": "#F1F5F9",
+    # Une encre presque noire: sur un videoprojecteur fatigue, un gris anthracite
+    # perd la moitie de son contraste et le texte se devine au lieu de se lire.
+    "ink": "#111827", "muted": "#55606E", "card": "#F1F5F9",
     "line": "#E2E8F0", "white": "#FFFFFF", "zebra": "#F8FAFC",
 }
 
@@ -299,9 +301,10 @@ def render_pptx(data: dict) -> bytes:
     # squad qui en porte dix, alors que le bas de la frise etait vide: la place
     # existait, elle n'etait simplement pas allouee.
     OTD_ROWS = 4
-    CPM = 16                           # caracteres tenant dans un mois, en 7,5 pt
-    JALON_H = 0.40                     # hauteur d'une boite de jalon, deux lignes de 7,5 pt
-    JALON_CPL = 42                     # caracteres sur une ligne d'une boite de jalon
+    CPM = 13                           # caracteres tenant dans un mois, en 9 pt
+    JALON_H = 0.46                     # hauteur d'une boite de jalon, deux lignes de 9 pt
+    JALON_CPL = 30                     # caracteres sur une ligne d'une boite de jalon
+    STAGE_W = 0.26                     # la phase, reservee a droite dans la boite
 
     def fit(text: str, chars: int) -> str:
         """Coupe a la largeur disponible. PowerPoint ne sait pas mettre de points
@@ -319,7 +322,7 @@ def render_pptx(data: dict) -> bytes:
         place(hdr, [
             (r["name"], 19, B["white"], True, PP_ALIGN.LEFT, 3),
             (f'{rt(lang, "h_leader")} : {r["leader"] or "-"}, {rt(lang, "year")} {data["year"]}, '
-             f'{rt(lang, "h_progress_long")} {r["annual_pct"]}%', 10, rgb("#C7D2FE"), False, PP_ALIGN.LEFT, 0),
+             f'{rt(lang, "h_progress_long")} {r["annual_pct"]}%', 11, rgb("#CDD8F5"), False, PP_ALIGN.LEFT, 0),
         ], anchor=MSO_ANCHOR.MIDDLE, ml=0.28, mr=0.28)
 
         # Le moral: trois niveaux, et la date qui les date. Un moral de mars
@@ -329,11 +332,11 @@ def render_pptx(data: dict) -> bytes:
         # comme un quatrieme niveau.
         mlines = []
         if mood in MOOD_EMOJI:
-            mlines.append((MOOD_EMOJI[mood], 18, B["ink"], False, PP_ALIGN.CENTER, 1))
-        mlines.append((mood_label(mood, lang), 8,
+            mlines.append((MOOD_EMOJI[mood], 20, B["ink"], False, PP_ALIGN.CENTER, 1))
+        mlines.append((mood_label(mood, lang), 9,
                        rgb(_RAG_BRAND[MOOD_COLOR.get(mood or "", "grey")]), True, PP_ALIGN.CENTER, 0))
         if r.get("mood_at"):
-            mlines.append((rt(lang, "mood_at", d=r["mood_at"]), 6.5, B["muted"], False, PP_ALIGN.CENTER, 0))
+            mlines.append((rt(lang, "mood_at", d=r["mood_at"]), 7.5, B["muted"], False, PP_ALIGN.CENTER, 0))
         place(rrect(s, Inches(11.20), Inches(0.26), Inches(1.73), Inches(0.81),
                     B["white"], line=B["line"], radius=0.08),
               mlines, anchor=MSO_ANCHOR.MIDDLE, ml=0.04, mr=0.04, mt=0.04, mb=0.04)
@@ -350,49 +353,71 @@ def render_pptx(data: dict) -> bytes:
             x = AX0 + i * QW
             qc = rrect(s, Inches(x), Inches(qy), Inches(QW - 0.06), Inches(0.52),
                        rgb("#E8F0FE"), line=B["line"], radius=0.08)
-            place(qc, [(f'Q{q}    {pct} %', 10, B["navy"], True, PP_ALIGN.LEFT, 0)],
+            place(qc, [(f'Q{q}    {pct} %', 12, B["navy"], True, PP_ALIGN.LEFT, 0)],
                   anchor=MSO_ANCHOR.TOP, ml=0.08, mt=0.05, mr=0.08)
             pbar(s, Inches(x + 0.08), Inches(qy + 0.26), Inches(QW - 0.22), pct, B["accent"])
             if qd.get("comment"):
-                textbox(s, Inches(x + 0.08), Inches(qy + 0.38), Inches(QW - 0.22), Inches(0.13),
-                        qd["comment"][:70], 6.5, color=B["muted"])
+                textbox(s, Inches(x + 0.08), Inches(qy + 0.39), Inches(QW - 0.22), Inches(0.13),
+                        qd["comment"][:60], 7.5, color=B["muted"])
 
         # Les mois, qui donnent la resolution de l'axe.
         months = _MONTHS[_lang(lang)]
         for i, m in enumerate(months):
-            textbox(s, Inches(AX0 + i * MW), Inches(2.16), Inches(MW), Inches(0.16), m, 8,
+            textbox(s, Inches(AX0 + i * MW), Inches(2.15), Inches(MW), Inches(0.18), m, 9,
                     color=B["muted"], align=PP_ALIGN.CENTER)
         rect(s, Inches(LBL_X), Inches(2.35), Inches(AX1 - LBL_X), Inches(0.012), B["line"])
 
         # ----- les engagements OTD, poses a leur date -----
         textbox(s, Inches(LBL_X), Inches(2.42), Inches(LBL_W), Inches(0.2),
-                rt(lang, "h_otd_section"), 9, bold=True, color=B["navy"])
+                rt(lang, "h_otd_section"), 10, bold=True, color=B["navy"])
         otds = det.get("otds") or []
         # Deux engagements proches ne peuvent pas occuper la meme place: ils
         # s'empilent, plutot que de se superposer et d'en rendre un illisible. Le
         # rangement est celui de l'export HTML, au pouce pres.
-        # Une case de mois fait 0,88 pouce, soit environ seize caracteres en 7,5 pt.
+        # Une case de mois fait 0,88 pouce, soit environ treize caracteres en 9 pt.
         placed, hidden = pack_otds(otds, chars_per_month=CPM, max_rows=OTD_ROWS)
+        # Ou s'arrete le dernier engagement pose sur chaque bande, en mois: c'est la
+        # limite de ce qu'un titre ecrit vers la gauche peut occuper sans recouvrir
+        # son voisin. Les engagements arrivent par mois croissant.
+        taken: dict[int, int] = {}
         for o, month, width, row in placed:
             # Le repere tombe sur le mois, le titre s'ecrit a cote. Une forme qui
             # s'etire sur trois mois se lirait comme une periode, alors qu'un
             # engagement est une date.
             x0 = AX0 + month * MW
-            y0 = 2.42 + row * 0.28
+            y0 = 2.42 + row * 0.26
             # Une seule couleur pour tous les engagements: quatre teintes sur une
             # meme rangee ne laissent plus ressortir les jalons en dessous, dont la
             # couleur dit vraiment quelque chose. Le statut reste ecrit.
             ink = B["navy"]
-            mark = s.shapes.add_shape(MSO_SHAPE.DIAMOND, Inches(x0 - 0.06), Inches(y0 + 0.05),
-                                      Inches(0.13), Inches(0.13))
+            mark = s.shapes.add_shape(MSO_SHAPE.DIAMOND, Inches(x0 - 0.06), Inches(y0 + 0.04),
+                                      Inches(0.12), Inches(0.12))
             mark.fill.solid(); mark.fill.fore_color.rgb = ink
             mark.line.fill.background(); mark.shadow.inherit = False
-            label = textbox(s, Inches(x0 + 0.10), Inches(y0 + 0.03), Inches(width * MW - 0.10),
-                            Inches(0.20), fit(o["title"], width * CPM - 2), 7.5, bold=True,
-                            color=ink)
+            # La place a droite du repere, que ``pack_otds`` a deja bornee a la fin
+            # de l'annee: un titre ne deborde jamais de l'axe, il se coupe avant.
+            right = width * MW - 0.10
+            # Les deux derniers mois n'ont presque plus rien devant eux. Le titre
+            # s'ecrit alors a gauche du repere, dans ce que le precedent de la
+            # bande laisse libre: mieux vaut un titre entier a gauche d'un point
+            # qu'un titre coupe a sa droite. Ailleurs sur l'axe il reste a droite,
+            # parce que le bord gauche du titre sur la date est ce qui fait lire la
+            # bande.
+            free = x0 - 0.08 - (AX0 + taken.get(row, 0) * MW)
+            if month >= 10 and free > right:
+                room = min(free, 2.40)
+                label = textbox(s, Inches(x0 - 0.08 - room), Inches(y0 + 0.02), Inches(room),
+                                Inches(0.18), fit(o["title"], int(room / MW * CPM)), 9,
+                                bold=True, color=ink, align=PP_ALIGN.RIGHT)
+            else:
+                room = right
+                label = textbox(s, Inches(x0 + 0.10), Inches(y0 + 0.02), Inches(room),
+                                Inches(0.18), fit(o["title"], int(room / MW * CPM)), 9,
+                                bold=True, color=ink)
             label.text_frame.word_wrap = False
+            taken[row] = month + width
         bands = max((row for _, _, _, row in placed), default=-1) + 1
-        otd_bottom = 2.42 + max(bands, 1) * 0.28
+        otd_bottom = 2.42 + max(bands, 1) * 0.26
 
         # Ce qui n'a pas de place sur l'axe est dit, pas tu: un engagement absent
         # d'un export se lit comme un engagement qui n'existe pas.
@@ -405,8 +430,8 @@ def render_pptx(data: dict) -> bytes:
         if not otds:
             notes.append(rt(lang, "no_otd"))
         if notes:
-            textbox(s, Inches(AX0), Inches(otd_bottom), Inches(AX1 - AX0), Inches(0.16),
-                    ", ".join(notes)[:150], 7, color=B["muted"])
+            textbox(s, Inches(AX0), Inches(otd_bottom), Inches(AX1 - AX0), Inches(0.18),
+                    ", ".join(notes)[:150], 8, color=B["muted"])
             otd_bottom += 0.18
 
         # ----- les colonnes de trimestre, tracees jusqu'en bas -----
@@ -430,7 +455,7 @@ def render_pptx(data: dict) -> bytes:
             tallest = max((len(v) for v in per_q.values()), default=0)
             # Un jalon prend deux lignes de texte quand son titre est long, donc la
             # hauteur d'une boite est fixe et connue: la ligne s'y ajuste.
-            rh = max(0.52, JALON_H * tallest + 0.14)
+            rh = max(0.56, JALON_H * tallest + 0.12)
             if y + rh > BOTTOM:
                 break
             rect(s, Inches(LBL_X), Inches(y), Inches(AX1 - LBL_X), Inches(0.012), B["line"])
@@ -443,46 +468,59 @@ def render_pptx(data: dict) -> bytes:
                                     rt(lang, "tl_deadline", d=row["deadline"]) if row.get("deadline") else None)
                         if x]
                 lbl = textbox(s, Inches(LBL_X), Inches(y + 0.06), Inches(LBL_W), Inches(rh - 0.1),
-                              fit(row["title"], 52), 8.5, bold=True, color=B["navy"])
+                              fit(row["title"], 44), 9.5, bold=True, color=B["navy"])
                 if meta:
                     p = lbl.text_frame.add_paragraph()
                     rr = p.add_run(); rr.text = ", ".join(meta)
-                    rr.font.size = Pt(6.5); rr.font.color.rgb = B["muted"]
+                    rr.font.size = Pt(7.5); rr.font.color.rgb = B["muted"]
 
             for qi, q in enumerate((1, 2, 3, 4)):
                 for k, it in enumerate(per_q[q]):
-                    jx, jy = AX0 + qi * QW + 0.05, y + 0.07 + k * JALON_H
-                    jb = rrect(s, Inches(jx), Inches(jy), Inches(QW - 0.14), Inches(JALON_H - 0.05),
-                               B["white"], line=B["line"], radius=0.14)
-                    # Le liset colore porte le statut, le texte reste lisible en
-                    # encre: un titre entierement rouge se lit moins bien qu'un
-                    # titre noir signale en rouge.
-                    rect(s, Inches(jx), Inches(jy), Inches(0.05), Inches(JALON_H - 0.05),
+                    jx, jy = AX0 + qi * QW + 0.05, y + 0.06 + k * JALON_H
+                    jb = rrect(s, Inches(jx), Inches(jy), Inches(QW - 0.14), Inches(JALON_H - 0.06),
+                               B["white"], line=B["line"], radius=0.12)
+                    # Le filet de couleur porte le statut. Il reste, mais il a
+                    # desormais sa legende au bas de la slide: une couleur sans
+                    # legende se devine, et se devine mal en reunion.
+                    rect(s, Inches(jx), Inches(jy), Inches(0.05), Inches(JALON_H - 0.06),
                          rgb(_RAG_BRAND[_status_rag(it["status"])]))
-                    # Le titre seul, et en entier. La dependance et la phase ont
-                    # quitte la boite: a trois informations sur une ligne, c'est le
-                    # titre qui etait coupe, et c'est la seule qu'on lit de loin.
-                    place(jb, [(fit(it["title"], 2 * JALON_CPL), 7.5, B["ink"],
+                    # Le titre, puis la phase a droite. La dependance, elle, reste
+                    # dehors: a trois informations sur une ligne c'est le titre qui
+                    # etait coupe, et c'est la seule qu'on lit de loin. EA ou GA
+                    # tient en deux lettres et se range dans une colonne fixe, donc
+                    # le titre sait ou s'arreter au lieu de passer dessous.
+                    stage = (it.get("stage") or "").strip()
+                    place(jb, [(fit(it["title"], 2 * JALON_CPL), 9, B["ink"],
                                 False, PP_ALIGN.LEFT, 0)],
-                          anchor=MSO_ANCHOR.MIDDLE, ml=0.11, mr=0.07, mt=0.01, mb=0.01)
+                          anchor=MSO_ANCHOR.MIDDLE, ml=0.10,
+                          mr=0.07 + (STAGE_W if stage else 0), mt=0.01, mb=0.01)
                     jb.text_frame.word_wrap = True
+                    if stage:
+                        # En encre de service et non aux couleurs de la phase: le
+                        # bord gauche de la boite porte deja une couleur, celle du
+                        # statut, et deux codes couleur dans une boite de deux
+                        # centimetres ne se distinguent plus de loin.
+                        textbox(s, Inches(jx + QW - 0.14 - STAGE_W - 0.05),
+                                Inches(jy + (JALON_H - 0.06) / 2 - 0.06),
+                                Inches(STAGE_W), Inches(0.13), stage, 8, bold=True,
+                                color=B["muted"], align=PP_ALIGN.RIGHT)
             y += rh
             drawn += 1
         if not rows:
             textbox(s, Inches(AX0), Inches(y + 0.06), Inches(AX1 - AX0), Inches(0.2),
-                    rt(lang, "tl_empty"), 9, color=B["muted"])
+                    rt(lang, "tl_empty"), 10, color=B["muted"])
         elif drawn < len(rows):
             textbox(s, Inches(AX0), Inches(min(y, BOTTOM) + 0.02), Inches(AX1 - AX0), Inches(0.2),
-                    f'+{len(rows) - drawn}', 8, color=B["muted"])
+                    f'+{len(rows) - drawn}', 9, color=B["muted"])
 
         # ----- bas de slide: messages cles et budget -----
         def list_card(x, y2, w, h, title, lines, empty):
             sh = rrect(s, x, y2, w, h, B["white"], line=B["line"], radius=0.05)
-            paras = [(title, 11, B["navy"], True, PP_ALIGN.LEFT, 4)]
+            paras = [(title, 12, B["navy"], True, PP_ALIGN.LEFT, 4)]
             if lines:
-                paras += [(txt, 8.5, color, bold, PP_ALIGN.LEFT, 1) for (txt, color, bold) in lines]
+                paras += [(txt, 10, color, bold, PP_ALIGN.LEFT, 2) for (txt, color, bold) in lines]
             else:
-                paras.append((empty, 8.5, B["muted"], False, PP_ALIGN.LEFT, 0))
+                paras.append((empty, 10, B["muted"], False, PP_ALIGN.LEFT, 0))
             place(sh, paras, anchor=MSO_ANCHOR.TOP, ml=0.16, mt=0.08, mr=0.16, mb=0.06)
 
         kms = det.get("key_messages") or []
@@ -497,13 +535,13 @@ def render_pptx(data: dict) -> bytes:
 
         bsh = rrect(s, Inches(8.61), Inches(6.08), Inches(4.32), Inches(1.18),
                     B["white"], line=B["line"], radius=0.05)
-        place(bsh, [(rt(lang, "h_budget"), 11, B["navy"], True, PP_ALIGN.LEFT, 4)],
+        place(bsh, [(rt(lang, "h_budget"), 12, B["navy"], True, PP_ALIGN.LEFT, 4)],
               anchor=MSO_ANCHOR.TOP, ml=0.16, mt=0.08, mr=0.16)
         bud = det.get("budget")
         btf = bsh.text_frame
         if bud is None:
             p = btf.add_paragraph(); rr = p.add_run(); rr.text = rt(lang, "no_budget")
-            rr.font.size = Pt(8.5); rr.font.color.rgb = B["muted"]
+            rr.font.size = Pt(10); rr.font.color.rgb = B["muted"]
         else:
             f = lambda v: "-" if v is None else f"{v:,.0f} €"
             st_color = {"on_track": "green", "at_risk": "amber", "over": "red"}[bud["status"]]
@@ -519,12 +557,33 @@ def render_pptx(data: dict) -> bytes:
             for label, val in rows_b:
                 p = btf.add_paragraph(); p.space_after = Pt(1)
                 r1 = p.add_run(); r1.text = f'{label} : '
-                r1.font.size = Pt(9); r1.font.color.rgb = B["muted"]
+                r1.font.size = Pt(10); r1.font.color.rgb = B["muted"]
                 r2 = p.add_run(); r2.text = val
-                r2.font.size = Pt(9); r2.font.bold = True; r2.font.color.rgb = B["ink"]
+                r2.font.size = Pt(10); r2.font.bold = True; r2.font.color.rgb = B["ink"]
             cw = Inches(0.26 + 0.082 * len(st_lbl))
             chip(s, Emu(int(Inches(8.61)) + int(Inches(4.32)) - int(cw) - int(Inches(0.14))),
                  Inches(6.14), st_lbl, rgb(_RAG_BRAND[st_color]))
+
+        # La legende, tout en bas: les couleurs de statut, puis les deux phases.
+        # Elle se lit une fois et sert pour toute la frise, donc elle tient sur une
+        # ligne discrete plutot que de repeter dans chaque boite ce qu'une couleur
+        # et deux lettres suffisent a dire.
+        LEG_CW = 0.048                 # largeur d'un caractere en 7 pt
+        lx = 0.4
+        for rag, codes in (("green", ("on_track", "done")), ("amber", ("at_risk",)),
+                           ("red", ("blocked",))):
+            rect(s, Inches(lx), Inches(7.33), Inches(0.09), Inches(0.09), rgb(_RAG_BRAND[rag]))
+            leg = ", ".join(_status_label(c, lang) for c in codes)
+            textbox(s, Inches(lx + 0.13), Inches(7.31), Inches(LEG_CW * len(leg) + 0.06),
+                    Inches(0.14), leg, 7, color=B["muted"])
+            lx += 0.26 + LEG_CW * len(leg)
+        # EA et GA sont dans les boites: deux lettres qui ne veulent rien dire pour
+        # qui decouvre le document, et tout pour qui sait, d'ou la legende.
+        for code in ("ea", "ga"):
+            leg = f'{code.upper()} {rt(lang, "stage_" + code)}'
+            textbox(s, Inches(lx), Inches(7.31), Inches(LEG_CW * len(leg) + 0.06),
+                    Inches(0.14), leg, 7, color=B["muted"])
+            lx += 0.20 + LEG_CW * len(leg)
 
     # --- Assemble the deck. Une squad, une slide, la meme dans les deux cas: un
     # export d'une seule squad n'est que ce deck sans sa page de synthese.

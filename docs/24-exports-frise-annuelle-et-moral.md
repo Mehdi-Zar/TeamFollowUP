@@ -41,6 +41,15 @@ disaient. Trois cas sont traites explicitement, et chacun a son test :
   bande.
 - **L'owner d'une initiative, l'echeance, la dependance d'un jalon** suivent sur
   la ligne. La dependance est souvent la seule ligne qui explique un glissement.
+- **La phase d'un jalon, EA ou GA**, se lit a droite de son titre dans la boite,
+  dans une colonne de largeur fixe pour que le titre sache ou s'arreter. Elle est
+  en encre de service et non aux couleurs de la phase : le bord gauche de la
+  boite porte deja une couleur, celle du statut, et deux codes couleur dans une
+  boite de deux centimetres ne se distinguent plus de loin. Les deux lettres ont
+  leur legende au bas de la slide, a cote de celle des couleurs.
+  La dependance, elle, reste hors de la boite sur la slide : a trois
+  informations sur une ligne, c'est le titre qui etait coupe, et c'est la seule
+  qu'on lit de loin. Le HTML, qui n'a pas de bas de page a tenir, garde les deux.
 
 ### Un engagement est une date, pas une duree
 
@@ -54,14 +63,24 @@ un besoin de mise en page, jamais une information.
 
 La place reservee au titre suit sa longueur, exprimee en mois. Quand deux se
 recouvrent, le second descend d'une bande. En HTML le nombre de bandes n'est pas
-limite ; sur une slide il l'est a trois, parce que la hauteur d'une slide ne
+limite ; sur une slide il l'est a quatre, parce que la hauteur d'une slide ne
 s'etire pas, et ce qui ne tient pas est compte et affiche (`+2`) plutot que
 supprime.
 
 Le calcul est le meme pour les deux formats (`reportcommon.pack_otds`) : deux
 mises en page qui se contrediraient sur la place d'un engagement seraient pires
 qu'une seule imparfaite. Seule la densite de texte change, huit caracteres par
-mois en HTML, seize sur une slide.
+mois en HTML, treize sur une slide en 9 pt.
+
+**Un engagement de novembre ou de decembre n'a plus rien devant lui.** La largeur
+reservee au titre s'arrete a la fin de l'annee, donc un engagement de decembre
+dispose d'un mois et se coupe apres une quinzaine de caracteres. Sur ces deux
+derniers mois, le titre s'ecrit donc **a gauche du repere**, dans ce que le
+precedent de la meme bande laisse libre, et sur la slide seulement : mieux vaut
+un titre entier a gauche d'un point qu'un titre coupe a sa droite. Ailleurs sur
+l'axe il reste a droite, parce que le bord gauche du titre pose sur la date est
+ce qui fait lire la bande. Quand la bande est deja occupee jusqu'au repere, il n'y
+a pas de place a gauche non plus et le titre se coupe, ce qui reste honnete.
 
 ## 2. Le moral de l'equipe
 
@@ -105,7 +124,37 @@ Ce qui ne tient pas dans une forme est coupe sur des points de suspension.
 PowerPoint ne sait pas le faire seul : sans coupe il passe a la ligne et le texte
 sort de la pastille.
 
-## 4. Ou est le code
+### Lisible depuis le fond de la salle
+
+Un deck se projette. Les corps de texte de la slide d'une squad sont donc donnes
+pour une lecture a distance (9 pt pour un titre de jalon ou un engagement, 10 pt
+pour les messages cles et le budget), et l'encre est un noir presque franc
+(`#111827`) : sur un videoprojecteur fatigue, un gris anthracite perd la moitie
+de son contraste et le texte se devine au lieu de se lire.
+
+Le filet de couleur au bord d'un jalon porte son statut, et il a sa **legende en
+bas de slide** : une couleur sans legende se devine, et se devine mal quand on
+decouvre le document en reunion.
+
+## 4. La frise a pleine charge
+
+Une mise en page ne casse pas sur un cas, elle casse quand tout arrive ensemble.
+Le jeu de donnees de demonstration (`app.seed_fake`) sert donc aussi de cas de
+charge : neuf jalons par squad tires d'un catalogue de titres de longueurs
+variees, un trimestre qui en porte parfois trois, des objectifs rattaches a des
+initiatives pour que la frise ait plusieurs lignes, une ligne de jalons qui ne
+sert aucune initiative, et cinq engagements par squad dont certains en novembre
+et en decembre.
+
+Il a longtemps porte cinq jalons de titre court, jamais plus de deux par
+trimestre, aucun objectif rattache a une initiative, et **aucun engagement** :
+la bande du haut ne se dessinait jamais et la frise n'avait qu'une ligne quel que
+soit le nombre de jalons. Une mise en page se validait alors sans avoir rien eu a
+ranger. `backend/tests/test_export_timeline_dense.py` tient les deux bouts : que
+ce jeu reste dense, puis qu'a cette densite rien ne sorte de la slide et qu'aucun
+titre d'engagement n'en recouvre un autre.
+
+## 5. Ou est le code
 
 | Role | Fichier |
 |---|---|
@@ -114,4 +163,5 @@ sort de la pastille.
 | La slide d'une squad | `backend/app/reportpptx.py` (`squad_slide`) |
 | Le JPG, rendu depuis le HTML | `frontend/src/components/ExportMenu.tsx` |
 | Declarer le moral | `frontend/src/components/TeamMood.tsx`, `PUT /api/squads/{id}/mood` |
-| Tests | `backend/tests/test_export_timeline.py`, `backend/tests/test_mood.py` |
+| Le jeu de donnees de demonstration | `backend/app/seed_fake.py` |
+| Tests | `backend/tests/test_export_timeline.py`, `backend/tests/test_export_timeline_dense.py`, `backend/tests/test_mood.py` |
