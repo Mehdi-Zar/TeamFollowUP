@@ -15,15 +15,49 @@ import { BREAKGLASS, expect, signIn, test } from "./helpers";
 // The keys AdminPage accepts in ?section=, from ADMIN_TABS. An administrator can
 // open all of them; a narrower role would see a subset, which roles.spec covers.
 const SECTIONS = [
-  "tribes", "import", "squads", "users", "personas", "my_squads",
-  "modules", "report", "leaves", "settings",
+  "tribes", "import", "squads", "platforms", "users", "personas", "my_squads",
+  "modules", "report", "leaves", "settings", "branding",
   "auth", "api", "smtp", "trust",
-  "moderation", "logs", "audit", "ops",
+  "moderation", "logs", "data", "audit", "ops",
 ];
 
+// The feed, leave, committee and steerco services ship switched off: they are
+// extras, and a fresh install shows what it needs. Their administration tabs are
+// hidden with them, because their routes answer 404 and an empty panel with two
+// console errors is worse than no tab at all. This suite is about the panels, not
+// about the default, so it turns them on before walking them.
+const OPTIONAL_SERVICES = {
+  feed: { enabled: true },
+  leaves: { enabled: true },
+  committees: { enabled: true },
+  steerco: { enabled: true },
+};
+
 test.describe("Administration sections", () => {
+  // What the instance had before the suite touched it, so it can be given back.
+  let previous: Record<string, { enabled: boolean }> | null = null;
+
   test.beforeEach(async ({ page }) => {
     await signIn(page, BREAKGLASS);
+    const before = await page.request.get("/api/admin/modules-config");
+    const cfg = await before.json();
+    previous ??= Object.fromEntries(
+      Object.keys(OPTIONAL_SERVICES).map((k) => [k, { enabled: !!cfg[k]?.enabled }]));
+    const on = await page.request.put("/api/admin/modules-config", { data: OPTIONAL_SERVICES });
+    expect(on.ok(), await on.text()).toBeTruthy();
+    // The tab list is built from the config the SPA loaded at startup.
+    await page.reload();
+  });
+
+  // Switching a service on to walk its panel is fair; leaving it on is not. The
+  // suite does not always run against a throwaway instance, and a setting someone
+  // deliberately turned off must be found off afterwards.
+  test.afterAll(async ({ playwright }, testInfo) => {
+    if (!previous) return;
+    const ctx = await playwright.request.newContext({ baseURL: testInfo.project.use.baseURL });
+    await ctx.post("/api/auth/login", { data: BREAKGLASS });
+    await ctx.put("/api/admin/modules-config", { data: previous });
+    await ctx.dispose();
   });
 
   for (const section of SECTIONS) {

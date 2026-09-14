@@ -62,6 +62,17 @@ const TAB_LABEL: Record<string, string> = {
   ops: "admin.tab.ops",
 };
 
+// L'onglet d'un service coupe n'a rien a montrer: ses routes sont gardees par le
+// meme module et repondent 404. Le proposer quand meme donne un ecran vide et deux
+// erreurs dans la console. Il revient des que le service est rallume, depuis
+// « Services actifs », qui ne depend lui-meme d'aucun module.
+const TAB_MODULE: Record<string, [ModuleKey] | [ModuleKey, string]> = {
+  leaves: ["leaves"],
+  moderation: ["feed"],
+  platforms: ["steerco"],
+  report: ["review", "weekly_report"],
+};
+
 // Les quatre familles du menu, dans l'ordre ou l'on se pose les questions en
 // montant une installation: qui est dans l'organisation, ce que l'application
 // propose, comment on s'y connecte, comment on l'entretient. Seuls les elements
@@ -96,10 +107,16 @@ export default function AdminPage() {
 
   // When an admin previews another role, reflect that role's scoped tab set
   // (the backend still enforces the real account's permissions on every call).
-  const tabKeys =
+  const granted =
     perms && effectiveRole && effectiveRole !== perms.role
       ? ADMIN_TABS_BY_ROLE[effectiveRole] ?? []
       : perms?.admin_tabs ?? [];
+  // Puis retirer ceux dont le service est coupe: leurs routes repondraient 404.
+  const moduleOn = useModule();
+  const tabKeys = granted.filter((k) => {
+    const m = TAB_MODULE[k];
+    return !m || moduleOn(m[0], m[1]);
+  });
 
   // Pick the active tab: honour a valid `?section=` deep link, else keep the
   // current tab if still allowed, else fall back to the first allowed tab.

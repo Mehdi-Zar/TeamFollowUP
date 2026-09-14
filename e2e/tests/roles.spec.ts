@@ -69,7 +69,7 @@ test.describe("Roles and route guards", () => {
     await page.goto("/admin");
     const nav = page.getByRole("navigation", { name: "Administration" });
     await expect(nav).toBeVisible();
-    for (const section of ["Tribes", "Squads", "Users", "Personas & access"]) {
+    for (const section of ["Tribes", "Squads", "Accounts", "Personas and access"]) {
       await expect(nav.getByRole("button", { name: section })).toBeVisible();
     }
   });

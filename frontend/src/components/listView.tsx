@@ -99,10 +99,15 @@ export function ListSearch({ view, id }: { view: ListView; id: string }) {
  * trier et changer de vue ne fait que le reordonner. `left` recoit ce que
  * l'ecran veut poser en vis-a-vis, une legende par exemple.
  */
-export function ListControls<T>({ view, sorts, left, extraTouched, onResetExtra }: {
+export function ListControls<T>({ view, sorts, left, right, views = true,
+                                 extraTouched, onResetExtra }: {
   view: ListView;
   sorts: SortSpec<T>[];
   left?: ReactNode;
+  /** Ce que l'ecran veut poser juste avant la remise a zero (un choix de squads). */
+  right?: ReactNode;
+  /** Faux quand cartes et liste n'ont pas de sens: une matrice est deja une vue. */
+  views?: boolean;
   /** Filtres propres a l'ecran, pour que « reinitialiser » les emporte aussi. */
   extraTouched?: boolean;
   onResetExtra?: () => void;
@@ -123,14 +128,17 @@ export function ListControls<T>({ view, sorts, left, extraTouched, onResetExtra 
             </button>
           ))}
         </span>
-        <span className="seg">
-          <button className={view.dense ? "" : "seg-on"} onClick={() => view.setDense(false)}>
-            {t("list.view_cards")}
-          </button>
-          <button className={view.dense ? "seg-on" : ""} onClick={() => view.setDense(true)}>
-            {t("list.view_list")}
-          </button>
-        </span>
+        {views && (
+          <span className="seg">
+            <button className={view.dense ? "" : "seg-on"} onClick={() => view.setDense(false)}>
+              {t("list.view_cards")}
+            </button>
+            <button className={view.dense ? "seg-on" : ""} onClick={() => view.setDense(true)}>
+              {t("list.view_list")}
+            </button>
+          </span>
+        )}
+        {right}
         {touched && (
           <button className="btn-ghost btn-sm"
                   onClick={() => { view.reset(); onResetExtra?.(); }}>{t("list.reset")}</button>
