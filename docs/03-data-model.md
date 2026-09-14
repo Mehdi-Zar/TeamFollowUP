@@ -70,7 +70,6 @@ erDiagram
 | **feed_replies** | id, post_id→feed_posts, author_user_id→users, content, created_at | |
 | **feed_reactions** | id, post_id→feed_posts, user_id→users, kind (like/ack), **uniq(post,user,kind)** | |
 | **notifications** | id, user_id→users, kind (tweet/reply), actor_name, excerpt, link, is_read, created_at | in-app bell |
-| **review_actions** | id, squad_id→squads, text, owner, due_date, done, created_by_user_id→users, created_at | COPIL action items |
 | **report_subscriptions** | id, user_id→users, squad_id→squads (nullable=dashboard scope), interval_days, last_sent_at, **uniq(user,squad)** | per-user email cadence |
 | **leave_types** | id, label, color, display_order, is_active, **requires_detail** | configurable absence categories (admin); `requires_detail` prompts a free-text precision (default "Autre") |
 | **leaves** | id, user_id→users, tribe_id→tribes (denormalised at creation), type_id→leave_types, start_date, end_date, **start_half/end_half**, **detail** (public precision), comment (private motif), **status** (pending/approved/rejected/cancelled), created_by_user_id, decided_by_user_id, decided_at, decision_comment | one declared absence; type public, motif private |

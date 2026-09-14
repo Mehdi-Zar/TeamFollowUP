@@ -7,9 +7,9 @@
 //
 // Review actions (the decisions taken in a squad's COPIL) had a complete CRUD, a
 // TypeScript type, and a module toggle. No component ever called it.
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { api, ApiError } from "../api";
-import { ReviewAction, SquadDetail } from "../types";
+import { SquadDetail } from "../types";
 import { SectionCard as Card } from "./ui";
 
 const QUARTERS = [1, 2, 3, 4] as const;
@@ -73,81 +73,6 @@ export function QuarterProgressEditor({ squad, year, readonly, onChange, t }: {
           ))}
         </tbody>
       </table>
-    </Card>
-  );
-}
-
-/** Review actions (COPIL): what was decided, who owns it, when it is due.
- *  Gated by the `review` module, like the API that serves it. */
-export function ReviewActionsEditor({ squad, readonly, t }: {
-  squad: SquadDetail; readonly?: boolean; t: (k: string, p?: any) => string;
-}) {
-  const [rows, setRows] = useState<ReviewAction[] | null>(null);
-  const [text, setText] = useState("");
-  const [owner, setOwner] = useState("");
-  const [due, setDue] = useState("");
-  const [err, setErr] = useState<string | null>(null);
-
-  async function load() {
-    try { setRows(await api.get<ReviewAction[]>(`/api/squads/${squad.id}/actions`)); }
-    catch (e) { setErr(e instanceof ApiError ? e.message : String(e)); setRows([]); }
-  }
-  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [squad.id]);
-
-  async function wrap(fn: () => Promise<unknown>) {
-    setErr(null);
-    try { await fn(); await load(); }
-    catch (e) { setErr(e instanceof ApiError ? e.message : String(e)); }
-  }
-
-  const add = () => {
-    if (!text.trim()) return;
-    // La squad vient du chemin: l'envoyer aussi dans le corps laisserait croire
-    // qu'elle est modifiable ici.
-    wrap(() => api.post(`/api/squads/${squad.id}/actions`, {
-      text: text.trim(), owner: owner.trim() || null, due_date: due || null,
-    })).then(() => { setText(""); setOwner(""); setDue(""); });
-  };
-
-  return (
-    <Card title={t("entry.actions_title")} hint={t("entry.actions_hint")}>
-      {err && <div className="banner banner-red" style={{ marginBottom: 8 }}>{err}</div>}
-      {rows === null ? <div className="small muted">{t("common.loading")}</div> : (
-        <>
-          {rows.length === 0 && <div className="small muted">{t("entry.actions_empty")}</div>}
-          {rows.map((a) => (
-            <div key={a.id} className="item-row">
-              <input type="checkbox" checked={a.done} disabled={readonly}
-                     aria-label={t("entry.actions_done")}
-                     onChange={() => wrap(() => api.put(`/api/actions/${a.id}`, { done: !a.done }))} />
-              <div className="grow">
-                <div style={a.done ? { textDecoration: "line-through", opacity: 0.6 } : undefined}>{a.text}</div>
-                <div className="small muted">
-                  {a.owner || t("entry.actions_no_owner")}
-                  {a.due_date ? `, ${t("entry.actions_due")} ${a.due_date.slice(0, 10)}` : ""}
-                </div>
-              </div>
-              {!readonly && (
-                <button className="icon-del" title={t("action.delete")} aria-label={t("action.delete")}
-                        onClick={() => wrap(() => api.del(`/api/actions/${a.id}`))}>✕</button>
-              )}
-            </div>
-          ))}
-          {!readonly && (
-            <div className="row" style={{ gap: 8, marginTop: 10, flexWrap: "wrap" }}>
-              <input style={{ flex: 2, minWidth: 200 }} placeholder={t("entry.actions_text_ph")}
-                     aria-label={t("entry.actions_text_ph")} value={text}
-                     onChange={(e) => setText(e.target.value)} />
-              <input style={{ flex: 1, minWidth: 130 }} placeholder={t("entry.actions_owner_ph")}
-                     aria-label={t("entry.actions_owner_ph")} value={owner}
-                     onChange={(e) => setOwner(e.target.value)} />
-              <input type="date" style={{ width: 150 }} aria-label={t("entry.actions_due")}
-                     value={due} onChange={(e) => setDue(e.target.value)} />
-              <button className="btn-sm" disabled={!text.trim()} onClick={add}>{t("entry.actions_add")}</button>
-            </div>
-          )}
-        </>
-      )}
     </Card>
   );
 }

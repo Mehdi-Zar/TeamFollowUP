@@ -525,16 +525,6 @@ export interface LeaveOverlapDay {
   names: string[];
 }
 
-/** An action item captured during a squad review. */
-export interface ReviewAction {
-  id: number;
-  squad_id: number;
-  text: string;
-  owner?: string | null;
-  due_date?: string | null;
-  done: boolean;
-  created_at?: string | null;
-}
 
 /** Public (unauthenticated-safe) app configuration: branding, defaults, feed
  *  rules and the module map. Fetched into the config context. */

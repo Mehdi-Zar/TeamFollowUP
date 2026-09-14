@@ -17,7 +17,6 @@ from starlette.middleware.sessions import SessionMiddleware
 from .config import settings
 from .database import get_db
 from .routers import (
-    actions,
     admin,
     audit,
     auth,
@@ -69,7 +68,7 @@ if settings.metrics_enabled:
 
 for r in (auth, tribes, squads, dashboard, org, orgexport, objectives, roadmap, roadmapview, kpis,
           members, snapshots, feed, notifications, admin, audit, reports,
-          actions, initiatives, otds, access, leaves, committees, steerco, data):
+          initiatives, otds, access, leaves, committees, steerco, data):
     app.include_router(r.router)
 
 

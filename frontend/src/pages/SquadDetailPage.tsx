@@ -20,7 +20,6 @@ import { Dot, FreshnessBadge, ProgressBar, Spinner, ErrorBanner, Collapsible } f
 import { InitiativesCard } from "../components/InitiativesCard";
 import { OtdPanel } from "../components/OtdPanel";
 import KeyMessagesPanel from "../components/KeyMessagesPanel";
-import { ReviewActionsEditor } from "../components/EntryExtras";
 import TeamMood from "../components/TeamMood";
 import { useAuth } from "../auth";
 import ExportMenu from "../components/ExportMenu";
@@ -47,7 +46,6 @@ export default function SquadDetailPage() {
   const moduleOn = useModule();
   const roadmapOn = moduleOn("squad_content", "roadmap");
   const objectivesOn = moduleOn("squad_content", "objectives");
-  const reviewOn = moduleOn("review");
   const kpisOn = moduleOn("squad_content", "kpis");
   const committeesOn = moduleOn("committees");
   const { user, effectiveRole } = useAuth();
@@ -220,9 +218,6 @@ export default function SquadDetailPage() {
       {/* Messages clés + Budget, directement sous la roadmap */}
       <div className="grid" style={{ gridTemplateColumns: privileged ? "repeat(auto-fit, minmax(320px, 1fr))" : "1fr", gap: 18, alignItems: "start" }}>
         <KeyMessagesPanel squad={squad} canEdit={leadsThisSquad} onChange={reload} />
-        {/* Les actions decidees en comite: le meme sujet que les messages cles
-            et les comites, et pas le rythme du reporting hebdomadaire. */}
-        {reviewOn && <ReviewActionsEditor squad={squad} readonly={!leadsThisSquad} t={t} />}
         {privileged && <BudgetPanel squad={squad} canEdit={privileged} canToggle={canToggleBudget} onChange={reload} />}
       </div>
 
