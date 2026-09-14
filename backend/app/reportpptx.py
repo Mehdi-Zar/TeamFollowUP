@@ -335,11 +335,16 @@ def render_pptx(data: dict) -> bytes:
             mlines.append((MOOD_EMOJI[mood], 20, B["ink"], False, PP_ALIGN.CENTER, 1))
         mlines.append((mood_label(mood, lang), 9,
                        rgb(_RAG_BRAND[MOOD_COLOR.get(mood or "", "grey")]), True, PP_ALIGN.CENTER, 0))
-        if r.get("mood_at"):
-            mlines.append((rt(lang, "mood_at", d=r["mood_at"]), 7.5, B["muted"], False, PP_ALIGN.CENTER, 0))
         place(rrect(s, Inches(11.20), Inches(0.26), Inches(1.73), Inches(0.81),
                     B["white"], line=B["line"], radius=0.08),
               mlines, anchor=MSO_ANCHOR.MIDDLE, ml=0.04, mr=0.04, mt=0.04, mb=0.04)
+        # La date se range dans le coin, pas sous le visage. Elle date le moral, elle
+        # ne le dit pas: sur trois lignes centrees, elle prenait le meme rang que le
+        # niveau, qui est la seule chose a lire de loin.
+        if r.get("mood_at"):
+            textbox(s, Inches(11.24), Inches(0.30), Inches(1.65), Inches(0.13),
+                    rt(lang, "mood_at", d=r["mood_at"]), 6.5, color=B["muted"],
+                    align=PP_ALIGN.RIGHT)
 
         # ----- la carte de la frise -----
         card(s, Inches(0.4), Inches(1.22), Inches(12.53), Inches(4.76),
@@ -455,8 +460,17 @@ def render_pptx(data: dict) -> bytes:
                  Inches(BOTTOM - qy - 0.54), rgb("#DDE3EE"))
 
         # ----- une ligne par initiative, ses jalons dans leur trimestre -----
+        #
+        # La colonne de gauche est titree, comme l'est la bande des engagements
+        # au-dessus. Sans ce mot, le lecteur y trouvait un nom suivi d'une personne
+        # et d'une date, sans rien qui dise de quoi il s'agit: un intitule sans
+        # categorie se devine, et la question posee en comite est justement
+        # « c'est quoi, ce titre a gauche ».
         rows = timeline_rows(det, lang)
         y = otd_bottom + 0.06
+        textbox(s, Inches(LBL_X), Inches(y), Inches(LBL_W), Inches(0.2),
+                rt(lang, "h_initiatives"), 10, bold=True, color=B["navy"])
+        y += 0.24
         drawn = 0
         for row in rows:
             per_q = {q: [it for it in row["items"] if it.get("quarter") == q] for q in (1, 2, 3, 4)}
