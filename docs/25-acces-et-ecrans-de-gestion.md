@@ -73,6 +73,13 @@ rien dire.
 et designe la squad qui la mene, et ce sont elles qui remplissent ses lignes dans
 les documents. Se regler ailleurs qu'ici n'avait pas de raison.
 
+**Les engagements OTD** se lisent en tableau : engagement, date, statut, jalons
+couverts. Une carte par engagement, avec sa liste de jalons repliee dedans, tenait
+sur deux engagements ; a sept, la page defilait sans qu'on puisse comparer deux
+dates, alors que comparer des dates est ce qu'on vient faire ici. Le meme panneau
+sert sur la page de la squad, dans « Gerer mes squads » et a l'etape OTD du
+reporting.
+
 **Les co-responsables** passent de cases a cocher a une liste deroulante. Une
 rangee de cases tenait sur trois personnes et se deformait a dix : elle
 s'enroulait sur plusieurs lignes de hauteur variable, et le champ ne s'alignait

@@ -148,7 +148,10 @@ sequenceDiagram
   `ModuleGuard` and `Section` (module + persona capability).
 - **Cross-cutting context**: `auth.tsx` (user, effective role, **capabilities**, impersonation),
   `config.tsx` (public config + modules), `i18n.tsx` (FR/EN, 540 keys, parity-checked).
-- **Layout** = sidebar nav (mobile drawer) + topbar (page chrome, ⌘K command palette, notifications).
+- **Layout** = sidebar nav (mobile drawer) + topbar (page chrome, notifications). The
+  command palette is still there, reached by its keyboard shortcut; its button left the
+  top bar, which was already crowded, and a button whose only job is to announce a
+  shortcut earns little.
 - **Design system**: `components/ui.tsx` (Modal, EmptyState, Spinner, Dot, StatusBadge, Collapsible…)
   + `theme.css` (CSS variables). See [04 UI in the audit](09-audit-report.md).
 - **API client**: `api.ts` thin fetch wrapper (credentials: include, JSON, typed errors).
