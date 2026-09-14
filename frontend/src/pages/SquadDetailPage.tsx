@@ -18,7 +18,9 @@ import { useModule } from "../config";
 import { Budget, Committee, CommitteeFrequency, DependentItem, Initiative, KeyMessageKind, Member, RoadmapItem, SnapshotMeta, SquadDetail, Weekday } from "../types";
 import { Dot, FreshnessBadge, ProgressBar, Spinner, ErrorBanner, Collapsible } from "../components/ui";
 import { InitiativesCard } from "../components/InitiativesCard";
+import { OtdPanel } from "../components/OtdPanel";
 import KeyMessagesPanel from "../components/KeyMessagesPanel";
+import { ReviewActionsEditor } from "../components/EntryExtras";
 import TeamMood from "../components/TeamMood";
 import { useAuth } from "../auth";
 import ExportMenu from "../components/ExportMenu";
@@ -45,6 +47,7 @@ export default function SquadDetailPage() {
   const moduleOn = useModule();
   const roadmapOn = moduleOn("squad_content", "roadmap");
   const objectivesOn = moduleOn("squad_content", "objectives");
+  const reviewOn = moduleOn("review");
   const kpisOn = moduleOn("squad_content", "kpis");
   const committeesOn = moduleOn("committees");
   const { user, effectiveRole } = useAuth();
@@ -150,10 +153,16 @@ export default function SquadDetailPage() {
       {/* Initiatives assignées à la squad (définies par le tribe leader). */}
       <InitiativesCard initiatives={initiatives} />
 
-      {/* OTD - objectifs annuels engagés, en tête de page (définis par le tribe leader) */}
+      {/* Les engagements OTD de cette squad: dates, avec leur statut. Ils vivent au
+          niveau de la tribu, d'ou un panneau qui va les chercher lui-meme. C'est ce
+          que les exports montrent, et ce que cette page taisait. */}
+      {privileged && <OtdPanel squad={squad} canManage={canToggleBudget} onChange={reload} />}
+
+      {/* Les objectifs de squad: le maillon entre un engagement et les jalons qui
+          le servent. Autre chose que les OTD ci-dessus, donc une autre carte. */}
       {objectivesOn && privileged && (
       <div className="card">
-        <h2>{t("squad.otd_section", { year: squad.year })}</h2>
+        <h2>{t("squad.objectives_section", { year: squad.year })}</h2>
         <div className="small muted" style={{ marginBottom: 6 }}>{t("squad.otd_hint")}</div>
         {squad.objectives.length === 0 && <div className="small muted">{t("squad.no_obj")}</div>}
         {squad.objectives.map((o) => (
@@ -211,6 +220,9 @@ export default function SquadDetailPage() {
       {/* Messages clés + Budget, directement sous la roadmap */}
       <div className="grid" style={{ gridTemplateColumns: privileged ? "repeat(auto-fit, minmax(320px, 1fr))" : "1fr", gap: 18, alignItems: "start" }}>
         <KeyMessagesPanel squad={squad} canEdit={leadsThisSquad} onChange={reload} />
+        {/* Les actions decidees en comite: le meme sujet que les messages cles
+            et les comites, et pas le rythme du reporting hebdomadaire. */}
+        {reviewOn && <ReviewActionsEditor squad={squad} readonly={!leadsThisSquad} t={t} />}
         {privileged && <BudgetPanel squad={squad} canEdit={privileged} canToggle={canToggleBudget} onChange={reload} />}
       </div>
 

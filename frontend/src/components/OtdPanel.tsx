@@ -58,8 +58,11 @@ export function OtdPanel({ squad, canManage, onChange }:
         items.map((o) => (
           <div key={o.id} className="card stack" style={{ gap: 8, padding: 10 }}>
             <div className="between" style={{ alignItems: "flex-start" }}>
+              {/* Le titre d'un engagement. Le style vit dans la feuille et non ici:
+                  en ligne, il annulait le fond du bouton sans annuler sa couleur
+                  de texte, et le titre s'ecrivait en blanc sur blanc. */}
               <button className="otd-open" onClick={() => canManage && setEditing(o)}
-                style={{ background: "none", border: 0, padding: 0, cursor: canManage ? "pointer" : "default", textAlign: "left" }}>
+                      style={{ cursor: canManage ? "pointer" : "default" }}>
                 <span className="inline" style={{ gap: 8, alignItems: "center" }}>
                   <span className="strong">{o.title}</span>
                   <span className={`badge ${STATUS_CLASS[o.status] ?? "badge-grey"}`}>{t(`otd.status.${o.status}`)}</span>

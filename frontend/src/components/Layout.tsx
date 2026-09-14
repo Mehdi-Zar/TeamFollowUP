@@ -1,5 +1,5 @@
 // Layout: the app chrome wrapping every authenticated route. Collapsible left
-// sidebar (nav), top bar (page title, notifications, ⌘K, language, admin
+// sidebar (nav), top bar (page title, notifications, language, admin
 // "view-as" impersonation, logout), an optional contextual sub-bar (tabs +
 // actions pushed by the current page via pageChrome), the impersonation banner,
 // the first-login welcome modal, and the command palette. The routed page renders
@@ -196,11 +196,6 @@ export default function Layout() {
               )}
 
               <NotificationBell />
-
-              <button className="btn-ghost btn-sm cmd-trigger" title={t("cmd.placeholder")} aria-label={t("cmd.placeholder")}
-                      onClick={() => window.dispatchEvent(new Event("cmdk:open"))}>
-                <span aria-hidden>⌕</span><kbd className="cmd-kbd">⌘K</kbd>
-              </button>
 
               <select value={lang} onChange={(e) => setLang(e.target.value as any)} className="w-auto">
                 <option value="fr">FR</option>
