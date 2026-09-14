@@ -486,16 +486,13 @@ def render_pptx(data: dict) -> bytes:
             # Le libelle de la ligne. Les jalons qui ne servent aucune initiative
             # n'appartiennent pas a une categorie « sans initiative »: ils
             # n'appartiennent a rien, et leur ligne n'annonce donc rien.
+            # Le nom de l'initiative, seul. L'owner et l'echeance suivaient dessous
+            # et ne servaient a rien ici: la ligne repond a « quels jalons servent
+            # quoi », pas a « qui la porte ». Les deux restent sur la carte des
+            # initiatives, qui est faite pour ca.
             if row["key"] != "none":
-                meta = [x for x in (row.get("owner"),
-                                    rt(lang, "tl_deadline", d=row["deadline"]) if row.get("deadline") else None)
-                        if x]
-                lbl = textbox(s, Inches(LBL_X), Inches(y + 0.06), Inches(LBL_W), Inches(rh - 0.1),
-                              fit(row["title"], 44), 9.5, bold=True, color=B["navy"])
-                if meta:
-                    p = lbl.text_frame.add_paragraph()
-                    rr = p.add_run(); rr.text = ", ".join(meta)
-                    rr.font.size = Pt(7.5); rr.font.color.rgb = B["muted"]
+                textbox(s, Inches(LBL_X), Inches(y + 0.06), Inches(LBL_W), Inches(rh - 0.1),
+                        fit(row["title"], 52), 9.5, bold=True, color=B["navy"])
 
             for qi, q in enumerate((1, 2, 3, 4)):
                 for k, it in enumerate(per_q[q]):
