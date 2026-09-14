@@ -937,59 +937,6 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); width
 .sidebar-logo-img { height: 28px; width: 28px; object-fit: contain; border-radius: 8px; background: #fff; }
 .login-brand { max-height: 48px; max-width: 180px; object-fit: contain; margin-bottom: 10px; display: block; }
 
-/* ---- Frise annuelle: trimestres, engagements OTD, initiatives --------------
-   Une grille de treize colonnes: une pour le libelle, douze pour les mois. Les
-   trimestres occupent trois colonnes chacun, donc tout s'aligne sur le meme axe
-   sans calcul de position: c'est la grille qui tient l'alignement, pas des
-   pourcentages calcules a la main. */
-.tl-scroll { overflow-x: auto; margin-top: 12px; }
-.tl-grid { min-width: 880px; }
-.tl-row { display: grid; grid-template-columns: 190px repeat(12, 1fr); gap: 6px; align-items: start; }
-.tl-label { padding: 4px 8px 4px 0; }
-.tl-q {
-  background: var(--ice-soft); border: 1px solid var(--line); border-radius: 10px;
-  padding: 6px 8px; margin-bottom: 4px;
-}
-.tl-q.focus { border-color: var(--accent); }
-.tl-bar { height: 5px; background: var(--line); border-radius: 99px; margin-top: 5px; overflow: hidden; }
-.tl-bar > span { display: block; height: 100%; background: var(--accent); border-radius: 99px; }
-.tl-qc { margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tl-months { border-bottom: 1px solid var(--line); padding-bottom: 4px; margin-bottom: 6px; }
-.tl-m { text-align: center; }
-.tl-cell { min-height: 8px; display: flex; flex-direction: column; gap: 4px; }
-
-/* Un engagement OTD: gros, pose juste sous les trimestres, parce que c'est la
-   promesse tenue ou non que le comite regarde en premier. */
-.tl-otds { padding-bottom: 8px; }
-.tl-otd {
-  display: flex; align-items: center; gap: 6px; padding: 5px 8px; border-radius: 10px;
-  background: var(--navy); color: #fff; font-size: 12px; font-weight: 600; line-height: 1.2;
-}
-.tl-otd-dot { width: 8px; height: 8px; border-radius: 50%; background: #fff; flex: 0 0 auto; opacity: .9; }
-.tl-otd-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tl-otd.st-late { background: var(--red); }
-.tl-otd.st-at_risk { background: var(--orange); }
-.tl-otd.st-delivered { background: var(--green); }
-
-/* Une initiative par ligne, ses jalons dans le trimestre ou ils tombent. */
-.tl-init { border-top: 1px solid var(--line); padding: 8px 0; }
-.tl-init-name {
-  background: none; border: 0; padding: 0; text-align: left; font: inherit; font-weight: 600;
-  color: var(--navy); cursor: pointer;
-}
-.tl-init-name:hover { text-decoration: underline; }
-.tl-jalon {
-  display: flex; align-items: center; gap: 6px; width: 100%; text-align: left;
-  background: #fff; border: 1px solid var(--line); border-left: 3px solid var(--line);
-  border-radius: 8px; padding: 5px 8px; font: inherit; font-size: 12px; cursor: pointer;
-}
-.tl-jalon:hover { border-color: var(--accent); }
-.tl-jalon.rag-green { border-left-color: var(--green); }
-.tl-jalon.rag-amber { border-left-color: var(--orange); }
-.tl-jalon.rag-red { border-left-color: var(--red); }
-.tl-jalon-text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tl-stage { font-size: 10px; color: var(--grey); flex: 0 0 auto; }
-
 /* Moral de l'equipe: trois niveaux, lisibles sans legende. */
 .mood { display: inline-flex; gap: 4px; align-items: center; }
 .mood-btn {
