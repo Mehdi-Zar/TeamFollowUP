@@ -49,7 +49,7 @@ _RT = {
         "h_otd_section": "OTD", "h_freshness_ok": "Données à jour",
         # --- Frise annuelle (trimestres + engagements OTD + initiatives/jalons) ---
         "h_timeline": "Frise {year}", "tl_hint": "Les engagements OTD sur l'axe, puis les jalons de chaque initiative",
-        "tl_orphans": "Jalons hors initiative", "tl_empty": "Aucune initiative, aucun jalon",
+        "tl_empty": "Aucune initiative, aucun jalon",
         "tl_jalons_n": "{n} jalon(s)", "tl_deadline": "échéance {d}",
         "tl_no_date": "Engagements sans date",
         "otd_on_track": "À l'heure", "otd_at_risk": "À risque", "otd_late": "En retard",
@@ -105,7 +105,7 @@ _RT = {
         "h_otd_section": "OTD", "h_freshness_ok": "Up to date",
         # --- Annual timeline (quarters + OTD commitments + initiatives/milestones) ---
         "h_timeline": "Timeline {year}", "tl_hint": "OTD commitments on the axis, then each initiative's milestones",
-        "tl_orphans": "Milestones with no initiative", "tl_empty": "No initiative, no milestone",
+        "tl_empty": "No initiative, no milestone",
         "tl_jalons_n": "{n} milestone(s)", "tl_deadline": "due {d}",
         "tl_no_date": "Commitments with no date",
         "otd_on_track": "On time", "otd_at_risk": "At risk", "otd_late": "Late",
@@ -281,7 +281,10 @@ def timeline_rows(det: dict, lang: str) -> list[dict]:
                      "deadline": ini.get("deadline"), "items": groups.get(ini["id"], [])})
     orphans = [it for key, items in groups.items() if key not in known for it in items]
     if orphans:
-        rows.append({"key": "none", "title": rt(lang, "tl_orphans"), "owner": None,
+        # Sans titre, et non « Jalons hors initiative »: ces jalons ne forment pas
+        # une categorie, ils sont ceux qui n'en ont pas. Nommer ce vide ajoute une
+        # ligne a lire dans un document qui doit se lire de loin.
+        rows.append({"key": "none", "title": None, "owner": None,
                      "deadline": None, "items": orphans})
     return rows
 

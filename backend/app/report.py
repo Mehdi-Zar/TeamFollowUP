@@ -558,14 +558,23 @@ _TIMELINE_CSS = """<style>
   transform:rotate(45deg);border-radius:2px}
 .xtl-otd span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .xtl-init{border-top:1px solid var(--line,#E2E8F0);padding:8px 0}
+/* Un trait a chaque frontiere de trimestre, repris a chaque ligne: sans lui, quatre
+   colonnes sans separation obligent a mesurer a l'oeil de quel trimestre releve un
+   jalon. */
+.xtl-init .xtl-cell,.xtl-months .xtl-q-sep{border-left:1px solid var(--line,#E2E8F0);
+  padding-left:6px}
+.xtl-init .xtl-cell:last-child{border-right:1px solid var(--line,#E2E8F0);padding-right:6px}
 .xtl-init-name{font-weight:600;color:var(--navy,#1E2761)}
-.xtl-jalon{display:flex;align-items:center;gap:6px;background:#fff;
+.xtl-jalon{display:flex;align-items:flex-start;gap:6px;background:#fff;
   border:1px solid var(--line,#E2E8F0);border-left:3px solid var(--line,#E2E8F0);
   border-radius:8px;padding:5px 8px;font-size:12px}
 .xtl-jalon.rag-green{border-left-color:var(--green,#027A48)}
 .xtl-jalon.rag-amber{border-left-color:var(--orange,#B54708)}
 .xtl-jalon.rag-red{border-left-color:var(--red,#B42318)}
-.xtl-jalon>span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Le titre s'ecrit en entier, sur autant de lignes qu'il en faut: c'est la seule
+   chose qu'on lit sur une frise, et la couper pour tenir sur une ligne revient a
+   ne pas l'ecrire. */
+.xtl-jalon>span{flex:1;min-width:0;overflow-wrap:anywhere}
 .xtl-jalon em{font-style:normal;font-size:10px;color:var(--grey,#64748B);flex:0 0 auto}
 .xtl-none{font-size:12px;color:var(--grey,#64748B);grid-column:span 12;padding:4px 0}
 .xtl-mood{display:inline-flex;align-items:center;gap:8px}
@@ -653,13 +662,20 @@ def _timeline_html(det: dict, lang: str, e, year: int) -> str:
     for row in rows:
         # Owner et echeance restent sur la ligne de l'initiative: la frise remplace
         # trois blocs, elle ne se permet pas d'en perdre le contenu au passage.
-        meta = [x for x in (row.get("owner"),
-                            rt(lang, "tl_deadline", d=row["deadline"]) if row.get("deadline") else None,
-                            rt(lang, "tl_jalons_n", n=len(row["items"])))
-                if x]
-        P.append(f'<div class="xtl-row xtl-init"><div class="xtl-label">'
-                 f'<div class="xtl-init-name">{e(row["title"])}</div>'
-                 f'<div class="small muted">{e(", ".join(meta))}</div></div>')
+        #
+        # Les jalons qui ne servent aucune initiative, eux, n'ont pas de libelle:
+        # ils n'appartiennent pas a une categorie « sans initiative », ils
+        # n'appartiennent a rien, et nommer ce vide ajoute une ligne a lire.
+        if row["key"] == "none":
+            label = ""
+        else:
+            meta = [x for x in (row.get("owner"),
+                                rt(lang, "tl_deadline", d=row["deadline"]) if row.get("deadline") else None,
+                                rt(lang, "tl_jalons_n", n=len(row["items"])))
+                    if x]
+            label = (f'<div class="xtl-init-name">{e(row["title"])}</div>'
+                     f'<div class="small muted">{e(", ".join(meta))}</div>')
+        P.append(f'<div class="xtl-row xtl-init"><div class="xtl-label">{label}</div>')
         for q in (1, 2, 3, 4):
             P.append('<div class="xtl-cell" style="grid-column:span 3">')
             for it in row["items"]:
