@@ -145,10 +145,11 @@ def test_a_tribe_leader_only_sees_their_own_tribe(client, db, seeded):
     assert seeded["tribe2"] not in mails
 
 
-def test_a_squad_leader_gets_no_list_because_they_do_not_revoke(client, db, seeded):
-    """Montrer une liste sur laquelle on ne peut rien faire est une fausse promesse."""
+def test_a_squad_leader_does_not_reach_the_access_screen_at_all(client, db, seeded):
+    """Accorder l'entree dans l'application n'est pas composer une equipe."""
     login(client, seeded["sl_a"])
-    assert client.get("/api/access-requests/accounts").json()["accounts"] == []
+    assert client.get("/api/access-requests/accounts").status_code == 403
+    assert client.get("/api/access-requests").status_code == 403
 
 
 def test_a_pending_account_stays_in_the_queue_not_in_the_list(client, db, seeded):

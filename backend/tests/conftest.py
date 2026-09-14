@@ -50,9 +50,26 @@ def db():
     Base.metadata.create_all(bind=engine)
     session = TestingSessionLocal()
     try:
+        _all_modules_available(session)
         yield session
     finally:
         session.close()
+
+
+def _all_modules_available(session) -> None:
+    """Monte la base de test avec les services optionnels disponibles.
+
+    Le fil, les conges, la comitologie et le steerco sont eteints dans une
+    installation neuve: ce sont des services en plus. La plupart des tests ne
+    testent pas l'interrupteur mais ce qu'il y a derriere, et repeter la meme
+    ligne de preparation dans chacun n'aurait rien appris a personne. La valeur
+    par defaut, elle, reste gardee la ou elle est ecrite
+    (test_modules.test_the_optional_services_start_off).
+    """
+    from app.modulesconfig import set_modules
+
+    set_modules(session, {"feed": {"enabled": True}, "leaves": {"enabled": True}})
+    session.commit()
 
 
 @pytest.fixture()

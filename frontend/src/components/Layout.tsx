@@ -56,12 +56,11 @@ const NAV: NavItem[] = [
   { to: "/", end: true, labelKey: "nav.dashboard", titleKey: "nav.dashboard", Icon: IconDashboard, visible: () => true, module: "dashboard", cap: "dashboard" },
   { to: "/roadmap", labelKey: "nav.roadmap", titleKey: "nav.roadmap", Icon: IconEntry, visible: () => true, module: "squad_content", feature: "roadmap", cap: "roadmap" },
   { to: "/organigramme", labelKey: "nav.org", titleKey: "nav.org", Icon: IconOrg, visible: () => true, module: "org", cap: "org" },
-  { to: "/tribus", labelKey: "nav.tribes", titleKey: "nav.tribes", Icon: IconTribes, visible: isGlobalAdmin },
   { to: "/saisie", labelKey: "nav.entry", titleKey: "nav.entry", Icon: IconEntry, visible: () => true, module: "reporting", cap: "reporting" },
   { to: "/fil", labelKey: "nav.feed", titleKey: "nav.feed", Icon: IconFeed, visible: () => true, module: "feed", cap: "feed" },
   { to: "/conges", labelKey: "nav.leaves", titleKey: "nav.leaves", Icon: IconCalendar, visible: () => true, module: "leaves", cap: "leaves" },
   { to: "/mes-squads", labelKey: "nav.mysquads", titleKey: "mysquads.title", Icon: IconTribes, visible: () => true, cap: "mysquads" },
-  { to: "/acces", labelKey: "nav.access", titleKey: "access.title", Icon: IconAdmin, visible: (r) => ["admin", "tribe_leader", "squad_leader"].includes(r) },
+  { to: "/acces", labelKey: "nav.access", titleKey: "access.title", Icon: IconAdmin, visible: (r) => ["admin", "tribe_leader"].includes(r) },
   { to: "/admin", labelKey: "nav.admin", titleKey: "nav.admin", Icon: IconAdmin, visible: canSeeAdmin },
 ];
 

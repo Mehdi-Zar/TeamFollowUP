@@ -13,7 +13,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { useI18n } from "../i18n";
-import { Member, OrgNode, Squad, SquadDetail, Tribe, Role } from "../types";
+import { Member, OrgNode, Squad, SquadDetail, Tribe, TribeOrg, Role } from "../types";
 import { Spinner, ErrorBanner, FitScale, Modal } from "../components/ui";
 import { HtmlPreviewButton } from "../components/HtmlPreview";
 import { useSetPageChrome } from "../components/pageChrome";
@@ -90,10 +90,16 @@ export default function OrgPage() {
   const [tree, setTree] = useState<OrgNode[] | null>(null);
   const [squads, setSquads] = useState<Squad[]>([]);
   const [tribes, setTribes] = useState<Tribe[]>([]);
+  // Le nombre de squads par tribu: c'est ce que l'ancienne page « Tribus »
+  // apportait et que la liste deroulante ne disait pas. Best effort, la barre
+  // sait s'afficher sans.
+  const [counts, setCounts] = useState<Record<number, number>>({});
   const [tribeId, setTribeId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState<FormState | null>(null);
-  const [view, setView] = useState<OrgView>("tree");
+  // La liste d'abord: l'arbre est la belle vue, la liste est celle qui repond a
+  // « ou est ma squad » sans faire defiler.
+  const [view, setView] = useState<OrgView>("list");
   const [showAllMembers, setShowAllMembers] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
 
@@ -107,6 +113,11 @@ export default function OrgPage() {
     api.get<Squad[]>(`/api/squads${q}`).then(setSquads).catch(() => {});
   }
   const [searchParams] = useSearchParams();
+  useEffect(() => {
+    api.get<TribeOrg[]>("/api/tribes/org-overview")
+      .then((rows) => setCounts(Object.fromEntries(rows.map((r) => [r.tribe_id, r.squads_count]))))
+      .catch(() => {});
+  }, []);
   useEffect(() => {
     api.get<Tribe[]>("/api/tribes").then((ts) => {
       setTribes(ts);
@@ -186,8 +197,8 @@ export default function OrgPage() {
   useSetPageChrome(
     {
       tabs: [
-        { key: "tree", label: t("org.view_tree") },
         { key: "list", label: t("org.view_list") },
+        { key: "tree", label: t("org.view_tree") },
       ],
       activeTab: view,
       onTab: (k) => setView(k as OrgView),
@@ -201,23 +212,6 @@ export default function OrgPage() {
               {showAllMembers ? t("org.hide_members") : t("org.show_members")}
             </button>
           )}
-          {tribes.length > 1 && (
-            <select
-              className="w-auto"
-              value={tribeId ?? ""}
-              onChange={(e) => {
-                const v = Number(e.target.value);
-                setTribeId(v);
-                load(v);
-              }}
-            >
-              {tribes.map((tr) => (
-                <option key={tr.id} value={tr.id}>
-                  {tr.name}
-                </option>
-              ))}
-            </select>
-          )}
           {!editable && !isOwnTribe && tribeId !== null && (
             <span className="badge badge-grey">{t("org.view_only_other")}</span>
           )}
@@ -230,7 +224,7 @@ export default function OrgPage() {
         </>
       ),
     },
-    [view, tribes, tribeId, editable, isOwnTribe, showAllMembers, t]
+    [view, tribeId, editable, isOwnTribe, showAllMembers, t]
   );
 
   if (error) return <ErrorBanner message={error} />;
@@ -256,6 +250,24 @@ export default function OrgPage() {
   return (
     <div className="stack" style={{ gap: 18 }}>
       <div className="muted small">{editable ? t("org.subtitle_edit") : t("org.subtitle_ro")}</div>
+
+      {/* La barre des tribus: choisir celle qu'on regarde, et voir du meme coup ce
+          qu'elle pese. Elle remplace a la fois la liste deroulante de l'entete et
+          l'ancienne page « Tribus », qui posaient la meme question. */}
+      {tribes.length > 1 && (
+        <div className="inline" style={{ gap: 8, flexWrap: "wrap" }}>
+          {tribes.map((tr) => (
+            <button key={tr.id}
+                    className={`tribe-chip${tr.id === tribeId ? " on" : ""}`}
+                    onClick={() => { setTribeId(tr.id); load(tr.id); }}>
+              <span className="strong">{tr.name}</span>
+              {counts[tr.id] !== undefined && (
+                <span className="small muted">{t("tribes.squads_n", { n: counts[tr.id] })}</span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
 
       {tree.length === 0 && (
         <div className="card stack" style={{ gap: 10 }}>

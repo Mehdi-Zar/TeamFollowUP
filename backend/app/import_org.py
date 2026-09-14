@@ -34,7 +34,8 @@ from sqlalchemy.orm import Session
 
 from .database import SessionLocal
 from .deps import ADMIN, SQUAD, TRIBE
-from .models import Initiative, Otd, Squad, Tribe, User
+from . import platforms as plat
+from .models import Platform, Initiative, Otd, Squad, Tribe, User
 from .security import hash_password
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -113,7 +114,7 @@ def import_org(db: Session, data: dict) -> dict:
     Excel or YAML input). Runs in one transaction, commits at the end, and returns
     a summary of what was processed (for the API response / CLI log)."""
     year = int(data.get("year") or datetime.now(timezone.utc).year)
-    created = {"users": 0, "squads": 0, "initiatives": 0, "otds": 0}
+    created = {"users": 0, "squads": 0, "initiatives": 0, "otds": 0, "platforms": 0}
     # Everything the file asked for that the import could not do as written. A
     # summary that only counts successes reads as a success: an OTD naming a
     # squad that does not exist is imported with no owner, which makes it
@@ -263,6 +264,37 @@ def import_org(db: Session, data: dict) -> dict:
             for k, v in fields.items():
                 setattr(otd, k, v)
 
+    # --- Plateformes: le niveau auquel le comite lit, alimente par n squads ---
+    for i, p in enumerate(data.get("platforms", []) or [], start=1):
+        name = (p.get("name") or "").strip()
+        if not name:
+            continue
+        contributors = []
+        for ref in p.get("squads") or []:
+            sq = _referenced_squad(ref)
+            if sq is None:
+                warnings.append(f"Plateforme « {name} » : squad « {ref} » introuvable, "
+                                f"elle n'a pas ete rattachee.")
+                continue
+            contributors.append(sq)
+        plat_row = db.scalar(select(Platform).where(
+            Platform.tribe_id == tribe.id, Platform.name == name))
+        if plat_row is None:
+            plat_row = Platform(tribe_id=tribe.id, name=name)
+            db.add(plat_row)
+            created["platforms"] += 1
+            log.info("Platform created: %s", name)
+        plat_row.description = p.get("description") or None
+        plat_row.display_order = p.get("display_order", i)
+        plat_row.contributors = contributors
+        ids = [sq.id for sq in contributors]
+        # Le gabarit suit les contributrices: une plateforme a une seule squad est
+        # prete a remplir, a plusieurs la propriete de chaque case est une decision.
+        plat_row.template = plat.normalize_template(
+            plat_row.template or plat.default_template(ids[0] if len(ids) == 1 else None), ids)
+        db.flush()
+        plat.sync_squad_flags(db, contributors)
+
     db.commit()
     summary = {
         "tribe": tribe.name,
@@ -270,6 +302,7 @@ def import_org(db: Session, data: dict) -> dict:
         "squads": len(squads_by_name),
         "initiatives": len(data.get("initiatives") or []),
         "otds": len(data.get("otds") or []),
+        "platforms": len(data.get("platforms") or []),
         "created": created,
         "warnings": warnings,
     }
@@ -293,7 +326,8 @@ def _split(v) -> list[str]:
 
 
 def _read_xlsx(path: str) -> dict:
-    """Parse the org workbook (sheets Tribu / Squads / Initiatives / OTD) into the
+    """Parse the org workbook (sheets Tribu / Squads / Initiatives / OTD /
+    Plateformes) into the
     same dict shape as the YAML input. Columns are read by POSITION, so the header
     text may be translated freely as long as the column order matches the template."""
     from openpyxl import load_workbook
@@ -319,7 +353,7 @@ def _read_xlsx(path: str) -> dict:
     data: dict = {
         "year": r[0],
         "tribe": {"name": r[1], "description": r[2], "leader": {"name": r[3], "email": r[4]}},
-        "squads": [], "initiatives": [], "otds": [],
+        "squads": [], "initiatives": [], "otds": [], "platforms": [],
     }
     for row in rows("Squads"):
         name, typ, ln, le, products, hardware, kpis, budget = (list(row) + [None] * 8)[:8]
@@ -337,6 +371,9 @@ def _read_xlsx(path: str) -> dict:
     for row in rows("OTD"):
         title, squad, cdate, desc = (list(row) + [None] * 4)[:4]
         data["otds"].append({"title": title, "squad": squad, "committed_date": cdate, "description": desc})
+    for row in rows("Plateformes"):
+        name, squads, desc = (list(row) + [None] * 3)[:3]
+        data["platforms"].append({"name": name, "squads": _split(squads), "description": desc})
     return data
 
 
@@ -363,7 +400,7 @@ def read_upload(filename: str, content: bytes) -> dict:
 
 
 def build_template_workbook():
-    """Build the empty-but-illustrated org workbook (4 sheets). Returned as an
+    """Build the empty-but-illustrated org workbook (5 sheets). Returned as an
     openpyxl ``Workbook`` so callers can save it to disk or stream it over HTTP."""
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill
@@ -398,6 +435,10 @@ def build_template_workbook():
     build(wb.create_sheet(), "OTD",
           ["Titre", "Squad concernee (owner = son leader)", "Date d'engagement (AAAA-MM-JJ)", "Description"],
           [["Data lake GCP en production", "GCP / S3NS", "2026-09-30", "Mise en production du data lake."]])
+    build(wb.create_sheet(), "Plateformes",
+          ["Nom", "Squads contributrices (separees par virgule)", "Description"],
+          [["Socle GCP", "GCP / S3NS, Run & Operation", "Une plateforme alimentee par plusieurs squads."],
+           ["Portail", "Portal", "Une plateforme alimentee par une seule squad."]])
     return wb
 
 
@@ -411,7 +452,7 @@ def template_bytes() -> bytes:
 
 
 def write_template(path: str) -> None:
-    """Write the Excel template (4 sheets) to ``path`` for the user to fill."""
+    """Write the Excel template (5 sheets) to ``path`` for the user to fill."""
     build_template_workbook().save(path)
 
 

@@ -62,12 +62,18 @@ const TAB_LABEL: Record<string, string> = {
   ops: "admin.tab.ops",
 };
 
-// Admin sections grouped by purpose (only the items a role may open are shown).
+// Les quatre familles du menu, dans l'ordre ou l'on se pose les questions en
+// montant une installation: qui est dans l'organisation, ce que l'application
+// propose, comment on s'y connecte, comment on l'entretient. Seuls les elements
+// que le role peut ouvrir sont affiches.
+//
+// L'import ferme la premiere famille: il sert une fois, au debut, et jamais plus.
+// Le mettre au milieu le faisait passer pour un reglage courant.
 const ADMIN_GROUPS: { titleKey: string; items: string[] }[] = [
-  { titleKey: "admin.group.org", items: ["tribes", "import", "tribe", "squads", "platforms", "my_squads", "users", "personas"] },
+  { titleKey: "admin.group.org", items: ["tribes", "tribe", "squads", "my_squads", "platforms", "users", "personas", "import"] },
   { titleKey: "admin.group.config", items: ["modules", "report", "leaves", "settings", "branding"] },
-  { titleKey: "admin.group.access", items: ["auth", "api", "smtp", "trust"] },
-  { titleKey: "admin.group.oversight", items: ["moderation", "logs", "data", "audit", "ops"] },
+  { titleKey: "admin.group.access", items: ["auth", "smtp", "api", "trust"] },
+  { titleKey: "admin.group.oversight", items: ["audit", "moderation", "logs", "data", "ops"] },
 ];
 
 /**

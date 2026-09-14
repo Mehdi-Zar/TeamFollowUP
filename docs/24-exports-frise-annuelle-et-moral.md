@@ -40,9 +40,17 @@ disaient. Trois cas sont traites explicitement, et chacun a son test :
 - **L'owner d'une initiative, l'echeance, la dependance d'un jalon** suivent sur
   la ligne. La dependance est souvent la seule ligne qui explique un glissement.
 
+### Un engagement est une date, pas une duree
+
+Le repere est un losange pose sur le mois, et le titre s'ecrit a cote. Il a
+d'abord ete dessine comme une pastille pleine occupant plusieurs mois, pour loger
+ce titre : une forme qui s'etire se lit comme une periode, elle disait « de
+septembre a novembre » la ou la donnee dit « le 30 septembre ». La largeur etait
+un besoin de mise en page, jamais une information.
+
 ### Deux engagements qui se genent
 
-Un engagement occupe la largeur de son titre, exprimee en mois. Quand deux se
+La place reservee au titre suit sa longueur, exprimee en mois. Quand deux se
 recouvrent, le second descend d'une bande. En HTML le nombre de bandes n'est pas
 limite ; sur une slide il l'est a trois, parce que la hauteur d'une slide ne
 s'etire pas, et ce qui ne tient pas est compte et affiche (`+2`) plutot que
@@ -66,9 +74,11 @@ janvier.
 **La date compte autant que le niveau.** Un moral de mars projete en septembre
 ment plus surement qu'une case vide : l'age est toujours indique.
 
-**Ou il se declare.** Sur la page de la squad, par ceux qui peuvent l'editer :
-son responsable, ses co-responsables, son tribe leader, un admin. C'est le moral
-de leur equipe, pas une note qu'un tiers leur attribue. Recliquer sur le niveau
+**Ou il se declare.** En tete de l'ecran de saisie, la ou l'on rend compte chaque
+semaine, par ceux qui peuvent editer la squad : son responsable, ses
+co-responsables, son tribe leader, un admin. C'est le moral de leur equipe, pas
+une note qu'un tiers leur attribue. Il reste visible sur la page de la squad et
+sur les cartes du tableau de bord. Recliquer sur le niveau
 courant retire la declaration, ce qui est la seule facon de dire « je ne me
 prononce plus » sans inventer un quatrieme niveau, et efface aussi la date, sinon
 une date resterait a l'ecran sans rien dater.

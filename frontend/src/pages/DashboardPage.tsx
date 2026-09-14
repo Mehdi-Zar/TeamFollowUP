@@ -236,38 +236,34 @@ export default function DashboardPage() {
             </select>
           </div>
         </div>
-
-        {/* Trier et afficher: des boutons, pas une liste deroulante de plus. Le
-            critere actif porte le sens du tri et le retourne quand on le reclique. */}
-        <div className="between" style={{ marginTop: 12, gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-          <div className="inline" style={{ gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-            <span className="small muted">{t("dash.sort")}</span>
-            <span className="seg">
-              {(["risk", "progress", "name", "fresh"] as SortKey[]).map((k) => (
-                <button key={k} className={k === sort ? "seg-on" : ""} onClick={() => pickSort(k)}
-                        title={k === sort ? t("dash.sort.flip") : undefined}>
-                  {t(`dash.sort.${k}`)}{k === sort ? (desc ? " \u2193" : " \u2191") : ""}
-                </button>
-              ))}
-            </span>
-          </div>
-          <div className="inline" style={{ gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-            <span className="seg">
-              <button className={dense ? "" : "seg-on"} onClick={() => setDense(false)}>{t("dash.view.cards")}</button>
-              <button className={dense ? "seg-on" : ""} onClick={() => setDense(true)}>{t("dash.view.list")}</button>
-            </span>
-            {dirty && (
-              <button className="btn-ghost btn-sm" onClick={reset}>{t("dash.reset")}</button>
-            )}
-          </div>
-        </div>
       </div>
 
-      <div className="inline small muted" style={{ gap: 16, flexWrap: "wrap" }}>
-        <span className="strong">{t("dash.legend")} :</span>
-        <span className="inline"><Dot status="red" decorative /> {roadmap("blocked")}</span>
-        <span className="inline"><Dot status="amber" decorative /> {roadmap("at_risk")}</span>
-        <span className="inline"><Dot status="green" decorative /> {roadmap("done")}</span>
+      {/* Legende a gauche, commandes d'affichage a droite: chercher et filtrer
+          reduit ce qu'on voit, trier et changer de vue ne fait que le reordonner.
+          Les deux gestes n'ont pas a partager la meme carte. */}
+      <div className="between" style={{ gap: 16, flexWrap: "wrap", alignItems: "center" }}>
+        <div className="inline small muted" style={{ gap: 16, flexWrap: "wrap" }}>
+          <span className="strong">{t("dash.legend")} :</span>
+          <span className="inline"><Dot status="red" decorative /> {roadmap("blocked")}</span>
+          <span className="inline"><Dot status="amber" decorative /> {roadmap("at_risk")}</span>
+          <span className="inline"><Dot status="green" decorative /> {roadmap("done")}</span>
+        </div>
+        <div className="inline" style={{ gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <span className="small muted">{t("dash.sort")}</span>
+          <span className="seg">
+            {(["risk", "progress", "name", "fresh"] as SortKey[]).map((k) => (
+              <button key={k} className={k === sort ? "seg-on" : ""} onClick={() => pickSort(k)}
+                      title={k === sort ? t("dash.sort.flip") : undefined}>
+                {t(`dash.sort.${k}`)}{k === sort ? (desc ? " \u2193" : " \u2191") : ""}
+              </button>
+            ))}
+          </span>
+          <span className="seg">
+            <button className={dense ? "" : "seg-on"} onClick={() => setDense(false)}>{t("dash.view.cards")}</button>
+            <button className={dense ? "seg-on" : ""} onClick={() => setDense(true)}>{t("dash.view.list")}</button>
+          </span>
+          {dirty && <button className="btn-ghost btn-sm" onClick={reset}>{t("dash.reset")}</button>}
+        </div>
       </div>
 
       {cards.length === 0 ? (

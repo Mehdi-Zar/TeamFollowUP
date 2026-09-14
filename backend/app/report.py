@@ -546,14 +546,17 @@ _TIMELINE_CSS = """<style>
 .xtl-months{border-bottom:1px solid var(--line,#E2E8F0);padding-bottom:4px;margin-bottom:6px}
 .xtl-m{text-align:center;font-size:12px;color:var(--grey,#64748B)}
 .xtl-cell{min-width:0;min-height:8px;display:flex;flex-direction:column;gap:4px}
-.xtl-otds{padding-bottom:8px;row-gap:4px}
-.xtl-otd{display:flex;align-items:center;gap:6px;padding:5px 8px;border-radius:10px;
-  background:var(--navy,#1E2761);color:#fff;font-size:12px;font-weight:600;line-height:1.2}
-.xtl-otd i{width:8px;height:8px;border-radius:50%;background:#fff;flex:0 0 auto;opacity:.9}
+.xtl-otds{padding-bottom:8px;row-gap:6px}
+/* Un engagement est une date: un repere pose sur le mois, et son titre a cote.
+   Une pastille pleine qui s'etire se lirait comme une periode. */
+.xtl-otd{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;
+  line-height:1.2;color:var(--navy,#1E2761);margin-left:-6px}
+.xtl-otd i{width:11px;height:11px;flex:0 0 auto;background:currentColor;
+  transform:rotate(45deg);border-radius:2px}
 .xtl-otd span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.xtl-otd.st-late{background:var(--red,#B42318)}
-.xtl-otd.st-at_risk{background:var(--orange,#B54708)}
-.xtl-otd.st-delivered{background:var(--green,#027A48)}
+.xtl-otd.st-late{color:var(--red,#B42318)}
+.xtl-otd.st-at_risk{color:var(--orange,#B54708)}
+.xtl-otd.st-delivered{color:var(--green,#027A48)}
 .xtl-init{border-top:1px solid var(--line,#E2E8F0);padding:8px 0}
 .xtl-init-name{font-weight:600;color:var(--navy,#1E2761)}
 .xtl-jalon{display:flex;align-items:center;gap:6px;background:#fff;

@@ -5,11 +5,32 @@ from tests.conftest import login
 # ---- config model --------------------------------------------------------------
 
 def test_defaults_all_enabled(db, seeded):
+    """La base de test rallume les services optionnels (voir conftest); ce qui se
+    verifie ici est que le reste tient et que les sous-fonctions suivent."""
     cfg = get_modules(db)
     assert cfg["feed"]["enabled"] is True
     assert cfg["feed"]["reactions"] is True
     assert is_active(cfg, "feed") is True
     assert is_active(cfg, "feed", "reactions") is True
+
+
+def test_the_optional_services_start_off():
+    """Une installation neuve montre ce dont elle a besoin.
+
+    Le fil, les conges, la comitologie et le steerco sont des services en plus:
+    les allumer d'office donne un menu que personne n'a demande, et qu'il faut
+    ensuite eteindre un par un.
+    """
+    from app.modulesconfig import _defaults
+
+    d = _defaults()
+    assert d["feed"]["enabled"] is False
+    assert d["leaves"]["enabled"] is False
+    assert d["committees"]["enabled"] is False
+    assert d["steerco"]["enabled"] is False
+    # Le coeur, lui, est la des le premier ecran.
+    assert d["dashboard"]["enabled"] is True
+    assert d["reporting"]["enabled"] is True
 
 
 def test_set_modules_sanitizes_and_persists(db, seeded):

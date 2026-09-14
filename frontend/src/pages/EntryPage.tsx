@@ -19,6 +19,7 @@ import { Dot, FreshnessBadge, Spinner, ErrorBanner, EmptyState, SectionCard as C
 import { QuarterProgressEditor, ReviewActionsEditor } from "../components/EntryExtras";
 import { InitiativesCard } from "../components/InitiativesCard";
 import TeamMood from "../components/TeamMood";
+import KeyMessagesPanel from "../components/KeyMessagesPanel";
 import { canEditSquad, canManageObjectives } from "../perms";
 import { useSetPageChrome } from "../components/pageChrome";
 import { roadmapRag } from "../labels";
@@ -179,6 +180,9 @@ export default function EntryPage() {
               <QuarterProgressEditor squad={squad} year={year} readonly={!writeAllowed} onChange={reload} t={t} />
             </div>
           )}
+          {/* Les messages cles: ce que le comite lit en premier, ecrit au moment ou
+              l'on rend compte plutot que sur un ecran de lecture. */}
+          <div id="sec-km"><KeyMessagesPanel squad={squad} canEdit={writeAllowed} onChange={reload} /></div>
           {reviewOn && <div id="sec-actions"><ReviewActionsEditor squad={squad} readonly={!writeAllowed} t={t} /></div>}
           {steercoOn && <div id="sec-steerco"><SteercoSection squad={squad} readonly={!writeAllowed} t={t} /></div>}
         </>
@@ -695,16 +699,31 @@ const FLOW_ICONS = {
       <path d="M22 2L11 13" /><path d="M22 2l-7 20-4-9-9-4 20-7z" />
     </svg>
   ),
+  mood: (
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="9" /><path d="M8.5 14.5a4.5 4.5 0 0 0 7 0" />
+      <path d="M9 9.5h.01" /><path d="M15 9.5h.01" />
+    </svg>
+  ),
+  message: (
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 12a8 8 0 0 1-8 8H7l-4 3V12a8 8 0 0 1 8-8h2a8 8 0 0 1 8 8z" />
+    </svg>
+  ),
 };
 
 /** Decorative "how to report" header: a hero line plus a 4-step icon flow
  *  (objectives -> milestones -> status -> submit) and an "auto" footnote. */
 function ReportIntro({ t }: { t: any }) {
+  // Les cinq temps, dans l'ordre ou l'ecran les pose. Le moral ouvre la marche
+  // parce qu'il prend une seconde et qu'il eclaire tout ce qui suit.
   const flow = [
-    { key: "s1", icon: FLOW_ICONS.target, color: "#1E2761" },
-    { key: "s2", icon: FLOW_ICONS.flag, color: "#175CD3" },
-    { key: "s3", icon: FLOW_ICONS.check, color: "#027A48" },
-    { key: "s4", icon: FLOW_ICONS.send, color: "#B54708" },
+    { key: "s1", icon: FLOW_ICONS.mood, color: "#B54708" },
+    { key: "s2", icon: FLOW_ICONS.target, color: "#1E2761" },
+    { key: "s3", icon: FLOW_ICONS.flag, color: "#175CD3" },
+    { key: "s4", icon: FLOW_ICONS.check, color: "#027A48" },
+    { key: "s5", icon: FLOW_ICONS.message, color: "#6B21A8" },
+    { key: "s6", icon: FLOW_ICONS.send, color: "#B42318" },
   ];
   return (
     <div className="report-intro">
