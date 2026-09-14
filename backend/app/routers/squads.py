@@ -38,9 +38,11 @@ from ..deps import (
     record_audit,
     require_module,
     require_tribe_or_admin,
+    require_writer,
     visible_tribe_id,
 )
 from ..models import (
+    utcnow,
     FeedPost,
     KeyMessage,
     OrgNode,
@@ -60,6 +62,7 @@ from ..schemas import (
     QuarterProgressOut,
     SquadBudgetIn,
     SquadBudgetOut,
+    MoodIn,
     SquadCreate,
     SquadDetail,
     SquadOut,
@@ -296,6 +299,30 @@ def delete_squad(squad_id: int, db: Session = Depends(get_db), user: User = Depe
     record_audit(db, user.id, "squad.delete", entity="squad", entity_id=squad.id, detail={"name": squad.name})
     db.delete(squad)
     db.commit()
+
+
+@router.put("/{squad_id}/mood", response_model=SquadOut)
+def set_mood(squad_id: int, payload: MoodIn, db: Session = Depends(get_db),
+             user: User = Depends(require_writer)):
+    """PUT /api/squads/{squad_id}/mood : declare le moral de l'equipe.
+
+    Trois niveaux (good | mixed | bad), ou ``null`` pour retirer la declaration.
+    Reserve a qui peut editer la squad: c'est le moral de SON equipe, pas une note
+    qu'un tiers lui attribue. La date est posee par le serveur, parce qu'un moral
+    sans fraicheur se lit comme un moral actuel. Audite.
+    """
+    squad = db.get(Squad, squad_id)
+    if squad is None:
+        raise HTTPException(status_code=404, detail="Squad introuvable")
+    assert_can_edit_squad(db, user, squad_id)
+    squad.mood = payload.mood
+    squad.mood_comment = (payload.comment or "").strip()[:300] or None
+    squad.mood_at = utcnow() if payload.mood else None
+    record_audit(db, user.id, "squad.mood", entity="squad", entity_id=squad_id,
+                 detail={"mood": squad.mood})
+    db.commit()
+    db.refresh(squad)
+    return squad
 
 
 @router.put("/{squad_id}/quarter-progress", response_model=QuarterProgressOut)

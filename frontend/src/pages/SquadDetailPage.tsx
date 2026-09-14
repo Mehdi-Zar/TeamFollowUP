@@ -15,9 +15,11 @@ import { Link, useParams, useSearchParams } from "react-router-dom";
 import { api } from "../api";
 import { useI18n } from "../i18n";
 import { useModule } from "../config";
-import { Budget, Committee, CommitteeFrequency, DependentItem, Initiative, KeyMessageKind, Member, RoadmapItem, SnapshotMeta, SquadDetail, Weekday } from "../types";
+import { Budget, Committee, CommitteeFrequency, DependentItem, Initiative, KeyMessageKind, Member, OtdReport, RoadmapItem, SnapshotMeta, SquadDetail, Weekday } from "../types";
 import { Dot, FreshnessBadge, ProgressBar, Spinner, ErrorBanner, Collapsible } from "../components/ui";
 import { InitiativesCard } from "../components/InitiativesCard";
+import RoadmapTimeline from "../components/RoadmapTimeline";
+import TeamMood from "../components/TeamMood";
 import { useAuth } from "../auth";
 import ExportMenu from "../components/ExportMenu";
 import { useSetPageChrome } from "../components/pageChrome";
@@ -40,6 +42,10 @@ export default function SquadDetailPage() {
   const [openJalon, setOpenJalon] = useState<RoadmapItem | null>(null);
   const [dependents, setDependents] = useState<DependentItem[]>([]);
   const [initiatives, setInitiatives] = useState<Initiative[]>([]);
+  // Les engagements OTD de cette squad. Ils vivent au niveau de la tribu, d'ou un
+  // appel a part; l'API ne renvoie que ce que le lecteur a le droit de voir, donc
+  // une bande vide est une reponse, pas une erreur.
+  const [otds, setOtds] = useState<OtdReport[]>([]);
   const moduleOn = useModule();
   const roadmapOn = moduleOn("squad_content", "roadmap");
   const objectivesOn = moduleOn("squad_content", "objectives");
@@ -65,6 +71,13 @@ export default function SquadDetailPage() {
     if (!squad) return;
     api.get<DependentItem[]>(`/api/squads/${squadId}/dependents?year=${squad.year}`).then(setDependents).catch(() => {});
     api.get<Initiative[]>(`/api/initiatives?year=${squad.year}&squad_id=${squadId}`).then(setInitiatives).catch(() => {});
+    api.get<OtdReport[]>(`/api/otds?year=${squad.year}`)
+      // Ceux qui concernent cette squad: engages sur son responsable, ou couvrant
+      // l'un de ses jalons. Meme regle que le panneau de saisie, pour que les deux
+      // ecrans ne racontent pas deux histoires.
+      .then((all) => setOtds(all.filter((o) => o.owner_user_id === squad.leader_user_id
+                                            || o.jalons.some((j: { squad_id: number }) => j.squad_id === squad.id))))
+      .catch(() => setOtds([]));
   }, [squadId, squad?.year]);
 
   useSetPageChrome(
@@ -137,70 +150,26 @@ export default function SquadDetailPage() {
             </div>
           )}
         </div>
+        {/* Le moral de l'equipe, en haut a droite: c'est ce qu'on regarde avant
+            les compteurs, et c'est la seule donnee de cette page qu'aucun calcul
+            ne produit. */}
+        <TeamMood squadId={squad.id} mood={squad.mood as any} moodAt={squad.mood_at}
+                  comment={squad.mood_comment} canEdit={privileged} onChange={reload} />
       </div>
 
       {squad.description && <div className="muted small">{squad.description}</div>}
 
-      {/* Initiatives assignées à la squad (définies par le tribe leader). */}
+      {/* Un seul bloc pour l'annee: la frise des trimestres, les engagements OTD
+          poses dessus, puis les initiatives et les jalons qui les servent. Trois
+          cartes empilees demandaient trois lectures pour une seule question. */}
+      {(roadmapOn || objectivesOn) && (
+        <RoadmapTimeline squad={squad} initiatives={initiatives} otds={otds}
+                         onOpenJalon={setOpenJalon} />
+      )}
+
+      {/* Le detail des initiatives reste disponible sous la frise, pour qui veut
+          lire leur description plutot que leur avancement. */}
       <InitiativesCard initiatives={initiatives} />
-
-      {/* OTD - objectifs annuels engagés, en tête de page (définis par le tribe leader) */}
-      {objectivesOn && privileged && (
-      <div className="card">
-        <h2>{t("squad.otd_section", { year: squad.year })}</h2>
-        <div className="small muted" style={{ marginBottom: 6 }}>{t("squad.otd_hint")}</div>
-        {squad.objectives.length === 0 && <div className="small muted">{t("squad.no_obj")}</div>}
-        {squad.objectives.map((o) => (
-          <div key={o.id} className="item-row">
-            <Dot status={o.rag_status} />
-            <div className="grow">
-              <div>{o.title}</div>
-              {o.description && <div className="small muted">{o.description}</div>}
-            </div>
-            <span className="small muted">
-              {rag(o.rag_status)}
-              {o.target_date ? `, ${formatDate(o.target_date)}` : ""}
-            </span>
-          </div>
-        ))}
-      </div>
-      )}
-
-      {/* Roadmap par quarter */}
-      {roadmapOn && (
-      <div className="card">
-        <h2>{t("squad.roadmap", { year: squad.year })}</h2>
-        <div className="small muted" style={{ marginBottom: 10 }}>{t("jalon.view_hint")}</div>
-        <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}>
-          {[1, 2, 3, 4].map((q) => {
-            const cell = squad.quarter_progress[String(q)];
-            const items = squad.roadmap_items.filter((r) => r.quarter === q);
-            return (
-              <div key={q} className="quarter-block">
-                <div className="between">
-                  <h4>Q{q}</h4>
-                  <span className="small muted">{cell?.progress_pct ?? 0}%</span>
-                </div>
-                <ProgressBar pct={cell?.progress_pct ?? 0} />
-                {cell?.comment && <div className="small muted" style={{ marginTop: 6 }}>{cell.comment}</div>}
-                <div style={{ marginTop: 8 }}>
-                  {items.length === 0 && <div className="small muted">{t("squad.no_jalon")}</div>}
-                  {items.map((r) => (
-                    <div key={r.id} className="item-row clickable-row" onClick={() => setOpenJalon(r)} title={t("jalon.details")}>
-                      <Dot status={roadmapRag(r.status)} />
-                      <span className="grow small">{r.title}</span>
-                      <span className="badge badge-navy" style={{ fontSize: 10 }}>{r.release_stage}</span>
-                      <span className="small muted">{roadmap(r.status)}</span>
-                      <span className="chevron">›</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-      )}
 
       {/* Messages clés + Budget, directement sous la roadmap */}
       <div className="grid" style={{ gridTemplateColumns: privileged ? "repeat(auto-fit, minmax(320px, 1fr))" : "1fr", gap: 18, alignItems: "start" }}>
