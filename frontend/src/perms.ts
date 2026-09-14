@@ -42,10 +42,13 @@ export const canManageObjectives = (r: Role) => r === "admin" || r === "tribe_le
 export const canEditOrg = (r: Role) => r === "admin" || r === "tribe_leader";
 /** Any writer role (has some edit rights): admin, tribe leader or squad leader. */
 export const isWriter = (r: Role) => r === "admin" || r === "tribe_leader" || r === "squad_leader";
-// Reporting (saisie) is for squad leaders (and admins). Tribe leaders steer their
-// squads via the admin "Squads" tab (KPIs on/off, annual objectives), not reporting.
-/** Open the reporting (saisie) screen: admins and squad leaders. */
-export const canSeeSaisie = (r: Role) => r === "admin" || r === "squad_leader";
+// Qui atteint l'ecran de saisie ne se decide pas ici: c'est la capacite « reporting »
+// du persona, reglable dans l'administration, que la navigation et la route lisent.
+// Une fonction locale a longtemps affirme la meme regle en dur sans etre appelee par
+// aucun ecran, et son test la jurait: une regle testee que l'application n'applique
+// pas donne une fausse assurance, et un admin qui coche « reporting » pour les tribe
+// leaders la contredit sans que rien ne bronche. La regle est verifiee la ou elle
+// decide, dans backend/tests/test_personas.py.
 
 /** Can this role (with this user id) edit the given squad's KPIs/members/budget? */
 export function canEditSquad(role: Role, userId: number | undefined, squad: Pick<SquadDetail, "leader_user_id">): boolean {

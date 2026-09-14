@@ -130,10 +130,19 @@ def check_multi(db, admin, rng):
         notice = 1 if n > cap else 0
         assert len(slides) == 1 + rendered + notice, \
             f"slidecount n={n} cap={cap} got={len(slides)} exp={1+rendered+notice}"
-        first_lines = [slides[i].shapes[0].text_frame.text.split("\n")[0] for i in range(1, 1 + rendered)]
+        # Le nom d'une squad se cherche dans tout le texte de sa slide, jamais a une
+        # position. Il a longtemps ete la premiere forme; la slide a ensuite recu un
+        # fond de page, et cette premiere forme est devenue un rectangle vide. Le
+        # harnais a jure faux pendant ce temps, n'etant lance par personne (son nom
+        # de fichier le tient hors de la collecte pytest).
         expected = [r["name"] for r in flat[:cap]]
-        assert sorted(first_lines) == sorted(expected), \
-            f"detail mismatch n={n} cap={cap}: got={sorted(first_lines)[:3]} exp={sorted(expected)[:3]}"
+        texts = {i: chr(10).join(sh.text_frame.text for sh in slides[i].shapes if sh.has_text_frame)
+                 for i in range(1, 1 + rendered)}
+        for nm in expected:
+            on = [i for i, txt in texts.items() if nm in txt]
+            assert len(on) == 1,                 f"detail mismatch n={n} cap={cap}: squad {nm!r} sur {len(on)} slides de detail"
+        empty = [i for i, txt in texts.items() if not txt.strip()]
+        assert not empty, f"slides de detail sans texte: {empty[:3]}"
         if notice:
             nt = " ".join(sh.text_frame.text for sh in slides[-1].shapes if sh.has_text_frame)
             assert str(n - cap) in nt, f"notice missing count {n-cap}: {nt!r}"

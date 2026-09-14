@@ -5,8 +5,8 @@
 | Layer | Tooling | Coverage |
 |-------|---------|----------|
 | Backend unit/integration | pytest + FastAPI `TestClient` + SQLite in-memory | **Good** - 378 tests / 39 modules |
-| Frontend unit/component | **Vitest + Testing Library + jsdom** | **Present** - 23 tests (labels, perms, i18n parity and usage, typography, the language a visitor gets, the HTTPS panel), wired into CI |
-| End-to-end (browser) | **Playwright** against the real Docker stack ([18](18-tests-e2e.md)) | **34 tests in CI** - login, route guards, RBAC, the write path, the audit screen, every one of the 18 admin sections, the trusted-authority panel in infra-TLS mode, and the language a first-time visitor gets |
+| Frontend unit/component | **Vitest + Testing Library + jsdom** | **Present** - 22 tests (labels, perms, i18n parity and usage, typography, the language a visitor gets, the HTTPS panel), wired into CI |
+| End-to-end (browser) | **Playwright** against the real Docker stack ([18](18-tests-e2e.md)) | **48 tests** - login, route guards, RBAC, the write path, the audit screen, every one of the 18 admin sections, the trusted-authority panel in infra-TLS mode, the language a first-time visitor gets, and every step of the reporting flow |
 | End-to-end (API script) | `e2e_test.py` (script at repo root) | Ad-hoc, not in CI - superseded for the journeys Playwright now covers |
 | End-to-end (deployment + SSO) | [Kubernetes + Keycloak bench](16-banc-kubernetes-sso.md), `bench/k8s-sso/run-tests.py` | **Manual**, reproducible - 18 checks against a real IdP (OIDC and SAML) |
 | Coverage | `pytest-cov`, floor in `backend/.coveragerc` | Enforced in CI - **80%** on `app/`, ratchet at 79 (entry points and seed scripts excluded) |
@@ -16,9 +16,7 @@
 | Typography | `test_typography.py` (whole repository), `typography.test.ts` (frontend), `test_report_typography.py` (rendered HTML/PPTX) | Enforced - no em dash, no middot anywhere, no allowlist |
 
 ### Backend test modules
-`test_access`, `test_access_history`, `test_actions`, `test_api_keys`, `test_audit_api`, `test_authconfig_urls`, `test_budget`, `test_changenotify`, `test_committees`, `test_freshness`, `test_hardening`, `test_import_org`, `test_initiatives_otd`, `test_insecure_defaults`, `test_leaves`, `test_logconfig`, `test_logexport`, `test_metrics`, `test_modules`, `test_notifications`, `test_oidc_client`, `test_ops`, `test_otds`, `test_personas`, `test_pptx_template`, `test_rbac`, `test_rbac_admin`, `test_report`, `test_report_surface`, `test_retention`, `test_review_access`, `test_roadmap_deps`, `test_saml_settings`, `test_snapshot`, `test_squad_products`, `test_ssotest`, `test_status`, `test_steerco`,
-`test_trust`, `test_trust_store`, `test_typography`, `test_report_typography`,
-`test_coleaders`, `test_data_reset`, `test_oidc_callback`, `test_api_ui_parity`.
+`test_access`, `test_access_history`, `test_access_revoke`, `test_api_keys`, `test_api_ui_parity`, `test_audit_api`, `test_authconfig_urls`, `test_branding`, `test_budget`, `test_changenotify`, `test_coleaders`, `test_committees`, `test_data_reset`, `test_export_timeline`, `test_export_timeline_dense`, `test_freshness`, `test_hardening`, `test_import_org`, `test_initiatives_otd`, `test_insecure_defaults`, `test_leaves`, `test_logconfig`, `test_logexport`, `test_login_screen`, `test_metrics`, `test_modules`, `test_mood`, `test_notifications`, `test_oidc_callback`, `test_oidc_client`, `test_ops`, `test_otds`, `test_personas`, `test_pptx_template`, `test_rbac`, `test_rbac_admin`, `test_report`, `test_report_labels`, `test_report_surface`, `test_report_typography`, `test_retention`, `test_review_access`, `test_roadmap_deps`, `test_saml_settings`, `test_snapshot`, `test_squad_products`, `test_ssotest`, `test_status`, `test_steerco`, `test_trust`, `test_trust_store`, `test_typography`, `test_user_deletion`.
 
 They cover RBAC/persona capabilities, derived objective status, roadmap dependency + EA/GA,
 report/roadmap rendering (incl. the single-page guarantee), snapshots, freshness, the SSO URL
@@ -47,6 +45,35 @@ pend dessous et le test ne verrait plus aucun orphelin.
 
 Une route qui ne doit deliberement pas avoir d'ecran se declare dans
 `NO_SCREEN_ON_PURPOSE`, avec sa raison. La liste est vide aujourd'hui.
+
+### Les libelles des documents
+
+`test_report_labels` fait pour les dictionnaires du backend ce que
+`i18n.usage.test.ts` fait depuis longtemps pour ceux du frontend, **dans les deux
+sens** : une cle demandee mais absente sort telle quelle dans un document qui part en
+comite, parce que `rt()` retombe deliberement sur la cle plutot que sur du vide; une
+cle presente que rien ne rend est du vocabulaire mort, qui se traduit pour rien et se
+lit comme un inventaire de ce que le produit fait.
+
+Le garde-fou manquait, et deux libelles y avaient survecu a la ligne qu'ils
+nommaient. Il verifie aussi que les deux langues portent les memes cles.
+
+### Le harnais de fuzz des exports
+
+`tests/fuzz_export_loop.py` n'est pas ramasse par pytest (son nom de fichier l'en
+tient a l'ecart) et ne tourne que lance a la main. C'est un choix, il fait des
+centaines de scenarios et prend des minutes, mais il a un cout : il a affirme faux
+pendant des mois sans que personne le voie. Il cherchait le nom d'une squad a une
+**position** (la premiere forme de la slide) ; la slide a recu un fond de page, cette
+premiere forme est devenue un rectangle vide, et chaque iteration echouait. Il cherche
+desormais le nom dans tout le texte de la slide.
+
+A lancer quand on touche aux exports :
+
+```
+cd backend
+DISABLE_SCHEDULER=1 FUZZ_ITERS=400 .venv-test/Scripts/python.exe -m tests.fuzz_export_loop
+```
 
 ## Gaps (prioritized)
 
