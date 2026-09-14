@@ -129,8 +129,9 @@ export interface OtdReport extends Otd {
   counts: { total: number; done: number; blocked: number; at_risk: number };
   jalons: { id: number; title: string; quarter: number; stage?: string | null; status: RoadmapStatus; squad_id: number; squad_name: string }[];
 }
-/** An objective selectable when linking objectives to an initiative. */
-export interface CandidateObjective { id: number; title: string; squad_id: number; squad_name: string; initiative_id?: number | null; }
+/** Un jalon proposable a une initiative: son trimestre, et l'initiative qui le
+ *  prend deja s'il y en a une. */
+export interface CandidateInitiativeJalon { id: number; title: string; quarter: number; squad_id: number; initiative_id?: number | null; }
 /** A milestone selectable when linking milestones to an OTD. */
 export interface CandidateJalon { id: number; title: string; quarter: number; theme?: string | null; squad_id: number; squad_name: string; otd_id?: number | null; }
 
@@ -275,6 +276,7 @@ export interface RoadmapItem {
   status: RoadmapStatus;
   display_order: number;
   objective_id?: number | null;
+  initiative_id?: number | null;
   otd_id?: number | null;
   otd_label?: string | null;
 }

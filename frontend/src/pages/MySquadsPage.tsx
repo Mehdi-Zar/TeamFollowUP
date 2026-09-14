@@ -12,8 +12,8 @@ import { useEffect, useState } from "react";
 import { api, ApiError } from "../api";
 import { useI18n } from "../i18n";
 import { useAuth } from "../auth";
-import { Budget, Initiative, Member, Objective, Squad, SquadDetail, Tribe, User } from "../types";
-import { ErrorBanner, Spinner, Dot, Modal, EmptyState } from "../components/ui";
+import { Budget, CandidateInitiativeJalon, Initiative, Member, Objective, Squad, SquadDetail, Tribe, User } from "../types";
+import { ErrorBanner, Spinner, Dot, Modal, EmptyState, PickItem } from "../components/ui";
 import { useSetPageChrome } from "../components/pageChrome";
 import { useModule } from "../config";
 import { OtdPanel } from "../components/OtdPanel";
@@ -309,15 +309,17 @@ function EditSquadModal({ detail, leaders, tribes, isAdmin, onClose, onError }: 
           {steercoOn
             ? <SteercoMembership squad={d} onChange={reload} onError={onError} />
             : <div className="small muted">{t("mysquads.module_off", { name: t("steerco.tab") })}</div>}
-          <SquadInitiatives squad={d} onError={onError} />
+          <SquadObjectives squad={d} onChange={reload} onError={onError} />
         </div>
       )}
 
-      {/* Etape 3 - OTD: l'engagement date de l'annee, et ce qui le sert */}
+      {/* Etape 3 - OTD: exactement ce que la frise exportee montre, dans son
+          ordre. En haut de la frise, les engagements dates. En dessous, une ligne
+          par initiative portant les jalons qui la servent. */}
       {step === 2 && (
         <div className="stack" style={{ gap: 16 }}>
           <OtdPanel squad={d} canManage onChange={reload} />
-          <SquadObjectives squad={d} onChange={reload} onError={onError} />
+          <SquadInitiatives squad={d} onChange={reload} onError={onError} />
         </div>
       )}
 
@@ -498,10 +500,12 @@ function SquadObjectives({ squad, onChange, onError }:
  * reglage de squad comme les autres: c'est ce qui remplit ses lignes dans la
  * frise des exports.
  */
-function SquadInitiatives({ squad, onError }: { squad: SquadDetail; onError: (m: string) => void }) {
+function SquadInitiatives({ squad, onChange, onError }:
+  { squad: SquadDetail; onChange: () => void; onError: (m: string) => void }) {
   const { t } = useI18n();
   const [all, setAll] = useState<Initiative[] | null>(null);
   const [busy, setBusy] = useState(false);
+  const [picking, setPicking] = useState<Initiative | null>(null);
 
   async function load() {
     try { setAll(await api.get<Initiative[]>(`/api/initiatives?year=${squad.year}`)); }
@@ -529,18 +533,23 @@ function SquadInitiatives({ squad, onError }: { squad: SquadDetail; onError: (m:
       <div className="small strong">{t("nav.initiatives")}</div>
       <div className="small muted">{t("mysquads.initiatives_hint")}</div>
       {all.length === 0 && <div className="small muted">{t("mysquads.initiatives_none")}</div>}
-      {mine.length > 0 && (
-        <div className="inline" style={{ gap: 6, flexWrap: "wrap" }}>
-          {mine.map((i) => (
-            <span key={i.id} className="badge badge-navy" style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
-              {i.title}
-              <button className="btn-ghost btn-sm" style={{ padding: "0 3px", lineHeight: 1 }}
-                      aria-label={t("action.delete")} disabled={busy}
-                      onClick={() => assign(i, false)}>×</button>
+      {mine.map((i) => {
+        // Les jalons que porte cette initiative: c'est ce qui fait sa ligne dans
+        // la frise, donc c'est ce qu'on montre a cote de son nom.
+        const carried = (squad.roadmap_items ?? []).filter((j) => j.initiative_id === i.id);
+        return (
+          <div key={i.id} className="item-row" style={{ gap: 8 }}>
+            <span className="grow strong">{i.title}</span>
+            <span className="small muted">
+              {t("mysquads.init_jalons_n", { n: carried.length })}
             </span>
-          ))}
-        </div>
-      )}
+            <button className="btn-secondary btn-sm" disabled={busy}
+                    onClick={() => setPicking(i)}>{t("mysquads.init_pick")}</button>
+            <button className="btn-danger btn-sm" aria-label={t("action.delete")} disabled={busy}
+                    onClick={() => assign(i, false)}>✕</button>
+          </div>
+        );
+      })}
       {others.length > 0 && (
         <select value="" disabled={busy}
                 onChange={(e) => { const i = others.find((x) => String(x.id) === e.target.value); if (i) assign(i, true); }}>
@@ -552,7 +561,83 @@ function SquadInitiatives({ squad, onError }: { squad: SquadDetail; onError: (m:
           ))}
         </select>
       )}
+
+      {picking && (
+        <InitiativeJalonsModal initiative={picking} squad={squad}
+          onClose={() => setPicking(null)}
+          onSaved={() => { setPicking(null); onChange(); }} />
+      )}
     </div>
+  );
+}
+
+
+/** Les jalons qui servent une initiative, coches dans une fenetre.
+ *
+ *  Le meme geste que pour un engagement, parce que c'est la meme question posee a
+ *  deux niveaux. Un jalon deja pris par une autre initiative se voit, grise: le
+ *  cacher laisserait croire qu'il n'existe pas. */
+function InitiativeJalonsModal({ initiative, squad, onClose, onSaved }: {
+  initiative: Initiative; squad: SquadDetail; onClose: () => void; onSaved: () => void;
+}) {
+  const { t } = useI18n();
+  const [rows, setRows] = useState<CandidateInitiativeJalon[] | null>(null);
+  const [sel, setSel] = useState<Set<number>>(new Set());
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.get<CandidateInitiativeJalon[]>(
+      `/api/initiatives/candidate-jalons?squad_id=${squad.id}&year=${squad.year}`)
+      .then((all) => {
+        setRows(all);
+        setSel(new Set(all.filter((r) => r.initiative_id === initiative.id).map((r) => r.id)));
+      })
+      .catch(() => setRows([]));
+  }, [initiative.id, squad.id, squad.year]);
+
+  const toggle = (id: number) => setSel((prev) => {
+    const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n;
+  });
+
+  async function save() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await api.put(`/api/initiatives/${initiative.id}/jalons`, { jalon_ids: Array.from(sel) });
+      onSaved();
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : "Erreur");
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <Modal width={560} title={initiative.title} onClose={onClose}
+      footer={<>
+        <button className="btn-secondary" onClick={onClose}>{t("action.cancel")}</button>
+        <button onClick={save} disabled={busy}>{busy ? "…" : t("action.save")}</button>
+      </>}>
+      <div className="stack" style={{ gap: 12 }}>
+        <div className="banner small">{t("mysquads.init_pick_intro")}</div>
+        {err && <ErrorBanner message={err} />}
+        {rows === null ? (
+          <div className="small muted">{t("common.loading")}</div>
+        ) : rows.length === 0 ? (
+          <div className="small muted">{t("mysquads.init_pick_empty")}</div>
+        ) : (
+          <div className="pick-list" style={{ maxHeight: 300, overflowY: "auto" }}>
+            {rows.map((r) => {
+              const taken = r.initiative_id != null && r.initiative_id !== initiative.id;
+              return (
+                <PickItem key={r.id} selected={sel.has(r.id)} disabled={taken}
+                  onToggle={() => toggle(r.id)} title={r.title} meta={`Q${r.quarter}`}
+                  tag={taken ? t("mysquads.init_taken") : undefined} />
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </Modal>
   );
 }
 

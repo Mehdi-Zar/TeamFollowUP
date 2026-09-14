@@ -51,7 +51,7 @@ une question :
 |---|---|
 | Infos | qui est cette squad (nom, tribu, responsable, co-responsables, description, ordre, produits, materiel) |
 | Options | ce qu'elle suit (KPI, budget, plateformes steerco) |
-| OTD | ce sur quoi elle s'engage pour l'annee |
+| OTD | ce sur quoi elle s'engage pour l'annee, et les initiatives qu'elle mene |
 | Budget | les montants, quand le suivi est actif |
 
 Le panneau « Parametres » d'Administration > Squads a disparu : il proposait
@@ -63,7 +63,9 @@ Les **OTD de l'annee** se sont longtemps ecrits dans l'ecran de saisie, a cote d
 jalons qu'ils portent. C'etait le mauvais ecran : seuls un tribe leader ou un
 admin peuvent les ecrire, et un tribe leader n'entre pas dans la saisie, si bien
 qu'un admin etait en pratique le seul a pouvoir en creer un. Ils sont a l'etape
-OTD, sous les engagements qu'ils servent.
+Options, avec les autres choses que la squad suit. Pas a l'etape OTD malgre leur
+nom : ils n'apparaissent pas sur la frise, ils comptent dans le chiffre
+« objectifs rouges » de la page de synthese, ce qui est un autre sujet.
 
 Le **type de squad** a quitte l'etape Infos. Il annonce un style de reporting que
 rien ne lit (voir [03](03-data-model.md)) : la colonne reste en base et l'import
@@ -79,9 +81,15 @@ retire la squad de toutes celles qu'elle alimente, et c'est ecrit a cote. Il ne
 peut pas s'allumer seul, puisque l'allumer sans choisir de plateforme ne voudrait
 rien dire.
 
-**Les initiatives** sont dans la meme etape : une initiative appartient a la tribu
-et designe la squad qui la mene, et ce sont elles qui remplissent ses lignes dans
-les documents. Se regler ailleurs qu'ici n'avait pas de raison.
+**Les initiatives** sont a l'etape OTD, avec les engagements : l'etape montre
+exactement ce que la frise exportee montre, et dans son ordre. En haut de la frise,
+les engagements dates. En dessous, une ligne par initiative portant les jalons qui
+la servent. L'etape se lit donc comme le document qu'elle produit.
+
+Chaque initiative menee par la squad **coche les jalons qui la servent**, du meme
+geste que les jalons d'un engagement : c'est la meme question posee a deux niveaux,
+elle merite le meme geste. Un jalon deja pris par une autre initiative se voit,
+grise : le cacher laisserait croire qu'il n'existe pas.
 
 **Les engagements OTD** se lisent en tableau : engagement, date, statut, jalons
 couverts. Une carte par engagement, avec sa liste de jalons repliee dedans, tenait

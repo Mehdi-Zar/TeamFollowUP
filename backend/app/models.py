@@ -339,12 +339,20 @@ class RoadmapItem(Base):
     # Which top-management OTD (budget delivery commitment) this milestone belongs to.
     otd_id: Mapped[int | None] = mapped_column(
         ForeignKey("otds.id", ondelete="SET NULL"), nullable=True, index=True)
+    # Which tribe initiative this milestone serves. Direct, because the road through
+    # the objective (jalon -> objective -> initiative) had a link no screen ever set:
+    # every exported timeline showed empty initiative rows and one anonymous row
+    # carrying every milestone. The objective keeps its own job, being an objective
+    # whose red ones the summary counts, and stops being plumbing.
+    initiative_id: Mapped[int | None] = mapped_column(
+        ForeignKey("initiatives.id", ondelete="SET NULL"), nullable=True, index=True)
 
     squad: Mapped["Squad"] = relationship(back_populates="roadmap_items", foreign_keys=[squad_id])
     dependency_squad: Mapped["Squad | None"] = relationship(foreign_keys=[dependency_squad_id])
     dependency_tribe: Mapped["Tribe | None"] = relationship(foreign_keys=[dependency_tribe_id])
     objective: Mapped["Objective | None"] = relationship(back_populates="jalons", foreign_keys=[objective_id])
     otd: Mapped["Otd | None"] = relationship(back_populates="roadmap_items", foreign_keys=[otd_id])
+    initiative: Mapped["Initiative | None"] = relationship(foreign_keys=[initiative_id])
 
 
 class QuarterProgress(Base):
