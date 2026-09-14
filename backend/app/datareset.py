@@ -43,7 +43,7 @@ NEVER_ERASED = {"app_settings", "leave_types", "data_snapshots", "alembic_versio
 # key -> (tables it owns, domains it drags along when erased)
 DOMAINS: dict[str, dict] = {
     "reporting": {
-        "tables": ["report_snapshots", "quarter_progress", "key_messages", "review_actions",
+        "tables": ["report_snapshots", "quarter_progress", "key_messages",
                    "report_baselines"],
         "implies": [],
     },
