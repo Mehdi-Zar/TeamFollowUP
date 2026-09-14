@@ -2,7 +2,7 @@
 // Shows a flat, year-scoped list of initiatives (the top of the reporting chain).
 // Everyone can read it; tribe leaders manage their own tribe's initiatives and
 // admins can manage any tribe (and filter by tribe). Includes HTML/PPTX export.
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { useI18n } from "../i18n";
@@ -12,6 +12,7 @@ import { Initiative, Squad, Tribe } from "../types";
 import { Spinner, ErrorBanner, EmptyState, Modal } from "../components/ui";
 import { HtmlPreviewButton } from "../components/HtmlPreview";
 import { useSetPageChrome } from "../components/pageChrome";
+import { ListControls, ListSearch, SortSpec, applyListView, useListView } from "../components/listView";
 
 const CUR_YEAR = new Date().getFullYear();
 /** Trim an ISO datetime to its YYYY-MM-DD date part, or show a dash when absent. */
@@ -51,6 +52,8 @@ export default function InitiativesPage() {
   const [editing, setEditing] = useState<Partial<Initiative> | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
   const [reload, setReload] = useState(0);
+  // La table par defaut: une initiative se lit en colonnes (owner, squad, echeance).
+  const view = useListView("init", "title", true);
 
   const tribeForNew = isAdmin ? (tribeId ? Number(tribeId) : tribes[0]?.id) : user?.tribe_id;
   const qs = `?year=${year}${isAdmin && tribeId ? `&tribe_id=${tribeId}` : ""}`;
@@ -100,8 +103,31 @@ export default function InitiativesPage() {
     ),
   }, [isAdmin, tribes, tribeId, year, t, tribeForNew, canEdit, steercoTabOn]);
 
+  // Une initiative sans echeance n'est pas « en retard », elle est sans date: elle
+  // passe apres celles qui en ont une, dans les deux sens du tri.
+  const sorts: SortSpec<Initiative>[] = useMemo(() => [
+    { key: "title", label: t("init.sort_title"), cmp: (a, b) => a.title.localeCompare(b.title) },
+    { key: "owner", label: t("init.sort_owner"),
+      cmp: (a, b) => (a.owner || "\uffff").localeCompare(b.owner || "\uffff") },
+    { key: "squad", label: t("init.sort_squad"),
+      cmp: (a, b) => (a.squad_name || "\uffff").localeCompare(b.squad_name || "\uffff") },
+    { key: "deadline", label: t("init.sort_deadline"),
+      cmp: (a, b) => (a.deadline || "\uffff").localeCompare(b.deadline || "\uffff") },
+  ], [t]);
+
+  const rows = useMemo(
+    () => applyListView(items ?? [], view, sorts,
+                        (i, q) => i.title.toLowerCase().includes(q)
+                               || (i.owner || "").toLowerCase().includes(q)
+                               || (i.squad_name || "").toLowerCase().includes(q)),
+    [items, view.query, view.sort, view.desc, sorts]);
+
   if (error) return <ErrorBanner message={error} />;
   if (!items) return <Spinner />;
+
+  const remove = async (i: Initiative) => {
+    if (confirm(t("init.confirm_del"))) { await api.del(`/api/initiatives/${i.id}`); refresh(); }
+  };
 
   return (
     <div className="stack" style={{ gap: 14 }}>
@@ -109,37 +135,69 @@ export default function InitiativesPage() {
       {items.length === 0 ? (
         <EmptyState message={t("init.empty")} />
       ) : (
-        <div className="card" style={{ padding: 8, overflowX: "auto" }}>
-          <table className="init-tbl">
-            <thead>
-              <tr>
-                <th>{t("init.h_initiative")}</th>
-                <th>{t("init.h_owner")}</th>
-                <th>{t("init.h_squad")}</th>
-                <th>{t("init.h_deadline")}</th>
-                {canEdit && <th style={{ width: 90 }} />}
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((i) => (
-                <tr key={i.id}>
-                  <td><strong>{i.title}</strong></td>
-                  <td>{i.owner || "-"}</td>
-                  <td>{i.squad_name || "-"}</td>
-                  <td>{fmtDate(i.deadline)}</td>
+        <>
+          <div className="card" style={{ padding: 14 }}>
+            <div className="row" style={{ gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
+              <ListSearch view={view} id="init-search" />
+            </div>
+          </div>
+
+          <ListControls view={view} sorts={sorts} />
+
+          {rows.length === 0 ? (
+            <EmptyState message={t("list.no_match")} />
+          ) : view.dense ? (
+            <div className="card" style={{ padding: 8, overflowX: "auto" }}>
+              <table className="init-tbl">
+                <thead>
+                  <tr>
+                    <th>{t("init.h_initiative")}</th>
+                    <th>{t("init.h_owner")}</th>
+                    <th>{t("init.h_squad")}</th>
+                    <th>{t("init.h_deadline")}</th>
+                    {canEdit && <th style={{ width: 90 }} />}
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((i) => (
+                    <tr key={i.id}>
+                      <td><strong>{i.title}</strong></td>
+                      <td>{i.owner || "-"}</td>
+                      <td>{i.squad_name || "-"}</td>
+                      <td>{fmtDate(i.deadline)}</td>
+                      {canEdit && (
+                        <td>
+                          <div className="inline" style={{ gap: 4 }}>
+                            <button className="btn-ghost btn-sm" onClick={() => setEditing(i)}>{t("action.edit")}</button>
+                            <button className="btn-ghost btn-sm" onClick={() => remove(i)}>✕</button>
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="squad-grid-2">
+              {rows.map((i) => (
+                <div key={i.id} className="card stack" style={{ gap: 8 }}>
+                  <div className="strong" style={{ fontSize: 16, color: "var(--navy)" }}>{i.title}</div>
+                  <div className="small muted">
+                    {t("init.h_owner")} : {i.owner || "-"}, {t("init.h_squad")} : {i.squad_name || "-"}
+                  </div>
+                  <div className="small muted">{t("init.h_deadline")} : {fmtDate(i.deadline)}</div>
                   {canEdit && (
-                    <td>
-                      <div className="inline" style={{ gap: 4 }}>
-                        <button className="btn-ghost btn-sm" onClick={() => setEditing(i)}>{t("action.edit")}</button>
-                        <button className="btn-ghost btn-sm" onClick={async () => { if (confirm(t("init.confirm_del"))) { await api.del(`/api/initiatives/${i.id}`); refresh(); } }}>✕</button>
-                      </div>
-                    </td>
+                    <div className="inline" style={{ gap: 6 }}>
+                      <button className="btn-secondary btn-sm" onClick={() => setEditing(i)}>{t("action.edit")}</button>
+                      <button className="btn-danger btn-sm" onClick={() => remove(i)}>{t("action.delete")}</button>
+                    </div>
                   )}
-                </tr>
+                </div>
               ))}
-            </tbody>
-          </table>
-        </div>
+            </div>
+          )}
+        </>
       )}
 
       {editing && (

@@ -959,3 +959,65 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); width
 .tribe-chip:hover { border-color: var(--accent); background: var(--ice-soft); }
 .tribe-chip.on { background: var(--navy); border-color: var(--navy); color: #fff; }
 .tribe-chip.on .muted { color: var(--ice-blue); }
+
+/* Une ligne repliable: le titre et l'etat visibles, le contenu au clic. C'est la
+   forme qui tient a dix elements comme a deux, la ou tout deplier d'un coup ne
+   tient qu'a deux. */
+.collapse-row {
+  display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+  background: #fff; color: var(--text); border: 1px solid var(--line);
+  border-radius: 12px; padding: 12px 14px; font: inherit; font-size: 14px; cursor: pointer;
+}
+.collapse-row:hover { border-color: var(--accent); background: var(--ice-soft); }
+.collapse-row[aria-expanded="true"] { border-color: var(--navy); }
+.collapse-caret { color: var(--grey); flex: 0 0 auto; font-size: 12px; }
+.squad-card.s-open { border-color: var(--navy); box-shadow: 0 0 0 3px rgba(30,39,97,.08); }
+
+/* Le bandeau d'entete du reporting: quelle squad, quelle semaine. Il ouvre
+   l'ecran parce que c'est ce qu'on verifie avant de saisir quoi que ce soit. */
+.reporting-banner {
+  display: flex; justify-content: space-between; align-items: center; gap: 20px;
+  flex-wrap: wrap; background: linear-gradient(135deg, var(--navy), var(--navy-deep));
+  color: #fff; border-radius: var(--radius); padding: 20px 24px; box-shadow: var(--shadow);
+}
+.rb-eyebrow {
+  font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--ice-blue);
+}
+.rb-title { font-size: 28px; font-weight: 800; line-height: 1.15; margin-top: 2px; }
+.rb-sub { font-size: 15px; color: var(--ice-blue); margin-top: 6px; }
+.rb-side { display: flex; gap: 10px; flex-wrap: wrap; }
+.rb-chip {
+  display: flex; flex-direction: column; gap: 2px; min-width: 120px;
+  background: rgba(255, 255, 255, .12); border-radius: 12px; padding: 8px 12px;
+}
+.rb-chip-label { font-size: 11px; letter-spacing: .04em; color: var(--ice-blue); }
+.rb-chip-value { font-size: 14px; font-weight: 700; }
+
+/* Le parcours de reporting: une barre d'etapes, puis l'etape courante.
+   La barre remplace une bande decorative qui annoncait la meme demarche sans
+   permettre de la suivre: elle mene quelque part, et elle dit ce qui est fait. */
+.step-rail { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
+.step-chip {
+  display: flex; align-items: center; gap: 10px; flex: 0 0 auto;
+  background: #fff; color: var(--text); border: 1px solid var(--line);
+  border-radius: 12px; padding: 10px 14px; font: inherit; cursor: pointer; text-align: left;
+}
+.step-chip:hover { border-color: var(--accent); }
+.step-chip.on { border-color: var(--navy); box-shadow: 0 0 0 3px rgba(30, 39, 97, .08); }
+.step-ico {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; border-radius: 9px; color: #fff; flex: 0 0 auto;
+}
+.step-body { display: flex; flex-direction: column; gap: 1px; }
+.step-title { font-size: 13px; font-weight: 700; color: var(--navy); }
+.step-state { font-size: 11px; color: var(--grey); }
+.step-check { color: var(--green); font-weight: 800; }
+.step-panel {
+  background: #fff; border-radius: var(--radius); box-shadow: var(--shadow); padding: 20px;
+}
+/* Une etape dont le contenu tient en un geste: on le pose au milieu plutot que
+   de le coller en haut a gauche d'une carte vide. */
+.step-center { display: flex; flex-direction: column; align-items: center; padding: 14px 0; }
+.mood-big { gap: 10px; }
+.mood-big .mood-btn { font-size: 40px; padding: 8px 14px; border-radius: 16px; }
+.mood-note { width: min(460px, 100%); margin-top: 10px; text-align: center; }
