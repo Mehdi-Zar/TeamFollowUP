@@ -49,16 +49,26 @@ une question :
 
 | Etape | La question |
 |---|---|
-| Infos | qui est cette squad (nom, tribu, responsable, co-responsables, type, description, ordre, produits, materiel) |
+| Infos | qui est cette squad (nom, tribu, responsable, co-responsables, description, ordre, produits, materiel) |
 | Options | ce qu'elle suit (KPI, budget, plateformes steerco) |
 | OTD | ce sur quoi elle s'engage pour l'annee |
 | Budget | les montants, quand le suivi est actif |
 
 Le panneau « Parametres » d'Administration > Squads a disparu : il proposait
-l'interrupteur KPI, qui vit ici, et les objectifs annuels, qui se saisissent dans
-l'ecran de saisie a cote des jalons qu'ils portent. Deux endroits pour le meme
-reglage, c'est un endroit de trop : celui qu'on ne pense pas a ouvrir finit par
-afficher l'ancien etat.
+l'interrupteur KPI et les objectifs annuels, qui vivent ici tous les deux. Deux
+endroits pour le meme reglage, c'est un endroit de trop : celui qu'on ne pense pas
+a ouvrir finit par afficher l'ancien etat.
+
+Les **OTD de l'annee** se sont longtemps ecrits dans l'ecran de saisie, a cote des
+jalons qu'ils portent. C'etait le mauvais ecran : seuls un tribe leader ou un
+admin peuvent les ecrire, et un tribe leader n'entre pas dans la saisie, si bien
+qu'un admin etait en pratique le seul a pouvoir en creer un. Ils sont a l'etape
+OTD, sous les engagements qu'ils servent.
+
+Le **type de squad** a quitte l'etape Infos. Il annonce un style de reporting que
+rien ne lit (voir [03](03-data-model.md)) : la colonne reste en base et l'import
+la remplit toujours, mais un reglage inerte a l'ecran fait douter de tous les
+autres.
 
 **Le steerco ne s'active pas, il se deduit.** Une squad est au steerco parce
 qu'elle alimente une plateforme (`app/platforms.py`, `sync_squad_flags`). Le menu
@@ -77,8 +87,8 @@ les documents. Se regler ailleurs qu'ici n'avait pas de raison.
 couverts. Une carte par engagement, avec sa liste de jalons repliee dedans, tenait
 sur deux engagements ; a sept, la page defilait sans qu'on puisse comparer deux
 dates, alors que comparer des dates est ce qu'on vient faire ici. Le meme panneau
-sert sur la page de la squad, dans « Gerer mes squads » et a l'etape OTD du
-reporting.
+sert sur la page de la squad et dans « Gerer mes squads ». Il a quitte le
+reporting, ou personne ne pouvait l'ecrire.
 
 **Les co-responsables** passent de cases a cocher a une liste deroulante. Une
 rangee de cases tenait sur trois personnes et se deformait a dix : elle

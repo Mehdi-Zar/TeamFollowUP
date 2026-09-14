@@ -35,16 +35,20 @@ const ICON: Record<CardKey | "admin" | "tribes", (p: { size?: number }) => JSX.E
   admin: IconAdmin, tribes: IconTribes,
 };
 
-/** Card key -> in-app route the card's CTA links to. */
+/** Card key -> in-app route the card's CTA links to.
+ *
+ *  `otd` pointait sur `/otd`, une route qui n'a jamais existe: le fourre-tout de
+ *  App.tsx renvoyait sur le tableau de bord sans rien dire, et la carte promettait
+ *  un ecran qu'on ne trouvait pas. Les engagements se gerent dans « Mes squads ». */
 const ROUTE: Record<CardKey, string> = {
-  dashboard: "/", reporting: "/saisie", roadmap: "/roadmap", otd: "/otd",
+  dashboard: "/", reporting: "/saisie", roadmap: "/roadmap", otd: "/mes-squads",
   mysquads: "/mes-squads", feed: "/fil", org: "/organigramme", leaves: "/conges",
 };
 
 // Priority order per persona (only cards the user is actually entitled to appear).
 const ORDER: Record<Role, CardKey[]> = {
   member: ["dashboard", "feed", "org", "roadmap", "leaves"],
-  squad_leader: ["reporting", "otd", "mysquads", "dashboard", "feed", "roadmap", "leaves"],
+  squad_leader: ["reporting", "mysquads", "dashboard", "feed", "roadmap", "leaves"],
   tribe_leader: ["mysquads", "otd", "dashboard", "roadmap", "org", "feed", "leaves"],
   admin: ["dashboard", "reporting", "roadmap", "otd", "mysquads", "feed", "org", "leaves"],
 };
@@ -71,7 +75,11 @@ export default function GettingStartedPage() {
       case "dashboard": return can("dashboard") && m("dashboard");
       case "reporting": return can("reporting") && m("reporting");
       case "roadmap": return can("roadmap") && m("squad_content", "roadmap");
-      case "otd": return ["admin", "tribe_leader", "squad_leader"].includes(role);
+      // Un engagement se fixe et se date par un tribe leader ou un admin, dans
+      // « Mes squads ». Un squad leader les lit sur la page de sa squad, avec le
+      // reste de ce qui la decrit: lui ouvrir une carte d'accueil vers un ecran
+      // ou il ne peut rien faire etait la meme promesse vide que la route morte.
+      case "otd": return ["admin", "tribe_leader"].includes(role) && can("mysquads");
       case "mysquads": return can("mysquads");
       case "feed": return can("feed") && m("feed");
       case "org": return can("org") && m("org");
