@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { canSeeAdmin, isWriter, canSeeSaisie, isGlobalAdmin, canEditSquad } from "./perms";
+import { canSeeAdmin, isWriter, isGlobalAdmin, canEditSquad } from "./perms";
 
 describe("role predicates", () => {
   it("admin area is admin + tribe leader", () => {
@@ -11,11 +11,6 @@ describe("role predicates", () => {
   it("writers are admin/tribe/squad leaders", () => {
     expect(isWriter("squad_leader")).toBe(true);
     expect(isWriter("member")).toBe(false);
-  });
-  it("reporting (Saisie) is admin + squad leader", () => {
-    expect(canSeeSaisie("admin")).toBe(true);
-    expect(canSeeSaisie("squad_leader")).toBe(true);
-    expect(canSeeSaisie("tribe_leader")).toBe(false);
   });
   it("global admin is admin only", () => {
     expect(isGlobalAdmin("admin")).toBe(true);

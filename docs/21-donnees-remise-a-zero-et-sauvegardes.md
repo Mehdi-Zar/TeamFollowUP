@@ -17,7 +17,7 @@ lignes reellement en base, et ce que le domaine **entraine** avec lui.
 
 | Domaine | Contenu | Entraine |
 |---|---|---|
-| Saisies hebdomadaires | instantanes de reporting, avancement trimestriel, messages cles, actions de revue, baselines | |
+| Saisies hebdomadaires | instantanes de reporting, avancement trimestriel, messages cles, baselines | |
 | Jalons de roadmap | `roadmap_items` | |
 | Objectifs de squad | `objectives` | Jalons |
 | Initiatives et OTD | `initiatives`, `otds` | |
