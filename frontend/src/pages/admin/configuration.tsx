@@ -20,7 +20,7 @@ export const MODULE_TREE: { key: ModuleKey; features: string[] }[] = [
   { key: "reporting", features: [] },
   { key: "feed", features: ["reactions", "replies", "pin", "kinds"] },
   { key: "review", features: ["weekly_report"] },
-  { key: "squad_content", features: ["objectives", "roadmap", "kpis"] },
+  { key: "squad_content", features: ["objectives", "roadmap", "kpis", "quarter_progress"] },
   { key: "committees", features: [] },
   { key: "steerco", features: [] },
   { key: "notifications", features: ["inapp", "email"] },

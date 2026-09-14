@@ -27,7 +27,10 @@ def _defaults() -> dict:
         "reporting": {"enabled": True},
         "feed": {"enabled": True, "reactions": True, "replies": True, "pin": True, "kinds": True},
         "review": {"enabled": True, "weekly_report": True},
-        "squad_content": {"enabled": True, "objectives": True, "roadmap": True, "kpis": False},
+        # quarter_progress: le commentaire de trimestre, a cote du pourcentage que
+        # l'application calcule. Eteint tant que la section n'est pas jugee prete.
+        "squad_content": {"enabled": True, "objectives": True, "roadmap": True, "kpis": False,
+                          "quarter_progress": False},
         # Optional governance section ("comitologie"): squad leaders declare their
         # recurring committees, tribe leaders get oversight. Off by default.
         "committees": {"enabled": False},

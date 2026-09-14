@@ -21,75 +21,11 @@ import { useErr } from "./shared";
 export const RAGS: Array<"green" | "amber" | "red"> = ["green", "amber", "red"];
 
 
-/** Expandable per-squad settings row inside SquadsAdmin: toggle KPIs on/off and
- *  manage the squad's annual objectives (title + deadline; RAG is auto-derived). */
-export function SquadParamsPanel({ squadId }: { squadId: number }) {
-  const { t, rag } = useI18n();
-  const kpisModuleOn = useModule()("squad_content", "kpis");
-  const [squad, setSquad] = useState<SquadDetail | null>(null);
-  const [newObj, setNewObj] = useState("");
-  const { error, wrap } = useErr();
-
-  async function load() {
-    const d = await wrap(() => api.get<SquadDetail>(`/api/squads/${squadId}`));
-    if (d) setSquad(d);
-  }
-  useEffect(() => { load(); }, [squadId]);
-  if (!squad) return <div className="small muted">{t("common.loading")}</div>;
-
-  const toggleKpis = (on: boolean) => wrap(async () => { await api.put(`/api/squads/${squadId}`, { kpis_enabled: on }); await load(); });
-  const addObj = () => wrap(async () => {
-    if (!newObj.trim()) return;
-    await api.post("/api/objectives", { squad_id: squadId, year: squad.year, title: newObj.trim() });
-    setNewObj("");
-    await load();
-  });
-  const updObj = (id: number, patch: any) => wrap(async () => { await api.put(`/api/objectives/${id}`, patch); await load(); });
-  const delObj = (id: number) => wrap(async () => { await api.del(`/api/objectives/${id}`); await load(); });
-
-  return (
-    <div className="stack" style={{ gap: 14, padding: "6px 2px" }}>
-      {error && <ErrorBanner message={error} />}
-      {kpisModuleOn && (
-        <label className="switch">
-          <input type="checkbox" checked={!!squad.kpis_enabled} onChange={(e) => toggleKpis(e.target.checked)} />
-          <span className="track"><span className="knob" /></span>
-          <span className="small strong">{t("admin.kpis_enabled")}</span>
-        </label>
-      )}
-
-      <div>
-        <div className="small muted" style={{ marginBottom: 6 }}>{t("squad.objectives", { year: squad.year })} - {t("admin.objectives_hint")}</div>
-        {squad.objectives.length === 0 && <div className="small muted">{t("squad.no_obj")}</div>}
-        {squad.objectives.map((o) => (
-          <div key={o.id} className="item-row" style={{ gap: 8 }}>
-            <Dot status={o.rag_status} />
-            <input style={{ flex: 1 }} aria-label={t("a11y.objective_title")} defaultValue={o.title} onBlur={(e) => e.target.value !== o.title && updObj(o.id, { title: e.target.value })} />
-            <span className="small muted" style={{ minWidth: 56 }}>{rag(o.rag_status)}</span>
-            <input type="date" className="w-auto" style={{ maxWidth: 150 }} title={t("obj.deadline")} aria-label={t("obj.deadline")}
-                   value={o.target_date ? o.target_date.slice(0, 10) : ""}
-                   onChange={(e) => updObj(o.id, { target_date: e.target.value || null })} />
-            <button className="btn-ghost btn-sm" aria-label={t("action.delete")} onClick={() => delObj(o.id)}>✕</button>
-          </div>
-        ))}
-        <div className="small muted" style={{ marginTop: 2 }}>{t("obj.status_auto")}</div>
-        <div className="row" style={{ alignItems: "flex-end", marginTop: 8 }}>
-          <div style={{ flex: 1, minWidth: 200 }}>
-            <label>{t("admin.new_objective")}</label>
-            <input aria-label={t("admin.new_objective")} value={newObj} onChange={(e) => setNewObj(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addObj()} />
-          </div>
-          <button className="btn-sm" onClick={addObj} disabled={!newObj.trim()}>{t("admin.add")}</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-
-/** Admin > Squads: table of squads (name, tribe, leader, order) with inline edit,
- *  an expandable params panel, and a create form. A tribe leader is scoped to
- *  their own tribe (tribe column read-only, create fixed to their tribe); an
- *  admin can move squads across tribes. */
+/** Admin > Squads: table of squads (name, tribe, leader, order) with inline edit
+ *  and a create form. A tribe leader is scoped to their own tribe (tribe column
+ *  read-only, create fixed to their tribe); an admin can move squads across
+ *  tribes. Everything else about a squad (KPI, budget, steerco, OTD) is edited in
+ *  « Gerer mes squads », which is the one screen that carries all of it. */
 export function SquadsAdmin({ perms }: { perms: Permissions }) {
   const { t } = useI18n();
   const isAdmin = perms.role === "admin";
@@ -98,7 +34,6 @@ export function SquadsAdmin({ perms }: { perms: Permissions }) {
   const [tribes, setTribes] = useState<Tribe[]>([]);
   const { error, wrap } = useErr();
   const [form, setForm] = useState({ name: "", leader_user_id: "", tribe_id: isAdmin ? "" : String(perms.tribe_id ?? "") });
-  const [paramsId, setParamsId] = useState<number | null>(null);
 
   async function load() {
     setSquads(await api.get<Squad[]>("/api/squads"));
@@ -181,22 +116,11 @@ export function SquadsAdmin({ perms }: { perms: Permissions }) {
                   <input type="number" aria-label={t("admin.order")} defaultValue={s.display_order} onBlur={(e) => Number(e.target.value) !== s.display_order && update(s, { display_order: Number(e.target.value) })} />
                 </td>
                 <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                  <button className="btn-secondary btn-sm" style={{ marginRight: 6 }}
-                          onClick={() => setParamsId(paramsId === s.id ? null : s.id)}>
-                    {t("admin.squad_params")}
-                  </button>
                   <button className="btn-danger btn-sm" onClick={() => remove(s)}>
                     {t("action.delete")}
                   </button>
                 </td>
               </tr>
-              {paramsId === s.id && (
-                <tr>
-                  <td colSpan={5} style={{ background: "var(--ice-soft)" }}>
-                    <SquadParamsPanel squadId={s.id} />
-                  </td>
-                </tr>
-              )}
               </Fragment>
             ))}
           </tbody>

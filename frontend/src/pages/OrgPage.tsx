@@ -154,6 +154,29 @@ export default function OrgPage() {
     }
   }
 
+  // Poser l'organigramme a partir de ce que l'application sait deja: une racine
+  // au nom de la tribu, puis une boite par squad. C'est le point de depart que
+  // tout le monde recree a la main, en moins bien.
+  const [seeding, setSeeding] = useState(false);
+  async function seedFromSquads() {
+    if (!squads.length) return;
+    setSeeding(true);
+    try {
+      const tribeName = tribes.find((x) => x.id === tribeId)?.name || t("org.root_default");
+      const base: any = { person_name: null, squad_id: null, parent_id: null };
+      if (isAdmin) base.tribe_id = tribeId;
+      const root = await api.post<OrgNode>("/api/org", { ...base, title: tribeName });
+      for (const sq of squads) {
+        await api.post("/api/org", { ...base, title: sq.name, squad_id: sq.id, parent_id: root.id });
+      }
+      load(tribeId);
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setSeeding(false);
+    }
+  }
+
   async function remove(n: OrgNode) {
     if (!confirm(t("org.del_confirm"))) return;
     await api.del(`/api/org/${n.id}`);
@@ -235,7 +258,19 @@ export default function OrgPage() {
       <div className="muted small">{editable ? t("org.subtitle_edit") : t("org.subtitle_ro")}</div>
 
       {tree.length === 0 && (
-        <div className="card muted">{t("org.empty")} {editable ? t("org.empty_edit") : ""}</div>
+        <div className="card stack" style={{ gap: 10 }}>
+          <div className="muted">{t("org.empty")} {editable ? t("org.empty_edit") : ""}</div>
+          {editable && squads.length > 0 && (
+            <>
+              <div className="small muted">{t("org.empty_squads", { n: squads.length })}</div>
+              <div>
+                <button className="btn btn-sm" disabled={seeding} onClick={seedFromSquads}>
+                  {seeding ? "…" : t("org.seed_from_squads")}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
       )}
 
       {tree.length > 0 && view === "tree" && (
