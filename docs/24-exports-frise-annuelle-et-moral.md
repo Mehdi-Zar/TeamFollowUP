@@ -57,8 +57,13 @@ disaient. Trois cas sont traites explicitement, et chacun a son test :
   initiative portee par une autre squad.
 - **Un engagement sans date** n'a pas de place sur l'axe : il est cite sous la
   bande.
-- **L'owner d'une initiative, l'echeance, la dependance d'un jalon** suivent sur
-  la ligne. La dependance est souvent la seule ligne qui explique un glissement.
+- **La dependance d'un jalon** suit sur sa boite : c'est souvent la seule ligne
+  qui explique un glissement.
+- **L'owner d'une initiative et son echeance** ne sont pas sur la frise. Ils y ont
+  figure sous le nom de l'initiative, ou ils ne repondaient a rien : la ligne dit
+  quels jalons servent quoi, pas qui la porte. Ils se lisent sur le document des
+  initiatives, sur la carte des initiatives de la page d'une squad, et dans
+  « Mes squads ».
 - **La phase d'un jalon, EA ou GA**, se lit a droite de son titre dans la boite,
   dans une colonne de largeur fixe pour que le titre sache ou s'arreter. Elle est
   en encre de service et non aux couleurs de la phase : le bord gauche de la

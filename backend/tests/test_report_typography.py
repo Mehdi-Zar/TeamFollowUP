@@ -91,9 +91,11 @@ def test_the_single_squad_export_too(db, rich):
 
     deck = _deck_text(report_mod.render_pptx(data))
     _assert_clean(deck, "the single-squad PPTX")
-    # L'owner et l'echeance ont quitte les parentheses pour la ligne sous le nom
-    # de l'initiative, ce qui ne les autorise pas a disparaitre.
-    assert "Alice Martin, échéance 2026-06-30" in deck
+    # La ligne d'une initiative ne porte plus que son nom: elle repond a « quels
+    # jalons servent quoi », pas a « qui la porte ». L'owner et l'echeance vivent
+    # sur le document des initiatives, teste plus bas.
+    assert "Cut the build time" in deck
+    assert "Alice Martin" not in deck
     assert "(80%)" in deck and "(125%)" in deck            # percentage after its amount
 
 
@@ -105,7 +107,11 @@ def test_every_other_document_too(db, rich):
     _assert_clean(_deck_text(report_mod.render_roadmap_pptx(data)), "the roadmap PPTX")
 
     inits = report_mod.build_initiative_list(db, None, YEAR)
-    _assert_clean(report_mod.render_initiatives_html(inits), "the initiatives HTML")
+    inits_html = report_mod.render_initiatives_html(inits)
+    _assert_clean(inits_html, "the initiatives HTML")
+    # L'owner et l'echeance d'une initiative ont quitte la frise, ou ils ne
+    # repondaient a rien. Ils ne quittent pas le produit: c'est ici qu'on les lit.
+    assert "Alice Martin" in inits_html and "2026-06-30" in inits_html
     _assert_clean(_deck_text(report_mod.render_initiatives_pptx(inits)), "the initiatives PPTX")
 
     dep = report_mod.build_dependencies_data(db, None, YEAR)
@@ -120,7 +126,6 @@ def test_the_separators_were_replaced_and_not_simply_dropped(db, rich):
     html = report_mod.render_html(
         report_mod.build_report_data(db, None, YEAR, 7, lang="fr", viewer=viewer))
 
-    assert "Alice Martin, échéance 2026-06-30" in html     # initiative owner then deadline
     assert "(Dép. Tribe Two)" in html                      # dependency in parentheses
     assert "Vendor slipped a week" in html                 # key message survived
     assert ", 25%)" in html                                # budget overrun keeps both figures

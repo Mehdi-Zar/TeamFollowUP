@@ -667,15 +667,15 @@ def _timeline_html(det: dict, lang: str, e, year: int) -> str:
         # Les jalons qui ne servent aucune initiative, eux, n'ont pas de libelle:
         # ils n'appartiennent pas a une categorie « sans initiative », ils
         # n'appartiennent a rien, et nommer ce vide ajoute une ligne a lire.
+        #
+        # Le nom de l'initiative, seul. L'owner et l'echeance suivaient dessous et
+        # ne servaient a rien ici: la ligne repond a « quels jalons servent quoi »,
+        # pas a « qui la porte ». Les deux restent sur la carte des initiatives, qui
+        # est faite pour ca.
         if row["key"] == "none":
             label = ""
         else:
-            meta = [x for x in (row.get("owner"),
-                                rt(lang, "tl_deadline", d=row["deadline"]) if row.get("deadline") else None,
-                                rt(lang, "tl_jalons_n", n=len(row["items"])))
-                    if x]
-            label = (f'<div class="xtl-init-name">{e(row["title"])}</div>'
-                     f'<div class="small muted">{e(", ".join(meta))}</div>')
+            label = f'<div class="xtl-init-name">{e(row["title"])}</div>'
         P.append(f'<div class="xtl-row xtl-init"><div class="xtl-label">{label}</div>')
         for q in (1, 2, 3, 4):
             P.append('<div class="xtl-cell" style="grid-column:span 3">')
