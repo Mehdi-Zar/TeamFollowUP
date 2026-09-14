@@ -214,6 +214,24 @@ def test_contributing_squads_get_the_steerco_flag(client, db, seeded):
     assert client.get(f"/api/squads/{sid_b}").json()["steerco_enabled"] is False
 
 
+def test_a_platform_with_its_steerco_off_gives_the_squad_nothing_to_fill(client, db, seeded):
+    """Le drapeau dit « cette squad a quelque chose a saisir », pas « cette squad est
+    rattachee quelque part ». Une plateforme dont le steerco est coupe n'ouvre aucune
+    saisie, et l'etape du reporting n'aurait affiche qu'une liste vide."""
+    _enable(client)
+    login(client, seeded["tribe"])
+    sid = seeded["squad_a"]
+    pid = client.post("/api/steerco/platforms",
+                      json={"name": "P", "contributor_ids": [sid]}).json()["id"]
+    assert client.get(f"/api/squads/{sid}").json()["steerco_enabled"] is True
+
+    client.put(f"/api/steerco/platforms/{pid}", json={"steerco_enabled": False})
+    assert client.get(f"/api/squads/{sid}").json()["steerco_enabled"] is False
+
+    client.put(f"/api/steerco/platforms/{pid}", json={"steerco_enabled": True})
+    assert client.get(f"/api/squads/{sid}").json()["steerco_enabled"] is True
+
+
 def test_an_admin_creates_a_platform_without_naming_a_tribe(client, db, seeded):
     """An admin belongs to no tribe, so the tribe has to come from somewhere else.
 

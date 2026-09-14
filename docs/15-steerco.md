@@ -84,12 +84,18 @@ Retirer une squad des contributrices **libere** les elements qu'elle possedait (
 repassent en non attribues) plutot que de les geler sur une squad absente.
 
 `squads.steerco_enabled` est **derive** : une squad est "en Steerco" parce qu'elle
-contribue a une plateforme, pas parce que quelqu'un a coche une case. Le drapeau sert
-uniquement a afficher la carte Steerco dans la Saisie.
+contribue a une plateforme **dont le steerco est actif**, pas parce que quelqu'un a
+coche une case. Le drapeau sert uniquement a decider si l'etape Steerco existe dans la
+Saisie, et c'est pour cela qu'il compte les plateformes actives et non toutes : il
+repondait "oui" a une squad rattachee a une plateforme dont le steerco est coupe,
+c'est a dire une squad qui n'a rien a saisir. L'etape s'ouvrait alors sur une liste
+vide. Une etape ou l'on ne peut rien faire se traverse quand meme, et fait douter
+d'avoir oublie quelque chose.
 
 ## 3. Saisir (contributeur)
 
-**Saisie -> carte Steerco**. La carte liste **les plateformes que la squad alimente**,
+**Saisie -> etape Steerco**, qui n'apparait que pour une squad qui alimente une
+plateforme active. La carte liste **les plateformes que la squad alimente**,
 rappelle la cadence (mensuelle, alors que le reporting au-dessus est hebdomadaire),
 indique si le mois est deja rempli, quand, par qui, et **qui manque encore**.
 

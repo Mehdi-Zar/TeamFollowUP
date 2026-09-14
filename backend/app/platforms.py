@@ -198,12 +198,15 @@ def merge_events(stored, incoming, squad_ids, all_owned: bool = False) -> list:
 def sync_squad_flags(db: Session, squads=None) -> None:
     """Recompute ``Squad.steerco_enabled`` from platform membership.
 
-    The flag is a cache of "this squad contributes somewhere", read by the
-    reporting screen to show its Steerco step. Recomputed rather than toggled by
-    hand so it cannot drift from the link table.
+    The flag is a cache of "this squad has somewhere to fill a steerco", read by
+    the reporting screen to show its Steerco step. Recomputed rather than toggled
+    by hand so it cannot drift from the link table.
+
+    A platform whose steerco is switched off does not count: contributing to one
+    gives nothing to fill in, and the reporting step then opened on an empty list.
     """
     from .models import Squad
 
     targets = squads if squads is not None else db.query(Squad).all()
     for squad in targets:
-        squad.steerco_enabled = bool(squad.platforms)
+        squad.steerco_enabled = any(p.steerco_enabled for p in squad.platforms)

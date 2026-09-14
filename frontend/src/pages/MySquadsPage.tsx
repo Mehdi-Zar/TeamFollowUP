@@ -12,7 +12,7 @@ import { useEffect, useState } from "react";
 import { api, ApiError } from "../api";
 import { useI18n } from "../i18n";
 import { useAuth } from "../auth";
-import { Budget, Initiative, Member, Squad, SquadDetail, Tribe, User } from "../types";
+import { Budget, Initiative, Member, Objective, Squad, SquadDetail, Tribe, User } from "../types";
 import { ErrorBanner, Spinner, Dot, Modal, EmptyState } from "../components/ui";
 import { useSetPageChrome } from "../components/pageChrome";
 import { useModule } from "../config";
@@ -237,10 +237,6 @@ function EditSquadModal({ detail, leaders, tribes, isAdmin, onClose, onError }: 
                 {leaders.map((u) => <option key={u.id} value={u.id}>{u.display_name}</option>)}
               </select>
             </div>
-            <div style={{ flex: 1, minWidth: 160 }}>
-              <label>{t("squad.type")}</label>
-              <SquadTypeField value={d.squad_type ?? "product"} onChange={(v) => patch({ squad_type: v })} t={t} />
-            </div>
           </div>
 
           {/* Co-responsables: les memes droits sur cette squad, sans disputer a
@@ -317,9 +313,12 @@ function EditSquadModal({ detail, leaders, tribes, isAdmin, onClose, onError }: 
         </div>
       )}
 
-      {/* Etape 3 - OTD: l'engagement date de l'annee */}
+      {/* Etape 3 - OTD: l'engagement date de l'annee, et ce qui le sert */}
       {step === 2 && (
-        <OtdPanel squad={d} canManage onChange={reload} />
+        <div className="stack" style={{ gap: 16 }}>
+          <OtdPanel squad={d} canManage onChange={reload} />
+          <SquadObjectives squad={d} onChange={reload} onError={onError} />
+        </div>
       )}
 
       {/* Etape 4 - Budget: les montants, quand le suivi est actif */}
@@ -428,6 +427,62 @@ function SteercoMembership({ squad, onChange, onError }: {
       )}
       <div className="small muted">
         {squad.steerco_enabled ? t("mysquads.steerco_on") : t("mysquads.steerco_off")}
+      </div>
+    </div>
+  );
+}
+
+
+/** Les OTD de l'annee, ecrits ici parce que c'est ici qu'ils se decident.
+ *
+ *  Ils vivaient dans l'ecran de saisie, ou seuls un tribe leader ou un admin
+ *  pouvaient les ecrire, alors qu'un tribe leader n'a pas acces a cet ecran: en
+ *  pratique un admin etait le seul a pouvoir en creer un. L'ecran « Mes squads »
+ *  annoncait deja les porter, il les porte. */
+function SquadObjectives({ squad, onChange, onError }:
+  { squad: SquadDetail; onChange: () => void; onError: (m: string) => void }) {
+  const { t, rag } = useI18n();
+  const [title, setTitle] = useState("");
+
+  async function run(fn: () => Promise<unknown>) {
+    try { await fn(); onChange(); }
+    catch (e) { onError(e instanceof ApiError ? e.message : "Erreur"); }
+  }
+  const add = () => title.trim() && run(async () => {
+    await api.post("/api/objectives", { squad_id: squad.id, year: squad.year, title: title.trim() });
+    setTitle("");
+  });
+  const update = (o: Objective, patch: Partial<Objective>) =>
+    run(() => api.put(`/api/objectives/${o.id}`, patch));
+  const remove = (o: Objective) => run(() => api.del(`/api/objectives/${o.id}`));
+
+  return (
+    <div className="stack" style={{ gap: 6 }}>
+      <div className="small strong">{t("squad.objectives", { year: squad.year })}</div>
+      {squad.objectives.length === 0 && <div className="small muted">{t("squad.no_obj")}</div>}
+      {squad.objectives.map((o) => (
+        <div key={o.id} className="item-row" style={{ gap: 8 }}>
+          {/* Le statut se deduit de l'avancement des jalons: il se montre, il ne
+              se choisit pas. */}
+          <span className="inline" style={{ gap: 6 }} title={t("mysquads.obj_status_auto")}>
+            <Dot status={o.rag_status} />
+          </span>
+          <input className="grow" defaultValue={o.title}
+                 onBlur={(e) => e.target.value !== o.title && update(o, { title: e.target.value })} />
+          <span className="small muted" style={{ minWidth: 60 }}>{rag(o.rag_status)}</span>
+          <input type="date" className="w-auto" style={{ maxWidth: 150 }}
+                 title={t("mysquads.obj_deadline")}
+                 value={o.target_date ? o.target_date.slice(0, 10) : ""}
+                 onChange={(e) => update(o, { target_date: (e.target.value || null) as any })} />
+          <button className="btn-danger btn-sm" onClick={() => remove(o)}
+                  aria-label={`${t("action.delete")} - ${o.title}`}>✕</button>
+        </div>
+      ))}
+      <div className="inline" style={{ marginTop: 8 }}>
+        <input placeholder={t("mysquads.obj_new")} value={title}
+               onChange={(e) => setTitle(e.target.value)}
+               onKeyDown={(e) => e.key === "Enter" && add()} />
+        <button className="btn-secondary btn-sm" onClick={add}>{t("action.add")}</button>
       </div>
     </div>
   );
@@ -891,37 +946,6 @@ function TagListEditor({ value, onChange, placeholder }: {
                onKeyDown={(e) => { if (e.key === "Enter" || e.key === ",") { e.preventDefault(); add(); } }} />
         <button className="btn-secondary btn-sm" onClick={add} disabled={!text.trim()}>{t("action.add")}</button>
       </div>
-    </div>
-  );
-}
-
-const KNOWN_SQUAD_TYPES = ["product", "transverse"];
-
-/** Squad type picker: the built-in types, plus a "custom…" option that lets you
- *  define a new type key - the model is open-ended (future-proofing). */
-function SquadTypeField({ value, onChange, t }: { value: string; onChange: (v: string) => void; t: any }) {
-  const [custom, setCustom] = useState(!!value && !KNOWN_SQUAD_TYPES.includes(value));
-  return (
-    <div className="stack" style={{ gap: 6 }}>
-      <select
-        value={custom ? "__custom" : value || "product"}
-        onChange={(e) => {
-          if (e.target.value === "__custom") setCustom(true);
-          else { setCustom(false); onChange(e.target.value); }
-        }}
-      >
-        <option value="product">{t("squad.type_product")}</option>
-        <option value="transverse">{t("squad.type_transverse")}</option>
-        <option value="__custom">{t("squad.type_custom")}</option>
-      </select>
-      {custom && (
-        <input
-          autoFocus
-          defaultValue={KNOWN_SQUAD_TYPES.includes(value) ? "" : value}
-          placeholder={t("squad.type_custom_ph")}
-          onBlur={(e) => { const v = e.target.value.trim(); if (v) onChange(v); }}
-        />
-      )}
     </div>
   );
 }
