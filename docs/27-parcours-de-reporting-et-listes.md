@@ -84,6 +84,25 @@ s'il en a, le commentaire de chaque trimestre, les messages cles, le moral, puis
 l'envoi. Une etape en moins n'est pas une information en moins : c'est un ecran de
 moins a traverser pour trouver celui qui attend quelque chose de vous.
 
+### Deux regles qui n'en etaient pas
+
+En passant la saisie au crible, deux choses affirmaient un comportement que
+l'application n'avait pas.
+
+**`canSeeSaisie`**, dans `frontend/src/perms.ts`, disait « la saisie est pour les
+admins et les squad leaders » et son propre test le jurait. Elle n'etait appelee
+par aucun ecran : la vraie porte est la capacite `reporting` d'un persona, reglable
+dans l'administration. Une regle testee que l'application n'applique pas donne une
+fausse assurance, et un admin qui coche `reporting` pour les tribe leaders la
+contredit sans que rien ne bronche. Elle a disparu, et la regle est desormais
+verifiee la ou elle decide (`backend/tests/test_personas.py`).
+
+**Le champ « Objectif » du formulaire d'un jalon** posait `objective_id`, que plus
+rien ne lit depuis qu'un jalon designe son initiative directement : la relation
+`Objective.jalons` n'est lue nulle part cote serveur, et le statut d'un objectif se
+deduit de l'avancement de la squad, pas de ses jalons. Un champ de plus a remplir
+qui ne changeait aucun document.
+
 ### Le bandeau : quel reporting, pour qui
 
 Avant le parcours, un bandeau dit en toutes lettres ce qu'on est en train de

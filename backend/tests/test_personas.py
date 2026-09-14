@@ -2,6 +2,27 @@
 from tests.conftest import login
 
 
+def test_the_default_capabilities_decide_who_reaches_the_reporting_screen(client, seeded):
+    """La regle « la saisie est pour les squad leaders, pas pour les tribe leaders »
+    vit ici, dans les droits par defaut d'un persona, et nulle part ailleurs.
+
+    Le frontend en portait une copie en dur (``canSeeSaisie``), qui n'etait appelee
+    par aucun ecran et que son propre test affirmait: une regle testee que
+    l'application n'applique pas donne une fausse assurance, et un admin qui coche
+    « reporting » pour les tribe leaders la contredit sans que rien ne bronche.
+    Elle est donc verifiee la ou elle decide, et la copie a disparu."""
+    login(client, seeded["admin"])
+    out = client.get("/api/admin/personas").json()
+    caps = {p["key"]: p["caps"] for p in out["personas"]}
+
+    assert caps["squad_leader"]["reporting"] is True
+    assert caps["tribe_leader"]["reporting"] is False
+    assert caps["member"]["reporting"] is False
+    assert caps["admin"]["reporting"] is True
+    # Un tribe leader pilote ses squads par « Mes squads », pas par la saisie.
+    assert caps["tribe_leader"]["mysquads"] is True
+
+
 def test_get_personas_returns_builtins_and_catalog(client, seeded):
     login(client, seeded["admin"])
     out = client.get("/api/admin/personas").json()

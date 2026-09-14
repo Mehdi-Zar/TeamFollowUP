@@ -22,7 +22,7 @@ import { api, ApiError } from "../api";
 import { useAuth } from "../auth";
 import { useI18n } from "../i18n";
 import { useConfig, useModule } from "../config";
-import { Kpi, Member, Objective, RoadmapItem, RoadmapStatus, Squad, SquadDetail, Tribe, Trend, Role } from "../types";
+import { Kpi, Member, RoadmapItem, RoadmapStatus, Squad, SquadDetail, Tribe, Trend, Role } from "../types";
 import { Dot, FreshnessBadge, Spinner, ErrorBanner, EmptyState, SectionCard as Card } from "../components/ui";
 import { QuarterProgressEditor } from "../components/EntryExtras";
 import TeamMood from "../components/TeamMood";
@@ -359,7 +359,7 @@ function SubmitRecap({ squad, onConfirm, onCancel, t }: any) {
 
 /** Blank milestone pre-set to the given quarter, seeding the "new jalon" form. */
 function emptyJalon(year: number, quarter: number): Partial<RoadmapItem> {
-  return { year, quarter, title: "", theme: "", release_stage: "EA", description: "", success_criteria: "", user_benefit: "", dependencies: "", dependency_kind: null, dependency_squad_id: null, dependency_tribe_id: null, risks: "", owner: "", status: "on_track", objective_id: null };
+  return { year, quarter, title: "", theme: "", release_stage: "EA", description: "", success_criteria: "", user_benefit: "", dependencies: "", dependency_kind: null, dependency_squad_id: null, dependency_tribe_id: null, risks: "", owner: "", status: "on_track" };
 }
 
 /**
@@ -412,7 +412,7 @@ function RoadmapEditor({ squad, year, onChange, readonly, t, roadmap, squads, tr
         ))}
       </div>
       {editing && (
-        <JalonModal jalon={editing} members={squad.members} objectives={squad.objectives} onSave={save} onCancel={() => setEditing(null)} t={t} roadmap={roadmap} squads={squads} tribes={tribes} currentSquadId={squad.id} />
+        <JalonModal jalon={editing} members={squad.members} onSave={save} onCancel={() => setEditing(null)} t={t} roadmap={roadmap} squads={squads} tribes={tribes} currentSquadId={squad.id} />
       )}
     </Card>
   );
@@ -464,7 +464,7 @@ function QuarterEditor({ squad, quarter, readonly, t, onAdd, onEdit }: any) {
  * optional link to an objective, and a dependency that can be free text, another
  * squad, or a tribe (`depKind`). Title + theme are required to save.
  */
-function JalonModal({ jalon, members, objectives, onSave, onCancel, t, roadmap, squads, tribes, currentSquadId }: any) {
+function JalonModal({ jalon, members, onSave, onCancel, t, roadmap, squads, tribes, currentSquadId }: any) {
   const [f, setF] = useState<Partial<RoadmapItem>>(jalon);
   const [themes, setThemes] = useState<string[]>([]);
   const set = (k: string, v: any) => setF((p) => ({ ...p, [k]: v }));
@@ -524,15 +524,6 @@ function JalonModal({ jalon, members, objectives, onSave, onCancel, t, roadmap, 
               </datalist>
             </div>
           </div>
-          {objectives && objectives.length > 0 && (
-            <div>
-              <label>{t("jalon.objective")}</label>
-              <select value={f.objective_id ?? ""} onChange={(e) => set("objective_id", e.target.value ? Number(e.target.value) : null)}>
-                <option value="">{t("jalon.objective_none")}</option>
-                {objectives.map((o: Objective) => <option key={o.id} value={o.id}>{o.title}</option>)}
-              </select>
-            </div>
-          )}
           {field(t("jalon.desc"), "description", true)}
           {field(t("jalon.success"), "success_criteria", true)}
           {field(t("jalon.benefit"), "user_benefit", true)}
