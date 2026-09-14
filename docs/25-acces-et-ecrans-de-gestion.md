@@ -98,6 +98,14 @@ dates, alors que comparer des dates est ce qu'on vient faire ici. Le meme pannea
 sert sur la page de la squad et dans « Gerer mes squads ». Il a quitte le
 reporting, ou personne ne pouvait l'ecrire.
 
+**Les cartes de la page d'une squad se plient**, toutes, du meme geste que
+l'equipe et l'historique qui le faisaient deja : on clique l'en-tete, le chevron
+tourne. Une page de squad empile une dizaine de cartes, et on n'en regarde que
+deux a la fois. Elles s'ouvrent par defaut, a la difference de l'equipe et de
+l'historique : une page dont toutes les cartes seraient fermees ne montrerait plus
+rien de ce qu'on vient y voir. Pliee, chaque carte garde son titre et un compte de
+ce qu'elle contient, pour qu'on sache s'il vaut la peine de l'ouvrir.
+
 **Les co-responsables** passent de cases a cocher a une liste deroulante. Une
 rangee de cases tenait sur trois personnes et se deformait a dix : elle
 s'enroulait sur plusieurs lignes de hauteur variable, et le champ ne s'alignait

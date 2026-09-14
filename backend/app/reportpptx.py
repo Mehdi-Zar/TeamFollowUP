@@ -912,7 +912,11 @@ def render_dependencies_pptx(data: dict) -> bytes:
         textbox(s, margin, Inches(0.14), Inches(9.2), Inches(0.5),
                 T["title"] + (T["suite"] if cont else ""), 22, bold=True, color=B["white"], anchor=MSO_ANCHOR.TOP)
         textbox(s, margin, Inches(0.64), Inches(9.2), Inches(0.3),
-                f'{data["scope_name"]}, {rt(lang, "year")} {data["year"]}, {T["total"].format(n=data["total"])}',
+                f'{data["scope_name"]}, {rt(lang, "year")} {data["year"]}, '
+                f'{T["total"].format(n=data["total"])}'
+                # Un deck filtre doit le dire, sinon son compte se lit comme le
+                # total et « aucune dependance » repond a une autre question.
+                + (f', {T["cross_only"]}' if data.get("mode") == "cross_tribe" else ""),
                 12, color=rgb("#C7D2FE"), anchor=MSO_ANCHOR.TOP)
         textbox(s, int(SW) - int(Inches(4.3)), Inches(0.32), Inches(3.8), Inches(0.4),
                 rt(lang, "generated_full", d=gen_str), 10, color=rgb("#C7D2FE"), align=PP_ALIGN.RIGHT)
