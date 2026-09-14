@@ -338,12 +338,13 @@ def render_pptx(data: dict) -> bytes:
         place(rrect(s, Inches(11.20), Inches(0.26), Inches(1.73), Inches(0.81),
                     B["white"], line=B["line"], radius=0.08),
               mlines, anchor=MSO_ANCHOR.MIDDLE, ml=0.04, mr=0.04, mt=0.04, mb=0.04)
-        # La date se range dans le coin, pas sous le visage. Elle date le moral, elle
-        # ne le dit pas: sur trois lignes centrees, elle prenait le meme rang que le
-        # niveau, qui est la seule chose a lire de loin.
+        # La date se range au-dessus de la carte, seule dans le coin de la slide, et
+        # non dans l'encadre du visage. Elle date le moral, elle ne le dit pas: a
+        # l'interieur, elle prenait le meme rang que le niveau, qui est la seule
+        # chose a lire de loin.
         if r.get("mood_at"):
-            textbox(s, Inches(11.24), Inches(0.30), Inches(1.65), Inches(0.13),
-                    rt(lang, "mood_at", d=r["mood_at"]), 6.5, color=B["muted"],
+            textbox(s, Inches(10.90), Inches(0.10), Inches(2.03), Inches(0.14),
+                    rt(lang, "mood_at", d=r["mood_at"]), 7, color=B["muted"],
                     align=PP_ALIGN.RIGHT)
 
         # ----- la carte de la frise -----
