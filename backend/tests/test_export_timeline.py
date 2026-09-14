@@ -194,6 +194,37 @@ def test_the_deck_puts_one_squad_on_one_slide(db, chained):
     assert "Moyen" in text, "le moral declare"
 
 
+def test_the_deck_says_the_release_stage_of_each_milestone(db, chained):
+    """EA ou GA repond a « est-ce ouvert a tout le monde », qui est la premiere
+    question posee sur un jalon en comite. Les deux lettres sont dans la boite du
+    jalon, et leur legende est au bas de la slide: une abreviation sans legende ne
+    dit rien a qui decouvre le document."""
+    pptx = pytest.importorskip("pptx")
+    squad_id, viewer = chained
+    blob = report_mod.render_pptx(_data(db, squad_id, viewer))
+    text = _deck_text(blob)
+    assert "EA" in text and "GA" in text
+    assert "Accès anticipé" in text and "Disponibilité générale" in text
+
+    # Et la phase ne doit pas se poser sur le titre qu'elle accompagne. La phase
+    # est posee dans la boite du jalon, donc les deux formes se recouvrent par
+    # construction: ce qui les separe est la marge droite du titre, qui doit
+    # reserver la colonne de la phase. C'est cette marge que l'on verifie.
+    prs = pptx.Presentation(io.BytesIO(blob))
+    titles = {"Cache des dependances", "Build incremental", "Nettoyage des images"}
+    shapes = [sh for sh in prs.slides[0].shapes if sh.has_text_frame and sh.text_frame.text]
+    stages = [sh for sh in shapes if sh.text_frame.text in ("EA", "GA")]
+    assert len(stages) == 3, "une phase par jalon"
+
+    for st_box in stages:
+        host = next(sh for sh in shapes if sh.text_frame.text in titles
+                    and sh.left <= st_box.left and st_box.left + st_box.width <= sh.left + sh.width
+                    and sh.top <= st_box.top and st_box.top + st_box.height <= sh.top + sh.height)
+        text_right = host.left + host.width - host.text_frame.margin_right
+        assert text_right <= st_box.left, (
+            f"le titre « {host.text_frame.text} » court jusque sous sa phase")
+
+
 def test_no_shape_falls_outside_the_slide(db, chained):
     """Une forme hors cadre ne se voit pas a la lecture du code, seulement a la
     projection."""
