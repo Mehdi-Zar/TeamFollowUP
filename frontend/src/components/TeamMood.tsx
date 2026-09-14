@@ -7,7 +7,7 @@
 // La date compte autant que le niveau: un moral de mars affiche en septembre ment
 // plus surement qu'une case vide, donc l'age est toujours dit, et un moral trop
 // vieux se signale de lui-meme.
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api, ApiError } from "../api";
 import { useI18n } from "../i18n";
 
@@ -26,9 +26,12 @@ export function moodAge(at?: string | null): number | null {
 }
 
 /** Les trois visages, cliquables pour qui peut editer la squad. */
-export default function TeamMood({ squadId, mood, moodAt, comment, canEdit, onChange }: {
+export default function TeamMood({ squadId, mood, moodAt, comment, canEdit, onChange, big }: {
   squadId: number; mood?: Mood | null; moodAt?: string | null; comment?: string | null;
   canEdit?: boolean; onChange?: () => void;
+  /** Au centre d'une etape de reporting: les trois visages prennent la place
+   *  qu'ils meritent quand la question est la seule posee a l'ecran. */
+  big?: boolean;
 }) {
   const { t, formatDate } = useI18n();
   const [busy, setBusy] = useState(false);
@@ -50,9 +53,10 @@ export default function TeamMood({ squadId, mood, moodAt, comment, canEdit, onCh
   }
 
   return (
-    <div className="stack" style={{ gap: 2, alignItems: "flex-end" }}>
+    // Cale a droite dans un coin d'entete, centre quand il occupe l'ecran.
+    <div className="stack" style={{ gap: 2, alignItems: big ? "center" : "flex-end" }}>
       <div className="small muted">{t("mood.title")}</div>
-      <div className="mood" role={canEdit ? "group" : undefined} aria-label={t("mood.title")}>
+      <div className={big ? "mood mood-big" : "mood"} role={canEdit ? "group" : undefined} aria-label={t("mood.title")}>
         {MOODS.map((m) => (
           <button key={m} type="button" disabled={!canEdit || busy}
                   className={`mood-btn${mood === m ? " on" : ""}`}
@@ -70,9 +74,47 @@ export default function TeamMood({ squadId, mood, moodAt, comment, canEdit, onCh
         </div>
       )}
       {!mood && canEdit && <div className="small muted">{t("mood.empty")}</div>}
-      {comment && <div className="small muted" style={{ maxWidth: 220, textAlign: "right" }}>{comment}</div>}
+      {/* Le mot qui explique le visage. Il ne s'ecrit que la ou la question est
+          posee en grand: dans un coin d'entete, un champ de texte n'aurait ni la
+          place ni le sens. */}
+      {big && canEdit ? (
+        <MoodNote squadId={squadId} mood={mood} comment={comment} onChange={onChange} />
+      ) : (
+        comment && <div className="small muted" style={{ maxWidth: 220, textAlign: big ? "center" : "right" }}>{comment}</div>
+      )}
       {err && <div className="small" style={{ color: "var(--red)" }}>{err}</div>}
     </div>
+  );
+}
+
+/**
+ * Le commentaire du moral: une phrase, enregistree en quittant le champ.
+ *
+ * Il accompagne le niveau sans le remplacer. Le serveur le coupe a 300
+ * caracteres, la meme borne est posee ici pour que la coupe ne soit pas une
+ * surprise a la relecture.
+ */
+function MoodNote({ squadId, mood, comment, onChange }: {
+  squadId: number; mood?: Mood | null; comment?: string | null; onChange?: () => void;
+}) {
+  const { t } = useI18n();
+  const [draft, setDraft] = useState(comment ?? "");
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { setDraft(comment ?? ""); }, [comment]);
+
+  async function save() {
+    if (draft === (comment ?? "")) return;
+    setBusy(true);
+    try {
+      await api.put(`/api/squads/${squadId}/mood`, { mood: mood ?? null, comment: draft || null });
+      onChange?.();
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <input className="mood-note" value={draft} maxLength={300} disabled={busy}
+           placeholder={t("mood.note_ph")} aria-label={t("mood.note_ph")}
+           onChange={(e) => setDraft(e.target.value)} onBlur={save} />
   );
 }
 

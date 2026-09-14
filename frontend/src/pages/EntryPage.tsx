@@ -6,10 +6,13 @@
  * squads appear depends on the role: admins / tribe leaders (and preview mode)
  * see all squads; a squad leader only sees the squads they lead. Write access is
  * decided per squad by `canEditSquad`; objectives editing by `canManageObjectives`.
- * A visual "how to report" intro (ReportIntro) sits at the top. Each section is
- * behind its squad_content module flag.
+ *
+ * L'ecran est un parcours: une etape a la fois, une barre qui dit ou l'on en est
+ * et ce qui reste, et un bandeau qui rappelle quelle squad et quelle semaine on
+ * remplit. Les etapes sont construites a partir des services actifs, chacune
+ * derriere son drapeau de module comme avant.
  */
-import { useEffect, useMemo, useState } from "react";
+import { ReactNode, useEffect, useMemo, useState } from "react";
 import { api, ApiError } from "../api";
 import { useAuth } from "../auth";
 import { useI18n } from "../i18n";
@@ -35,7 +38,7 @@ const ROADMAP_STATUSES: RoadmapStatus[] = ["on_track", "at_risk", "blocked", "do
  */
 export default function EntryPage() {
   const { user, effectiveRole, isPreview } = useAuth();
-  const { t, roadmap, trend, rag, freshness } = useI18n();
+  const { t, roadmap, trend, rag, freshness, formatDate } = useI18n();
   const { default_year } = useConfig();
   const moduleOn = useModule();
   const roadmapOn = moduleOn("squad_content", "roadmap");
@@ -58,6 +61,11 @@ export default function EntryPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [recap, setRecap] = useState(false);
+  // L'etape courante. On repart de la premiere en changeant de squad ou d'annee:
+  // rester au milieu d'un parcours qui n'est plus le meme desoriente plus qu'il
+  // ne fait gagner du temps.
+  const [step, setStep] = useState(0);
+  useEffect(() => { setStep(0); }, [squadId, year]);
 
   // Squad picker scope: leaders/admins (and preview mode) can report on any
   // squad; a squad leader is limited to the squads they lead, as leader OR as
@@ -139,9 +147,84 @@ export default function EntryPage() {
   // Objectives are managed by tribe leaders/admins, not squad leaders.
   const objAllowed = canManageObjectives(role);
 
+  // Les etapes, construites a partir des services actifs: une etape vide apprend
+  // a traverser les etapes. `done` n'est pas une condition de passage, c'est un
+  // etat: rien n'empeche de sauter une etape, on veut seulement qu'elle le dise.
+  const steps: Step[] = squad ? [
+    {
+      key: "mood", icon: FLOW_ICONS.mood, color: "#B54708",
+      done: !!squad.mood,
+      node: (
+        <div className="step-center">
+          <TeamMood squadId={squad.id} mood={squad.mood as any} moodAt={squad.mood_at}
+                    comment={squad.mood_comment} canEdit={writeAllowed} onChange={reload} big />
+        </div>
+      ),
+    },
+    ...(objectivesOn ? [{
+      key: "otd", icon: FLOW_ICONS.target, color: "#1E2761",
+      done: squad.objectives.length > 0,
+      node: (
+        <>
+          <InitiativesCard initiatives={initiatives} />
+          <ObjectivesEditor squad={squad} year={year} onChange={reload} editable={objAllowed} t={t} rag={rag} />
+        </>
+      ),
+    }] : []),
+    ...(roadmapOn ? [{
+      key: "jalons", icon: FLOW_ICONS.flag, color: "#175CD3",
+      done: squad.roadmap_items.length > 0,
+      node: <RoadmapEditor squad={squad} year={year} onChange={reload} readonly={!writeAllowed}
+                           t={t} roadmap={roadmap} squads={squads} tribes={tribes} />,
+    }] : []),
+    ...(kpisOn && squad.kpis_enabled ? [{
+      key: "kpis", icon: FLOW_ICONS.check, color: "#027A48",
+      done: squad.kpis.length > 0,
+      node: <KpisEditor squad={squad} onChange={reload} readonly={!writeAllowed} t={t} trend={trend} />,
+    }] : []),
+    ...(progressOn ? [{
+      key: "progress", icon: FLOW_ICONS.check, color: "#027A48",
+      done: [1, 2, 3, 4].some((q) => squad.quarter_progress?.[String(q)]?.comment),
+      node: <QuarterProgressEditor squad={squad} year={year} readonly={!writeAllowed} onChange={reload} t={t} />,
+    }] : []),
+    {
+      key: "km", icon: FLOW_ICONS.message, color: "#6B21A8",
+      done: squad.key_messages.length > 0,
+      node: <KeyMessagesPanel squad={squad} canEdit={writeAllowed} onChange={reload} />,
+    },
+    ...(reviewOn ? [{
+      key: "actions", icon: FLOW_ICONS.message, color: "#6B21A8",
+      done: undefined,
+      node: <ReviewActionsEditor squad={squad} readonly={!writeAllowed} t={t} />,
+    }] : []),
+    ...(steercoOn ? [{
+      key: "steerco", icon: FLOW_ICONS.target, color: "#1E2761",
+      done: undefined,
+      node: <SteercoSection squad={squad} readonly={!writeAllowed} t={t} />,
+    }] : []),
+    {
+      key: "submit", icon: FLOW_ICONS.send, color: "#B42318",
+      done: !squad.freshness?.is_stale,
+      node: (
+        <div className="step-center stack" style={{ gap: 14, alignItems: "center" }}>
+          <div className="small muted">{t("entry.step.submit_d")}</div>
+          <SubmitChecklist squad={squad} t={t} />
+          <button className="btn" disabled={!writeAllowed} onClick={() => setRecap(true)}>
+            {t("action.submit")}
+          </button>
+        </div>
+      ),
+    },
+  ] : [];
+
+  const at = Math.min(step, Math.max(0, steps.length - 1));
+  const current = steps[at];
+
   return (
     <div className="stack" style={{ gap: 18 }}>
-      <ReportIntro t={t} />
+      {/* Quel reporting, pour qui: avant tout le reste, parce que savoir ou l'on
+          est vient avant savoir quoi faire. */}
+      {squad && <ReportingHeader squad={squad} t={t} formatDate={formatDate} freshness={freshness} />}
 
       {message && <div className="banner banner-green">{message}</div>}
 
@@ -149,42 +232,28 @@ export default function EntryPage() {
         <Spinner />
       ) : (
         <>
-          <div className="card between">
-            <div>
-              <div className="strong" style={{ fontSize: 16, color: "var(--navy)" }}>{squad.name}</div>
-              <div className="small muted" style={{ marginTop: 2 }}>
-                {t("squad.squad_leader")} : <span className="strong">{squad.leader?.display_name || "-"}</span>
-                {", "}{t("entry.last_submit")} : {freshness(squad.freshness)}
-              </div>
-            </div>
-            <div className="inline" style={{ gap: 12, alignItems: "center" }}>
-              {/* Le moral de l'equipe, declare la ou l'on rend compte: une
-                  seconde a repondre, et c'est ce qui explique souvent le reste. */}
-              <TeamMood squadId={squad.id} mood={squad.mood as any} moodAt={squad.mood_at}
-                        comment={squad.mood_comment} canEdit={writeAllowed} onChange={reload} />
-              <FreshnessBadge freshness={squad.freshness} />
-            </div>
-          </div>
           {!writeAllowed && <div className="banner" style={{ background: "var(--ice-soft)" }}>{t("entry.readonly")}</div>}
 
-          {/* Initiatives en tête - même rendu que le dashboard de la squad, pour la cohérence. */}
-          <InitiativesCard initiatives={initiatives} />
+          {/* La barre d'etapes: ce qui reste a faire, et par ou passer. Elle a
+              remplace la bande decorative qui annoncait la meme demarche sans
+              permettre de la suivre. */}
+          <StepRail steps={steps} at={at} onGo={setStep} t={t} />
 
-          {objectivesOn && <div id="sec-obj"><ObjectivesEditor squad={squad} year={year} onChange={reload} editable={objAllowed} t={t} rag={rag} /></div>}
-          {roadmapOn && <div id="sec-roadmap"><RoadmapEditor squad={squad} year={year} onChange={reload} readonly={!writeAllowed} t={t} roadmap={roadmap} squads={squads} tribes={tribes} /></div>}
-          {kpisOn && squad.kpis_enabled && <div id="sec-kpis"><KpisEditor squad={squad} onChange={reload} readonly={!writeAllowed} t={t} trend={trend} /></div>}
-          {/* Le commentaire de trimestre, derriere son interrupteur de module:
-              eteint par defaut tant que la section n'est pas jugee prete. */}
-          {progressOn && (
-            <div id="sec-progress">
-              <QuarterProgressEditor squad={squad} year={year} readonly={!writeAllowed} onChange={reload} t={t} />
+          <div className="step-panel stack" style={{ gap: 16 }}>
+            <div>
+              <h2 style={{ margin: 0 }}>{t(`entry.step.${current.key}_t`)}</h2>
+              <div className="small muted">{t(`entry.step.${current.key}_d`)}</div>
             </div>
-          )}
-          {/* Les messages cles: ce que le comite lit en premier, ecrit au moment ou
-              l'on rend compte plutot que sur un ecran de lecture. */}
-          <div id="sec-km"><KeyMessagesPanel squad={squad} canEdit={writeAllowed} onChange={reload} /></div>
-          {reviewOn && <div id="sec-actions"><ReviewActionsEditor squad={squad} readonly={!writeAllowed} t={t} /></div>}
-          {steercoOn && <div id="sec-steerco"><SteercoSection squad={squad} readonly={!writeAllowed} t={t} /></div>}
+            {current.node}
+          </div>
+
+          <div className="between" style={{ flexWrap: "wrap", gap: 10 }}>
+            <button className="btn-secondary btn-sm" disabled={at === 0}
+                    onClick={() => setStep(at - 1)}>‹ {t("common.prev")}</button>
+            <span className="small muted">{t("entry.step_of", { n: at + 1, total: steps.length })}</span>
+            <button className="btn-sm" disabled={at >= steps.length - 1}
+                    onClick={() => setStep(at + 1)}>{t("common.next")} ›</button>
+          </div>
         </>
       )}
 
@@ -193,34 +262,88 @@ export default function EntryPage() {
   );
 }
 
+
+/** Une etape du reporting: son icone, son etat, et ce qu'elle montre. */
+type Step = {
+  key: string;
+  icon: ReactNode;
+  color: string;
+  /** Rempli, vide, ou sans notion de « fait » (les actions, le steerco). */
+  done: boolean | undefined;
+  node: ReactNode;
+};
+
+
 /**
- * Pre-submit checklist modal. Before taking a snapshot it shows a soft, purely
- * informational readiness check (has milestones / progress / KPIs / members) so
- * the user can confirm; none of these block submission.
+ * La barre d'etapes.
+ *
+ * Elle remplace la bande decorative qui listait les memes temps sans y mener. Un
+ * mode d'emploi qui ne fait pas avancer se lit une fois puis se saute; celui-ci
+ * est le chemin lui-meme, et il dit en plus ce qui est deja rempli.
+ */
+function StepRail({ steps, at, onGo, t }: {
+  steps: Step[]; at: number; onGo: (i: number) => void; t: (k: string, v?: any) => string;
+}) {
+  return (
+    <div className="step-rail">
+      {steps.map((s, i) => (
+        <button key={s.key} className={`step-chip${i === at ? " on" : ""}`} onClick={() => onGo(i)}
+                aria-current={i === at ? "step" : undefined}>
+          <span className="step-ico" style={{ background: s.color }}>{s.icon}</span>
+          <span className="step-body">
+            <span className="step-title">{t(`entry.step.${s.key}_t`)}</span>
+            <span className="step-state">
+              {s.done === undefined ? t("entry.step_optional")
+                : s.done ? t("entry.step_done") : t("entry.step_todo")}
+            </span>
+          </span>
+          {s.done === true && <span className="step-check" aria-hidden>✓</span>}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Ce qui est rempli et ce qui ne l'est pas, avant d'envoyer.
+ *
+ * Aucune de ces lignes ne bloque l'envoi: une squad peut legitimement n'avoir ni
+ * KPI ni membre declare. Elles sont montrees sur la derniere etape, la ou l'on
+ * peut encore y faire quelque chose, et non plus seulement dans la fenetre de
+ * confirmation.
+ */
+function SubmitChecklist({ squad, t }: { squad: any; t: (k: string) => string }) {
+  const items: Array<[boolean, string]> = [
+    [squad.roadmap_items.length > 0, t("entry.check.jalons")],
+    [[1, 2, 3, 4].some((q: number) => (squad.quarter_progress[String(q)]?.progress_pct ?? 0) > 0),
+     t("entry.check.progress")],
+    [!squad.kpis_enabled || squad.kpis.length > 0, t("entry.check.kpis")],
+    [squad.members.length > 0, t("entry.check.members")],
+  ];
+  return (
+    <div className="stack" style={{ gap: 6 }}>
+      {items.map(([ok, label], i) => (
+        <div key={i} className="inline">
+          <span className={`badge ${ok ? "badge-green" : "badge-grey"}`}>{ok ? "✓" : "○"}</span>
+          <span className="small">{label}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Pre-submit confirmation. Shows the same readiness check as the last step, then
+ * asks for the snapshot; none of the lines block submission.
  */
 function SubmitRecap({ squad, onConfirm, onCancel, t }: any) {
   const [busy, setBusy] = useState(false);
-  const hasJalons = squad.roadmap_items.length > 0;
-  const hasProgress = [1, 2, 3, 4].some((q: number) => (squad.quarter_progress[String(q)]?.progress_pct ?? 0) > 0);
-  const hasKpis = !squad.kpis_enabled || squad.kpis.length > 0;
-  const hasMembers = squad.members.length > 0;
-  const items: Array<[boolean, string]> = [
-    [hasJalons, t("entry.check.jalons")],
-    [hasProgress, t("entry.check.progress")],
-    [hasKpis, t("entry.check.kpis")],
-    [hasMembers, t("entry.check.members")],
-  ];
   return (
     <div className="modal-overlay" onClick={onCancel}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h3>{t("entry.submit_recap")}</h3>
         <div className="stack" style={{ margin: "12px 0" }}>
-          {items.map(([ok, label], i) => (
-            <div key={i} className="inline">
-              <span className={`badge ${ok ? "badge-green" : "badge-grey"}`}>{ok ? "✓" : "○"}</span>
-              <span className="small">{label}</span>
-            </div>
-          ))}
+          <SubmitChecklist squad={squad} t={t} />
         </div>
         <div className="inline" style={{ justifyContent: "flex-end", gap: 8 }}>
           <button className="btn-secondary" onClick={onCancel} disabled={busy}>{t("action.cancel")}</button>
@@ -712,42 +835,72 @@ const FLOW_ICONS = {
   ),
 };
 
-/** Decorative "how to report" header: a hero line plus a 4-step icon flow
- *  (objectives -> milestones -> status -> submit) and an "auto" footnote. */
-function ReportIntro({ t }: { t: any }) {
-  // Les cinq temps, dans l'ordre ou l'ecran les pose. Le moral ouvre la marche
-  // parce qu'il prend une seconde et qu'il eclaire tout ce qui suit.
-  const flow = [
-    { key: "s1", icon: FLOW_ICONS.mood, color: "#B54708" },
-    { key: "s2", icon: FLOW_ICONS.target, color: "#1E2761" },
-    { key: "s3", icon: FLOW_ICONS.flag, color: "#175CD3" },
-    { key: "s4", icon: FLOW_ICONS.check, color: "#027A48" },
-    { key: "s5", icon: FLOW_ICONS.message, color: "#6B21A8" },
-    { key: "s6", icon: FLOW_ICONS.send, color: "#B42318" },
-  ];
+/**
+ * Le bandeau d'entete: quel reporting, pour quelle squad, quelle semaine.
+ *
+ * La semaine est celle d'aujourd'hui, en numerotation ISO (celle des calendriers
+ * d'entreprise), avec ses deux bornes: un numero seul ne se verifie pas, une
+ * plage de dates si. L'annee affichee est celle du reporting en cours, qui n'est
+ * pas toujours l'annee courante en janvier comme en decembre.
+ */
+function ReportingHeader({ squad, t, formatDate, freshness }: {
+  squad: SquadDetail;
+  t: (k: string, v?: any) => string;
+  formatDate: (iso?: string | null) => string;
+  freshness: (f: any) => string;
+}) {
+  const now = new Date();
+  const { week, monday, sunday } = isoWeekOf(now);
   return (
-    <div className="report-intro">
-      <div className="report-hero">
-        <div className="report-hero-badge">{FLOW_ICONS.target}</div>
-        <div>
-          <div className="report-hero-title">{t("entry.purpose_title")}</div>
-          <div className="report-hero-text">{t("entry.purpose")}</div>
+    <div className="reporting-banner">
+      <div className="rb-main">
+        <div className="rb-eyebrow">{t("entry.header_eyebrow")}</div>
+        <div className="rb-title">{squad.name}</div>
+        <div className="rb-sub">
+          {t("entry.header_week", {
+            week,
+            from: formatDate(monday.toISOString()),
+            to: formatDate(sunday.toISOString()),
+          })}
         </div>
       </div>
-      <div className="report-flow">
-        {flow.map((s, i) => (
-          <div key={s.key} className="flow-step">
-            <span className="flow-ico" style={{ background: s.color }}>{s.icon}</span>
-            <span className="flow-num">{i + 1}</span>
-            <div className="flow-body">
-              <div className="flow-title">{t(`entry.flow.${s.key}_t`)}</div>
-              <div className="flow-desc">{t(`entry.flow.${s.key}_d`)}</div>
-            </div>
-            {i < flow.length - 1 && <span className="flow-chevron" aria-hidden>›</span>}
-          </div>
-        ))}
+      <div className="rb-side">
+        <div className="rb-chip">
+          <span className="rb-chip-label">{t("entry.header_year")}</span>
+          <span className="rb-chip-value">{squad.year}</span>
+        </div>
+        <div className="rb-chip">
+          <span className="rb-chip-label">{t("entry.header_today")}</span>
+          <span className="rb-chip-value">{formatDate(now.toISOString())}</span>
+        </div>
+        <div className="rb-chip">
+          <span className="rb-chip-label">{t("entry.last_submit")}</span>
+          <span className="rb-chip-value">{freshness(squad.freshness)}</span>
+        </div>
       </div>
-      <div className="report-auto"><span className="report-auto-spark">⚡</span>{t("entry.flow.auto")}</div>
     </div>
   );
 }
+
+/** Le numero de semaine ISO d'une date, et les lundi/dimanche qui l'encadrent.
+ *
+ *  ISO parce que c'est la numerotation des calendriers d'entreprise: la semaine
+ *  commence le lundi et la semaine 1 est celle qui contient le premier jeudi de
+ *  l'annee. Compter autrement donnerait un numero different de celui que porte
+ *  l'invitation du comite. */
+function isoWeekOf(d: Date): { week: number; monday: Date; sunday: Date } {
+  const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const dayOfWeek = t.getUTCDay() || 7;          // dimanche vaut 7, pas 0
+  const monday = new Date(t);
+  monday.setUTCDate(t.getUTCDate() - (dayOfWeek - 1));
+  const sunday = new Date(monday);
+  sunday.setUTCDate(monday.getUTCDate() + 6);
+  // Le jeudi de la semaine decide de l'annee a laquelle elle appartient.
+  const thursday = new Date(t);
+  thursday.setUTCDate(t.getUTCDate() + 4 - dayOfWeek);
+  const jan1 = new Date(Date.UTC(thursday.getUTCFullYear(), 0, 1));
+  const week = Math.ceil(((thursday.getTime() - jan1.getTime()) / 86400000 + 1) / 7);
+  return { week, monday, sunday };
+}
+
+

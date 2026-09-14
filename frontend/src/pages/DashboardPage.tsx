@@ -21,22 +21,10 @@ import AbsencesWidget from "../components/AbsencesWidget";
 import { MoodBadge } from "../components/TeamMood";
 import SteercoConsolidation from "../components/SteercoConsolidation";
 import { useSetPageChrome } from "../components/pageChrome";
+import { ListControls, ListSearch, SortSpec, applyListView, useListView } from "../components/listView";
 import { currentSteercoPeriod } from "../steerco";
 
-type SortKey = "risk" | "progress" | "name" | "fresh";
 type Health = "all" | "blocked" | "at_risk" | "on_track";
-
-/** Les preferences de lecture (tri, sens, densite) vivent dans le navigateur de
- *  celui qui regarde: elles ne concernent que lui et n'ont pas a traverser le
- *  reseau. Un navigateur qui refuse le stockage rend simplement la valeur par
- *  defaut, ce qui est un ecran correct et non une erreur. */
-function readPref(key: string, fallback: string): string {
-  try { return localStorage.getItem(key) ?? fallback; } catch { return fallback; }
-}
-
-function writePref(key: string, value: string): void {
-  try { localStorage.setItem(key, value); } catch { /* stockage refuse: tant pis */ }
-}
 
 /** Derive a squad's overall health from its milestone counts: any blocked
  *  milestone -> "blocked", else any at-risk -> "at_risk", else "on_track".
@@ -75,25 +63,11 @@ export default function DashboardPage() {
   const [data, setData] = useState<DashboardOut | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [year, setYear] = useState<number | null>(null);
-  // Le tri, son sens et la densite d'affichage sont des preferences de lecture:
-  // les redemander a chaque visite serait les faire ressaisir pour rien.
-  const [sort, setSort] = useState<SortKey>(() => readPref("dash.sort", "risk") as SortKey);
-  const [desc, setDesc] = useState<boolean>(() => readPref("dash.sort.desc", "") === "1");
-  const [dense, setDense] = useState<boolean>(() => readPref("dash.dense", "") === "1");
-  useEffect(() => { writePref("dash.sort", sort); }, [sort]);
-  useEffect(() => { writePref("dash.sort.desc", desc ? "1" : ""); }, [desc]);
-  useEffect(() => { writePref("dash.dense", dense ? "1" : ""); }, [dense]);
-  // Choisir un critere le pose dans son sens naturel; le rechoisir retourne le sens.
-  const pickSort = (k: SortKey) => {
-    if (k === sort) { setDesc((v) => !v); return; }
-    setSort(k);
-    setDesc(false);
-  };
+  const view = useListView("dash", "risk");
   const [health, setHealth] = useState<Health>("all");
   const [freshFilter, setFreshFilter] = useState<"all" | "stale" | "fresh">("all");
   const [tribes, setTribes] = useState<Tribe[]>([]);
   const [tribeFilter, setTribeFilter] = useState<string>("");
-  const [query, setQuery] = useState("");
 
   // Seed the selected year from the org default once it is known.
   useEffect(() => {
@@ -112,39 +86,35 @@ export default function DashboardPage() {
     api.get<DashboardOut>(`/api/dashboard?${p.toString()}`).then(setData).catch((e) => setError(e.message));
   }, [year, tribeFilter, isAdmin]);
 
-  // Client-side view of the cards: apply search + health + freshness filters, then sort.
+  // Le sens naturel de chaque critere: le risque et l'anciennete du pire au
+  // meilleur, le nom et l'avancement du premier au dernier.
+  const sorts: SortSpec<SquadCard>[] = useMemo(() => [
+    { key: "risk", label: t("dash.sort.risk"),
+      cmp: (a, b) => b.risk_rank - a.risk_rank || b.blocked_count - a.blocked_count || a.name.localeCompare(b.name) },
+    { key: "progress", label: t("dash.sort.progress"),
+      cmp: (a, b) => a.annual_progress - b.annual_progress || a.name.localeCompare(b.name) },
+    { key: "name", label: t("dash.sort.name"), cmp: (a, b) => a.name.localeCompare(b.name) },
+    { key: "fresh", label: t("dash.sort.fresh"),
+      cmp: (a, b) => (b.freshness.age_days ?? 1e9) - (a.freshness.age_days ?? 1e9) || a.name.localeCompare(b.name) },
+  ], [t]);
+
+  // Vue cote navigateur: la recherche et le tri sont communs a tous les ecrans de
+  // liste, les deux filtres de sante et de fraicheur sont propres a celui-ci.
   const cards = useMemo(() => {
     if (!data) return [];
-    const needle = query.trim().toLowerCase();
-    let r = data.cards.filter((c) => {
-      if (needle && !c.name.toLowerCase().includes(needle)) return false;
+    const kept = data.cards.filter((c) => {
       if (health !== "all" && healthOf(c) !== health) return false;
       if (freshFilter === "stale" && !c.freshness.is_stale) return false;
       if (freshFilter === "fresh" && c.freshness.is_stale) return false;
       return true;
     });
-    r = [...r];
-    // Le sens par defaut de chaque critere: le risque et l'anciennete du pire au
-    // meilleur, le nom et l'avancement du premier au dernier. `desc` le retourne.
-    const cmp: Record<SortKey, (a: SquadCard, b: SquadCard) => number> = {
-      risk: (a, b) => b.risk_rank - a.risk_rank || b.blocked_count - a.blocked_count || a.name.localeCompare(b.name),
-      progress: (a, b) => a.annual_progress - b.annual_progress || a.name.localeCompare(b.name),
-      name: (a, b) => a.name.localeCompare(b.name),
-      fresh: (a, b) => (b.freshness.age_days ?? 1e9) - (a.freshness.age_days ?? 1e9) || a.name.localeCompare(b.name),
-    };
-    r.sort(cmp[sort]);
-    if (desc) r.reverse();
-    return r;
-  }, [data, health, freshFilter, sort, desc, query]);
+    return applyListView(kept, view, sorts, (c, q) => c.name.toLowerCase().includes(q));
+  }, [data, health, freshFilter, view.sort, view.desc, view.query, sorts]);
 
   // Revenir a la vue par defaut d'un geste: quand on a empile quatre filtres, les
   // defaire un par un pour comprendre ce qu'on voit est une corvee.
-  const dirty = !!query || health !== "all" || freshFilter !== "all" || tribeFilter !== ""
-    || sort !== "risk" || desc || dense;
-  const reset = () => {
-    setQuery(""); setHealth("all"); setFreshFilter("all"); setTribeFilter("");
-    setSort("risk"); setDesc(false); setDense(false);
-  };
+  const extraTouched = health !== "all" || freshFilter !== "all" || tribeFilter !== "";
+  const resetExtra = () => { setHealth("all"); setFreshFilter("all"); setTribeFilter(""); };
 
   useSetPageChrome(
     data
@@ -205,10 +175,7 @@ export default function DashboardPage() {
 
       <div className="card" style={{ padding: 14 }}>
         <div className="row" style={{ alignItems: "flex-end", gap: 12 }}>
-          <div style={{ width: 200 }}>
-            <label htmlFor="dash-search">{t("roadmap.search")}</label>
-            <input id="dash-search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("roadmap.search")} />
-          </div>
+          <ListSearch view={view} id="dash-search" />
           {isAdmin && (
             <div style={{ width: 200 }}>
               <label>{t("admin.tribe")}</label>
@@ -239,36 +206,20 @@ export default function DashboardPage() {
       </div>
 
       {/* Legende a gauche, commandes d'affichage a droite: chercher et filtrer
-          reduit ce qu'on voit, trier et changer de vue ne fait que le reordonner.
-          Les deux gestes n'ont pas a partager la meme carte. */}
-      <div className="between" style={{ gap: 16, flexWrap: "wrap", alignItems: "center" }}>
-        <div className="inline small muted" style={{ gap: 16, flexWrap: "wrap" }}>
-          <span className="strong">{t("dash.legend")} :</span>
-          <span className="inline"><Dot status="red" decorative /> {roadmap("blocked")}</span>
-          <span className="inline"><Dot status="amber" decorative /> {roadmap("at_risk")}</span>
-          <span className="inline"><Dot status="green" decorative /> {roadmap("done")}</span>
-        </div>
-        <div className="inline" style={{ gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-          <span className="small muted">{t("dash.sort")}</span>
-          <span className="seg">
-            {(["risk", "progress", "name", "fresh"] as SortKey[]).map((k) => (
-              <button key={k} className={k === sort ? "seg-on" : ""} onClick={() => pickSort(k)}
-                      title={k === sort ? t("dash.sort.flip") : undefined}>
-                {t(`dash.sort.${k}`)}{k === sort ? (desc ? " \u2193" : " \u2191") : ""}
-              </button>
-            ))}
-          </span>
-          <span className="seg">
-            <button className={dense ? "" : "seg-on"} onClick={() => setDense(false)}>{t("dash.view.cards")}</button>
-            <button className={dense ? "seg-on" : ""} onClick={() => setDense(true)}>{t("dash.view.list")}</button>
-          </span>
-          {dirty && <button className="btn-ghost btn-sm" onClick={reset}>{t("dash.reset")}</button>}
-        </div>
-      </div>
+          reduit ce qu'on voit, trier et changer de vue ne fait que le reordonner. */}
+      <ListControls view={view} sorts={sorts} extraTouched={extraTouched} onResetExtra={resetExtra}
+        left={
+          <div className="inline small muted" style={{ gap: 16, flexWrap: "wrap" }}>
+            <span className="strong">{t("dash.legend")} :</span>
+            <span className="inline"><Dot status="red" decorative /> {roadmap("blocked")}</span>
+            <span className="inline"><Dot status="amber" decorative /> {roadmap("at_risk")}</span>
+            <span className="inline"><Dot status="green" decorative /> {roadmap("done")}</span>
+          </div>
+        } />
 
       {cards.length === 0 ? (
         <EmptyState message={t("dash.none")} />
-      ) : dense ? (
+      ) : view.dense ? (
         <CompactList cards={cards} showTribe={isAdmin} tribes={tribes} />
       ) : (
         <div className="squad-grid-2">

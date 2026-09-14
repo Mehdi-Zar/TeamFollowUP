@@ -99,6 +99,9 @@ Six temps, dans l'ordre ou l'ecran les pose :
 La note de bas de bande garde son role : le pourcentage ne se saisit pas, il se
 calcule a partir des jalons termines.
 
+Ces six temps sont depuis devenus la navigation de l'ecran, une etape a la fois :
+voir [27](27-parcours-de-reporting-et-listes.md).
+
 **Les messages cles rejoignent l'ecran de saisie.** Le mode d'emploi les annonce
 comme une etape, et c'est juste : c'est ce que le comite lit en premier et ce qui
 part en toutes lettres dans les documents. Ils ne se saisissaient pourtant que sur
