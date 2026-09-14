@@ -23,10 +23,19 @@ chose que ces trois objets ont en commun :
 4. **Une ligne par initiative**, portant **les jalons qui la servent**, chacun
    dans son trimestre.
 
-La donnee ne change pas, seul son agencement change : le chainage existait deja
-en base, une initiative porte des objectifs et un objectif porte des jalons
-(`Initiative` <- `Objective.initiative_id` <- `RoadmapItem.objective_id`). Les
-exports se contentent de le suivre.
+**Une ligne d'initiative, ce sont les jalons qui la servent**
+(`RoadmapItem.initiative_id`), et ce lien se pose dans « Mes squads », a l'etape
+OTD, du meme geste que les jalons d'un engagement.
+
+Il a d'abord ete indirect, un jalon repondant a un objectif annuel qui servait une
+initiative. Personne ne pouvait poser le second maillon : aucun ecran n'offrait
+« cet objectif sert telle initiative ». Chaque frise affichait donc des lignes
+d'initiative vides et une ligne anonyme portant tous les jalons, ce qui ressemblait
+a une mise en page ratee alors que c'etait une donnee jamais saisissable. L'ancien
+chemin reste lu en second, pour des donnees qui n'auraient pas ete reprises.
+
+L'objectif annuel, lui, garde son seul vrai role : etre un objectif qu'on suit,
+dont la page de synthese compte les rouges. Il n'apparait pas sur cette frise.
 
 ### Ce que la frise n'a pas le droit de perdre
 

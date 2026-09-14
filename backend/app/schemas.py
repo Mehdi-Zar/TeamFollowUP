@@ -212,7 +212,11 @@ class RoadmapItemCreate(BaseModel):
 
 
 class RoadmapItemUpdate(BaseModel):
-    """Partial edit of a roadmap milestone (note: otd_id is managed from the OTD side)."""
+    """Partial edit of a roadmap milestone.
+
+    Ni ``otd_id`` ni ``initiative_id`` n'y figurent: ces deux liens se posent du
+    cote de l'engagement et du cote de l'initiative, chacun a un seul endroit. Deux
+    ecrans qui posent le meme lien finissent par se contredire."""
     title: Optional[str] = None
     theme: Optional[str] = Field(default=None, min_length=1, max_length=120)
     objective_id: Optional[int] = None
@@ -254,6 +258,7 @@ class RoadmapItemOut(ORMModel):
     status: RoadmapStatus
     display_order: int
     objective_id: Optional[int] = None
+    initiative_id: Optional[int] = None  # set from the initiative side (tribe/admin)
     otd_id: Optional[int] = None  # set only from the OTD side (tribe/admin)
     otd_label: Optional[str] = None  # resolved OTD title
 
@@ -330,6 +335,11 @@ class OtdOut(ORMModel):
     committed_date: Optional[datetime] = None
     owner_user_id: Optional[int] = None
     display_order: int
+
+
+class InitiativeMembers(BaseModel):
+    """Les jalons qui servent une initiative (remplace l'ensemble courant)."""
+    jalon_ids: list[int] = []
 
 
 class OtdMembers(BaseModel):

@@ -81,6 +81,14 @@ still accepted. `co_leader_user_ids` on `PUT /{id}` replaces the squad's co-lead
 ### objectives (`/api/objectives`) - module `squad_content.objectives`
 `POST ""`; `PUT /{id}`; `DELETE /{id}` (manage = admin/tribe). Status is derived; not settable.
 
+### initiatives (`/api/initiatives`)
+`GET ""`; `POST ""`; `PUT /{id}`; `DELETE /{id}` (manage = admin/tribe).
+`GET /candidate-jalons?squad_id=&year=` - les jalons d'une squad, chacun avec
+l'initiative qui le prend deja. `PUT /{id}/jalons` - pose l'ensemble des jalons qui
+servent l'initiative (remplace le precedent). C'est le **seul** endroit ou ce lien
+se pose, comme `PUT /api/otds/{id}/jalons` l'est pour un engagement : il ne figure
+pas dans l'edition d'un jalon, ou deux ecrans finiraient par se contredire.
+
 ### roadmap (`/api/roadmap-items`) - module `squad_content.roadmap`
 `POST ""`; `PUT /{id}`; `DELETE /{id}` (writer + can-edit-squad). Normalizes EA/GA + dependency.
 
@@ -114,9 +122,6 @@ removes the taxonomy instead of only hiding its selector.
 
 ### leaves CSV export
 `GET /api/leaves/export.csv` - absences export (scoped to the caller's tribe); part of the `leaves` module.
-
-### actions (`/api`) - review action items
-`GET /squads/{id}/actions`; `POST /squads/{id}/actions`; `PUT /actions/{id}`; `DELETE /actions/{id}`
 
 ### leaves (`/api/leaves`) - module `leaves` + capability `leaves`
 Types: `GET /types` (`?include_inactive`); `POST /types`; `PUT /types/{id}`; `DELETE /types/{id}` (admin);

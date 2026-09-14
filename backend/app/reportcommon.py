@@ -260,17 +260,23 @@ def mood_label(mood: str | None, lang: str) -> str:
 def timeline_rows(det: dict, lang: str) -> list[dict]:
     """Une ligne par initiative, portant les jalons qui la servent.
 
-    Le chemin passe par l'objectif: un jalon repond a un objectif de squad, qui
-    sert une initiative de tribu. Les jalons qui ne repondent a rien, et ceux qui
-    servent une initiative portee par une autre squad, se retrouvent dans une
-    ligne « hors initiative » plutot que de disparaitre de la frise: un jalon
-    absent d'un export se lit comme un jalon qui n'existe pas.
+    Un jalon designe son initiative. Il l'a longtemps designee a travers son
+    objectif annuel (jalon -> objectif -> initiative), un chemin dont aucun ecran
+    ne posait le second maillon: chaque frise affichait alors des lignes
+    d'initiative vides et une ligne anonyme portant tous les jalons. L'ancien
+    chemin reste lu en second, pour des donnees qui n'auraient pas ete reprises.
+
+    Les jalons qui ne servent rien, et ceux qui servent une initiative portee par
+    une autre squad, se retrouvent dans une ligne « hors initiative » plutot que de
+    disparaitre de la frise: un jalon absent d'un export se lit comme un jalon qui
+    n'existe pas.
     """
     obj_to_init = {o["id"]: o.get("initiative_id") for o in det.get("objectives") or []}
     groups: dict[object, list[dict]] = {}
     for qd in det.get("quarters") or []:
         for it in qd.get("items") or []:
-            key = obj_to_init.get(it.get("objective_id")) or "none"
+            key = (it.get("initiative_id")
+                   or obj_to_init.get(it.get("objective_id")) or "none")
             groups.setdefault(key, []).append(dict(it, quarter=qd["q"]))
 
     rows: list[dict] = []
