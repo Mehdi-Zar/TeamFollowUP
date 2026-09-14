@@ -23,8 +23,13 @@ from .rbac import ADMIN, MEMBER, SQUAD, TRIBE
 
 
 def can_review_access(user: User) -> bool:
-    """Who may open the access-request queue at all."""
-    return user.role in (ADMIN, TRIBE, SQUAD)
+    """Qui peut ouvrir la file des demandes d'acces.
+
+    Les memes que ceux qui peuvent revoquer: accorder l'entree dans l'application
+    n'est pas la meme decision que composer une equipe, et une file ou l'on ne
+    peut qu'ajouter est une demi-delegation qui vieillit mal.
+    """
+    return user.role in (ADMIN, TRIBE)
 
 
 def approval_roles(actor: User) -> list[str]:
@@ -33,8 +38,6 @@ def approval_roles(actor: User) -> list[str]:
         return [ADMIN, TRIBE, SQUAD, MEMBER]
     if actor.role == TRIBE:
         return [SQUAD, MEMBER]
-    if actor.role == SQUAD:
-        return [MEMBER]
     return []
 
 
@@ -70,14 +73,13 @@ def decision_history(db: Session, actor: User, limit: int = 60) -> list[dict]:
     "who decided what, and when", which only the trail answers: a validated
     account looks like any other account afterwards.
 
-    Scope follows the delegation model: gatekeepers (admin, tribe leader) see every
-    decision, a squad leader sees the ones they took themselves.
+    Seuls les gardiens (admin, tribe leader) arrivent ici, et ils voient tout, y
+    compris les arrivees SSO qui n'ont encore ni tribu ni decision: ce sont
+    justement celles qui attendent qu'on s'en occupe.
     """
     from .models import AuditLog
 
     stmt = select(AuditLog).where(AuditLog.action.in_(HISTORY_ACTIONS))
-    if actor.role not in (ADMIN, TRIBE):
-        stmt = stmt.where(AuditLog.user_id == actor.id)
     rows = list(db.scalars(stmt.order_by(AuditLog.timestamp.desc()).limit(limit)).all())
 
     # Resolve the names in one pass rather than per row.

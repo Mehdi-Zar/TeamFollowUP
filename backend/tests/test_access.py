@@ -54,17 +54,27 @@ def test_tribe_leader_scope(client, seeded, db):
     assert ok.json()["status"] == "active" and ok.json()["tribe_id"] == seeded["t1"]
 
 
-def test_squad_leader_must_place_into_own_squad(client, seeded, db):
+def test_a_squad_leader_does_not_review_access(client, seeded, db):
+    """Accorder l'entree dans l'application n'est pas composer une equipe.
+
+    Un squad leader validait autrefois un compte dans une de ses squads, sans
+    pouvoir ni le revoquer ni le retablir: une file ou l'on ne peut qu'ajouter.
+    Les gardiens sont ceux qui peuvent aussi reprendre, admin et tribe leader.
+    """
     u = _pending(db)
     login(client, seeded["sl_a"])
-    opts = client.get("/api/access-requests").json()
-    assert opts["roles"] == ["member"] and opts["can_deny"] is False
-    assert {s["id"] for s in opts["squads"]} == {seeded["squad_a"]}
-    # No squad → rejected; someone else's squad → forbidden.
-    assert client.post(f"/api/access-requests/{u.id}/approve", json={"role": "member"}).status_code == 400
+    assert client.get("/api/access-requests").status_code == 403
     assert client.post(f"/api/access-requests/{u.id}/approve",
-                       json={"role": "member", "squad_id": seeded["squad_b"]}).status_code == 403
-    # Own squad → validated into that squad's tribe.
+                       json={"role": "member", "squad_id": seeded["squad_a"]}).status_code == 403
+
+
+def test_a_tribe_leader_places_into_one_of_their_squads(client, seeded, db):
+    """Ce que le squad leader faisait remonte d'un cran, avec le meme resultat."""
+    u = _pending(db)
+    login(client, seeded["tribe"])
+    opts = client.get("/api/access-requests").json()
+    assert opts["roles"] == ["squad_leader", "member"] and opts["can_deny"] is True
+
     ok = client.post(f"/api/access-requests/{u.id}/approve",
                      json={"role": "member", "squad_id": seeded["squad_a"]})
     assert ok.status_code == 200 and ok.json()["tribe_id"] == seeded["t1"]

@@ -35,6 +35,7 @@ understand, run, operate and extend the product **without further explanation**.
 | 23 | [Personnalisation (couleurs, logos, densite)](23-personnalisation.md) | Admins |
 | 24 | [Exports d'une squad : la frise de l'annee et le moral](24-exports-frise-annuelle-et-moral.md) | Squad leaders / Tribe leaders |
 | 25 | [Acces, et les ecrans qui gerent une squad](25-acces-et-ecrans-de-gestion.md) | Admins / Tribe leaders |
+| 26 | [Ranger les ecrans : menus, valeurs par defaut, mode d'emploi](26-ranger-les-ecrans.md) | Admins |
 | - | [Architecture Decision Records (ADR)](adr/README.md) | Engineers / Architects |
 
 ## At a glance
@@ -45,7 +46,7 @@ understand, run, operate and extend the product **without further explanation**.
 - **Authorization**: role tiers + a configurable **persona → capability** matrix + per-module on/off switches.
 - **Per squad**: products & hardware, OTD (committed annual objectives), detailed roadmap, curated key messages, and **budget tracking** (total / spent / forecast → on-track / at-risk / over), visible only to admin, the tribe leader and the squad's own leader.
 - **Size**: ~18k LOC backend, ~16k LOC frontend, 25 API routers, 32 tables, 32 migrations.
-- **Tests**: 52 backend modules (**520 tests**, 77% covered, gated in CI) + 11 frontend (Vitest) + **30 Playwright** end-to-end against the real Docker stack + an 18-check Kubernetes/Keycloak SSO bench.
+- **Tests**: 52 backend modules (**523 tests**, 77% covered, gated in CI) + 11 frontend (Vitest) + **30 Playwright** end-to-end against the real Docker stack + an 18-check Kubernetes/Keycloak SSO bench.
 - **Observability**: Prometheus `/metrics`, seven alert rules, a ready-to-run Grafana stack (`ops/`).
 
 See [01-product-overview](01-product-overview.md) for the full picture.

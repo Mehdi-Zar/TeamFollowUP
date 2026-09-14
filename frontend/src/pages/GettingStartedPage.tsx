@@ -132,7 +132,7 @@ export default function GettingStartedPage() {
           <div className="stack" style={{ gap: 12 }}>
             <AdminCard Icon={ICON.admin} to="/admin" title={t("gs.card.admin.title")} desc={t("gs.card.admin.desc")} cta={t("gs.card.cta")} />
             {isGlobalAdmin(role) && (
-              <AdminCard Icon={ICON.tribes} to="/tribus" title={t("gs.card.tribes.title")} desc={t("gs.card.tribes.desc")} cta={t("gs.card.cta")} />
+              <AdminCard Icon={ICON.tribes} to="/organigramme" title={t("gs.card.tribes.title")} desc={t("gs.card.tribes.desc")} cta={t("gs.card.cta")} />
             )}
           </div>
         </>

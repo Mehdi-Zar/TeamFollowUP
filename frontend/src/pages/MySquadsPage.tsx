@@ -12,7 +12,7 @@ import { useEffect, useState } from "react";
 import { api, ApiError } from "../api";
 import { useI18n } from "../i18n";
 import { useAuth } from "../auth";
-import { Budget, Member, Squad, SquadDetail, Tribe, User } from "../types";
+import { Budget, Initiative, Member, Squad, SquadDetail, Tribe, User } from "../types";
 import { ErrorBanner, Spinner, Dot, Modal, EmptyState } from "../components/ui";
 import { useSetPageChrome } from "../components/pageChrome";
 import { useModule } from "../config";
@@ -310,7 +310,10 @@ function EditSquadModal({ detail, leaders, tribes, isAdmin, onClose, onError }: 
             <span className="track"><span className="knob" /></span>
             <span className="small">{t("mysquads.budget_enabled")}</span>
           </label>
-          {steercoOn && <SteercoMembership squad={d} onChange={reload} onError={onError} />}
+          {steercoOn
+            ? <SteercoMembership squad={d} onChange={reload} onError={onError} />
+            : <div className="small muted">{t("mysquads.module_off", { name: t("steerco.tab") })}</div>}
+          <SquadInitiatives squad={d} onError={onError} />
         </div>
       )}
 
@@ -377,9 +380,31 @@ function SteercoMembership({ squad, onChange, onError }: {
   const mine = platforms.filter((p) => p.contributors.some((c) => c.id === squad.id));
   const others = platforms.filter((p) => !p.contributors.some((c) => c.id === squad.id));
 
+  // Eteindre le steerco pour cette squad, c'est la retirer de toutes les
+  // plateformes qu'elle alimente: il n'y a pas d'autre facon de le rendre faux,
+  // puisque l'etat est deduit d'elles.
+  async function turnOff() {
+    setBusy(true);
+    try {
+      for (const p of platforms!.filter((x) => x.contributors.some((c) => c.id === squad.id))) {
+        await api.put(`/api/steerco/platforms/${p.id}`, {
+          contributor_ids: p.contributors.map((c) => c.id).filter((x) => x !== squad.id),
+        });
+      }
+      await load();
+      onChange();
+    } catch (e) { onError(e instanceof ApiError ? e.message : "Erreur"); }
+    finally { setBusy(false); }
+  }
+
   return (
     <div className="stack" style={{ gap: 6 }}>
-      <div className="small strong">{t("steerco.platforms")}</div>
+      <label className="switch">
+        <input type="checkbox" checked={!!squad.steerco_enabled} disabled={busy || !squad.steerco_enabled}
+               onChange={(e) => { if (!e.target.checked) turnOff(); }} />
+        <span className="track"><span className="knob" /></span>
+        <span className="small">{t("mysquads.steerco_enabled")}</span>
+      </label>
       <div className="small muted">{t("mysquads.steerco_hint")}</div>
       {platforms.length === 0 && <div className="small muted">{t("mysquads.steerco_none")}</div>}
       {mine.length > 0 && (
@@ -404,6 +429,74 @@ function SteercoMembership({ squad, onChange, onError }: {
       <div className="small muted">
         {squad.steerco_enabled ? t("mysquads.steerco_on") : t("mysquads.steerco_off")}
       </div>
+    </div>
+  );
+}
+
+
+/**
+ * Les initiatives que cette squad porte.
+ *
+ * Une initiative appartient a la tribu et designe la squad qui la mene
+ * (Initiative.squad_id). La question « quelles initiatives pour cette squad » se
+ * reglait donc dans l'ecran des initiatives, loin d'ici, alors que c'est un
+ * reglage de squad comme les autres: c'est ce qui remplit ses lignes dans la
+ * frise des exports.
+ */
+function SquadInitiatives({ squad, onError }: { squad: SquadDetail; onError: (m: string) => void }) {
+  const { t } = useI18n();
+  const [all, setAll] = useState<Initiative[] | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function load() {
+    try { setAll(await api.get<Initiative[]>(`/api/initiatives?year=${squad.year}`)); }
+    catch { setAll([]); }
+  }
+  useEffect(() => { load(); }, [squad.id, squad.year]);
+
+  async function assign(init: Initiative, mine: boolean) {
+    setBusy(true);
+    try {
+      await api.put(`/api/initiatives/${init.id}`, { squad_id: mine ? squad.id : null });
+      await load();
+    } catch (e) { onError(e instanceof ApiError ? e.message : "Erreur"); }
+    finally { setBusy(false); }
+  }
+
+  if (all === null) return <div className="small muted">{t("common.loading")}</div>;
+  const mine = all.filter((i) => i.squad_id === squad.id);
+  // Celles qui restent a prendre: libres, ou portees par une autre squad (le
+  // cacher laisserait croire qu'elles n'existent pas).
+  const others = all.filter((i) => i.squad_id !== squad.id);
+
+  return (
+    <div className="stack" style={{ gap: 6 }}>
+      <div className="small strong">{t("nav.initiatives")}</div>
+      <div className="small muted">{t("mysquads.initiatives_hint")}</div>
+      {all.length === 0 && <div className="small muted">{t("mysquads.initiatives_none")}</div>}
+      {mine.length > 0 && (
+        <div className="inline" style={{ gap: 6, flexWrap: "wrap" }}>
+          {mine.map((i) => (
+            <span key={i.id} className="badge badge-navy" style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
+              {i.title}
+              <button className="btn-ghost btn-sm" style={{ padding: "0 3px", lineHeight: 1 }}
+                      aria-label={t("action.delete")} disabled={busy}
+                      onClick={() => assign(i, false)}>×</button>
+            </span>
+          ))}
+        </div>
+      )}
+      {others.length > 0 && (
+        <select value="" disabled={busy}
+                onChange={(e) => { const i = others.find((x) => String(x.id) === e.target.value); if (i) assign(i, true); }}>
+          <option value="">{t("mysquads.initiatives_add")}</option>
+          {others.map((i) => (
+            <option key={i.id} value={i.id}>
+              {i.title}{i.squad_name ? ` (${i.squad_name})` : ""}
+            </option>
+          ))}
+        </select>
+      )}
     </div>
   );
 }

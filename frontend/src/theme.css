@@ -948,3 +948,14 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); width
 .mood-btn[disabled] { cursor: default; }
 .mood-card { font-size: 15px; filter: grayscale(1); opacity: .5; }
 .mood-card.on { filter: none; opacity: 1; }
+
+/* Barre des tribus de l'organigramme: choisir la tribu qu'on regarde, et voir du
+   meme coup ce qu'elle pese. Remplace une liste deroulante et une page entiere. */
+.tribe-chip {
+  display: inline-flex; align-items: baseline; gap: 8px;
+  background: #fff; color: var(--text); border: 1px solid var(--line);
+  border-radius: 999px; padding: 7px 14px; font: inherit; font-size: 13px; cursor: pointer;
+}
+.tribe-chip:hover { border-color: var(--accent); background: var(--ice-soft); }
+.tribe-chip.on { background: var(--navy); border-color: var(--navy); color: #fff; }
+.tribe-chip.on .muted { color: var(--ice-blue); }

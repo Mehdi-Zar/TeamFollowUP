@@ -26,6 +26,11 @@ Trois changements :
   ne revoque ni un administrateur ni quelqu'un d'une autre tribu. Ce dernier
   point etait un trou : l'ecran ne le proposait pas, l'API l'acceptait.
 
+**Qui relit les acces.** Admin et tribe leader, et eux seuls. Un squad leader
+validait autrefois un compte dans une de ses squads sans pouvoir ni le revoquer
+ni le retablir : une file ou l'on ne peut qu'ajouter. Accorder l'entree dans
+l'application n'est pas composer une equipe.
+
 Le compte de secours n'apparait pas dans la liste et ne se revoque pas : c'est la
 porte qui reste ouverte quand les autres se referment. Il compte en revanche
 comme administrateur actif, sinon revoquer un administrateur compromis serait
@@ -56,10 +61,17 @@ reglage, c'est un endroit de trop : celui qu'on ne pense pas a ouvrir finit par
 afficher l'ancien etat.
 
 **Le steerco ne s'active pas, il se deduit.** Une squad est au steerco parce
-qu'elle alimente une plateforme (`app/platforms.py`, `sync_squad_flags`). Offrir
-un interrupteur aurait pose la question deux fois, et les deux reponses auraient
-fini par differer. Le menu montre donc les plateformes et laisse choisir celles
-que la squad alimente ; l'etat suit.
+qu'elle alimente une plateforme (`app/platforms.py`, `sync_squad_flags`). Le menu
+montre donc les plateformes et laisse choisir celles que la squad alimente ;
+l'etat suit. Un interrupteur existe quand meme, parce qu'il fallait une facon de
+dire « plus de steerco ici » sans retirer les plateformes une par une : l'eteindre
+retire la squad de toutes celles qu'elle alimente, et c'est ecrit a cote. Il ne
+peut pas s'allumer seul, puisque l'allumer sans choisir de plateforme ne voudrait
+rien dire.
+
+**Les initiatives** sont dans la meme etape : une initiative appartient a la tribu
+et designe la squad qui la mene, et ce sont elles qui remplissent ses lignes dans
+les documents. Se regler ailleurs qu'ici n'avait pas de raison.
 
 **Les co-responsables** passent de cases a cocher a une liste deroulante. Une
 rangee de cases tenait sur trois personnes et se deformait a dix : elle
