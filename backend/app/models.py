@@ -161,6 +161,14 @@ class Squad(Base):
     # strings (set on squad create/edit, shown at the top of the squad page).
     products: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     hardware: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    # Moral de l'equipe, en trois niveaux: good | mixed | bad, ou NULL tant que
+    # personne ne s'est prononce. Trois niveaux et pas cinq: une echelle fine
+    # invite a la nuance, et ce qu'on veut lire ici est un signal, pas une note.
+    # La date sert a dire "c'est vieux": un moral de mars affiche en septembre
+    # ment plus surement qu'une case vide.
+    mood: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    mood_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    mood_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     tribe: Mapped["Tribe"] = relationship(back_populates="squads")
     leader: Mapped["User | None"] = relationship(back_populates="led_squads", foreign_keys=[leader_user_id])

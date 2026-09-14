@@ -33,6 +33,7 @@ understand, run, operate and extend the product **without further explanation**.
 | 21 | [Donnees : remise a zero et sauvegardes](21-donnees-remise-a-zero-et-sauvegardes.md) | Admins |
 | 22 | [Ecran de connexion (ordre, libelles, lien de secours)](22-ecran-de-connexion.md) | Admins |
 | 23 | [Personnalisation (couleurs, logos, densite)](23-personnalisation.md) | Admins |
+| 24 | [Page d'une squad : la frise annuelle et le moral d'equipe](24-page-squad-frise-et-moral.md) | Squad leaders / Tribe leaders |
 | - | [Architecture Decision Records (ADR)](adr/README.md) | Engineers / Architects |
 
 ## At a glance
@@ -42,8 +43,8 @@ understand, run, operate and extend the product **without further explanation**.
 - **Auth**: signed session cookie, local password (Argon2), OIDC (Authlib), SAML (python3-saml), break-glass admin.
 - **Authorization**: role tiers + a configurable **persona → capability** matrix + per-module on/off switches.
 - **Per squad**: products & hardware, OTD (committed annual objectives), detailed roadmap, curated key messages, and **budget tracking** (total / spent / forecast → on-track / at-risk / over), visible only to admin, the tribe leader and the squad's own leader.
-- **Size**: ~18k LOC backend, ~16k LOC frontend, 24 API routers, 28 tables, 27 migrations.
-- **Tests**: 39 backend modules (**378 tests**, 77% covered, gated in CI) + 11 frontend (Vitest) + **30 Playwright** end-to-end against the real Docker stack + an 18-check Kubernetes/Keycloak SSO bench.
+- **Size**: ~18k LOC backend, ~16k LOC frontend, 25 API routers, 32 tables, 32 migrations.
+- **Tests**: 50 backend modules (**493 tests**, 77% covered, gated in CI) + 11 frontend (Vitest) + **30 Playwright** end-to-end against the real Docker stack + an 18-check Kubernetes/Keycloak SSO bench.
 - **Observability**: Prometheus `/metrics`, seven alert rules, a ready-to-run Grafana stack (`ops/`).
 
 See [01-product-overview](01-product-overview.md) for the full picture.
