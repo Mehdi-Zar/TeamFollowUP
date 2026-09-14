@@ -548,15 +548,15 @@ _TIMELINE_CSS = """<style>
 .xtl-cell{min-width:0;min-height:8px;display:flex;flex-direction:column;gap:4px}
 .xtl-otds{padding-bottom:8px;row-gap:6px}
 /* Un engagement est une date: un repere pose sur le mois, et son titre a cote.
-   Une pastille pleine qui s'etire se lirait comme une periode. */
+   Une pastille pleine qui s'etire se lirait comme une periode. Tous de la meme
+   couleur: une rangee d'engagements de quatre teintes ne laisse plus ressortir
+   les jalons en dessous, dont la couleur dit vraiment quelque chose. Le statut
+   reste ecrit dans l'infobulle et sous la bande. */
 .xtl-otd{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;
   line-height:1.2;color:var(--navy,#1E2761);margin-left:-6px}
 .xtl-otd i{width:11px;height:11px;flex:0 0 auto;background:currentColor;
   transform:rotate(45deg);border-radius:2px}
 .xtl-otd span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.xtl-otd.st-late{color:var(--red,#B42318)}
-.xtl-otd.st-at_risk{color:var(--orange,#B54708)}
-.xtl-otd.st-delivered{color:var(--green,#027A48)}
 .xtl-init{border-top:1px solid var(--line,#E2E8F0);padding:8px 0}
 .xtl-init-name{font-weight:600;color:var(--navy,#1E2761)}
 .xtl-jalon{display:flex;align-items:center;gap:6px;background:#fff;
@@ -631,7 +631,7 @@ def _timeline_html(det: dict, lang: str, e, year: int) -> str:
     P.append(f'<div class="xtl-row xtl-otds">'
              f'<div class="xtl-label small strong">{e(rt(lang, "h_otd_section"))}</div>')
     for o, month, width, row in placed:
-        P.append(f'<div class="xtl-otd st-{e(o["status"])}" title="{e(o["title"])}"'
+        P.append(f'<div class="xtl-otd" title="{e(o["title"])} : {e(rt(lang, "otd_" + o["status"]))}"'
                  f' style="grid-column:{2 + month} / span {width};grid-row:{row + 1}">'
                  f'<i></i><span>{e(o["title"])}</span></div>')
     if bands == 0:

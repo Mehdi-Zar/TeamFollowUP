@@ -16,8 +16,10 @@ chose que ces trois objets ont en commun :
 1. **Les trimestres**, avec l'avancement calcule de chacun et son commentaire.
 2. **Les mois**, qui donnent la resolution de l'axe.
 3. **Les engagements OTD**, poses a leur date juste sous les trimestres : c'est
-   la promesse tenue ou non que le comite regarde en premier. La couleur suit
-   leur statut (a l'heure, a risque, en retard, livre).
+   la promesse tenue ou non que le comite regarde en premier. Tous de la meme
+   couleur, celle de la marque : une rangee d'engagements de quatre teintes ne
+   laisse plus ressortir les jalons en dessous, dont la couleur dit un risque. Le
+   statut reste ecrit, ce qui se lit aussi en noir et blanc.
 4. **Une ligne par initiative**, portant **les jalons qui la servent**, chacun
    dans son trimestre.
 
