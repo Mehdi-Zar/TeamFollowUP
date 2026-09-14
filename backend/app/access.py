@@ -120,10 +120,22 @@ def led_squads(db: Session, actor: User) -> list[Squad]:
 
 def approve(db: Session, actor: User, target: User, *, role: str,
             tribe_id: int | None, squad_id: int | None) -> User:
-    """Validate a pending account: set role + tribe scope and activate it.
-    Raises 4xx HTTPException when the actor exceeds their delegation scope."""
-    if target.status != "pending":
+    """Validate a pending account, or reinstate a disabled one: set role + tribe
+    scope and activate it.
+
+    Un compte desactive est accepte ici parce que le retablir est exactement la
+    meme operation qu'une validation, avec les memes limites de delegation:
+    choisir un role, une tribu, une squad, activer. Le refuser aurait fait d'une
+    revocation une decision definitive, ce qui n'est jamais ce qu'on veut d'un
+    droit d'acces.
+
+    Raises 4xx HTTPException when the actor exceeds their delegation scope.
+    """
+    if target.status == "active":
+        raise HTTPException(status_code=409, detail="Ce compte est déjà actif.")
+    if target.status not in ("pending", "disabled"):
         raise HTTPException(status_code=409, detail="Cette demande a déjà été traitée.")
+    was = target.status
     if role not in approval_roles(actor):
         raise HTTPException(status_code=403, detail="Vous ne pouvez pas attribuer ce rôle.")
 
@@ -153,21 +165,77 @@ def approve(db: Session, actor: User, target: User, *, role: str,
     target.role = role
     target.tribe_id = scope_tribe
     record_audit(db, actor.id, "access.approve", entity="user", entity_id=target.id,
-                 detail={"email": target.email, "role": role, "tribe_id": scope_tribe, "squad_id": squad_id})
+                 detail={"email": target.email, "role": role, "tribe_id": scope_tribe,
+                         "squad_id": squad_id, "from": was})
     _notify_user_granted(db, target, actor)
     return target
 
 
 def deny(db: Session, actor: User, target: User) -> User:
-    """Reject / revoke an account. Reserved to admin & tribe leaders (gatekeepers)."""
+    """Reject a request, or revoke an account already granted. Reserved to admin &
+    tribe leaders (gatekeepers).
+
+    Le compte de secours est intouchable ici: c'est la porte qui reste ouverte
+    quand toutes les autres se sont refermees, y compris sur celui qui appuie.
+    Se revoquer soi-meme l'est aussi, pour la meme raison.
+    """
     if actor.role not in (ADMIN, TRIBE):
         raise HTTPException(status_code=403, detail="Seuls un admin ou un tribe leader peuvent refuser un accès.")
     if target.is_break_glass:
         raise HTTPException(status_code=403, detail="Le compte de secours ne peut pas être désactivé.")
+    if target.id == actor.id:
+        raise HTTPException(status_code=400, detail="Vous ne pouvez pas révoquer votre propre accès.")
+    if actor.role == TRIBE:
+        if target.role == ADMIN:
+            raise HTTPException(status_code=403, detail="Un tribe leader ne révoque pas un administrateur.")
+        if target.status != "pending" and target.tribe_id != actor.tribe_id:
+            raise HTTPException(status_code=403, detail="Ce compte n'est pas dans votre tribe.")
+    if _would_leave_no_gatekeeper(db, target):
+        raise HTTPException(status_code=400,
+                            detail="Il doit rester au moins un administrateur actif.")
     target.status = "disabled"
     record_audit(db, actor.id, "access.deny", entity="user", entity_id=target.id,
                  detail={"email": target.email})
     return target
+
+
+def _would_leave_no_gatekeeper(db: Session, target: User) -> bool:
+    """Revoquer ce compte laisserait-il l'application sans administrateur actif ?
+
+    Le compte de secours compte comme les autres: c'est un administrateur actif,
+    et c'est le filet prevu pour ce cas. L'exclure du decompte aurait interdit de
+    revoquer un administrateur compromis dans une installation qui n'en a qu'un,
+    ce qui est exactement la situation ou il faut pouvoir le faire.
+    """
+    if target.role != ADMIN or target.status != "active":
+        return False
+    others = db.scalar(select(func.count()).select_from(User).where(
+        User.role == ADMIN, User.status == "active", User.id != target.id))
+    return not int(others or 0)
+
+
+def managed_accounts(db: Session, actor: User) -> list[dict]:
+    """Les comptes deja decides que ce relecteur peut reprendre en main.
+
+    La file d'attente ne repond qu'a « que reste-t-il a faire ». Celle-ci repond a
+    « qui a acces », qui est la question qu'on se pose le lendemain. Seuls les
+    gardiens (admin, tribe leader) la voient, parce qu'eux seuls peuvent revoquer.
+    Le compte de secours n'y figure pas: il ne se gere pas depuis un ecran.
+    """
+    if actor.role not in (ADMIN, TRIBE):
+        return []
+    stmt = select(User).where(User.status != "pending", User.is_break_glass.is_(False))
+    if actor.role == TRIBE:
+        stmt = stmt.where(User.tribe_id == actor.tribe_id)
+    rows = list(db.scalars(stmt.order_by(User.display_name, User.id)).all())
+    from .models import Tribe
+    tribes = {t.id: t.name for t in db.scalars(select(Tribe))}
+    return [{
+        "id": u.id, "email": u.email, "display_name": u.display_name,
+        "role": u.role, "status": u.status, "tribe_id": u.tribe_id,
+        "tribe": tribes.get(u.tribe_id), "last_login_at": u.last_login_at,
+        "is_self": u.id == actor.id,
+    } for u in rows]
 
 
 # ----- notifications ----------------------------------------------------------

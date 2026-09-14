@@ -61,6 +61,14 @@ def list_history(limit: int = 60, db: Session = Depends(get_db), user: User = De
     return {"entries": acc.decision_history(db, user, limit=min(max(limit, 1), 200))}
 
 
+@router.get("/accounts")
+def list_accounts(db: Session = Depends(get_db), user: User = Depends(_require_reviewer)):
+    """Les comptes deja decides que ce relecteur peut reprendre: revoquer un acces
+    accorde, ou retablir un acces revoque. Vide pour un squad leader, qui ne
+    revoque pas."""
+    return {"accounts": acc.managed_accounts(db, user)}
+
+
 def _target(db: Session, user_id: int) -> User:
     """Load the pending account being acted on, or 404 if it does not exist."""
     target = db.get(User, user_id)
@@ -72,7 +80,8 @@ def _target(db: Session, user_id: int) -> User:
 @router.post("/{user_id}/approve", response_model=UserOut)
 def approve_request(user_id: int, payload: AccessApproveIn, db: Session = Depends(get_db),
                     user: User = Depends(_require_reviewer)):
-    """Validate a pending account with the requested role/tribe/squad.
+    """Validate a pending account, or reinstate a revoked one, with the requested
+    role/tribe/squad.
 
     Delegation limits (which roles/tribes/squads this reviewer may grant) are
     enforced inside ``acc.approve`` and surface as 4xx errors.
@@ -86,8 +95,10 @@ def approve_request(user_id: int, payload: AccessApproveIn, db: Session = Depend
 
 @router.post("/{user_id}/deny", response_model=UserOut)
 def deny_request(user_id: int, db: Session = Depends(get_db), user: User = Depends(_require_reviewer)):
-    """Reject/revoke an account (disables it). Restricted to admin & tribe leaders
-    inside ``acc.deny``; the break-glass account cannot be denied."""
+    """Reject a request, or revoke an access already granted (disables the account).
+    Restricted to admin & tribe leaders inside ``acc.deny``; the break-glass
+    account, one's own account, and the last active administrator cannot be
+    denied."""
     target = acc.deny(db, user, _target(db, user_id))
     db.commit()
     db.refresh(target)

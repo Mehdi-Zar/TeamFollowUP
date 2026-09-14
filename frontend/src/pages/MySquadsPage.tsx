@@ -71,7 +71,8 @@ function TribeLeaderSquads() {
       {squads.length === 0 && <EmptyState message={t("mysquads.empty")} />}
       <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 16 }}>
         {squads.map((s) => (
-          <SquadCard key={s.id} squadId={s.id} leaders={leaders} onChanged={load} onError={setError} />
+          <SquadCard key={s.id} squadId={s.id} leaders={leaders} tribes={tribes} isAdmin={isAdmin}
+                     onChanged={load} onError={setError} />
         ))}
       </div>
 
@@ -95,8 +96,9 @@ function TribeLeaderSquads() {
  * and an Edit button that opens the multi-step EditSquadModal. Loads its own
  * SquadDetail so badges reflect the latest state.
  */
-function SquadCard({ squadId, leaders, onChanged, onError }: {
-  squadId: number; leaders: User[]; onChanged: () => void; onError: (m: string) => void;
+function SquadCard({ squadId, leaders, tribes, isAdmin, onChanged, onError }: {
+  squadId: number; leaders: User[]; tribes: Tribe[]; isAdmin: boolean;
+  onChanged: () => void; onError: (m: string) => void;
 }) {
   const { t } = useI18n();
   const [d, setD] = useState<SquadDetail | null>(null);
@@ -139,6 +141,8 @@ function SquadCard({ squadId, leaders, onChanged, onError }: {
         <EditSquadModal
           detail={d}
           leaders={leaders}
+          tribes={tribes}
+          isAdmin={isAdmin}
           onClose={() => { setEdit(false); load(); onChanged(); }}
           onError={onError}
         />
@@ -148,15 +152,22 @@ function SquadCard({ squadId, leaders, onChanged, onError }: {
 }
 
 /**
- * Tribe-leader/admin squad editor, as a 3-step wizard in a modal:
- *   1. Infos (name, responsible, type, products/hardware)
- *   2. OTD - the squad's single dated annual commitment
- *   3. Budget & KPIs
- * Every field saves immediately (PUT) and reloads the detail. The footer also
- * offers deletion of the squad (confirmed).
+ * L'editeur d'une squad, en quatre etapes:
+ *   1. Infos       qui est cette squad (nom, tribu, responsable, co-responsables,
+ *                  type, description, ordre, produits, materiel)
+ *   2. Options     ce qu'elle suit (KPI, budget, plateformes steerco)
+ *   3. OTD         ce sur quoi elle s'engage pour l'annee
+ *   4. Budget      les montants, quand le suivi est actif
+ *
+ * Chaque champ enregistre tout de suite (PUT) puis recharge le detail: un
+ * formulaire a bouton « enregistrer » unique laisserait croire qu'on peut
+ * abandonner ses modifications, ce qui n'est pas vrai des panneaux enfants (OTD,
+ * budget) qui ecrivent deja au fil de l'eau. Le pied de page propose la
+ * suppression de la squad, confirmee.
  */
-function EditSquadModal({ detail, leaders, onClose, onError }: {
-  detail: SquadDetail; leaders: User[]; onClose: () => void; onError: (m: string) => void;
+function EditSquadModal({ detail, leaders, tribes, isAdmin, onClose, onError }: {
+  detail: SquadDetail; leaders: User[]; tribes: Tribe[]; isAdmin: boolean;
+  onClose: () => void; onError: (m: string) => void;
 }) {
   const { t } = useI18n();
   const kpisOn = useModule()("squad_content", "kpis");
@@ -173,10 +184,9 @@ function EditSquadModal({ detail, leaders, onClose, onError }: {
   }
   const patch = (p: any) => run(() => api.put(`/api/squads/${d.id}`, p));
 
-  // One clean step at a time instead of one crowded form. The OTD is the squad's
-  // single dated annual commitment (there is no separate "objective" concept).
   const steps = [
     t("mysquads.step.infos"),
+    t("mysquads.step.options"),
     t("mysquads.step.otd"),
     t("mysquads.step.budget"),
   ];
@@ -212,7 +222,7 @@ function EditSquadModal({ detail, leaders, onClose, onError }: {
         ))}
       </div>
 
-      {/* Step 1 - Infos */}
+      {/* Etape 1 - Infos */}
       {step === 0 && (
         <div className="stack" style={{ gap: 14 }}>
           <div className="row" style={{ gap: 12 }}>
@@ -232,27 +242,43 @@ function EditSquadModal({ detail, leaders, onClose, onError }: {
               <SquadTypeField value={d.squad_type ?? "product"} onChange={(v) => patch({ squad_type: v })} t={t} />
             </div>
           </div>
-          {/* Co-leaders: the same rights on this squad, without disputing who the
-              squad's leader is. */}
-          <div>
-            <label>{t("squad.co_leaders")}</label>
-            <div className="small muted" style={{ marginBottom: 4 }}>{t("squad.co_leaders_hint")}</div>
-            <div className="inline" style={{ gap: 10, flexWrap: "wrap" }}>
-              {leaders.filter((u) => u.id !== d.leader_user_id).map((u) => {
-                const on = (d.co_leader_user_ids ?? []).includes(u.id);
-                return (
-                  <label key={u.id} className="inline small" style={{ gap: 4 }}>
-                    <input type="checkbox" checked={on} onChange={() => patch({
-                      co_leader_user_ids: on
-                        ? (d.co_leader_user_ids ?? []).filter((x) => x !== u.id)
-                        : [...(d.co_leader_user_ids ?? []), u.id],
-                    })} />
-                    {u.display_name}
-                  </label>
-                );
-              })}
+
+          {/* Co-responsables: les memes droits sur cette squad, sans disputer a
+              qui elle appartient. */}
+          <div className="row" style={{ gap: 12 }}>
+            <div style={{ flex: 1, minWidth: 200 }}>
+              <label>{t("squad.co_leaders")}</label>
+              <div className="small muted" style={{ marginBottom: 4 }}>{t("squad.co_leaders_hint")}</div>
+              <PeoplePicker options={leaders.filter((u) => u.id !== d.leader_user_id)}
+                            value={d.co_leader_user_ids ?? []}
+                            onChange={(v) => patch({ co_leader_user_ids: v })} />
             </div>
           </div>
+
+          <div className="row" style={{ gap: 12 }}>
+            {/* Deplacer une squad de tribu est une decision d'administrateur: un
+                tribe leader ne voit pas les autres tribus. */}
+            {isAdmin && (
+              <div style={{ flex: 1, minWidth: 160 }}>
+                <label>{t("admin.tribe")}</label>
+                <select value={d.tribe_id} onChange={(e) => patch({ tribe_id: Number(e.target.value) })}>
+                  {tribes.map((tr) => <option key={tr.id} value={tr.id}>{tr.name}</option>)}
+                </select>
+              </div>
+            )}
+            <div style={{ width: 120 }}>
+              <label>{t("admin.order")}</label>
+              <input type="number" defaultValue={d.display_order}
+                     onBlur={(e) => Number(e.target.value) !== d.display_order && patch({ display_order: Number(e.target.value) })} />
+            </div>
+          </div>
+
+          <div>
+            <label>{t("admin.description")}</label>
+            <textarea rows={2} defaultValue={d.description ?? ""}
+                      onBlur={(e) => (e.target.value || null) !== (d.description ?? null) && patch({ description: e.target.value || null })} />
+          </div>
+
           <div className="row" style={{ gap: 12 }}>
             <div style={{ flex: 1, minWidth: 200 }}>
               <label>{t("squad.products")}</label>
@@ -268,14 +294,10 @@ function EditSquadModal({ detail, leaders, onClose, onError }: {
         </div>
       )}
 
-      {/* Step 2 - OTD (On-Time Delivery): the squad's single dated annual commitment */}
+      {/* Etape 2 - Options: ce que cette squad suit */}
       {step === 1 && (
-        <OtdPanel squad={d} canManage onChange={reload} />
-      )}
-
-      {/* Step 3 - Budget & KPIs */}
-      {step === 2 && (
-        <div className="stack" style={{ gap: 14 }}>
+        <div className="stack" style={{ gap: 16 }}>
+          <div className="small muted">{t("mysquads.options_hint")}</div>
           {kpisOn && (
             <label className="switch">
               <input type="checkbox" checked={!!d.kpis_enabled} onChange={(e) => patch({ kpis_enabled: e.target.checked })} />
@@ -283,20 +305,113 @@ function EditSquadModal({ detail, leaders, onClose, onError }: {
               <span className="small">{t("admin.kpis_enabled")}</span>
             </label>
           )}
-          <div className="stack" style={{ gap: 6 }}>
-            <div className="small strong">{t("budget.title")}</div>
-            <BudgetEditor
-              squadId={d.id} year={d.year}
-              enabled={!!d.budget_enabled} budget={d.budget}
-              canToggle onToggle={(v) => patch({ budget_enabled: v })}
-              onError={onError}
-            />
-          </div>
+          <label className="switch">
+            <input type="checkbox" checked={!!d.budget_enabled} onChange={(e) => patch({ budget_enabled: e.target.checked })} />
+            <span className="track"><span className="knob" /></span>
+            <span className="small">{t("mysquads.budget_enabled")}</span>
+          </label>
+          {steercoOn && <SteercoMembership squad={d} onChange={reload} onError={onError} />}
+        </div>
+      )}
+
+      {/* Etape 3 - OTD: l'engagement date de l'annee */}
+      {step === 2 && (
+        <OtdPanel squad={d} canManage onChange={reload} />
+      )}
+
+      {/* Etape 4 - Budget: les montants, quand le suivi est actif */}
+      {step === 3 && (
+        <div className="stack" style={{ gap: 6 }}>
+          <div className="small strong">{t("budget.title")}</div>
+          <BudgetEditor
+            squadId={d.id} year={d.year}
+            enabled={!!d.budget_enabled} budget={d.budget}
+            canToggle onToggle={(v) => patch({ budget_enabled: v })}
+            onError={onError}
+          />
         </div>
       )}
     </Modal>
   );
 }
+
+
+/**
+ * Le rattachement steerco d'une squad, vu depuis la squad.
+ *
+ * Il n'y a pas d'interrupteur « steerco » sur une squad, et c'est voulu: l'etat
+ * est deduit des plateformes qu'elle alimente (backend/app/platforms.py,
+ * sync_squad_flags). Un interrupteur poserait la question deux fois et les deux
+ * reponses finiraient par differer. Ce panneau agit donc la ou la decision se
+ * prend, sur la liste des contributrices de chaque plateforme, et affiche l'etat
+ * qui en decoule.
+ */
+function SteercoMembership({ squad, onChange, onError }: {
+  squad: SquadDetail; onChange: () => void; onError: (m: string) => void;
+}) {
+  const { t } = useI18n();
+  const [platforms, setPlatforms] = useState<PlatformRow[] | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function load() {
+    try { setPlatforms(await api.get<PlatformRow[]>("/api/steerco/platforms")); }
+    catch { setPlatforms([]); }
+  }
+  useEffect(() => { load(); }, [squad.id]);
+
+  async function toggle(p: PlatformRow, on: boolean) {
+    setBusy(true);
+    try {
+      const ids = p.contributors.map((c) => c.id);
+      await api.put(`/api/steerco/platforms/${p.id}`, {
+        contributor_ids: on ? [...ids, squad.id] : ids.filter((x) => x !== squad.id),
+      });
+      await load();
+      onChange();
+    } catch (e) { onError(e instanceof ApiError ? e.message : "Erreur"); }
+    finally { setBusy(false); }
+  }
+
+  if (platforms === null) return <div className="small muted">{t("common.loading")}</div>;
+
+  const mine = platforms.filter((p) => p.contributors.some((c) => c.id === squad.id));
+  const others = platforms.filter((p) => !p.contributors.some((c) => c.id === squad.id));
+
+  return (
+    <div className="stack" style={{ gap: 6 }}>
+      <div className="small strong">{t("steerco.platforms")}</div>
+      <div className="small muted">{t("mysquads.steerco_hint")}</div>
+      {platforms.length === 0 && <div className="small muted">{t("mysquads.steerco_none")}</div>}
+      {mine.length > 0 && (
+        <div className="inline" style={{ gap: 6, flexWrap: "wrap" }}>
+          {mine.map((p) => (
+            <span key={p.id} className="badge badge-navy" style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
+              {p.name}
+              <button className="btn-ghost btn-sm" style={{ padding: "0 3px", lineHeight: 1 }}
+                      aria-label={t("action.delete")} disabled={busy}
+                      onClick={() => toggle(p, false)}>×</button>
+            </span>
+          ))}
+        </div>
+      )}
+      {others.length > 0 && (
+        <select value="" disabled={busy}
+                onChange={(e) => { const p = others.find((x) => String(x.id) === e.target.value); if (p) toggle(p, true); }}>
+          <option value="">{t("mysquads.steerco_add")}</option>
+          {others.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
+      )}
+      <div className="small muted">
+        {squad.steerco_enabled ? t("mysquads.steerco_on") : t("mysquads.steerco_off")}
+      </div>
+    </div>
+  );
+}
+
+
+/** Ce que la liste des plateformes renvoie, reduit a ce dont ce menu a besoin. */
+type PlatformRow = { id: number; name: string; contributors: { id: number; name: string }[] };
+
 
 /**
  * New-squad modal. Admins must pick a tribe; a tribe leader is pinned to their
@@ -614,6 +729,44 @@ function BudgetEditor({ squadId, year, enabled, budget, canToggle, onToggle, onE
     </div>
   );
 }
+
+/** Choisir des personnes dans une liste deroulante, et les garder en vue.
+ *
+ *  Meme forme que TagListEditor juste en dessous, qui fait cela pour du texte
+ *  libre: les choix restent affiches au-dessus, la liste ne propose que ce qui
+ *  n'a pas encore ete pris. Choisir dans une liste est deja un geste explicite,
+ *  il n'y a donc pas de bouton « ajouter » a valider derriere. */
+function PeoplePicker({ options, value, onChange }: {
+  options: { id: number; display_name: string }[];
+  value: number[];
+  onChange: (v: number[]) => void;
+}) {
+  const { t } = useI18n();
+  const chosen = options.filter((o) => value.includes(o.id));
+  const left = options.filter((o) => !value.includes(o.id));
+  return (
+    <div className="stack" style={{ gap: 6 }}>
+      {chosen.length > 0 && (
+        <div className="inline" style={{ gap: 6, flexWrap: "wrap" }}>
+          {chosen.map((o) => (
+            <span key={o.id} className="badge badge-navy" style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
+              {o.display_name}
+              <button className="btn-ghost btn-sm" style={{ padding: "0 3px", lineHeight: 1 }}
+                      aria-label={t("action.delete")}
+                      onClick={() => onChange(value.filter((x) => x !== o.id))}>×</button>
+            </span>
+          ))}
+        </div>
+      )}
+      <select value="" disabled={left.length === 0}
+              onChange={(e) => e.target.value && onChange([...value, Number(e.target.value)])}>
+        <option value="">{left.length ? t("squad.co_leaders_add") : t("squad.co_leaders_none")}</option>
+        {left.map((o) => <option key={o.id} value={o.id}>{o.display_name}</option>)}
+      </select>
+    </div>
+  );
+}
+
 
 /** Edit a list of names (products / hardware) as removable chips + an add input. */
 function TagListEditor({ value, onChange, placeholder }: {
