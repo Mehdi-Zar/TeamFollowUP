@@ -13,8 +13,15 @@ que de ce qui est genere et distribue.
 Le bloc unique met tout sur **le meme axe**, parce que le temps est la seule
 chose que ces trois objets ont en commun :
 
-1. **Les trimestres**, avec l'avancement calcule de chacun et son commentaire.
-2. **Les mois**, qui donnent la resolution de l'axe.
+1. **Les trimestres**, avec l'avancement calcule de chacun. Le commentaire du
+   trimestre, lui, n'est pas sur la slide : il s'inserait entre l'en-tete du
+   trimestre et la bande des mois, ou il coupait la lecture de l'axe juste la ou
+   elle commence. Il reste a l'ecran et dans le rapport HTML, qui n'ont pas de
+   hauteur a tenir.
+2. **Les mois**, qui donnent la resolution de l'axe, sur une bande et non sur le
+   blanc de la carte : douze mots poses dans le vide ne forment pas une regle, et
+   c'est une regle qu'on cherche quand on suit une date. Un mois sur deux est
+   legerement plus fonce, pour que l'oeil compte les colonnes sans lire les noms.
 3. **Les engagements OTD**, poses a leur date juste sous les trimestres : c'est
    la promesse tenue ou non que le comite regarde en premier. Tous de la meme
    couleur, celle de la marque : une rangee d'engagements de quatre teintes ne
