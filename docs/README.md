@@ -36,6 +36,7 @@ understand, run, operate and extend the product **without further explanation**.
 | 24 | [Exports d'une squad : la frise de l'annee et le moral](24-exports-frise-annuelle-et-moral.md) | Squad leaders / Tribe leaders |
 | 25 | [Acces, et les ecrans qui gerent une squad](25-acces-et-ecrans-de-gestion.md) | Admins / Tribe leaders |
 | 26 | [Ranger les ecrans : menus, valeurs par defaut, mode d'emploi](26-ranger-les-ecrans.md) | Admins |
+| 27 | [Le parcours de reporting, et les trois listes du tableau de bord](27-parcours-de-reporting-et-listes.md) | Squad leaders / Tribe leaders |
 | - | [Architecture Decision Records (ADR)](adr/README.md) | Engineers / Architects |
 
 ## At a glance
