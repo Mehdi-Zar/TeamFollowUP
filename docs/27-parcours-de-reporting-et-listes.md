@@ -20,7 +20,17 @@ saute ; celui-ci est le chemin lui-meme.**
   n'avoir ni KPI ni action de comite.
 - **Les etapes sont construites a partir des services actifs.** Une installation
   sans KPI ni steerco n'affiche pas d'etape vide : une etape qu'on traverse sans
-  rien faire apprend a traverser les etapes.
+  rien faire apprend a traverser les etapes. C'est pour la meme raison que les
+  actions de comite n'en sont pas une : elles se decident en comite et se
+  relisent entre deux, pas au rythme du reporting. Elles vivent sur la page de la
+  squad, a cote des messages cles et de la comitologie, qui sont le meme sujet.
+
+- **La couleur y dit un etat, pas une etape.** Chaque etape a d'abord eu sa
+  teinte, six couleurs en rang dont un violet etranger a la charte. Elles ne
+  disaient rien : le moral n'est pas orange et l'envoi n'est pas rouge. L'icone
+  est donc monochrome, encre pour l'etape courante, verte pour ce qui est
+  renseigne, grise pour le reste. Quand tout est colore, le rouge d'un jalon
+  bloque ne se voit plus.
 - **Rien n'est retire.** Ce sont les memes panneaux, dans le meme ordre, avec les
   memes droits. Seul l'empilement disparait.
 
