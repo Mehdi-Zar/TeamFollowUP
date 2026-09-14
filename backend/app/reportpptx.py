@@ -295,8 +295,13 @@ def render_pptx(data: dict) -> bytes:
     AX0, AX1 = 2.20, 12.80             # l'axe des douze mois
     MW = (AX1 - AX0) / 12.0            # largeur d'un mois
     QW = MW * 3                        # un trimestre vaut trois mois
-    OTD_ROWS = 3                       # bandes d'engagements superposables
+    # Quatre bandes d'engagements superposables. Trois laissaient « +3 » sur une
+    # squad qui en porte dix, alors que le bas de la frise etait vide: la place
+    # existait, elle n'etait simplement pas allouee.
+    OTD_ROWS = 4
     CPM = 16                           # caracteres tenant dans un mois, en 7,5 pt
+    JALON_H = 0.40                     # hauteur d'une boite de jalon, deux lignes de 7,5 pt
+    JALON_CPL = 42                     # caracteres sur une ligne d'une boite de jalon
 
     def fit(text: str, chars: int) -> str:
         """Coupe a la largeur disponible. PowerPoint ne sait pas mettre de points
@@ -404,43 +409,63 @@ def render_pptx(data: dict) -> bytes:
                     ", ".join(notes)[:150], 7, color=B["muted"])
             otd_bottom += 0.18
 
+        # ----- les colonnes de trimestre, tracees jusqu'en bas -----
+        #
+        # Quatre colonnes sans separation obligent le lecteur a mesurer a l'oeil
+        # de quel trimestre releve un jalon. Les traits descendent des entetes
+        # Q1 a Q4 et traversent toute la frise, sous les boites mais au-dessus du
+        # fond: c'est le repere que la frise promettait sans le donner.
+        BOTTOM = 5.84
+        for qi in range(5):
+            x = AX0 + qi * QW
+            rect(s, Inches(min(x, AX1)), Inches(qy + 0.54), Inches(0.008),
+                 Inches(BOTTOM - qy - 0.54), rgb("#DDE3EE"))
+
         # ----- une ligne par initiative, ses jalons dans leur trimestre -----
         rows = timeline_rows(det, lang)
         y = otd_bottom + 0.06
-        BOTTOM = 5.86
         drawn = 0
         for row in rows:
             per_q = {q: [it for it in row["items"] if it.get("quarter") == q] for q in (1, 2, 3, 4)}
             tallest = max((len(v) for v in per_q.values()), default=0)
-            # Assez haut pour deux lignes de nom d'initiative et sa ligne de detail.
-            rh = max(0.48, 0.26 * tallest + 0.12)
+            # Un jalon prend deux lignes de texte quand son titre est long, donc la
+            # hauteur d'une boite est fixe et connue: la ligne s'y ajuste.
+            rh = max(0.52, JALON_H * tallest + 0.14)
             if y + rh > BOTTOM:
                 break
             rect(s, Inches(LBL_X), Inches(y), Inches(AX1 - LBL_X), Inches(0.012), B["line"])
-            meta = [x for x in (row.get("owner"),
-                                rt(lang, "tl_deadline", d=row["deadline"]) if row.get("deadline") else None,
-                                rt(lang, "tl_jalons_n", n=len(row["items"]))) if x]
-            lbl = textbox(s, Inches(LBL_X), Inches(y + 0.05), Inches(LBL_W), Inches(rh - 0.08),
-                          fit(row["title"], 46), 8.5, bold=True, color=B["navy"])
-            p = lbl.text_frame.add_paragraph()
-            rr = p.add_run(); rr.text = ", ".join(meta)
-            rr.font.size = Pt(6.5); rr.font.color.rgb = B["muted"]
+
+            # Le libelle de la ligne. Les jalons qui ne servent aucune initiative
+            # n'appartiennent pas a une categorie « sans initiative »: ils
+            # n'appartiennent a rien, et leur ligne n'annonce donc rien.
+            if row["key"] != "none":
+                meta = [x for x in (row.get("owner"),
+                                    rt(lang, "tl_deadline", d=row["deadline"]) if row.get("deadline") else None)
+                        if x]
+                lbl = textbox(s, Inches(LBL_X), Inches(y + 0.06), Inches(LBL_W), Inches(rh - 0.1),
+                              fit(row["title"], 52), 8.5, bold=True, color=B["navy"])
+                if meta:
+                    p = lbl.text_frame.add_paragraph()
+                    rr = p.add_run(); rr.text = ", ".join(meta)
+                    rr.font.size = Pt(6.5); rr.font.color.rgb = B["muted"]
+
             for qi, q in enumerate((1, 2, 3, 4)):
                 for k, it in enumerate(per_q[q]):
-                    jx, jy = AX0 + qi * QW, y + 0.06 + k * 0.26
-                    jb = rrect(s, Inches(jx), Inches(jy), Inches(QW - 0.06), Inches(0.23),
-                               B["white"], line=B["line"], radius=0.2)
+                    jx, jy = AX0 + qi * QW + 0.05, y + 0.07 + k * JALON_H
+                    jb = rrect(s, Inches(jx), Inches(jy), Inches(QW - 0.14), Inches(JALON_H - 0.05),
+                               B["white"], line=B["line"], radius=0.14)
                     # Le liset colore porte le statut, le texte reste lisible en
                     # encre: un titre entierement rouge se lit moins bien qu'un
                     # titre noir signale en rouge.
-                    rect(s, Inches(jx), Inches(jy), Inches(0.05), Inches(0.23),
+                    rect(s, Inches(jx), Inches(jy), Inches(0.05), Inches(JALON_H - 0.05),
                          rgb(_RAG_BRAND[_status_rag(it["status"])]))
-                    dep = f'   ({rt(lang, "dep")} {it["dependency"]})' if it.get("dependency") else ""
-                    stage = f'   {it["stage"]}' if it.get("stage") else ""
-                    place(jb, [(fit(f'{it["title"]}{dep}{stage}', 3 * CPM - 2), 7.5, B["ink"],
+                    # Le titre seul, et en entier. La dependance et la phase ont
+                    # quitte la boite: a trois informations sur une ligne, c'est le
+                    # titre qui etait coupe, et c'est la seule qu'on lit de loin.
+                    place(jb, [(fit(it["title"], 2 * JALON_CPL), 7.5, B["ink"],
                                 False, PP_ALIGN.LEFT, 0)],
-                          anchor=MSO_ANCHOR.MIDDLE, ml=0.12, mr=0.06, mt=0.01, mb=0.01)
-                    jb.text_frame.word_wrap = False
+                          anchor=MSO_ANCHOR.MIDDLE, ml=0.11, mr=0.07, mt=0.01, mb=0.01)
+                    jb.text_frame.word_wrap = True
             y += rh
             drawn += 1
         if not rows:

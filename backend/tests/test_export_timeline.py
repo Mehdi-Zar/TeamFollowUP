@@ -104,8 +104,9 @@ def test_a_milestone_serving_nothing_keeps_its_own_row(db, chained):
     det = _data(db, squad_id, viewer)["tribes"][0]["squads"][0]["detail"]
     rows = report_mod.timeline_rows(det, "fr")
 
-    orphans = next(r for r in rows if r["title"] == "Jalons hors initiative")
+    orphans = next(r for r in rows if r["key"] == "none")
     assert [it["title"] for it in orphans["items"]] == ["Nettoyage des images"]
+    assert orphans["title"] is None, "ces jalons ne forment pas une categorie nommee"
 
 
 def test_the_commitments_carry_their_month_and_their_status(db, chained):
@@ -169,7 +170,9 @@ def test_the_html_export_shows_the_whole_block(db, chained):
     assert len(re.findall(r"<b>Q[1-4]</b>", html)) == 4, "les quatre trimestres"
     assert len(re.findall(r'class="xtl-m"', html)) == 12, "les douze mois"
     assert "Reduire le temps de build" in html and "Cache des dependances" in html
-    assert "Jalons hors initiative" in html and "Nettoyage des images" in html
+    # Le jalon est la; la ligne qui le porte n'annonce aucune categorie.
+    assert "Nettoyage des images" in html
+    assert "hors initiative" not in html
     # Un engagement sans date est cite sous la bande, pas efface.
     assert "Engagements sans date" in html and "Engagement sans date arretee" in html
     # Le moral, avec la date qui le date (le libelle part echappe, pas le niveau).
