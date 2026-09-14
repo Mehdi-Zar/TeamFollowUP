@@ -296,7 +296,6 @@ def render_pptx(data: dict) -> bytes:
     MW = (AX1 - AX0) / 12.0            # largeur d'un mois
     QW = MW * 3                        # un trimestre vaut trois mois
     OTD_ROWS = 3                       # bandes d'engagements superposables
-    OTD_FILL = {"late": "red", "at_risk": "amber", "delivered": "green"}
     CPM = 16                           # caracteres tenant dans un mois, en 7,5 pt
 
     def fit(text: str, chars: int) -> str:
@@ -375,7 +374,10 @@ def render_pptx(data: dict) -> bytes:
             # engagement est une date.
             x0 = AX0 + month * MW
             y0 = 2.42 + row * 0.28
-            ink = rgb(_RAG_BRAND[OTD_FILL[o["status"]]]) if o["status"] in OTD_FILL else B["navy"]
+            # Une seule couleur pour tous les engagements: quatre teintes sur une
+            # meme rangee ne laissent plus ressortir les jalons en dessous, dont la
+            # couleur dit vraiment quelque chose. Le statut reste ecrit.
+            ink = B["navy"]
             mark = s.shapes.add_shape(MSO_SHAPE.DIAMOND, Inches(x0 - 0.06), Inches(y0 + 0.05),
                                       Inches(0.13), Inches(0.13))
             mark.fill.solid(); mark.fill.fore_color.rgb = ink

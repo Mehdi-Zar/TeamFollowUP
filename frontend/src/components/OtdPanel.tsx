@@ -10,10 +10,6 @@ import { Modal, PickItem } from "./ui";
 
 /** Show only the date part of an ISO timestamp, or "-" when absent. */
 const fmtDate = (d?: string | null) => (d ? d.slice(0, 10) : "-");
-// Maps an OTD status to its badge CSS class (unknown statuses fall back to grey).
-const STATUS_CLASS: Record<string, string> = {
-  on_track: "badge-green", delivered: "badge-navy", at_risk: "badge-orange", late: "badge-red",
-};
 
 /** OTD (On-Time Delivery) inside the squad's management, not a separate menu.
  *  The tribe leader (or admin) sets a dated delivery commitment on this squad's
@@ -80,9 +76,10 @@ export function OtdPanel({ squad, canManage, onChange }:
                   </td>
                   <td>{fmtDate(o.committed_date)}</td>
                   <td>
-                    <span className={`badge ${STATUS_CLASS[o.status] ?? "badge-grey"}`}>
-                      {t(`otd.status.${o.status}`)}
-                    </span>
+                    {/* Une seule couleur pour tous les engagements, comme dans les
+                        documents: le statut se lit, il n'a pas besoin d'une teinte
+                        de plus a cote des jalons, dont la couleur dit un risque. */}
+                    <span className="badge badge-navy">{t(`otd.status.${o.status}`)}</span>
                   </td>
                   <td className="small muted">
                     {t("otd.counts", { total: o.counts.total, done: o.counts.done,
