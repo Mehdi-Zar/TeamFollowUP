@@ -99,11 +99,11 @@ npm run report          # le rapport HTML du dernier run
 Sortie attendue :
 
 ```
-Running 12 tests using 1 worker
+Running 48 tests using 1 worker
 
   ok  1 [chromium] › tests\admin-org.spec.ts:21:7 › a tribe can be created, listed and deleted (2.4s)
   ...
-  12 passed (20.2s)
+  48 passed (1.5m)
 ```
 
 ### 3.4 Quand un test échoue
@@ -129,9 +129,10 @@ ou recouvert par autre chose.
 |---|---|
 | `tests/login.spec.ts` | l'écran de connexion est servi et ses champs sont atteignables par leur libellé ; de mauvais identifiants sont refusés **sans dire lequel des deux est faux** (pas d'énumération de comptes) ; le compte de secours entre ; la déconnexion invalide vraiment la session côté serveur ; une URL interne tapée par un visiteur non connecté ramène à la connexion |
 | `tests/admin-org.spec.ts` | créer une tribu, la voir apparaître dans l'écran, la supprimer ; le journal d'audit enregistre l'action, la retrouve par filtre et affiche **le nom** de l'auteur et non son identifiant ; un filtre qui ne correspond à rien le dit au lieu de tout montrer ; la pagination avance et recule sans répéter de ligne |
-| `tests/admin-sections.spec.ts` | les **dix-huit sections** de l'administration : chacune s'affiche, sans bandeau d'erreur, sans panneau vide et sans erreur JavaScript en console. C'est le filet qui a rendu défendable le découpage d'`AdminPage.tsx` : vert avant, vert après |
+| `tests/admin-sections.spec.ts` | les **vingt et une sections** de l'administration : chacune s'affiche, sans bandeau d'erreur, sans panneau vide et sans erreur JavaScript en console. C'est le filet qui a rendu défendable le découpage d'`AdminPage.tsx` : vert avant, vert après |
 | `tests/admin-trust-store.spec.ts` | l'écran **Autorités de certification** : les autorités approuvées sont listées et administrables, boutons actifs, et rien sur cet écran ne gère un certificat que l'application servirait, puisque le TLS est terminé par l'infrastructure (ADR 0013) |
 | `tests/language.spec.ts` | un visiteur qui n'a jamais choisi de langue obtient celle de l'instance (`default_lang`, français par défaut), et rien n'est écrit dans `trt_lang` tant qu'il n'a pas choisi ; son choix, lui, survit au rechargement. Seule spec à importer `test` depuis `@playwright/test` : l'absence de choix stocké **est** le cas testé, et la fixture partagée la supprimerait |
+| `tests/pages-health.spec.ts` | **chaque page s'ouvre, et s'ouvre proprement** : les dix routes du menu et chacune des etapes du parcours de reporting sont ouvertes, et l'on verifie qu'aucune n'a laisse d'erreur JavaScript, d'appel en echec (hors 401 et 403, qui sont des reponses) ni de cle de traduction affichee telle quelle. C'est un test de fumee assume : il ne dit rien de ce qu'un ecran raconte, seulement qu'il a reussi a le raconter |
 | `tests/roles.spec.ts` | un membre ne se voit pas proposer l'administration, ne l'obtient pas en tapant l'URL, et l'API la lui refuse aussi ; l'administrateur voit bien les sections ; le tableau de bord s'affiche sans bandeau d'erreur |
 
 ---

@@ -72,6 +72,12 @@ que la plupart des tests ne portent pas sur l'interrupteur mais sur ce qu'il y a
 derriere. La valeur par defaut, elle, est gardee la ou elle est ecrite
 (`test_modules.test_the_optional_services_start_off`).
 
+**Un service coupe retire son onglet d'Administration.** Ses routes sont gardees
+par le meme module et repondent 404 : proposer l'onglet quand meme donnait un
+ecran vide et deux erreurs dans la console. L'onglet revient avec son service,
+qui se rallume depuis « Services actifs », lequel ne depend lui-meme d'aucun
+module.
+
 ## 5. Le tableau de bord : chercher d'un cote, afficher de l'autre
 
 Les commandes de tri avaient ete remontees dans la carte des filtres, et s'y
@@ -89,11 +95,11 @@ messages cles.
 
 Six temps, dans l'ordre ou l'ecran les pose :
 
-1. **Moral** : trois niveaux, une seconde.
-2. **OTD** : les engagements dates de l'annee, poses par le tribe leader.
-3. **Jalons** : les livrables par trimestre qui les rendent concrets.
-4. **Statut** : en cours, a risque, bloque, termine.
-5. **Messages cles** : un succes, une alerte, un risque.
+1. **OTD** : les engagements dates de l'annee, poses par le tribe leader.
+2. **Jalons** : les livrables par trimestre qui les rendent concrets.
+3. **Statut** : en cours, a risque, bloque, termine.
+4. **Messages cles** : un succes, une alerte, un risque.
+5. **Moral** : trois niveaux, une seconde, apres avoir relu sa semaine.
 6. **Soumettre** : figer l'etat du cycle.
 
 La note de bas de bande garde son role : le pourcentage ne se saisit pas, il se
