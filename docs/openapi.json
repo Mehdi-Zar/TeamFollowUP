@@ -12,8 +12,26 @@
           "auth"
         ],
         "summary": "Auth Config",
-        "description": "Public login-screen config: which SSO buttons (OIDC/SAML) to show.",
+        "description": "Public sign-in config: what the page offers, in which order, how it reads.\n\n``k`` is the secret link's token. It is compared here (constant-time) rather\nthan returned, so the page can be told \"the local form opens\" without the\ntoken ever leaving the server. Hiding that form is discoverability, not access\ncontrol: ``POST /login`` keeps working for the break-glass account, guarded by\nthe per-IP throttle.",
         "operationId": "auth_config_api_auth_config_get",
+        "parameters": [
+          {
+            "name": "k",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "K"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -21,6 +39,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AuthConfig"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -202,7 +230,7 @@
           "auth"
         ],
         "summary": "Oidc Login",
-        "description": "Start the OIDC Authorization Code + PKCE flow: redirect to the IdP.\n\n404s when OIDC is disabled or incompletely configured, keeping the endpoint\nindistinguishable from a non-existent one. Authlib stashes the state/PKCE\nverifier in the server-side session for the callback to consume.",
+        "description": "Start the OIDC Authorization Code + PKCE flow: redirect to the IdP.\n\n404s when OIDC is disabled or incompletely configured, keeping the endpoint\nindistinguishable from a non-existent one. Authlib stashes the state/PKCE\nverifier in the server-side session for the callback to consume.\n\nThe scope set actually sent is logged: when an IdP answers ``invalid_scope``,\nthe first question is always what was requested, and the answer is otherwise\nonly visible in the browser's address bar during a redirect nobody catches.",
         "operationId": "oidc_login_api_auth_oidc_login_get",
         "responses": {
           "200": {
@@ -222,7 +250,7 @@
           "auth"
         ],
         "summary": "Oidc Callback",
-        "description": "OIDC redirect target: exchange the code, provision the user, set the session.\n\nAuthlib validates state/PKCE and the ID-token signature during\n``authorize_access_token``. We then extract identity (sub/email/name/groups,\nthe groups claim being configurable), require at least one usable identifier,\nJIT-provision via ``_provision``, and redirect into the SPA with a session.",
+        "description": "OIDC redirect target: exchange the code, provision the user, set the session.\n\nAn IdP that refuses the authorization redirects here with ``error`` instead\nof ``code``. That case is answered with the provider's own message and a 400:\nhanding it to Authlib raises deep inside the token exchange, and the admin\nreads \"Internal Server Error\" for what is a configuration answer from the\nIdP, most often an unauthorized scope.\n\nAuthlib validates state/PKCE and the ID-token signature during\n``authorize_access_token``. We then extract identity (sub/email/name/groups,\nthe groups claim being configurable), require at least one usable identifier,\nJIT-provision via ``_provision``, and redirect into the SPA with a session.",
         "operationId": "oidc_callback_api_auth_oidc_callback_get",
         "responses": {
           "200": {
@@ -922,13 +950,66 @@
         }
       }
     },
+    "/api/squads/{squad_id}/mood": {
+      "put": {
+        "tags": [
+          "squads"
+        ],
+        "summary": "Set Mood",
+        "description": "PUT /api/squads/{squad_id}/mood : declare le moral de l'equipe.\n\nTrois niveaux (good | mixed | bad), ou ``null`` pour retirer la declaration.\nReserve a qui peut editer la squad: c'est le moral de SON equipe, pas une note\nqu'un tiers lui attribue. La date est posee par le serveur, parce qu'un moral\nsans fraicheur se lit comme un moral actuel. Audite.",
+        "operationId": "set_mood_api_squads__squad_id__mood_put",
+        "parameters": [
+          {
+            "name": "squad_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Squad Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MoodIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SquadOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/squads/{squad_id}/quarter-progress": {
       "put": {
         "tags": [
           "squads"
         ],
         "summary": "Set Quarter Progress",
-        "description": "PUT /api/squads/{squad_id}/quarter-progress: set the squad's progress %\nand comment for a given year/quarter (upsert).\n\nSquad-leader reporting: requires ``assert_can_edit_squad``. Audited, then\nemits ``notify_change(..., \"progress\", ...)``.",
+        "description": "PUT /api/squads/{squad_id}/quarter-progress: record a quarter's comment.\n\nThe percentage is derived from the quarter's milestones and is what the screens\ndisplay; it is stored here so the row matches what was shown, and only an\nexplicit ``progress_pct`` from an API caller overrides it.\n\nSquad-leader reporting: requires ``assert_can_edit_squad``. Audited, then\nemits ``notify_change(..., \"progress\", ...)``.",
         "operationId": "set_quarter_progress_api_squads__squad_id__quarter_progress_put",
         "parameters": [
           {
@@ -4393,17 +4474,76 @@
         }
       }
     },
+    "/api/admin/branding": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Read Branding",
+        "description": "GET /api/admin/branding : le theme complet, tel qu'il est stocke. Admin.\n\nLa configuration publique n'en publie que ce que la page applique; cet\nendpoint rend tout, parce que l'ecran de personnalisation doit pouvoir\nreafficher ce qui a ete choisi.",
+        "operationId": "read_branding_api_admin_branding_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Update Branding",
+        "description": "PUT /api/admin/branding : change l'apparence. Admin uniquement. Audite.\n\nModification partielle; ``{\"reset\": true}`` revient au theme livre, ce qui est\nla seule sortie sure d'une combinaison devenue illisible. Les valeurs sont\nvalidees par forme cote serveur (voir app/branding.py): elles finissent dans\nune feuille de style.",
+        "operationId": "update_branding_api_admin_branding_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "title": "Payload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/admin/import-steerco/template": {
       "get": {
         "tags": [
           "admin"
         ],
         "summary": "Download Steerco Template",
-        "description": "GET /api/admin/import-steerco/template?squad_id= : download the Steerco Excel\ntemplate (Infos / KPIs / SLA / Incidents / Evenements) to fill in. Admin only.\n\nWith ``squad_id`` the workbook is built *for that squad*: its name is pre-filled\nand the KPI / SLA rows are the ones it actually reports, so the file matches the\napp instead of proposing a canned list. Without it, the standard structure.",
+        "description": "GET /api/admin/import-steerco/template?platform_id= : download the Steerco Excel\ntemplate (Infos / KPIs / SLA / Incidents / Evenements) to fill in. Admin only.\n\nWith ``platform_id`` the workbook is built *for that platform*: its name is\npre-filled and the KPI / SLA rows come from its slide template, so the file asks\nfor exactly what will be rendered. Without it, the standard structure.",
         "operationId": "download_steerco_template_api_admin_import_steerco_template_get",
         "parameters": [
           {
-            "name": "squad_id",
+            "name": "platform_id",
             "in": "query",
             "required": false,
             "schema": {
@@ -4415,7 +4555,7 @@
                   "type": "null"
                 }
               ],
-              "title": "Squad Id"
+              "title": "Platform Id"
             }
           }
         ],
@@ -4447,7 +4587,7 @@
           "admin"
         ],
         "summary": "Import Steerco Upload",
-        "description": "POST /api/admin/import-steerco : upload a filled Steerco Excel and write the\nsquad's monthly snapshots (12-month history + full current month). Admin only.\nIdempotent per (squad, period). 400 on wrong format / unknown squad. Audited.",
+        "description": "POST /api/admin/import-steerco : upload a filled Steerco Excel and write the\nplatform's monthly snapshots (12-month history + full current month). Admin only.\nIdempotent per (platform, period). 400 on wrong format / unknown platform. Audited.",
         "operationId": "import_steerco_upload_api_admin_import_steerco_post",
         "requestBody": {
           "content": {
@@ -6756,13 +6896,33 @@
         }
       }
     },
+    "/api/access-requests/accounts": {
+      "get": {
+        "tags": [
+          "access"
+        ],
+        "summary": "List Accounts",
+        "description": "Les comptes deja decides que ce relecteur peut reprendre: revoquer un acces\naccorde, ou retablir un acces revoque. Vide pour un squad leader, qui ne\nrevoque pas.",
+        "operationId": "list_accounts_api_access_requests_accounts_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/access-requests/{user_id}/approve": {
       "post": {
         "tags": [
           "access"
         ],
         "summary": "Approve Request",
-        "description": "Validate a pending account with the requested role/tribe/squad.\n\nDelegation limits (which roles/tribes/squads this reviewer may grant) are\nenforced inside ``acc.approve`` and surface as 4xx errors.",
+        "description": "Validate a pending account, or reinstate a revoked one, with the requested\nrole/tribe/squad.\n\nDelegation limits (which roles/tribes/squads this reviewer may grant) are\nenforced inside ``acc.approve`` and surface as 4xx errors.",
         "operationId": "approve_request_api_access_requests__user_id__approve_post",
         "parameters": [
           {
@@ -6815,7 +6975,7 @@
           "access"
         ],
         "summary": "Deny Request",
-        "description": "Reject/revoke an account (disables it). Restricted to admin & tribe leaders\ninside ``acc.deny``; the break-glass account cannot be denied.",
+        "description": "Reject a request, or revoke an access already granted (disables the account).\nRestricted to admin & tribe leaders inside ``acc.deny``; the break-glass\naccount, one's own account, and the last active administrator cannot be\ndenied.",
         "operationId": "deny_request_api_access_requests__user_id__deny_post",
         "parameters": [
           {
@@ -7718,22 +7878,81 @@
         }
       }
     },
-    "/api/steerco/squad/{squad_id}/enabled": {
+    "/api/steerco/platforms": {
+      "get": {
+        "tags": [
+          "steerco"
+        ],
+        "summary": "List Platforms",
+        "description": "Platforms of the caller's scope, with contributors, template and what the\ncaller may fill. Readable by anyone signed in: a contributor needs to see the\nwhole slide, including the columns somebody else owes.",
+        "operationId": "list_platforms_api_steerco_platforms_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "steerco"
+        ],
+        "summary": "Create Platform",
+        "description": "Declare a platform. Tribe leader or admin. Audited.\n\nThe tribe comes from the payload, else from the caller, else from the first\ncontributing squad. That last fallback is what makes the screen work for an\nadministrator: an admin belongs to no tribe, so without it every creation from\nthe admin console was refused as \"out of scope\" while naming the squads that\nobviously carried the answer.",
+        "operationId": "create_platform_api_steerco_platforms_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "title": "Payload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/steerco/platforms/{platform_id}": {
       "put": {
         "tags": [
           "steerco"
         ],
-        "summary": "Set Squad Enabled",
-        "description": "Turn Steerco reporting on/off for a squad (the squad leader's own toggle).",
-        "operationId": "set_squad_enabled_api_steerco_squad__squad_id__enabled_put",
+        "summary": "Update Platform",
+        "description": "Rename a platform, change its contributors, its order, its template. Audited.",
+        "operationId": "update_platform_api_steerco_platforms__platform_id__put",
         "parameters": [
           {
-            "name": "squad_id",
+            "name": "platform_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "integer",
-              "title": "Squad Id"
+              "title": "Platform Id"
             }
           }
         ],
@@ -7742,7 +7961,8 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/Body_set_squad_enabled_api_steerco_squad__squad_id__enabled_put"
+                "type": "object",
+                "title": "Payload"
               }
             }
           }
@@ -7767,6 +7987,40 @@
             }
           }
         }
+      },
+      "delete": {
+        "tags": [
+          "steerco"
+        ],
+        "summary": "Delete Platform",
+        "description": "Delete a platform and its monthly snapshots. Tribe leader or admin. Audited.",
+        "operationId": "delete_platform_api_steerco_platforms__platform_id__delete",
+        "parameters": [
+          {
+            "name": "platform_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Platform Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/steerco/entries": {
@@ -7775,7 +8029,7 @@
           "steerco"
         ],
         "summary": "List Entries",
-        "description": "Every steerco-enabled in-scope squad's snapshot for a period (drives the tab).\n\nLeadership-only, like the one-pager endpoints it feeds: it returns every squad's\nfigures at once, which a squad member has no business reading.",
+        "description": "Every steerco platform of the scope for a period (drives the leadership tab).\n\nLeadership-only, like the one-pager endpoints it feeds: it returns every\nplatform's figures at once, which a squad member has no business reading. The\n``missing`` list names the contributors still owing an item, which is the whole\npoint of tracking a slide filled by several people.",
         "operationId": "list_entries_api_steerco_entries_get",
         "parameters": [
           {
@@ -7810,22 +8064,22 @@
         }
       }
     },
-    "/api/steerco/squad/{squad_id}": {
+    "/api/steerco/platform/{platform_id}": {
       "get": {
         "tags": [
           "steerco"
         ],
-        "summary": "Get Squad Entry",
-        "description": "One squad's monthly snapshot for a period ({} when not yet filled).\n\nAlso returns whether this month is already filled and when/who last updated it,\nso the reporting screen can show the monthly-cadence status at a glance.",
-        "operationId": "get_squad_entry_api_steerco_squad__squad_id__get",
+        "summary": "Get Platform Entry",
+        "description": "One platform's monthly snapshot, with the template and what the caller owns.\n\nThe payload carries the whole slide, not only the caller's share: a contributor\nshould see the columns it does not own, greyed out and attributed, rather than a\nform that pretends the rest does not exist.",
+        "operationId": "get_platform_entry_api_steerco_platform__platform_id__get",
         "parameters": [
           {
-            "name": "squad_id",
+            "name": "platform_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "integer",
-              "title": "Squad Id"
+              "title": "Platform Id"
             }
           },
           {
@@ -7863,17 +8117,17 @@
         "tags": [
           "steerco"
         ],
-        "summary": "Upsert Squad Entry",
-        "description": "Create/update a squad's monthly snapshot for a period (writer + edit rights).",
-        "operationId": "upsert_squad_entry_api_steerco_squad__squad_id__put",
+        "summary": "Upsert Platform Entry",
+        "description": "Write the caller's share of a platform's month (writer + contributor rights).\n\nThe payload may carry the whole slide; only the items the caller owns are taken\nfrom it, the rest is kept as stored. That is what lets two squad leaders fill\none slide at the same time without either of them erasing the other.",
+        "operationId": "upsert_platform_entry_api_steerco_platform__platform_id__put",
         "parameters": [
           {
-            "name": "squad_id",
+            "name": "platform_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "integer",
-              "title": "Squad Id"
+              "title": "Platform Id"
             }
           },
           {
@@ -7918,22 +8172,22 @@
         }
       }
     },
-    "/api/steerco/squad/{squad_id}/history": {
+    "/api/steerco/platform/{platform_id}/history": {
       "get": {
         "tags": [
           "steerco"
         ],
         "summary": "Get History",
         "description": "The report year's 12 monthly snapshots, January to December (backfill grid).",
-        "operationId": "get_history_api_steerco_squad__squad_id__history_get",
+        "operationId": "get_history_api_steerco_platform__platform_id__history_get",
         "parameters": [
           {
-            "name": "squad_id",
+            "name": "platform_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "integer",
-              "title": "Squad Id"
+              "title": "Platform Id"
             }
           },
           {
@@ -7972,16 +8226,16 @@
           "steerco"
         ],
         "summary": "Upsert History",
-        "description": "Backfill several months at once. Body: ``{\"months\": {\"2026-06\": {...}, ...}}``.\n\nEach value is merged onto that month's snapshot (existing events are kept; the\nnumeric metrics that feed the charts are updated). Writer + edit rights.",
-        "operationId": "upsert_history_api_steerco_squad__squad_id__history_put",
+        "description": "Backfill several months at once. Body: ``{\"months\": {\"2026-06\": {...}, ...}}``.\n\nEach month goes through the same ownership merge as a single save, so a\ncontributor pasting a year of its own figures cannot overwrite a colleague's\ncolumn in any of those months.",
+        "operationId": "upsert_history_api_steerco_platform__platform_id__history_put",
         "parameters": [
           {
-            "name": "squad_id",
+            "name": "platform_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "integer",
-              "title": "Squad Id"
+              "title": "Platform Id"
             }
           }
         ],
@@ -7990,7 +8244,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/Body_upsert_history_api_steerco_squad__squad_id__history_put"
+                "$ref": "#/components/schemas/Body_upsert_history_api_steerco_platform__platform_id__history_put"
               }
             }
           }
@@ -8023,16 +8277,16 @@
           "steerco"
         ],
         "summary": "Onepager Html",
-        "description": "One squad's KPI one-pager (auto-built from the last 12 monthly snapshots).",
+        "description": "One platform's KPI one-pager (auto-built from the year's monthly snapshots).",
         "operationId": "onepager_html_api_steerco_onepager_html_get",
         "parameters": [
           {
-            "name": "squad_id",
+            "name": "platform_id",
             "in": "query",
             "required": true,
             "schema": {
               "type": "integer",
-              "title": "Squad Id"
+              "title": "Platform Id"
             }
           },
           {
@@ -8085,22 +8339,22 @@
         }
       }
     },
-    "/api/steerco/squad/{squad_id}/preview.html": {
+    "/api/steerco/platform/{platform_id}/preview.html": {
       "post": {
         "tags": [
           "steerco"
         ],
         "summary": "Preview Html",
-        "description": "Live preview of the one-pager for the wizard, using the still-unsaved snapshot\n(``data``) as the current month. Nothing is persisted. Squad-leader accessible for\ntheir own squad (they are the one filling the report).",
-        "operationId": "preview_html_api_steerco_squad__squad_id__preview_html_post",
+        "description": "Live preview of the one-pager for the wizard, using the still-unsaved snapshot\n(``data``) as the current month. Nothing is persisted. Open to any contributor of\nthe platform (they are the ones filling the report).",
+        "operationId": "preview_html_api_steerco_platform__platform_id__preview_html_post",
         "parameters": [
           {
-            "name": "squad_id",
+            "name": "platform_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "integer",
-              "title": "Squad Id"
+              "title": "Platform Id"
             }
           },
           {
@@ -8170,7 +8424,7 @@
           "steerco"
         ],
         "summary": "Document Html",
-        "description": "Consolidated steerco (all steerco-enabled squads) as HTML one-pagers.",
+        "description": "Consolidated steerco (all enabled platforms) as HTML one-pagers.",
         "operationId": "document_html_api_steerco_document_html_get",
         "parameters": [
           {
@@ -8229,7 +8483,7 @@
           "steerco"
         ],
         "summary": "Document Pptx",
-        "description": "Consolidated steerco as PPTX. 501 when python-pptx is unavailable.",
+        "description": "Consolidated steerco as PPTX, one slide per platform. 501 without python-pptx.",
         "operationId": "document_pptx_api_steerco_document_pptx_get",
         "parameters": [
           {
@@ -8258,6 +8512,353 @@
             }
           }
         ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/data/domains": {
+      "get": {
+        "tags": [
+          "admin-data"
+        ],
+        "summary": "List Domains",
+        "description": "GET /api/admin/data/domains: row counts per erasable domain. Admin only.\n\nRead before every reset: the confirmation shows real numbers rather than a\npromise, and a domain with nothing in it is still listed because \"0\" answers\nthe question too.",
+        "operationId": "list_domains_api_admin_data_domains_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/data/reset": {
+      "post": {
+        "tags": [
+          "admin-data"
+        ],
+        "summary": "Reset",
+        "description": "POST /api/admin/data/reset: erase the selected domains. Admin only. Audited.\n\nBody: ``{\"domains\": [...], \"confirm\": true, \"snapshot_first\": true}``. The\nsnapshot is taken in the SAME transaction as the deletion, so a reset either\nleaves a copy behind or does not happen at all.",
+        "operationId": "reset_api_admin_data_reset_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "title": "Payload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/data/snapshots": {
+      "get": {
+        "tags": [
+          "admin-data"
+        ],
+        "summary": "List Snapshots",
+        "description": "GET /api/admin/data/snapshots: the copies on file, newest first. Admin only.",
+        "operationId": "list_snapshots_api_admin_data_snapshots_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "admin-data"
+        ],
+        "summary": "Create Snapshot",
+        "description": "POST /api/admin/data/snapshots: take a copy now. Admin only. Audited.",
+        "operationId": "create_snapshot_api_admin_data_snapshots_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/data/snapshots/{snapshot_id}/restore": {
+      "post": {
+        "tags": [
+          "admin-data"
+        ],
+        "summary": "Restore Snapshot",
+        "description": "POST /api/admin/data/snapshots/{id}/restore: rewind to that copy. Audited.\n\nEverything the snapshot covers is emptied and rewritten, ids included. A\nsafety copy of the CURRENT state is taken first unless the caller says not to,\nso a restore aimed at the wrong line is itself undoable.",
+        "operationId": "restore_snapshot_api_admin_data_snapshots__snapshot_id__restore_post",
+        "parameters": [
+          {
+            "name": "snapshot_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Snapshot Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/data/snapshots/{snapshot_id}": {
+      "delete": {
+        "tags": [
+          "admin-data"
+        ],
+        "summary": "Delete Snapshot",
+        "description": "DELETE /api/admin/data/snapshots/{id}: remove a copy. Admin only. Audited.",
+        "operationId": "delete_snapshot_api_admin_data_snapshots__snapshot_id__delete",
+        "parameters": [
+          {
+            "name": "snapshot_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Snapshot Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/data/snapshots/{snapshot_id}/download": {
+      "get": {
+        "tags": [
+          "admin-data"
+        ],
+        "summary": "Download Snapshot",
+        "description": "GET /api/admin/data/snapshots/{id}/download: the copy as a .json.gz file.\n\nThe same bytes that are stored, so a file downloaded today can be uploaded\nback tomorrow, into this instance or another one.",
+        "operationId": "download_snapshot_api_admin_data_snapshots__snapshot_id__download_get",
+        "parameters": [
+          {
+            "name": "snapshot_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Snapshot Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/data/snapshots/import": {
+      "post": {
+        "tags": [
+          "admin-data"
+        ],
+        "summary": "Import Snapshot",
+        "description": "POST /api/admin/data/snapshots/import: upload a .json.gz back as a snapshot.\n\nStored, not applied: importing a file and restoring it are two decisions, and\nonly the second one erases anything. The payload is parsed here so a truncated\nor foreign file is refused now rather than halfway through a restore.",
+        "operationId": "import_snapshot_api_admin_data_snapshots_import_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_import_snapshot_api_admin_data_snapshots_import_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/data/snapshot-config": {
+      "get": {
+        "tags": [
+          "admin-data"
+        ],
+        "summary": "Read Snapshot Config",
+        "description": "GET /api/admin/data/snapshot-config: automatic snapshot settings. Admin only.",
+        "operationId": "read_snapshot_config_api_admin_data_snapshot_config_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "admin-data"
+        ],
+        "summary": "Update Snapshot Config",
+        "description": "PUT /api/admin/data/snapshot-config: schedule (or stop) automatic copies.\n\n``{\"enabled\": true, \"interval_days\": 7, \"keep\": 8}``. The hourly scheduler\ntakes one when the last automatic copy is older than the interval, and prunes\nautomatic copies past ``keep``. Manual copies are never pruned. Audited.",
+        "operationId": "update_snapshot_config_api_admin_data_snapshot_config_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "title": "Payload"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -8491,6 +9092,24 @@
           "saml_enabled": {
             "type": "boolean",
             "title": "Saml Enabled"
+          },
+          "intro": {
+            "type": "string",
+            "title": "Intro",
+            "default": ""
+          },
+          "methods": {
+            "items": {
+              "$ref": "#/components/schemas/LoginMethodOut"
+            },
+            "type": "array",
+            "title": "Methods",
+            "default": []
+          },
+          "password_mode": {
+            "type": "string",
+            "title": "Password Mode",
+            "default": "visible"
           }
         },
         "type": "object",
@@ -8499,7 +9118,7 @@
           "saml_enabled"
         ],
         "title": "AuthConfig",
-        "description": "Which SSO backends are enabled, so the SPA can show the right login options."
+        "description": "What the unauthenticated sign-in page needs to draw itself.\n\nThe two ``*_enabled`` flags stay for compatibility; ``methods`` is what the\npage actually renders, in order, with the wording and logo an administrator\nchose. ``password_mode`` says whether the local form is shown, folded behind a\nlink, or reserved to whoever holds the secret link."
       },
       "AuthorInfo": {
         "properties": {
@@ -8555,6 +9174,20 @@
         ],
         "title": "Body_import_org_upload_api_admin_import_org_post"
       },
+      "Body_import_snapshot_api_admin_data_snapshots_import_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "format": "binary",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_import_snapshot_api_admin_data_snapshots_import_post"
+      },
       "Body_import_steerco_upload_api_admin_import_steerco_post": {
         "properties": {
           "file": {
@@ -8582,19 +9215,6 @@
           "file"
         ],
         "title": "Body_pptx_template_upload_api_admin_pptx_template_post"
-      },
-      "Body_set_squad_enabled_api_steerco_squad__squad_id__enabled_put": {
-        "properties": {
-          "enabled": {
-            "type": "boolean",
-            "title": "Enabled"
-          }
-        },
-        "type": "object",
-        "required": [
-          "enabled"
-        ],
-        "title": "Body_set_squad_enabled_api_steerco_squad__squad_id__enabled_put"
       },
       "Body_trust_add_ca_api_admin_trust_store_ca_post": {
         "properties": {
@@ -8636,7 +9256,7 @@
         "type": "object",
         "title": "Body_trust_add_ca_api_admin_trust_store_ca_post"
       },
-      "Body_upsert_history_api_steerco_squad__squad_id__history_put": {
+      "Body_upsert_history_api_steerco_platform__platform_id__history_put": {
         "properties": {
           "months": {
             "type": "object",
@@ -8647,7 +9267,7 @@
         "required": [
           "months"
         ],
-        "title": "Body_upsert_history_api_steerco_squad__squad_id__history_put"
+        "title": "Body_upsert_history_api_steerco_platform__platform_id__history_put"
       },
       "CommitteeCreate": {
         "properties": {
@@ -10566,6 +11186,45 @@
         "title": "LoginIn",
         "description": "Credentials submitted to the local (password) login endpoint."
       },
+      "LoginMethodOut": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label",
+            "default": ""
+          },
+          "hint": {
+            "type": "string",
+            "title": "Hint",
+            "default": ""
+          },
+          "logo": {
+            "type": "string",
+            "title": "Logo",
+            "default": ""
+          },
+          "primary": {
+            "type": "boolean",
+            "title": "Primary",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "enabled"
+        ],
+        "title": "LoginMethodOut",
+        "description": "One way in, as the sign-in page should present it."
+      },
       "MemberCreate": {
         "properties": {
           "squad_id": {
@@ -10746,6 +11405,40 @@
         "type": "object",
         "title": "MemberUpdate",
         "description": "Partial edit of a squad member."
+      },
+      "MoodIn": {
+        "properties": {
+          "mood": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "good",
+                  "mixed",
+                  "bad"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mood"
+          },
+          "comment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          }
+        },
+        "type": "object",
+        "title": "MoodIn",
+        "description": "Le moral que le responsable declare pour sa squad."
       },
       "NotificationOut": {
         "properties": {
@@ -11541,9 +12234,16 @@
             "title": "Quarter"
           },
           "progress_pct": {
-            "type": "integer",
-            "maximum": 100.0,
-            "minimum": 0.0,
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 100.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Progress Pct"
           },
           "comment": {
@@ -11561,11 +12261,10 @@
         "type": "object",
         "required": [
           "year",
-          "quarter",
-          "progress_pct"
+          "quarter"
         ],
         "title": "QuarterProgressIn",
-        "description": "Upsert a squad's completion percentage (0-100) for one year/quarter."
+        "description": "Upsert the COMMENT that explains one quarter of a squad's year.\n\nThe percentage is not typed in any more: it is derived from the quarter's\nmilestones (``status.year_progress``, \"the share of that quarter's jalons that\nare done\") and that derived value is what every screen shows. Accepting a\nhand-entered number here stored something nobody read back, which is exactly\nthe kind of figure that drifts from reality without anybody noticing.\n\n``progress_pct`` stays accepted for an API caller that still sends it, and is\notherwise filled with the derived value so what is stored matches what is\nshown."
       },
       "QuarterProgressOut": {
         "properties": {
@@ -12762,6 +13461,34 @@
             "type": "string",
             "title": "Name"
           },
+          "mood": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "good",
+                  "mixed",
+                  "bad"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mood"
+          },
+          "mood_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mood At"
+          },
           "tribe_id": {
             "type": "integer",
             "title": "Tribe Id"
@@ -12985,6 +13712,53 @@
             "title": "Budget Enabled",
             "default": false
           },
+          "mood": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "good",
+                  "mixed",
+                  "bad"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mood"
+          },
+          "mood_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mood At"
+          },
+          "mood_comment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mood Comment"
+          },
+          "co_leader_user_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Co Leader User Ids",
+            "default": []
+          },
           "squad_type": {
             "type": "string",
             "title": "Squad Type",
@@ -13015,6 +13789,14 @@
                 "type": "null"
               }
             ]
+          },
+          "co_leaders": {
+            "items": {
+              "$ref": "#/components/schemas/LeaderInfo"
+            },
+            "type": "array",
+            "title": "Co Leaders",
+            "default": []
           },
           "year": {
             "type": "integer",
@@ -13165,6 +13947,53 @@
             "title": "Budget Enabled",
             "default": false
           },
+          "mood": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "good",
+                  "mixed",
+                  "bad"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mood"
+          },
+          "mood_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mood At"
+          },
+          "mood_comment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mood Comment"
+          },
+          "co_leader_user_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Co Leader User Ids",
+            "default": []
+          },
           "squad_type": {
             "type": "string",
             "title": "Squad Type",
@@ -13255,16 +14084,19 @@
             ],
             "title": "Kpis Enabled"
           },
-          "steerco_enabled": {
+          "co_leader_user_ids": {
             "anyOf": [
               {
-                "type": "boolean"
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Steerco Enabled"
+            "title": "Co Leader User Ids"
           },
           "budget_enabled": {
             "anyOf": [
