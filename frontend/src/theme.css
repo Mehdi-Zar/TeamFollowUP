@@ -1036,3 +1036,14 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); width
   font: inherit; color: var(--text);
 }
 .otd-open:hover .strong { text-decoration: underline; }
+
+/* Le tableau des engagements OTD. Aligne a gauche comme le reste des tableaux de
+   l'application, avec une ligne de separation discrete: ce qu'on y lit, ce sont
+   des dates, et rien ne doit distraire de leur comparaison. */
+.otd-tbl { width: 100%; border-collapse: collapse; }
+.otd-tbl th {
+  text-align: left; font-size: 12px; color: var(--grey); font-weight: 600;
+  padding: 6px 10px 6px 0; border-bottom: 1px solid var(--line); white-space: nowrap;
+}
+.otd-tbl td { padding: 9px 10px 9px 0; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.otd-tbl tr:last-child td { border-bottom: 0; }
