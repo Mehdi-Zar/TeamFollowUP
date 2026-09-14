@@ -15,6 +15,14 @@ saute ; celui-ci est le chemin lui-meme.**
 - **Une etape a la fois.** On voit ce qu'on remplit, on sait laquelle c'est, et
   la barre dit ce qui est deja renseigne (✓), ce qui reste, et ce qui est
   facultatif.
+- **Numerotee, et flechee.** Chaque etape porte son rang dans une pastille, qui
+  devient un ✓ quand elle est remplie, et un chevron separe deux etapes. Des
+  cartes posees cote a cote se lisent comme un menu, ou l'on choisit ; une suite
+  numerotee et flechee se lit comme un parcours, ou l'on avance. Le rang est
+  repete en tete du panneau, pour qu'on puisse dire ou l'on est sans remonter les
+  yeux. La pastille portait jusque la une icone par etape, mais deux etapes
+  partageaient la meme et aucune ne nommait la sienne : un rang, lui, dit
+  quelque chose.
 - **Rien n'est bloquant.** Un etat n'est pas une condition de passage : on peut
   sauter une etape, on veut seulement qu'elle le dise. Une squad a le droit de
   n'avoir ni KPI ni action de comite.

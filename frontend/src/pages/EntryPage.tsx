@@ -17,7 +17,7 @@
  * remplit. Les etapes sont construites a partir des services actifs, chacune
  * derriere son drapeau de module comme avant.
  */
-import { ReactNode, useEffect, useMemo, useState } from "react";
+import { Fragment, ReactNode, useEffect, useMemo, useState } from "react";
 import { api, ApiError } from "../api";
 import { useAuth } from "../auth";
 import { useI18n } from "../i18n";
@@ -147,28 +147,28 @@ export default function EntryPage() {
   // les lire.
   const steps: Step[] = squad ? [
     ...(roadmapOn ? [{
-      key: "jalons", icon: FLOW_ICONS.flag,
+      key: "jalons",
       done: squad.roadmap_items.length > 0,
       node: <RoadmapEditor squad={squad} year={year} onChange={reload} readonly={!writeAllowed}
                            t={t} roadmap={roadmap} squads={squads} tribes={tribes} />,
     }] : []),
     ...(kpisOn && squad.kpis_enabled ? [{
-      key: "kpis", icon: FLOW_ICONS.check,
+      key: "kpis",
       done: squad.kpis.length > 0,
       node: <KpisEditor squad={squad} onChange={reload} readonly={!writeAllowed} t={t} trend={trend} />,
     }] : []),
     ...(progressOn ? [{
-      key: "progress", icon: FLOW_ICONS.check,
+      key: "progress",
       done: [1, 2, 3, 4].some((q) => squad.quarter_progress?.[String(q)]?.comment),
       node: <QuarterProgressEditor squad={squad} year={year} readonly={!writeAllowed} onChange={reload} t={t} />,
     }] : []),
     {
-      key: "km", icon: FLOW_ICONS.message,
+      key: "km",
       done: squad.key_messages.length > 0,
       node: <KeyMessagesPanel squad={squad} canEdit={writeAllowed} onChange={reload} />,
     },
     {
-      key: "mood", icon: FLOW_ICONS.mood,
+      key: "mood",
       done: !!squad.mood,
       node: (
         <div className="step-center">
@@ -182,12 +182,12 @@ export default function EntryPage() {
     // leader ». Une etape ou il n'y a rien a faire se traverse quand meme, et
     // fait douter d'avoir oublie quelque chose.
     ...(steercoOn && squad.steerco_enabled ? [{
-      key: "steerco", icon: FLOW_ICONS.target,
+      key: "steerco",
       done: undefined,
       node: <SteercoSection squad={squad} readonly={!writeAllowed} t={t} />,
     }] : []),
     {
-      key: "submit", icon: FLOW_ICONS.send,
+      key: "submit",
       done: !squad.freshness?.is_stale,
       node: (
         <div className="step-center stack" style={{ gap: 14, alignItems: "center" }}>
@@ -225,7 +225,12 @@ export default function EntryPage() {
 
           <div className="step-panel stack" style={{ gap: 16 }}>
             <div>
-              <h2 style={{ margin: 0 }}>{t(`entry.step.${current.key}_t`)}</h2>
+              {/* Le meme rang qu'en tete de la barre: on doit pouvoir dire ou
+                  l'on est sans remonter les yeux. */}
+              <h2 style={{ margin: 0 }}>
+                <span className="step-panel-num">{at + 1}</span>
+                {t(`entry.step.${current.key}_t`)}
+              </h2>
               <div className="small muted">{t(`entry.step.${current.key}_d`)}</div>
             </div>
             {current.node}
@@ -247,10 +252,9 @@ export default function EntryPage() {
 }
 
 
-/** Une etape du reporting: son icone, son etat, et ce qu'elle montre. */
+/** Une etape du reporting: son rang, son etat, et ce qu'elle montre. */
 type Step = {
   key: string;
-  icon: ReactNode;
   /** Rempli, vide, ou sans notion de « fait » (les actions, le steerco). */
   done: boolean | undefined;
   node: ReactNode;
@@ -268,24 +272,36 @@ function StepRail({ steps, at, onGo, t }: {
   steps: Step[]; at: number; onGo: (i: number) => void; t: (k: string, v?: any) => string;
 }) {
   return (
-    <div className="step-rail">
+    <ol className="step-rail">
       {steps.map((s, i) => (
-        <button key={s.key} className={`step-chip${i === at ? " on" : ""}`} onClick={() => onGo(i)}
-                aria-current={i === at ? "step" : undefined}>
-          {/* L'icone ne porte qu'un etat: ou l'on en est. Une couleur par etape
-              n'aurait rien dit, et aurait noye celles qui disent quelque chose. */}
-          <span className={`step-ico${i === at ? " on" : s.done ? " done" : ""}`}>{s.icon}</span>
-          <span className="step-body">
-            <span className="step-title">{t(`entry.step.${s.key}_t`)}</span>
-            <span className="step-state">
-              {s.done === undefined ? t("entry.step_optional")
-                : s.done ? t("entry.step_done") : t("entry.step_todo")}
-            </span>
-          </span>
-          {s.done === true && <span className="step-check" aria-hidden>✓</span>}
-        </button>
+        <Fragment key={s.key}>
+          {/* Le chevron entre deux etapes: il dit que l'une mene a l'autre. Une
+              rangee de cartes posees cote a cote se lit comme un menu, ou l'on
+              choisit; une suite fleche se lit comme un parcours, ou l'on avance. */}
+          {i > 0 && <li className="step-arrow" aria-hidden>›</li>}
+          <li>
+            <button className={`step-chip${i === at ? " on" : ""}`} onClick={() => onGo(i)}
+                    aria-current={i === at ? "step" : undefined}>
+              {/* Le numero, et le coche quand l'etape est remplie. La pastille
+                  portait une icone par etape, mais deux etapes partageaient la
+                  meme et aucune ne nommait la sienne: un rang, lui, dit ou l'on
+                  en est dans la suite, ce qui est la seule chose qu'on lui
+                  demande. */}
+              <span className={`step-num${i === at ? " on" : s.done ? " done" : ""}`}>
+                {s.done === true ? "✓" : i + 1}
+              </span>
+              <span className="step-body">
+                <span className="step-title">{t(`entry.step.${s.key}_t`)}</span>
+                <span className="step-state">
+                  {s.done === undefined ? t("entry.step_optional")
+                    : s.done ? t("entry.step_done") : t("entry.step_todo")}
+                </span>
+              </span>
+            </button>
+          </li>
+        </Fragment>
       ))}
-    </div>
+    </ol>
   );
 }
 
@@ -733,40 +749,6 @@ function SteercoSection({ squad, readonly, t }: any) {
 
 
 /* ---- Visual "how to report" intro: a hero line + a 4-step graphic flow ---- */
-const FLOW_ICONS = {
-  target: (
-    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="5" /><circle cx="12" cy="12" r="1.5" fill="currentColor" />
-    </svg>
-  ),
-  flag: (
-    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M5 21V4" /><path d="M5 4h11l-2 3 2 3H5" />
-    </svg>
-  ),
-  check: (
-    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="9" /><path d="M8.5 12.5l2.5 2.5 4.5-5" />
-    </svg>
-  ),
-  send: (
-    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M22 2L11 13" /><path d="M22 2l-7 20-4-9-9-4 20-7z" />
-    </svg>
-  ),
-  mood: (
-    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="9" /><path d="M8.5 14.5a4.5 4.5 0 0 0 7 0" />
-      <path d="M9 9.5h.01" /><path d="M15 9.5h.01" />
-    </svg>
-  ),
-  message: (
-    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M21 12a8 8 0 0 1-8 8H7l-4 3V12a8 8 0 0 1 8-8h2a8 8 0 0 1 8 8z" />
-    </svg>
-  ),
-};
-
 /**
  * Le bandeau d'entete: quel reporting, pour quelle squad, quelle semaine.
  *
