@@ -50,7 +50,6 @@ _RT = {
         # --- Frise annuelle (trimestres + engagements OTD + initiatives/jalons) ---
         "h_timeline": "Frise {year}", "tl_hint": "Les engagements OTD sur l'axe, puis les jalons de chaque initiative",
         "tl_empty": "Aucune initiative, aucun jalon",
-        "tl_jalons_n": "{n} jalon(s)", "tl_deadline": "échéance {d}",
         "tl_no_date": "Engagements sans date",
         "otd_on_track": "À l'heure", "otd_at_risk": "À risque", "otd_late": "En retard",
         "otd_delivered": "Livré",
@@ -106,7 +105,6 @@ _RT = {
         # --- Annual timeline (quarters + OTD commitments + initiatives/milestones) ---
         "h_timeline": "Timeline {year}", "tl_hint": "OTD commitments on the axis, then each initiative's milestones",
         "tl_empty": "No initiative, no milestone",
-        "tl_jalons_n": "{n} milestone(s)", "tl_deadline": "due {d}",
         "tl_no_date": "Commitments with no date",
         "otd_on_track": "On time", "otd_at_risk": "At risk", "otd_late": "Late",
         "otd_delivered": "Delivered",
