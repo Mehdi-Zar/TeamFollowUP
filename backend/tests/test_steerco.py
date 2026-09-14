@@ -139,6 +139,34 @@ def test_onepager_layout_and_translation(db, seeded):
     assert "Mois en cours" in html_fr and "Moyenne annuelle" in html_fr and "Évolution KPI" in html_fr
 
 
+def test_an_event_of_an_unexpected_shape_does_not_take_the_document_down(db, seeded):
+    """Le relevé est un blob sans schema, et c'est assume: la forme peut evoluer
+    sans migration. Les deux rendus appelaient pourtant `.get()` sur chaque
+    evenement sans verifier que c'en etait un. Une chaine a cet endroit, et le
+    comite n'avait plus de document du tout, ni page ni slide.
+
+    Un lecteur tolerant est la contrepartie d'un ecrivain sans schema: ce qui n'est
+    pas un dictionnaire se lit comme un texte, et le document sort.
+    """
+    pid = _platform(db, seeded)
+    db.add(SteercoEntry(platform_id=pid, period="2026-07", data={
+        "kpis": [{"label": "Users", "value": "247"}],
+        "incidents": "13",
+        # Ce qu'un import, un appel d'API ou une version anterieure peut avoir ecrit.
+        "last_events": ["Bascule du socle", {"date": "12/07", "text": "Mise a jour"}],
+        "next_events": [None],
+    }))
+    db.commit()
+    rd = _aggregate(db, pid, "2026-07")
+
+    html = _onepager("TP-S3NS", "2026-07", rd, I18N["fr"])
+    assert "Bascule du socle" in html, "le texte brut doit survivre a la lecture"
+    assert "Mise a jour" in html, "et le voisin bien forme aussi"
+
+    deck = _render_pptx([{"squad_name": "TP-S3NS", "data": rd}], "2026-07", I18N["fr"])
+    assert len(deck) > 10_000, "la slide doit se produire malgre la ligne mal formee"
+
+
 # ---- platforms: declaration, contributors, template ----------------------------
 
 def test_module_gate_blocks_when_disabled(client, seeded):
