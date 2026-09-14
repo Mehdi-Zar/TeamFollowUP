@@ -820,13 +820,27 @@ def _sla_table(sla: dict, L: dict) -> str:
             f"<tbody>{''.join(body)}</tbody></table>")
 
 
-def _events_list(events: list[dict], L: dict) -> str:
+def _as_event(e) -> dict:
+    """Ramener un evenement a la forme que les rendus attendent.
+
+    Le relevé est un blob sans schema: on peut y trouver une chaine la ou l'ecran
+    ecrit un dictionnaire (un import, un appel d'API, une version anterieure). La
+    lire comme un texte sans date ni type rend un document incomplet; refuser de la
+    lire n'en rend aucun.
+    """
+    if isinstance(e, dict):
+        return e
+    return {"text": "" if e is None else str(e)}
+
+
+def _events_list(events: list, L: dict) -> str:
     """Uniform event row: date / type (colour chip) / description. The chip is tinted
     with the event's severity (the "Gravité" entered in the wizard / the Excel)."""
     if not events:
         return f"<div class='empty'>{escape(L['no_event'])}</div>"
     items = []
-    for e in events:
+    for raw in events:
+        e = _as_event(raw)
         typ = escape(str(e.get("tag") or "-"))
         sev = e.get("sev") if e.get("sev") in SEV_FG else None
         chip = (f' style="background:{SEV_BG[sev]};color:{SEV_FG[sev]};border-color:{SEV_FG[sev]}"'
@@ -1066,7 +1080,8 @@ def _render_pptx(squads: list[dict], period: str, L: dict) -> bytes:
         if not evs:
             re = tf.paragraphs[0].add_run(); re.text = L["no_event"]
             re.font.size = Pt(12); re.font.italic = True; re.font.color.rgb = rgb("#6B7C90")
-        for e in evs:
+        for raw in evs:
+            e = _as_event(raw)
             # Uniform row: date / type / description.
             pe = tf.paragraphs[0] if first else tf.add_paragraph()
             pe.space_after = Pt(5)
