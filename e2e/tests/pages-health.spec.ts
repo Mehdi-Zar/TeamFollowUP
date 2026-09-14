@@ -1,4 +1,4 @@
-import { BREAKGLASS, expect, signIn, test } from "./helpers";
+import { BREAKGLASS, expect, signIn, test, uniqueName } from "./helpers";
 
 /**
  * Every page opens, and opens cleanly.
@@ -73,23 +73,48 @@ test.describe("Every page opens cleanly", () => {
     page.on("pageerror", (e) => failures.push(`uncaught: ${e.message}`));
 
     await signIn(page, BREAKGLASS);
-    await page.goto("/saisie");
 
-    // The rail only exists once the squad is loaded: counting before that counts zero.
-    const chips = page.locator(".step-chip");
-    await expect(chips.first()).toBeVisible();
-    const count = await chips.count();
-    expect(count, "the reporting screen offers no step").toBeGreaterThan(2);
+    // The screen needs a squad to report on, and a fresh instance has none. A test
+    // that leans on data it did not create is testing the machine it runs on: this
+    // one brings its own, and takes it away afterwards.
+    const tribe = await page.request.post("/api/tribes", {
+      data: { name: uniqueName("Tribe"), description: "created by the end-to-end suite" },
+    });
+    expect(tribe.ok(), await tribe.text()).toBeTruthy();
+    const tribeId = (await tribe.json()).id;
+    const squad = await page.request.post("/api/squads", {
+      data: { name: uniqueName("Squad"), tribe_id: tribeId },
+    });
+    expect(squad.ok(), await squad.text()).toBeTruthy();
+    const squadId = (await squad.json()).id;
 
-    for (let i = 0; i < count; i++) {
-      await chips.nth(i).click();
-      // Each step names itself and shows something: a step that mounts an empty
-      // panel is a step the user will cross without understanding why it exists.
-      // The step's own title, not the headings of the panels it hosts.
-      await expect(page.locator(".step-panel > div > h2").first()).not.toBeEmpty();
-      const panel = (await page.locator(".step-panel").innerText()).trim();
-      expect(panel.length, `step ${i + 1} rendered an empty panel`).toBeGreaterThan(30);
+    try {
+      await walkTheSteps(page, failures);
+    } finally {
+      await page.request.delete(`/api/squads/${squadId}`);
+      await page.request.delete(`/api/tribes/${tribeId}`);
     }
-    expect(failures, "the reporting flow failed").toEqual([]);
   });
 });
+
+/** Open every step of the reporting flow and check each one actually rendered. */
+async function walkTheSteps(page: import("@playwright/test").Page, failures: string[]) {
+  await page.goto("/saisie");
+
+  // The rail only exists once the squad is loaded: counting before that counts zero.
+  const chips = page.locator(".step-chip");
+  await expect(chips.first()).toBeVisible();
+  const count = await chips.count();
+  expect(count, "the reporting screen offers no step").toBeGreaterThan(2);
+
+  for (let i = 0; i < count; i++) {
+    await chips.nth(i).click();
+    // Each step names itself and shows something: a step that mounts an empty
+    // panel is a step the user will cross without understanding why it exists.
+    // The step's own title, not the headings of the panels it hosts.
+    await expect(page.locator(".step-panel > div > h2").first()).not.toBeEmpty();
+    const panel = (await page.locator(".step-panel").innerText()).trim();
+    expect(panel.length, `step ${i + 1} rendered an empty panel`).toBeGreaterThan(30);
+  }
+  expect(failures, "the reporting flow failed").toEqual([]);
+}
