@@ -177,6 +177,20 @@ export interface AccessHistoryEntry {
 
 /** Data backing the access-review screen: pending requests plus the choices
  *  (roles, squads, tribes) available to the reviewer within their scope. */
+/** Un compte deja decide, tel que l'ecran des acces le reprend: son etat, et de
+ *  quoi decider a nouveau. `is_self` empeche de se revoquer soi-meme. */
+export interface ManagedAccount {
+  id: number;
+  email: string;
+  display_name: string;
+  role: Role;
+  status: AccessStatus;
+  tribe_id?: number | null;
+  tribe?: string | null;
+  last_login_at?: string | null;
+  is_self: boolean;
+}
+
 export interface AccessOptions {
   requests: AccessRequest[];
   roles: Role[];

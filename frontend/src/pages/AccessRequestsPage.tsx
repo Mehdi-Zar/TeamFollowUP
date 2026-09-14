@@ -7,7 +7,7 @@ import { useNavigate } from "react-router-dom";
 import { api, ApiError } from "../api";
 import { useI18n } from "../i18n";
 import { useAuth } from "../auth";
-import { AccessHistoryEntry, AccessOptions, AccessRequest, Role } from "../types";
+import { AccessHistoryEntry, AccessOptions, AccessRequest, ManagedAccount, Role } from "../types";
 import { Spinner, ErrorBanner, EmptyState } from "../components/ui";
 import { useSetPageChrome } from "../components/pageChrome";
 
@@ -33,6 +33,12 @@ export default function AccessRequestsPage() {
   // What has already been decided. Kept beside the queue so the screen answers
   // "what happened here", not only "what is left to do".
   const [history, setHistory] = useState<AccessHistoryEntry[] | null>(null);
+  // Les comptes deja decides. Sans eux l'ecran ne sait repondre qu'a « que
+  // reste-t-il a faire », jamais a « qui a acces », qui est la question du
+  // lendemain: apres une validation, ou apres un effacement des comptes.
+  const [accounts, setAccounts] = useState<ManagedAccount[] | null>(null);
+  const [accQuery, setAccQuery] = useState("");
+  const [reinstating, setReinstating] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
 
@@ -43,6 +49,8 @@ export default function AccessRequestsPage() {
       setData(await api.get<AccessOptions>("/api/access-requests"));
       const h = await api.get<{ entries: AccessHistoryEntry[] }>("/api/access-requests/history");
       setHistory(h.entries);
+      const a = await api.get<{ accounts: ManagedAccount[] }>("/api/access-requests/accounts");
+      setAccounts(a.accounts);
     }
     catch (e) { setError(e instanceof ApiError ? e.message : "Erreur"); }
   }
@@ -75,6 +83,61 @@ export default function AccessRequestsPage() {
           ))}
         </div>
       )}
+      {/* Les comptes deja decides: revoquer un acces accorde, rendre un acces
+          revoque. Vide pour un squad leader, qui ne revoque pas. */}
+      {!!accounts?.length && (
+        <div className="card stack" style={{ gap: 10 }}>
+          <div className="between" style={{ alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            <h3 style={{ margin: 0 }}>{t("access.accounts_title")}</h3>
+            <input style={{ width: 220 }} value={accQuery} placeholder={t("access.accounts_search")}
+                   aria-label={t("access.accounts_search")}
+                   onChange={(e) => setAccQuery(e.target.value)} />
+          </div>
+          <div className="small muted">{t("access.accounts_hint")}</div>
+          <div className="stack" style={{ gap: 0 }}>
+            {accounts
+              .filter((a) => {
+                const q = accQuery.trim().toLowerCase();
+                return !q || a.email.toLowerCase().includes(q) || a.display_name.toLowerCase().includes(q);
+              })
+              .map((a) => (
+                <div key={a.id} className="item-row" style={{ gap: 10, flexWrap: "wrap", alignItems: "baseline" }}>
+                  <span className={`badge ${a.status === "active" ? "badge-green" : "badge-grey"}`}>
+                    {t(`access.status_${a.status}`)}
+                  </span>
+                  <span className="strong">{a.display_name}</span>
+                  <span className="small muted">{a.email}</span>
+                  <span className="pill-cat">{roleLabel(a.role)}</span>
+                  {a.tribe && <span className="small muted">{a.tribe}</span>}
+                  <span className="small muted" style={{ marginLeft: "auto" }}>
+                    {a.last_login_at ? formatDateTime(a.last_login_at) : t("access.never_signed_in")}
+                  </span>
+                  {a.status === "active" && !a.is_self && data.can_deny && (
+                    <button className="btn-danger btn-sm"
+                            onClick={() => { if (confirm(t("access.revoke_confirm", { name: a.display_name }))) act(() => api.post(`/api/access-requests/${a.id}/deny`, {}), "access.revoked"); }}>
+                      {t("access.revoke")}
+                    </button>
+                  )}
+                  {a.status === "disabled" && (
+                    <button className="btn-secondary btn-sm"
+                            onClick={() => setReinstating(reinstating === a.id ? null : a.id)}>
+                      {t("access.reinstate")}
+                    </button>
+                  )}
+                  {reinstating === a.id && (
+                    <div style={{ flexBasis: "100%" }}>
+                      <RequestRow
+                        req={{ id: a.id, email: a.email, display_name: a.display_name, role: a.role }}
+                        opts={data} roleLabel={roleLabel} t={t} submitLabel={t("access.reinstate")}
+                        onApprove={(body) => { setReinstating(null); return act(() => api.post(`/api/access-requests/${a.id}/approve`, body), "access.reinstated"); }} />
+                    </div>
+                  )}
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
+
       <div className="card stack" style={{ gap: 10 }}>
         <h3 style={{ margin: 0 }}>{t("access.history_title")}</h3>
         <div className="small muted">{t("access.history_hint")}</div>
@@ -138,10 +201,13 @@ function HistoryRow({ h, t, roleLabel, formatDateTime }: {
  * @param onApprove approve with the chosen role and optional tribe/squad ids
  * @param onDeny    reject the request (only rendered when `opts.can_deny`)
  */
-function RequestRow({ req, opts, roleLabel, t, onApprove, onDeny }: {
+function RequestRow({ req, opts, roleLabel, t, onApprove, onDeny, submitLabel }: {
   req: AccessRequest; opts: AccessOptions; roleLabel: (r: Role) => string; t: (k: string) => string;
   onApprove: (body: { role: Role; tribe_id?: number | null; squad_id?: number | null }) => void;
-  onDeny: () => void;
+  // Absent quand la ligne sert a retablir un acces: on ne refuse pas un compte
+  // deja refuse, on le rend.
+  onDeny?: () => void;
+  submitLabel?: string;
 }) {
   const [role, setRole] = useState<Role>(opts.roles[0]);
   const [tribeId, setTribeId] = useState<number | "">(opts.tribes[0]?.id ?? "");
@@ -185,9 +251,9 @@ function RequestRow({ req, opts, roleLabel, t, onApprove, onDeny }: {
         )}
         <button className="btn" disabled={squadRequired && !squadId}
           onClick={() => onApprove({ role, tribe_id: tribeId === "" ? null : tribeId, squad_id: squadId === "" ? null : squadId })}>
-          {t("access.approve")}
+          {submitLabel ?? t("access.approve")}
         </button>
-        {opts.can_deny && <button className="btn-secondary" onClick={onDeny}>{t("access.deny")}</button>}
+        {opts.can_deny && onDeny && <button className="btn-secondary" onClick={onDeny}>{t("access.deny")}</button>}
       </div>
     </div>
   );

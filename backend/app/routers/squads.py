@@ -325,7 +325,8 @@ def set_mood(squad_id: int, payload: MoodIn, db: Session = Depends(get_db),
     return squad
 
 
-@router.put("/{squad_id}/quarter-progress", response_model=QuarterProgressOut)
+@router.put("/{squad_id}/quarter-progress", response_model=QuarterProgressOut,
+            dependencies=[Depends(require_module("squad_content", "quarter_progress"))])
 def set_quarter_progress(squad_id: int, payload: QuarterProgressIn, db: Session = Depends(get_db),
                          user: User = Depends(get_current_user)):
     """PUT /api/squads/{squad_id}/quarter-progress: record a quarter's comment.

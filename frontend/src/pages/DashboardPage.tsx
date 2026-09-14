@@ -26,6 +26,18 @@ import { currentSteercoPeriod } from "../steerco";
 type SortKey = "risk" | "progress" | "name" | "fresh";
 type Health = "all" | "blocked" | "at_risk" | "on_track";
 
+/** Les preferences de lecture (tri, sens, densite) vivent dans le navigateur de
+ *  celui qui regarde: elles ne concernent que lui et n'ont pas a traverser le
+ *  reseau. Un navigateur qui refuse le stockage rend simplement la valeur par
+ *  defaut, ce qui est un ecran correct et non une erreur. */
+function readPref(key: string, fallback: string): string {
+  try { return localStorage.getItem(key) ?? fallback; } catch { return fallback; }
+}
+
+function writePref(key: string, value: string): void {
+  try { localStorage.setItem(key, value); } catch { /* stockage refuse: tant pis */ }
+}
+
 /** Derive a squad's overall health from its milestone counts: any blocked
  *  milestone -> "blocked", else any at-risk -> "at_risk", else "on_track".
  *  Drives both the status dot/colour and the health filter. */
@@ -63,7 +75,20 @@ export default function DashboardPage() {
   const [data, setData] = useState<DashboardOut | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [year, setYear] = useState<number | null>(null);
-  const [sort, setSort] = useState<SortKey>("risk");
+  // Le tri, son sens et la densite d'affichage sont des preferences de lecture:
+  // les redemander a chaque visite serait les faire ressaisir pour rien.
+  const [sort, setSort] = useState<SortKey>(() => readPref("dash.sort", "risk") as SortKey);
+  const [desc, setDesc] = useState<boolean>(() => readPref("dash.sort.desc", "") === "1");
+  const [dense, setDense] = useState<boolean>(() => readPref("dash.dense", "") === "1");
+  useEffect(() => { writePref("dash.sort", sort); }, [sort]);
+  useEffect(() => { writePref("dash.sort.desc", desc ? "1" : ""); }, [desc]);
+  useEffect(() => { writePref("dash.dense", dense ? "1" : ""); }, [dense]);
+  // Choisir un critere le pose dans son sens naturel; le rechoisir retourne le sens.
+  const pickSort = (k: SortKey) => {
+    if (k === sort) { setDesc((v) => !v); return; }
+    setSort(k);
+    setDesc(false);
+  };
   const [health, setHealth] = useState<Health>("all");
   const [freshFilter, setFreshFilter] = useState<"all" | "stale" | "fresh">("all");
   const [tribes, setTribes] = useState<Tribe[]>([]);
@@ -99,13 +124,27 @@ export default function DashboardPage() {
       return true;
     });
     r = [...r];
-    // "risk": most at-risk first (risk rank, then blocked count, then name as tie-breakers).
-    if (sort === "risk") r.sort((a, b) => b.risk_rank - a.risk_rank || b.blocked_count - a.blocked_count || a.name.localeCompare(b.name));
-    else if (sort === "progress") r.sort((a, b) => a.annual_progress - b.annual_progress);
-    else if (sort === "name") r.sort((a, b) => a.name.localeCompare(b.name));
-    else if (sort === "fresh") r.sort((a, b) => (b.freshness.age_days ?? 1e9) - (a.freshness.age_days ?? 1e9));
+    // Le sens par defaut de chaque critere: le risque et l'anciennete du pire au
+    // meilleur, le nom et l'avancement du premier au dernier. `desc` le retourne.
+    const cmp: Record<SortKey, (a: SquadCard, b: SquadCard) => number> = {
+      risk: (a, b) => b.risk_rank - a.risk_rank || b.blocked_count - a.blocked_count || a.name.localeCompare(b.name),
+      progress: (a, b) => a.annual_progress - b.annual_progress || a.name.localeCompare(b.name),
+      name: (a, b) => a.name.localeCompare(b.name),
+      fresh: (a, b) => (b.freshness.age_days ?? 1e9) - (a.freshness.age_days ?? 1e9) || a.name.localeCompare(b.name),
+    };
+    r.sort(cmp[sort]);
+    if (desc) r.reverse();
     return r;
-  }, [data, health, freshFilter, sort, query]);
+  }, [data, health, freshFilter, sort, desc, query]);
+
+  // Revenir a la vue par defaut d'un geste: quand on a empile quatre filtres, les
+  // defaire un par un pour comprendre ce qu'on voit est une corvee.
+  const dirty = !!query || health !== "all" || freshFilter !== "all" || tribeFilter !== ""
+    || sort !== "risk" || desc || dense;
+  const reset = () => {
+    setQuery(""); setHealth("all"); setFreshFilter("all"); setTribeFilter("");
+    setSort("risk"); setDesc(false); setDense(false);
+  };
 
   useSetPageChrome(
     data
@@ -189,21 +228,37 @@ export default function DashboardPage() {
             </select>
           </div>
           <div style={{ width: 190 }}>
-            <label>{t("dash.sort")}</label>
-            <select value={sort} onChange={(e) => setSort(e.target.value as SortKey)}>
-              <option value="risk">{t("dash.sort.risk")}</option>
-              <option value="progress">{t("dash.sort.progress")}</option>
-              <option value="name">{t("dash.sort.name")}</option>
-              <option value="fresh">{t("dash.sort.fresh")}</option>
-            </select>
-          </div>
-          <div style={{ width: 190 }}>
             <label>{t("dash.filter.fresh")}</label>
             <select value={freshFilter} onChange={(e) => setFreshFilter(e.target.value as any)}>
               <option value="all">{t("dash.filter.all_f")}</option>
               <option value="stale">{t("dash.fresh.stale")}</option>
               <option value="fresh">{t("dash.fresh.fresh")}</option>
             </select>
+          </div>
+        </div>
+
+        {/* Trier et afficher: des boutons, pas une liste deroulante de plus. Le
+            critere actif porte le sens du tri et le retourne quand on le reclique. */}
+        <div className="between" style={{ marginTop: 12, gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+          <div className="inline" style={{ gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            <span className="small muted">{t("dash.sort")}</span>
+            <span className="seg">
+              {(["risk", "progress", "name", "fresh"] as SortKey[]).map((k) => (
+                <button key={k} className={k === sort ? "seg-on" : ""} onClick={() => pickSort(k)}
+                        title={k === sort ? t("dash.sort.flip") : undefined}>
+                  {t(`dash.sort.${k}`)}{k === sort ? (desc ? " \u2193" : " \u2191") : ""}
+                </button>
+              ))}
+            </span>
+          </div>
+          <div className="inline" style={{ gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            <span className="seg">
+              <button className={dense ? "" : "seg-on"} onClick={() => setDense(false)}>{t("dash.view.cards")}</button>
+              <button className={dense ? "seg-on" : ""} onClick={() => setDense(true)}>{t("dash.view.list")}</button>
+            </span>
+            {dirty && (
+              <button className="btn-ghost btn-sm" onClick={reset}>{t("dash.reset")}</button>
+            )}
           </div>
         </div>
       </div>
@@ -217,6 +272,8 @@ export default function DashboardPage() {
 
       {cards.length === 0 ? (
         <EmptyState message={t("dash.none")} />
+      ) : dense ? (
+        <CompactList cards={cards} showTribe={isAdmin} tribes={tribes} />
       ) : (
         <div className="squad-grid-2">
           {cards.map((c) => <Card key={c.squad_id} card={c} showTribe={isAdmin} />)}
@@ -225,6 +282,58 @@ export default function DashboardPage() {
     </div>
   );
 }
+
+/**
+ * La vue compacte: une ligne par squad, les memes informations que la carte.
+ *
+ * Une grille de cartes se lit bien a dix squads et se parcourt mal a quarante,
+ * ou la question devient « ou est la mienne » plutot que « comment vont-elles ».
+ * Les colonnes sont celles sur lesquelles on trie, pour qu'un tri se voie.
+ */
+function CompactList({ cards, showTribe, tribes }: {
+  cards: SquadCard[]; showTribe: boolean; tribes: Tribe[];
+}) {
+  const { t, roadmap } = useI18n();
+  const tribeName = (id: number | null | undefined) =>
+    tribes.find((x) => x.id === id)?.name ?? "-";
+  return (
+    <div className="card" style={{ padding: 0, overflowX: "auto" }}>
+      <table>
+        <thead>
+          <tr>
+            <th>{t("admin.squad")}</th>
+            {showTribe && <th>{t("admin.tribe")}</th>}
+            <th>{t("squad.responsible")}</th>
+            <th style={{ width: 160 }}>{t("dash.annual")}</th>
+            <th>{t("dash.filter.status")}</th>
+            <th>{t("dash.filter.fresh")}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {cards.map((c) => (
+            <tr key={c.squad_id}>
+              <td>
+                <Link className="strong" to={`/squads/${c.squad_id}`}>{c.name}</Link>
+                <MoodBadge mood={c.mood as any} />
+              </td>
+              {showTribe && <td className="small muted">{c.tribe_name || tribeName(c.tribe_id)}</td>}
+              <td className="small muted">{c.leader?.display_name || "-"}</td>
+              <td><ProgressBar pct={c.annual_progress} /></td>
+              <td className="small">
+                <span className="inline" style={{ gap: 6 }}>
+                  <Dot status={healthOf(c) === "blocked" ? "red" : healthOf(c) === "at_risk" ? "amber" : "green"} decorative />
+                  {roadmap(healthOf(c))}
+                </span>
+              </td>
+              <td><FreshnessBadge freshness={c.freshness} /></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 
 /**
  * One squad-health card in the dashboard grid. Shows identity (name, leader,

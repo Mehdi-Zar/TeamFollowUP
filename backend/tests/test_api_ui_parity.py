@@ -127,6 +127,7 @@ def test_the_quarter_comment_is_the_part_a_person_writes(client, db, seeded):
     db.add(RoadmapItem(squad_id=sid, year=2026, quarter=1, title="En cours", status="on_track"))
     db.commit()
 
+    _turn_quarter_comment_on(client, seeded)
     login(client, seeded["sl_a"])
     r = client.put(f"/api/squads/{sid}/quarter-progress",
                    json={"year": 2026, "quarter": 1, "comment": "Le socle a pris deux semaines"})
@@ -139,11 +140,35 @@ def test_the_quarter_comment_is_the_part_a_person_writes(client, db, seeded):
     assert detail["progress_pct"] == 50          # ce que l'ecran affiche, et il concorde
 
 
+def _turn_quarter_comment_on(client, seeded):
+    """Le commentaire de trimestre est derriere un interrupteur de module, eteint
+    par defaut: la section n'est pas jugee prete. Les deux tests qui suivent
+    portent sur ce que fait la route, pas sur sa disponibilite."""
+    from tests.conftest import login
+
+    login(client, seeded["admin"])
+    r = client.put("/api/admin/modules-config",
+                   json={"squad_content": {"enabled": True, "quarter_progress": True}})
+    assert r.status_code == 200, r.text
+
+
+def test_the_quarter_comment_is_closed_while_the_section_sleeps(client, db, seeded):
+    """Un ecran retire et une route ouverte, c'est l'API qui ment sur ce que
+    l'application sait faire."""
+    from tests.conftest import login
+
+    login(client, seeded["sl_a"])
+    r = client.put(f"/api/squads/{seeded['squad_a']}/quarter-progress",
+                   json={"year": 2026, "quarter": 1, "comment": "x"})
+    assert r.status_code == 404
+
+
 def test_an_api_caller_may_still_send_its_own_percentage(client, db, seeded):
     """Compatibilite: un appelant qui envoie encore le nombre n'est pas casse."""
     from tests.conftest import login
 
     sid = seeded["squad_a"]
+    _turn_quarter_comment_on(client, seeded)
     login(client, seeded["sl_a"])
     r = client.put(f"/api/squads/{sid}/quarter-progress",
                    json={"year": 2026, "quarter": 2, "progress_pct": 80, "comment": None})
