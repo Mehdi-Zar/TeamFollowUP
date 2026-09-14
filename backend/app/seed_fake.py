@@ -330,16 +330,18 @@ def run(db: Session) -> None:
         by_squad.setdefault(s.id, []).append(ini)
     db.flush()
 
-    # Le chainage Initiative <- Objective <- Jalon est ce que la frise suit pour
-    # faire ses lignes. Sans objectif rattache, tous les jalons tombaient dans la
-    # ligne « sans titre » et la frise n'avait qu'une ligne, quel que soit le
-    # nombre de jalons: de quoi croire une mise en page juste alors qu'elle
-    # n'avait jamais rien eu a ranger.
-    for sq, _stype, sq_objectives, _jalons in squad_refs:
+    # Un jalon designe l'initiative qu'il sert, et c'est ce que la frise suit pour
+    # faire ses lignes. Sans ce lien, tous les jalons tombent dans la ligne « sans
+    # titre » et la frise n'a qu'une ligne quel que soit leur nombre: de quoi croire
+    # une mise en page juste alors qu'elle n'a jamais rien eu a ranger. Le dernier
+    # jalon de chaque squad reste volontairement libre, pour que cette ligne sans
+    # titre existe aussi dans le jeu de donnees.
+    for sq, _stype, _objs, jalons in squad_refs:
         inis = by_squad.get(sq.id) or []
-        for oi, obj in enumerate(sq_objectives):
-            if inis:
-                obj.initiative_id = inis[oi % len(inis)].id
+        if not inis:
+            continue
+        for ji, jal in enumerate(jalons[:-1]):
+            jal.initiative_id = inis[ji % len(inis)].id
     db.flush()
 
     # ---- Les engagements OTD: des promesses datees, fixees par le management et

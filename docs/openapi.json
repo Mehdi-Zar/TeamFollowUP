@@ -6185,6 +6185,114 @@
         }
       }
     },
+    "/api/initiatives/candidate-jalons": {
+      "get": {
+        "tags": [
+          "initiatives"
+        ],
+        "summary": "Candidate Jalons",
+        "description": "GET /api/initiatives/candidate-jalons: one squad's milestones, for attaching\nthem to an initiative. Tribe leader or admin.\n\nChaque ligne porte son ``initiative_id`` actuel, pour que l'ecran montre ce qui\nest deja pris et par quoi, plutot que de le decouvrir a l'enregistrement.",
+        "operationId": "candidate_jalons_api_initiatives_candidate_jalons_get",
+        "parameters": [
+          {
+            "name": "squad_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Squad Id"
+            }
+          },
+          {
+            "name": "year",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Year"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/initiatives/{initiative_id}/jalons": {
+      "put": {
+        "tags": [
+          "initiatives"
+        ],
+        "summary": "Set Initiative Jalons",
+        "description": "PUT /api/initiatives/{initiative_id}/jalons: set the milestones serving this\ninitiative (replaces the current set). Tribe leader or admin.\n\nLe pendant exact de la meme route cote OTD, et pour la meme raison: c'est le\nseul endroit ou ce lien se pose. Le remplacement ne touche que les jalons des\nsquads de la tribe de l'initiative, sinon une initiative pourrait s'attacher le\njalon d'une autre tribe.",
+        "operationId": "set_initiative_jalons_api_initiatives__initiative_id__jalons_put",
+        "parameters": [
+          {
+            "name": "initiative_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Initiative Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InitiativeMembers"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/initiatives/report.html": {
       "get": {
         "tags": [
@@ -9865,6 +9973,21 @@
         "title": "InitiativeCreate",
         "description": "Fields to create a tribe-level strategic initiative."
       },
+      "InitiativeMembers": {
+        "properties": {
+          "jalon_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Jalon Ids",
+            "default": []
+          }
+        },
+        "type": "object",
+        "title": "InitiativeMembers",
+        "description": "Les jalons qui servent une initiative (remplace l'ensemble courant)."
+      },
       "InitiativeOut": {
         "properties": {
           "id": {
@@ -12616,6 +12739,17 @@
             ],
             "title": "Objective Id"
           },
+          "initiative_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Initiative Id"
+          },
           "otd_id": {
             "anyOf": [
               {
@@ -12868,7 +13002,7 @@
         },
         "type": "object",
         "title": "RoadmapItemUpdate",
-        "description": "Partial edit of a roadmap milestone (note: otd_id is managed from the OTD side)."
+        "description": "Partial edit of a roadmap milestone.\n\nNi ``otd_id`` ni ``initiative_id`` n'y figurent: ces deux liens se posent du\ncote de l'engagement et du cote de l'initiative, chacun a un seul endroit. Deux\necrans qui posent le meme lien finissent par se contredire."
       },
       "SnapshotMeta": {
         "properties": {

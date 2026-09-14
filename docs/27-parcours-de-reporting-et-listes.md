@@ -57,8 +57,11 @@ les voit deja avec le reste de ce qui decrit son equipe.
 l'ecran de saisie, reserve la aux tribe leaders et aux admins, alors qu'un tribe
 leader n'y entre pas : en pratique, seul un admin pouvait creer un OTD, depuis un
 ecran cense servir a autre chose. L'editeur est desormais dans « Mes squads », a
-l'etape OTD, sous les engagements qu'il sert, ou l'intitule de l'ecran promettait
-deja de les porter (« les OTD, definis par vous, le tribe leader »).
+l'etape Options, avec les autres choses que la squad suit, ou l'intitule de
+l'ecran promettait deja de les porter (« les OTD, definis par vous, le tribe
+leader »). Pas a l'etape OTD malgre leur nom : celle-ci montre ce que la frise
+exportee montre, et l'objectif annuel n'y figure pas. Il compte ailleurs, dans le
+chiffre « objectifs rouges » de la page de synthese.
 
 **Le Steerco** ne regardait que le module global. Une squad qui ne contribue a
 aucune plateforme traversait quand meme l'etape, pour y lire « demandez a votre

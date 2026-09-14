@@ -224,6 +224,7 @@ def build_report_data(db: Session, scope_tribe: int | None, year: int | None = N
                      {"id": r.id, "title": r.title, "status": r.status, "owner": r.owner,
                       "stage": r.release_stage, "theme": r.theme,
                       "objective_id": r.objective_id,
+                      "initiative_id": r.initiative_id,
                       "dependency": dependency_label(r)}
                      for r in sorted(s.roadmap_items, key=lambda x: (x.display_order, x.id))
                      if r.year == year and r.quarter == q

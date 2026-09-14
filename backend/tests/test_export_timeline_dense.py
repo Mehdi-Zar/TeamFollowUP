@@ -52,9 +52,10 @@ def test_the_demo_data_is_dense_enough_to_be_a_test_case(db, fake):
     assert max(len(q["items"]) for d in dets for q in d["quarters"]) >= 3
     # Un titre plus long qu'une ligne de boite est ce qui fait travailler la coupe.
     assert max(len(it["title"]) for _, it in jalons) >= 70
-    # Une ligne sans initiative, celle des jalons qui ne repondent a rien.
-    assert any(it.get("objective_id") is None for _, it in jalons)
+    # Une ligne sans initiative, celle des jalons qui ne servent rien.
+    assert any(it.get("initiative_id") is None for _, it in jalons)
     # Et des jalons rattaches, sinon la frise n'a qu'une ligne quoi qu'il arrive.
+    assert any(it.get("initiative_id") for _, it in jalons)
     assert any(d.get("initiatives") for d in dets)
 
 

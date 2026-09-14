@@ -1,6 +1,7 @@
-"""Initiatives: a simple flat list (initiative / owner / squad / deadline) set by
-the tribe leader and visible to everyone. Each initiative is assigned to one squad,
-so it surfaces in that squad's report + dashboard. No milestones, no OTD here."""
+"""Initiatives: a flat list (initiative / owner / squad / deadline) set by the tribe
+leader and visible to everyone. Each initiative is assigned to one squad, so it
+surfaces in that squad's report + dashboard, and carries the milestones that serve
+it: the exported timeline makes one row per initiative out of exactly that link."""
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse, Response
 from sqlalchemy import select
@@ -11,8 +12,9 @@ from .. import status as st
 from ..database import get_db
 from ..deps import (assert_can_manage_tribe_reporting, get_current_user, record_audit,
                     require_tribe_or_admin, visible_tribe_id)
-from ..models import Initiative, Squad, Tribe, User
-from ..schemas import InitiativeCreate, InitiativeOut, InitiativeUpdate
+from ..models import Initiative, RoadmapItem, Squad, Tribe, User
+from ..schemas import (InitiativeCreate, InitiativeMembers, InitiativeOut,
+                       InitiativeUpdate)
 
 router = APIRouter(prefix="/api/initiatives", tags=["initiatives"])
 
@@ -100,6 +102,61 @@ def update_initiative(initiative_id: int, payload: InitiativeUpdate, db: Session
         setattr(init, k, v)
     _validate_squad(db, init.tribe_id, init.squad_id)
     record_audit(db, user.id, "initiative.update", entity="initiative", entity_id=init.id, detail=list(data.keys()))
+    db.commit()
+    db.refresh(init)
+    return _out(init)
+
+
+@router.get("/candidate-jalons")
+def candidate_jalons(squad_id: int = Query(...), year: int | None = Query(default=None),
+                     db: Session = Depends(get_db), user: User = Depends(require_tribe_or_admin)):
+    """GET /api/initiatives/candidate-jalons: one squad's milestones, for attaching
+    them to an initiative. Tribe leader or admin.
+
+    Chaque ligne porte son ``initiative_id`` actuel, pour que l'ecran montre ce qui
+    est deja pris et par quoi, plutot que de le decouvrir a l'enregistrement."""
+    sq = db.get(Squad, squad_id)
+    if sq is None:
+        raise HTTPException(status_code=404, detail="Squad introuvable")
+    assert_can_manage_tribe_reporting(user, sq.tribe_id)
+    year = year or st.current_year_quarter()[0]
+    q = (select(RoadmapItem)
+         .where(RoadmapItem.squad_id == squad_id, RoadmapItem.year == year)
+         .order_by(RoadmapItem.quarter, RoadmapItem.display_order, RoadmapItem.id))
+    return [{"id": j.id, "title": j.title, "quarter": j.quarter, "squad_id": j.squad_id,
+             "initiative_id": j.initiative_id} for j in db.scalars(q).all()]
+
+
+@router.put("/{initiative_id}/jalons")
+def set_initiative_jalons(initiative_id: int, payload: InitiativeMembers,
+                          db: Session = Depends(get_db),
+                          user: User = Depends(require_tribe_or_admin)):
+    """PUT /api/initiatives/{initiative_id}/jalons: set the milestones serving this
+    initiative (replaces the current set). Tribe leader or admin.
+
+    Le pendant exact de la meme route cote OTD, et pour la meme raison: c'est le
+    seul endroit ou ce lien se pose. Le remplacement ne touche que les jalons des
+    squads de la tribe de l'initiative, sinon une initiative pourrait s'attacher le
+    jalon d'une autre tribe."""
+    init = db.get(Initiative, initiative_id)
+    if init is None:
+        raise HTTPException(status_code=404, detail="Initiative introuvable")
+    assert_can_manage_tribe_reporting(user, init.tribe_id)
+    wanted = set(payload.jalon_ids)
+    if wanted:
+        rows = db.execute(
+            select(RoadmapItem).join(Squad, Squad.id == RoadmapItem.squad_id)
+            .where(RoadmapItem.id.in_(wanted), Squad.tribe_id == init.tribe_id)
+        ).scalars().all()
+        if len(rows) != len(wanted):
+            raise HTTPException(status_code=400, detail="Un jalon n'appartient pas à cette tribe")
+    current = db.scalars(select(RoadmapItem).where(RoadmapItem.initiative_id == init.id)).all()
+    for j in current:
+        j.initiative_id = None
+    for j in db.scalars(select(RoadmapItem).where(RoadmapItem.id.in_(wanted))).all() if wanted else []:
+        j.initiative_id = init.id
+    record_audit(db, user.id, "initiative.set_jalons", entity="initiative", entity_id=init.id,
+                 detail={"jalon_ids": sorted(wanted)})
     db.commit()
     db.refresh(init)
     return _out(init)
