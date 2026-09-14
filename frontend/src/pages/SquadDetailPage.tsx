@@ -159,8 +159,8 @@ export default function SquadDetailPage() {
       {/* Les objectifs de squad: le maillon entre un engagement et les jalons qui
           le servent. Autre chose que les OTD ci-dessus, donc une autre carte. */}
       {objectivesOn && privileged && (
-      <div className="card">
-        <h2>{t("squad.objectives_section", { year: squad.year })}</h2>
+      <Collapsible title={t("squad.objectives_section", { year: squad.year })} defaultOpen
+                   subtitle={t("squad.obj_collapsed_hint", { n: squad.objectives.length })}>
         <div className="small muted" style={{ marginBottom: 6 }}>{t("squad.otd_hint")}</div>
         {squad.objectives.length === 0 && <div className="small muted">{t("squad.no_obj")}</div>}
         {squad.objectives.map((o) => (
@@ -176,13 +176,13 @@ export default function SquadDetailPage() {
             </span>
           </div>
         ))}
-      </div>
+      </Collapsible>
       )}
 
       {/* Roadmap par quarter */}
       {roadmapOn && (
-      <div className="card">
-        <h2>{t("squad.roadmap", { year: squad.year })}</h2>
+      <Collapsible title={t("squad.roadmap", { year: squad.year })} defaultOpen
+                   subtitle={t("squad.roadmap_collapsed_hint", { n: squad.roadmap_items.length })}>
         <div className="small muted" style={{ marginBottom: 10 }}>{t("jalon.view_hint")}</div>
         <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}>
           {[1, 2, 3, 4].map((q) => {
@@ -212,7 +212,7 @@ export default function SquadDetailPage() {
             );
           })}
         </div>
-      </div>
+      </Collapsible>
       )}
 
       {/* Messages clés + Budget, directement sous la roadmap */}
@@ -223,8 +223,8 @@ export default function SquadDetailPage() {
 
       {/* What other squads are waiting on from this squad (incoming dependencies). */}
       {roadmapOn && dependents.length > 0 && (
-        <div className="card">
-          <h2>{t("dep.incoming_title")}</h2>
+        <Collapsible title={t("dep.incoming_title")} defaultOpen
+                     subtitle={t("dep.incoming_collapsed_hint", { n: dependents.length })}>
           <div className="small muted" style={{ marginBottom: 10 }}>{t("dep.incoming_hint")}</div>
           {dependents.map((d, i) => (
             <div key={i} className="item-row">
@@ -236,15 +236,15 @@ export default function SquadDetailPage() {
               <span className="badge badge-grey">{d.via === "tribe" ? t("dep.via_tribe") : t("dep.via_squad")}</span>
             </div>
           ))}
-        </div>
+        </Collapsible>
       )}
 
       {openJalon && <JalonView jalon={openJalon} onClose={() => setOpenJalon(null)} t={t} roadmap={roadmap} />}
 
       {/* KPIs (optionnels) - visibles par le squad leader / tribe leader / admin */}
       {squad.kpis_enabled && kpisOn && privileged && (
-        <div className="card">
-          <h2>{t("squad.kpis")}</h2>
+        <Collapsible title={t("squad.kpis")} defaultOpen
+                     subtitle={t("squad.kpis_collapsed_hint", { n: squad.kpis.length })}>
           {squad.kpis.length === 0 && <div className="small muted">{t("squad.no_kpi")}</div>}
           {squad.kpis.map((k) => (
             <div key={k.id} className="item-row">
@@ -265,7 +265,7 @@ export default function SquadDetailPage() {
               </span>
             </div>
           ))}
-        </div>
+        </Collapsible>
       )}
 
       {/* Comitologie (optionnelle) - déclarée par le squad leader, visible par le tribe leader */}
@@ -461,14 +461,10 @@ function CommitteesPanel({ squad, canEdit, onChange }:
   const remove = (id: number) => api.del(`/api/committees/${id}`).then(onChange).catch(() => {});
 
   return (
-    <div className="card">
-      <div className="between" style={{ alignItems: "flex-start" }}>
-        <div>
-          <h2 style={{ marginBottom: 2 }}>{t("committee.title")}</h2>
-          <div className="small muted">{t("committee.hint")}</div>
-        </div>
-        {canEdit && <button className="btn-secondary btn-sm" onClick={openNew}>+ {t("committee.add")}</button>}
-      </div>
+    <Collapsible title={t("committee.title")} defaultOpen
+                 subtitle={t("committee.collapsed_hint", { n: committees.length })}
+                 right={canEdit ? <button className="btn-secondary btn-sm" onClick={openNew}>+ {t("committee.add")}</button> : undefined}>
+      <div className="small muted">{t("committee.hint")}</div>
 
       {committees.length === 0 ? (
         <div className="small muted" style={{ marginTop: 12 }}>{t("committee.none")}</div>
@@ -516,7 +512,7 @@ function CommitteesPanel({ squad, canEdit, onChange }:
       {editing && (
         <CommitteeModal initial={editing} isNew={isNew} onSave={save} onClose={() => setEditing(null)} />
       )}
-    </div>
+    </Collapsible>
   );
 }
 
@@ -596,12 +592,10 @@ function BudgetPanel({ squad, canEdit, canToggle, onChange }:
   const barColor = b?.status === "over" ? "var(--red)" : b?.status === "at_risk" ? "var(--orange)" : "var(--green)";
 
   return (
-    <div className="card">
-      <div className="between">
-        <h2 style={{ margin: 0 }}>{t("budget.title")}</h2>
-        {hasFigures && b && <BudgetStatusBadge b={b} t={t} />}
-      </div>
-      <div className="small muted" style={{ margin: "4px 0 10px" }}>{t("budget.hint")}</div>
+    <Collapsible title={t("budget.title")} defaultOpen
+                 subtitle={hasFigures && b ? fmt(b.total) : t("budget.collapsed_none")}
+                 right={hasFigures && b ? <BudgetStatusBadge b={b} t={t} /> : undefined}>
+      <div className="small muted" style={{ margin: "0 0 10px" }}>{t("budget.hint")}</div>
 
       {editing ? (
         <div className="stack" style={{ gap: 8 }}>
@@ -671,7 +665,7 @@ function BudgetPanel({ squad, canEdit, canToggle, onChange }:
           </div>
         </>
       )}
-    </div>
+    </Collapsible>
   );
 }
 

@@ -205,7 +205,7 @@ def _dep_data(request: Request, db: Session, user: User, tribe_id: int | None, y
 @router.get("/dependencies.html", response_class=HTMLResponse, dependencies=[_roadmap_gate])
 def dependencies_html(request: Request, tribe_id: int | None = Query(default=None), year: int | None = Query(default=None),
                       squad_ids: list[int] | None = Query(default=None), lang: str | None = Query(default=None),
-                      mode: str = Query(default="cross_tribe"),
+                      mode: str = Query(default="all"),
                       db: Session = Depends(get_db), user: User = Depends(_roadmap_caller)):
     """Milestone dependencies as a page (grouped by the entity waited on)."""
     data = _dep_data(request, db, user, tribe_id, year, squad_ids, lang, mode)
@@ -215,7 +215,7 @@ def dependencies_html(request: Request, tribe_id: int | None = Query(default=Non
 @router.get("/dependencies.pptx", dependencies=[_roadmap_gate])
 def dependencies_pptx(request: Request, tribe_id: int | None = Query(default=None), year: int | None = Query(default=None),
                       squad_ids: list[int] | None = Query(default=None), lang: str | None = Query(default=None),
-                      mode: str = Query(default="cross_tribe"),
+                      mode: str = Query(default="all"),
                       db: Session = Depends(get_db), user: User = Depends(_roadmap_caller)):
     """Milestone-dependency deck (paginated table grouped by the entity waited on)."""
     data = _dep_data(request, db, user, tribe_id, year, squad_ids, lang, mode)

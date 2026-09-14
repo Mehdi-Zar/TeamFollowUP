@@ -5678,7 +5678,7 @@
             "required": false,
             "schema": {
               "type": "string",
-              "default": "cross_tribe",
+              "default": "all",
               "title": "Mode"
             }
           }
@@ -5789,7 +5789,7 @@
             "required": false,
             "schema": {
               "type": "string",
-              "default": "cross_tribe",
+              "default": "all",
               "title": "Mode"
             }
           }

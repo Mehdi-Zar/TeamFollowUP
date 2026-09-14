@@ -86,23 +86,6 @@ fait que le reordonner. Les deux gestes n'ont pas a partager la meme carte : la
 recherche et les filtres restent dans la leur, le tri et la vue passent a droite,
 sur la ligne de la legende.
 
-### La carte d'une squad se plie
-
-Chaque carte du tableau de bord se plie et se deplie, du meme geste que l'equipe
-et l'historique sur la page d'une squad : on clique l'en-tete, le chevron tourne.
-A quarante squads, une grille de cartes ouvertes se parcourt mal, et la question
-devient « ou est la mienne » plutot que « comment vont-elles ».
-
-**Elles s'ouvrent par defaut**, a la difference de l'equipe et de l'historique :
-un tableau de bord dont toutes les cartes seraient fermees ne montrerait plus
-rien de ce qu'on vient y voir. Ce qui reste visible une fois pliee est ce qui se
-lit de loin, le point de statut, le nom, le moral ; ce qui se plie est le detail,
-l'avancement et le compte de jalons.
-
-**Le nom ouvre la squad.** C'etait toute la carte auparavant, mais une carte qui
-se plie ne peut pas aussi naviguer d'un seul clic : il fallait choisir ou porter
-chacun des deux gestes.
-
 ## 6. Le mode d'emploi du reporting
 
 La bande d'en-tete de l'ecran de saisie decrivait un ecran qui a change : elle

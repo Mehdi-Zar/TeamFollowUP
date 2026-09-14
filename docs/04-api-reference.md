@@ -117,7 +117,7 @@ removes the taxonomy instead of only hiding its selector.
 
 ### reports (`/api/reports`) - module `review.weekly_report`
 `GET /weekly.html`; `GET /weekly.pptx`; `GET /roadmap.html`; `GET /roadmap.pptx` (supports `squad_ids`);
-`GET /dependencies.html`; `GET /dependencies.pptx` (milestone dependencies grouped by the entity waited on; `mode=cross_tribe`\|`all`, supports `tribe_id`/`squad_ids`/`year`; module `squad_content.roadmap`);
+`GET /dependencies.html`; `GET /dependencies.pptx` (milestone dependencies grouped by the entity waited on; `mode=all` **par defaut**, `mode=cross_tribe` ne garde que celles qui pointent hors de la tribu de la squad source et le document le dit alors en sous-titre. Le defaut valait `cross_tribe`, et une installation d'une seule tribu n'en a aucune: l'export s'ouvrait sur « Aucune dependance » alors que les jalons en portaient. Supporte `tribe_id`/`squad_ids`/`year`; module `squad_content.roadmap`);
 `POST /weekly/email`; `GET /subscriptions`; `GET /subscription`; `PUT /subscription`
 
 ### leaves CSV export

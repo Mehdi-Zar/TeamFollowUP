@@ -186,6 +186,7 @@ tr:last-child td { border-bottom: none; }
   border-radius: var(--radius);
   box-shadow: var(--shadow);
   padding: 20px;
+  cursor: pointer;
   transition: transform .12s, box-shadow .12s;
   text-align: left;
   width: 100%;
@@ -197,14 +198,6 @@ tr:last-child td { border-bottom: none; }
   transform: translateY(-2px);
   box-shadow: 0 4px 10px rgba(20,27,71,.12), 0 10px 24px rgba(20,27,71,.10);
 }
-/* Le nom d'une squad, sur sa carte du tableau de bord: il ouvre la squad, la
-   carte se contentant de se plier. Bouton nu, parce que la regle generale des
-   boutons (fond navy, texte blanc) donnerait un pave au milieu d'une carte. */
-.sc-open {
-  background: none; border: 0; padding: 0; text-align: left;
-  font: inherit; cursor: pointer;
-}
-.sc-open:hover { text-decoration: underline; }
 .squad-grid-2 { display: grid; gap: 20px; grid-template-columns: repeat(auto-fill, minmax(440px, 1fr)); }
 .squad-card-lg { padding: 24px; }
 .squad-card-lg .sc-name { font-size: 21px; }

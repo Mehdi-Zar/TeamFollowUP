@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import { useI18n } from "../i18n";
 import { CandidateJalon, OtdReport, SquadDetail } from "../types";
-import { Modal, PickItem } from "./ui";
+import { Collapsible, Modal, PickItem } from "./ui";
 
 /** Show only the date part of an ISO timestamp, or "-" when absent. */
 const fmtDate = (d?: string | null) => (d ? d.slice(0, 10) : "-");
@@ -35,16 +35,16 @@ export function OtdPanel({ squad, canManage, onChange }:
   const refresh = () => { setReload((n) => n + 1); onChange?.(); };
 
   return (
-    <div className="card stack" style={{ gap: 10 }}>
-      <div className="between" style={{ alignItems: "center" }}>
-        <span className="strong">{t("otd.title")}</span>
-        {canManage && (
-          <button className="btn-secondary btn-sm"
-            onClick={() => setEditing({ tribe_id: squad.tribe_id, year: squad.year, title: "",
-              owner_user_id: squad.leader_user_id ?? null })}>+ {t("otd.new")}</button>
-        )}
+    <Collapsible title={t("otd.title")} defaultOpen
+                 subtitle={t("otd.collapsed_hint", { n: items?.length ?? 0 })}
+                 right={canManage ? (
+                   <button className="btn-secondary btn-sm"
+                     onClick={() => setEditing({ tribe_id: squad.tribe_id, year: squad.year, title: "",
+                       owner_user_id: squad.leader_user_id ?? null })}>+ {t("otd.new")}</button>
+                 ) : undefined}>
+      <div className="small muted" style={{ marginBottom: 10 }}>
+        {canManage ? t("otd.panel_hint_manage") : t("otd.panel_hint_read")}
       </div>
-      <div className="small muted">{canManage ? t("otd.panel_hint_manage") : t("otd.panel_hint_read")}</div>
 
       {items === null ? (
         <div className="small muted">{t("common.loading")}</div>
@@ -106,7 +106,7 @@ export function OtdPanel({ squad, canManage, onChange }:
         <OtdDetailModal otd={editing} squad={squad}
           onClose={() => setEditing(null)} onSaved={() => { setEditing(null); refresh(); }} t={t} />
       )}
-    </div>
+    </Collapsible>
   );
 }
 
