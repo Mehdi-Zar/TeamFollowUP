@@ -529,6 +529,16 @@ class SquadUpdate(BaseModel):
     hardware: Optional[list[str]] = None
 
 
+# Trois niveaux, pas cinq: on cherche un signal, pas une note.
+Mood = Literal["good", "mixed", "bad"]
+
+
+class MoodIn(BaseModel):
+    """Le moral que le responsable declare pour sa squad."""
+    mood: Optional[Mood] = None      # None efface la declaration
+    comment: Optional[str] = None
+
+
 class SquadOut(ORMModel):
     """Squad summary as returned by the API (without the heavy nested report)."""
     id: int
@@ -540,6 +550,11 @@ class SquadOut(ORMModel):
     kpis_enabled: bool
     steerco_enabled: bool = False
     budget_enabled: bool = False
+    # Moral de l'equipe (good|mixed|bad), avec sa date: sans elle, un moral ancien
+    # se lit comme un moral actuel.
+    mood: Optional[Mood] = None
+    mood_at: Optional[datetime] = None
+    mood_comment: Optional[str] = None
     # Same rights as the leader over this squad, without being its named leader.
     # Fed from the ORM relationship by a validator so every endpoint returning a
     # SquadOut carries it without building the list by hand.
@@ -639,6 +654,9 @@ class SquadCard(BaseModel):
     """One squad's condensed status for the dashboard grid (progress + risk signals)."""
     squad_id: int
     name: str
+    # Le moral declare par l'equipe: un signal que les compteurs ne portent pas.
+    mood: Optional[Mood] = None
+    mood_at: Optional[datetime] = None
     tribe_id: int
     tribe_name: Optional[str] = None
     leader: Optional[LeaderInfo] = None

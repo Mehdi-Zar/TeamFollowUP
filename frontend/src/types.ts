@@ -309,6 +309,10 @@ export interface Squad {
   leader_user_id?: number | null;
   /** Same rights as the leader over this squad, without being its named leader. */
   co_leader_user_ids?: number[];
+  /** Moral declare par l'equipe: good | mixed | bad, avec sa date. */
+  mood?: "good" | "mixed" | "bad" | null;
+  mood_at?: string | null;
+  mood_comment?: string | null;
   display_order: number;
   kpis_enabled: boolean;
   steerco_enabled?: boolean;
@@ -411,6 +415,9 @@ export interface Breakdown {
 export interface SquadCard {
   squad_id: number;
   name: string;
+  /** Moral declare par l'equipe, affiche en tete de carte. */
+  mood?: "good" | "mixed" | "bad" | null;
+  mood_at?: string | null;
   tribe_id: number;
   tribe_name?: string | null;
   leader?: LeaderInfo | null;

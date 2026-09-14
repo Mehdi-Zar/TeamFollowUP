@@ -18,6 +18,7 @@ import { Dot, FreshnessBadge, ProgressBar, Spinner, ErrorBanner, EmptyState } fr
 import ExportMenu from "../components/ExportMenu";
 import { ReportingButton } from "../components/ReportingModal";
 import AbsencesWidget from "../components/AbsencesWidget";
+import { MoodBadge } from "../components/TeamMood";
 import SteercoConsolidation from "../components/SteercoConsolidation";
 import { useSetPageChrome } from "../components/pageChrome";
 import { currentSteercoPeriod } from "../steerco";
@@ -252,7 +253,12 @@ function Card({ card, showTribe }: { card: SquadCard; showTribe?: boolean }) {
             </div>
           </div>
         </div>
-        {showTribe && card.tribe_name && <span className="badge badge-navy">{card.tribe_name}</span>}
+        <span className="inline" style={{ gap: 6, alignItems: "center" }}>
+          {/* Le moral, en tete de carte: c'est la seule donnee de cette grille
+              qu'aucun calcul ne produit, et celle qui explique souvent les autres. */}
+          <MoodBadge mood={card.mood} moodAt={card.mood_at} />
+          {showTribe && card.tribe_name && <span className="badge badge-navy">{card.tribe_name}</span>}
+        </span>
       </div>
 
       {/* Annual progress */}
