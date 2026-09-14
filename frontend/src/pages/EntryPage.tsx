@@ -1,11 +1,16 @@
 /**
  * EntryPage - the reporting screen where a squad's data is entered/updated.
  *
- * Lets a user pick a squad + year and edit its objectives, quarterly roadmap
- * (milestones) and KPIs, then "submit" a snapshot of the current state. Which
- * squads appear depends on the role: admins / tribe leaders (and preview mode)
- * see all squads; a squad leader only sees the squads they lead. Write access is
- * decided per squad by `canEditSquad`; objectives editing by `canManageObjectives`.
+ * Lets a user pick a squad + year and edit its quarterly roadmap (milestones),
+ * KPIs, quarter comments, key messages and mood, then "submit" a snapshot of the
+ * current state. Which squads appear depends on the role: admins / tribe leaders
+ * (and preview mode) see all squads; a squad leader only sees the squads they
+ * lead. Write access is decided per squad by `canEditSquad`.
+ *
+ * Ce qui se pilote plutot que se saisir n'est pas ici: les engagements OTD, les
+ * initiatives et les objectifs annuels appartiennent a « Mes squads » et a la
+ * page de la squad, parce que seuls un tribe leader ou un admin les ecrivent et
+ * qu'un tribe leader n'a pas acces a cet ecran.
  *
  * L'ecran est un parcours: une etape a la fois, une barre qui dit ou l'on en est
  * et ce qui reste, et un bandeau qui rappelle quelle squad et quelle semaine on
@@ -17,14 +22,12 @@ import { api, ApiError } from "../api";
 import { useAuth } from "../auth";
 import { useI18n } from "../i18n";
 import { useConfig, useModule } from "../config";
-import { Initiative, Kpi, Member, Objective, RoadmapItem, RoadmapStatus, Squad, SquadDetail, Tribe, Trend, Role } from "../types";
+import { Kpi, Member, Objective, RoadmapItem, RoadmapStatus, Squad, SquadDetail, Tribe, Trend, Role } from "../types";
 import { Dot, FreshnessBadge, Spinner, ErrorBanner, EmptyState, SectionCard as Card } from "../components/ui";
 import { QuarterProgressEditor } from "../components/EntryExtras";
-import { InitiativesCard } from "../components/InitiativesCard";
-import { OtdPanel } from "../components/OtdPanel";
 import TeamMood from "../components/TeamMood";
 import KeyMessagesPanel from "../components/KeyMessagesPanel";
-import { canEditSquad, canManageObjectives } from "../perms";
+import { canEditSquad } from "../perms";
 import { useSetPageChrome } from "../components/pageChrome";
 import { roadmapRag } from "../labels";
 import { currentSteercoPeriod, monthLongLabel } from "../steerco";
@@ -33,9 +36,9 @@ import SteercoWizard, { SteercoPreviewModal } from "../components/SteercoWizard"
 const ROADMAP_STATUSES: RoadmapStatus[] = ["on_track", "at_risk", "blocked", "done"];
 
 /**
- * Reporting root. Owns the squad/year selection, loads the selected SquadDetail
- * and its assigned initiatives, and orchestrates the section editors plus the
- * submit-snapshot flow. Read-only when the viewer cannot write to the squad.
+ * Reporting root. Owns the squad/year selection, loads the selected SquadDetail,
+ * and orchestrates the section editors plus the submit-snapshot flow. Read-only
+ * when the viewer cannot write to the squad.
  */
 export default function EntryPage() {
   const { user, effectiveRole, isPreview } = useAuth();
@@ -43,7 +46,6 @@ export default function EntryPage() {
   const { default_year } = useConfig();
   const moduleOn = useModule();
   const roadmapOn = moduleOn("squad_content", "roadmap");
-  const objectivesOn = moduleOn("squad_content", "objectives");
   const kpisOn = moduleOn("squad_content", "kpis");
   const progressOn = moduleOn("squad_content", "quarter_progress");
   const steercoOn = moduleOn("steerco");
@@ -55,7 +57,6 @@ export default function EntryPage() {
   const [yearTouched, setYearTouched] = useState(false);
   useEffect(() => { if (!yearTouched) setYear(default_year); }, [default_year]);
   const [squad, setSquad] = useState<SquadDetail | null>(null);
-  const [initiatives, setInitiatives] = useState<Initiative[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [recap, setRecap] = useState(false);
@@ -87,14 +88,7 @@ export default function EntryPage() {
   }
   useEffect(() => {
     setSquad(null);
-    if (squadId !== null) {
-      reload();
-      // Initiatives assigned to this squad (read-only here) - same data the squad
-      // page shows, so the reporting opens with the same Initiatives card on top.
-      api.get<Initiative[]>(`/api/initiatives?year=${year}&squad_id=${squadId}`).then(setInitiatives).catch(() => setInitiatives([]));
-    } else {
-      setInitiatives([]);
-    }
+    if (squadId !== null) reload();
   }, [squadId, year]);
 
   function flash(m: string) {
@@ -142,26 +136,16 @@ export default function EntryPage() {
   if (error) return <ErrorBanner message={error} />;
   if (editable.length === 0) return <EmptyState message={t("entry.no_squad")} />;
 
-  // Objectives are managed by tribe leaders/admins, not squad leaders.
-  const objAllowed = canManageObjectives(role);
-
   // Les etapes, construites a partir des services actifs: une etape vide apprend
   // a traverser les etapes. `done` n'est pas une condition de passage, c'est un
   // etat: rien n'empeche de sauter une etape, on veut seulement qu'elle le dise.
+  // Pas d'etape pour les engagements OTD, les initiatives et les objectifs
+  // annuels: ils se pilotent, ils ne se saisissent pas ici. Seuls un tribe leader
+  // ou un admin peuvent les ecrire, et un tribe leader n'a pas acces a cet ecran,
+  // si bien que l'etape ouvrait le parcours sur trois cartes en lecture seule.
+  // Elles ont leur ecran: « Mes squads » pour les editer, la page de la squad pour
+  // les lire.
   const steps: Step[] = squad ? [
-    ...(objectivesOn ? [{
-      key: "otd", icon: FLOW_ICONS.target,
-      done: squad.objectives.length > 0,
-      node: (
-        <>
-          {/* Les engagements dates, d'abord: c'est ce que l'etape annonce. Les
-              objectifs qui les servent viennent apres. */}
-          <OtdPanel squad={squad} canManage={objAllowed} onChange={reload} />
-          <InitiativesCard initiatives={initiatives} />
-          <ObjectivesEditor squad={squad} year={year} onChange={reload} editable={objAllowed} t={t} rag={rag} />
-        </>
-      ),
-    }] : []),
     ...(roadmapOn ? [{
       key: "jalons", icon: FLOW_ICONS.flag,
       done: squad.roadmap_items.length > 0,
@@ -193,7 +177,11 @@ export default function EntryPage() {
         </div>
       ),
     },
-    ...(steercoOn ? [{
+    // Le Steerco n'est une etape que pour une squad qui contribue a une
+    // plateforme: ailleurs, l'etape n'ouvrait que sur « demandez a votre tribe
+    // leader ». Une etape ou il n'y a rien a faire se traverse quand meme, et
+    // fait douter d'avoir oublie quelque chose.
+    ...(steercoOn && squad.steerco_enabled ? [{
       key: "steerco", icon: FLOW_ICONS.target,
       done: undefined,
       node: <SteercoSection squad={squad} readonly={!writeAllowed} t={t} />,
@@ -573,62 +561,6 @@ function JalonModal({ jalon, members, objectives, onSave, onCancel, t, roadmap, 
 }
 
 /**
- * Annual objectives editor. When `editable` (tribe leader / admin) titles and
- * target dates can be changed and objectives added/removed; otherwise it is a
- * read-only list. The RAG status is auto-derived from advancement, never edited.
- */
-function ObjectivesEditor({ squad, year, onChange, editable, t, rag }: any) {
-  const [title, setTitle] = useState("");
-  async function add() {
-    if (!title.trim()) return;
-    await api.post("/api/objectives", { squad_id: squad.id, year, title: title.trim() });
-    setTitle("");
-    onChange();
-  }
-  async function update(o: Objective, patch: Partial<Objective>) {
-    await api.put(`/api/objectives/${o.id}`, patch);
-    onChange();
-  }
-  async function remove(o: Objective) {
-    await api.del(`/api/objectives/${o.id}`);
-    onChange();
-  }
-  return (
-    <Card title={t("squad.objectives", { year })} hint={editable ? t("entry.obj_hint_edit") : t("entry.obj_hint_ro")}>
-      {squad.objectives.length === 0 && <div className="small muted">{t("squad.no_obj")}</div>}
-      {squad.objectives.map((o: Objective) => (
-        <div key={o.id} className="item-row" style={{ gap: 8 }}>
-          {/* Status is auto-derived from advancement - shown, never edited here. */}
-          <span className="inline" style={{ gap: 6 }} title={t("obj.status_auto")}>
-            <Dot status={o.rag_status} />
-          </span>
-          {editable ? (
-            <input className="grow" defaultValue={o.title} onBlur={(e) => e.target.value !== o.title && update(o, { title: e.target.value })} />
-          ) : (
-            <span className="grow">{o.title}</span>
-          )}
-          <span className="small muted" style={{ minWidth: 60 }}>{rag(o.rag_status)}</span>
-          {editable ? (
-            <input type="date" className="w-auto" style={{ maxWidth: 150 }} title={t("obj.deadline")}
-                   value={o.target_date ? o.target_date.slice(0, 10) : ""}
-                   onChange={(e) => update(o, { target_date: (e.target.value || null) as any })} />
-          ) : (
-            o.target_date && <span className="small muted">{o.target_date.slice(0, 10)}</span>
-          )}
-          {editable && <button className="btn-danger btn-sm" onClick={() => remove(o)} aria-label={`${t("action.delete")} - ${o.title}`}>✕</button>}
-        </div>
-      ))}
-      {editable && (
-        <div className="inline" style={{ marginTop: 8 }}>
-          <input placeholder={t("entry.new_obj")} value={title} onChange={(e) => setTitle(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} />
-          <button className="btn-secondary btn-sm" onClick={add}>{t("action.add")}</button>
-        </div>
-      )}
-    </Card>
-  );
-}
-
-/**
  * KPI editor: name, trend, current/target/unit per KPI. Read-only mode disables
  * inputs. Only rendered when the squad has KPIs enabled and the module is on.
  */
@@ -710,7 +642,10 @@ function SteercoSection({ squad, readonly, t }: any) {
   async function load() {
     try {
       const all = await api.get<any[]>("/api/steerco/platforms");
-      const mine = all.filter((p) => (p.contributors ?? []).some((c: any) => c.id === squad.id));
+      // Contribuer a une plateforme dont le steerco est coupe ne donne rien a
+      // saisir: la ligne aurait ouvert un wizard que l'API refuse.
+      const mine = all.filter((p) => p.steerco_enabled !== false
+        && (p.contributors ?? []).some((c: any) => c.id === squad.id));
       const out = await Promise.all(mine.map(async (p) => {
         const r = await api.get<any>(`/api/steerco/platform/${p.id}?period=${encodeURIComponent(period)}`);
         return {

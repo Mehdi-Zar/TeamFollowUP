@@ -31,8 +31,47 @@ saute ; celui-ci est le chemin lui-meme.**
   est donc monochrome, encre pour l'etape courante, verte pour ce qui est
   renseigne, grise pour le reste. Quand tout est colore, le rouge d'un jalon
   bloque ne se voit plus.
-- **Rien n'est retire.** Ce sont les memes panneaux, dans le meme ordre, avec les
-  memes droits. Seul l'empilement disparait.
+- **Le passage en parcours n'avait rien retire.** C'etaient les memes panneaux,
+  dans le meme ordre, avec les memes droits, et seul l'empilement disparaissait.
+  Trois d'entre eux en sont partis depuis, pour la raison dite plus bas : une
+  etape ou l'on ne peut rien faire n'est pas une etape.
+
+### Une etape ou l'on ne peut rien faire n'est pas une etape
+
+Trois etapes ouvraient sur quelque chose que leur lecteur ne pouvait pas ecrire.
+
+**Les engagements OTD, les initiatives et les objectifs annuels** formaient la
+premiere etape du parcours, trois cartes empilees sous un seul titre. Or ces trois
+objets se fixent par un tribe leader ou un admin, et **un tribe leader n'a pas
+acces a l'ecran de saisie** : la capacite `reporting` n'est pas dans ses droits par
+defaut. Le parcours s'ouvrait donc, pour son lecteur reel qui est le squad leader,
+sur trois panneaux en lecture seule.
+
+Ils ne sont pas perdus, ils sont rendus a l'ecran ou l'on peut agir : « Mes
+squads » pour les ecrire, la page de la squad pour les lire, ou le squad leader
+les voit deja avec le reste de ce qui decrit son equipe.
+
+**Les deplacer a montre un trou.** Le test de parite entre l'API et l'interface
+(`test_api_ui_parity.py`) a refuse le changement : plus aucun ecran n'appelait
+`POST /api/objectives`. L'editeur des OTD de l'annee n'existait donc **que** dans
+l'ecran de saisie, reserve la aux tribe leaders et aux admins, alors qu'un tribe
+leader n'y entre pas : en pratique, seul un admin pouvait creer un OTD, depuis un
+ecran cense servir a autre chose. L'editeur est desormais dans « Mes squads », a
+l'etape OTD, sous les engagements qu'il sert, ou l'intitule de l'ecran promettait
+deja de les porter (« les OTD, definis par vous, le tribe leader »).
+
+**Le Steerco** ne regardait que le module global. Une squad qui ne contribue a
+aucune plateforme traversait quand meme l'etape, pour y lire « demandez a votre
+tribe leader ». Elle ne s'affiche plus que si la squad alimente une plateforme
+dont le steerco est actif. Le drapeau qui porte cette reponse existait deja
+(`Squad.steerco_enabled`) mais comptait toute plateforme, y compris celles dont le
+steerco est coupe : il compte desormais celles ou il y a reellement quelque chose
+a saisir.
+
+**Ce qui reste** est ce que le squad leader ecrit lui-meme : les jalons, ses KPI
+s'il en a, le commentaire de chaque trimestre, les messages cles, le moral, puis
+l'envoi. Une etape en moins n'est pas une information en moins : c'est un ecran de
+moins a traverser pour trouver celui qui attend quelque chose de vous.
 
 ### Le bandeau : quel reporting, pour qui
 
