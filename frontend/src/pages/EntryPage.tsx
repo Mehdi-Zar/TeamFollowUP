@@ -149,16 +149,6 @@ export default function EntryPage() {
   // a traverser les etapes. `done` n'est pas une condition de passage, c'est un
   // etat: rien n'empeche de sauter une etape, on veut seulement qu'elle le dise.
   const steps: Step[] = squad ? [
-    {
-      key: "mood", icon: FLOW_ICONS.mood,
-      done: !!squad.mood,
-      node: (
-        <div className="step-center">
-          <TeamMood squadId={squad.id} mood={squad.mood as any} moodAt={squad.mood_at}
-                    comment={squad.mood_comment} canEdit={writeAllowed} onChange={reload} big />
-        </div>
-      ),
-    },
     ...(objectivesOn ? [{
       key: "otd", icon: FLOW_ICONS.target,
       done: squad.objectives.length > 0,
@@ -192,6 +182,16 @@ export default function EntryPage() {
       key: "km", icon: FLOW_ICONS.message,
       done: squad.key_messages.length > 0,
       node: <KeyMessagesPanel squad={squad} canEdit={writeAllowed} onChange={reload} />,
+    },
+    {
+      key: "mood", icon: FLOW_ICONS.mood,
+      done: !!squad.mood,
+      node: (
+        <div className="step-center">
+          <TeamMood squadId={squad.id} mood={squad.mood as any} moodAt={squad.mood_at}
+                    comment={squad.mood_comment} canEdit={writeAllowed} onChange={reload} big />
+        </div>
+      ),
     },
     ...(steercoOn ? [{
       key: "steerco", icon: FLOW_ICONS.target,
