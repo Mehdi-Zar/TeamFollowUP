@@ -738,6 +738,9 @@ function LoginScreenPanel({ cfg, set, t, copy, copied }: {
 }) {
   const methods: any[] = cfg.login_methods ?? [];
   const mode: string = cfg.password_mode ?? "visible";
+  // Le mode secret gouverne seul le formulaire local, la case « Affichee » ne
+  // decide plus rien pour lui.
+  const pwdRuledByMode = (key: string) => key === "password" && mode === "secret";
 
   const update = (key: string, patch: any) =>
     set("login_methods", methods.map((m) => (m.key === key ? { ...m, ...patch } : m)));
@@ -823,9 +826,18 @@ function LoginScreenPanel({ cfg, set, t, copy, copied }: {
                 )}
               </td>
               <td>
+                {/* En mode secret, le mode decide seul du formulaire local. Laisser
+                    la case agir laissait croire qu'elle pouvait le retirer une
+                    seconde fois, et cette combinaison rendait le lien de secours
+                    inoperant: plus aucune porte visible pour revenir. */}
                 <input type="checkbox" aria-label={t("auth.login_shown")}
-                       checked={m.enabled !== false}
+                       checked={pwdRuledByMode(m.key) ? true : m.enabled !== false}
+                       disabled={pwdRuledByMode(m.key)}
+                       title={pwdRuledByMode(m.key) ? t("auth.login_shown_secret") : undefined}
                        onChange={(e) => update(m.key, { enabled: e.target.checked })} />
+                {pwdRuledByMode(m.key) && (
+                  <div className="small muted" style={{ marginTop: 4 }}>{t("auth.login_shown_secret")}</div>
+                )}
               </td>
               <td>
                 <input type="radio" name="login-primary" aria-label={t("auth.login_primary")}

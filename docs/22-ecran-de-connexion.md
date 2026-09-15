@@ -56,6 +56,19 @@ Trois etats :
 > tombe, c'est a dire exactement le jour ou elle en a besoin. Ce que le mode
 > supprime, c'est l'invitation.
 
+### En mode secret, la case « Affichee » ne compte plus
+
+Le mode secret decide seul du formulaire local. Decocher « Affichee » pour la
+methode « mot de passe » n'y change rien : le mode dit deja de le cacher, et le
+lien reste la seule chose qui l'ouvre.
+
+C'est une correction, pas un detail. Les deux reglages se presentaient cote a cote
+comme independants, et se neutralisaient : la methode decochee etait retiree de la
+liste **avant** que le jeton soit compare, donc le lien de secours n'ouvrait plus
+rien. Un administrateur dont l'IdP renvoyait un compte sans les droits n'avait
+alors plus aucune porte visible, et devait passer par `POST /api/auth/login` pour
+revenir. Hors mode secret, decocher veut toujours dire decocher.
+
 ## 4. Le lien de secours
 
 En mode secret, l'application **genere** un jeton (un secret qu'on tape est un

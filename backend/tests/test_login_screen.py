@@ -136,6 +136,53 @@ def test_renewing_the_secret_invalidates_the_previous_link(client, db, seeded):
     assert _public(client, k=second)["password_mode"] == "visible"
 
 
+def test_the_secret_link_reopens_a_form_that_was_also_unchecked(client, db, seeded):
+    """La configuration qui a reellement enferme un administrateur en production.
+
+    Decocher la methode « mot de passe » et choisir le mode secret sont deux
+    gestes que l'ecran presente separement, et ils se neutralisaient: le filtre
+    sur « enabled » retirait la methode avant meme que le jeton soit regarde, donc
+    le lien n'ouvrait plus rien. L'administrateur dont l'IdP ne renvoyait pas un
+    compte admin n'avait alors plus aucune porte visible.
+
+    Le mode secret decide seul de l'affichage du formulaire local, parce qu'il dit
+    deja « cache-le ».
+    """
+    out = _configure(client, oidc_enabled=True, oidc_issuer_url="https://idp.example",
+                     oidc_client_id="id", oidc_client_secret="s",
+                     password_mode="secret",
+                     login_methods=[{"key": "oidc", "enabled": True},
+                                    {"key": "password", "enabled": False}])
+    token = out["password_secret"]
+
+    public = _public(client)
+    assert public["password_mode"] == "secret"
+    assert all(m["key"] != "password" for m in public["methods"])
+    assert token not in str(public)
+
+    unlocked = _public(client, k=token)
+    assert unlocked["password_mode"] == "visible"
+    form = next((m for m in unlocked["methods"] if m["key"] == "password"), None)
+    assert form is not None, "le lien secret doit rouvrir le formulaire"
+    assert form["enabled"] is True, "annonce a l'ecran comme offerte, puisqu'elle l'est"
+
+
+def test_an_unchecked_form_stays_gone_outside_the_secret_mode(client, db, seeded):
+    """La contrepartie: sans mode secret, decocher veut toujours dire decocher.
+
+    Sinon le correctif ci-dessus ferait reapparaitre le formulaire sur toutes les
+    pages qui l'avaient retire volontairement.
+    """
+    for mode in ("visible", "collapsed"):
+        _configure(client, oidc_enabled=True, oidc_issuer_url="https://idp.example",
+                   oidc_client_id="id", oidc_client_secret="s",
+                   password_mode=mode,
+                   login_methods=[{"key": "oidc", "enabled": True},
+                                  {"key": "password", "enabled": False}])
+        public = _public(client)
+        assert all(m["key"] != "password" for m in public["methods"]), mode
+
+
 # ---- ce que la configuration garantit -------------------------------------------
 
 def test_every_method_stays_listed_for_the_admin_screen(db, seeded):
