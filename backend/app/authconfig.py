@@ -322,18 +322,31 @@ def login_screen(cfg: dict, secret: str | None = None) -> dict:
     read by anyone) and never the secret itself: the page sends what it was given
     and is told whether the local form opens. The comparison is constant-time so
     the endpoint cannot be used to guess the token character by character.
+
+    In "secret" mode the password method's ``enabled`` flag is deliberately not
+    consulted: the mode already hides the form, and letting the flag hide it a
+    second time meant the link could never reopen it. An administrator who
+    unchecked the method *and* picked "secret" had closed the local door for good,
+    on a screen that offered the two settings as if they were independent. That is
+    the door you need the day the IdP hands you an account without the rights to
+    undo it.
     """
     stored = str(cfg.get("password_secret") or "")
     unlocked = bool(stored and secret and hmac.compare_digest(stored, str(secret)))
-    methods = [
-        {k: m[k] for k in ("key", "enabled", "label", "hint", "logo", "primary")}
-        for m in cfg.get("login_methods") or []
-        if m.get("enabled")
-    ]
     mode = cfg.get("password_mode", "visible")
-    password = next((m for m in methods if m["key"] == "password"), None)
-    if password and mode == "secret" and not unlocked:
-        methods = [m for m in methods if m["key"] != "password"]
+    methods = []
+    for m in cfg.get("login_methods") or []:
+        if m.get("key") == "password" and mode == "secret":
+            if not unlocked:
+                continue
+        elif not m.get("enabled"):
+            continue
+        entry = {k: m[k] for k in ("key", "enabled", "label", "hint", "logo", "primary")}
+        # Every method that reaches this list is one the page is about to draw.
+        # Reporting enabled=False for the form the secret link just opened would
+        # only mislead whoever reads this endpoint.
+        entry["enabled"] = True
+        methods.append(entry)
     return {
         "intro": cfg.get("login_intro") or "",
         "methods": methods,
