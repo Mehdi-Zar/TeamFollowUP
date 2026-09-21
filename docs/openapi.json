@@ -6480,7 +6480,7 @@
           "otds"
         ],
         "summary": "Candidate Jalons",
-        "description": "GET /api/otds/candidate-jalons: milestones of the scope's squads, for\nassigning them to an OTD. Tribe leader or admin.\n\nScope: an admin may target any ``tribe_id``; a tribe leader is pinned to their\ntribe. Each row carries its current ``otd_id`` so the UI can show what is\nalready assigned. ``year`` defaults to current.",
+        "description": "GET /api/otds/candidate-jalons: milestones available for an OTD.\n\nLe perimetre suit ce que l'appelant a le droit d'engager : un admin peut\nviser n'importe quelle ``tribe_id``, un tribe leader est fixe sur sa tribe, et\nun squad leader ne voit que les jalons des squads qu'il dirige. Chaque ligne\nporte ses deux rattachements courants (``otd_id`` pour l'engagement\nmanagement, ``squad_otd_id`` pour celui de la squad), pour que l'ecran sache\nce qui est deja pris de son cote sans rien supposer de l'autre.",
         "operationId": "candidate_jalons_api_otds_candidate_jalons_get",
         "parameters": [
           {
@@ -6514,6 +6514,22 @@
               ],
               "title": "Year"
             }
+          },
+          {
+            "name": "squad_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Squad Id"
+            }
           }
         ],
         "responses": {
@@ -6544,7 +6560,7 @@
           "otds"
         ],
         "summary": "List Otds",
-        "description": "OTDs with their derived on-time status and member milestones.\n\nVisibility (rule #4): managed by the tribe leader (or admin); a squad leader\nsees ONLY the OTDs that include a milestone of a squad they lead; anyone else\nsees none.",
+        "description": "OTDs with their derived on-time status and member milestones.\n\nVisibility: le tribe leader (ou l'admin) voit tout ce qui concerne sa tribe,\nengagements de squad compris, puisque son rapport les montre. Un squad leader\nvoit les siens, plus les engagements management qui lui sont assignes ou qui\nembarquent un de ses jalons. Les autres n'en voient aucun.",
         "operationId": "list_otds_api_otds_get",
         "parameters": [
           {
@@ -6606,7 +6622,7 @@
           "otds"
         ],
         "summary": "Create Otd",
-        "description": "POST /api/otds: create an OTD (201). Tribe leader or admin.\n\nRequires ``assert_can_manage_tribe_reporting`` for the target tribe (404 if\nunknown). Any assigned owner must be a squad leader of that tribe\n(``_validate_owner``, a cross-tribe-disclosure guard). Audited.",
+        "description": "POST /api/otds: create an OTD (201).\n\nPortee ``management`` : tribe leader ou admin, sur leur tribe\n(``assert_can_manage_tribe_reporting``), et tout owner assigne doit etre un\nsquad leader de cette tribe (``_validate_owner``, garde anti-divulgation\nentre tribes). Portee ``squad`` : le leader de la squad visee, qui doit la\ndiriger, et la tribe de l'engagement est celle de la squad, pas celle que le\npayload annonce. Audite.",
         "operationId": "create_otd_api_otds_post",
         "requestBody": {
           "required": true,
@@ -6646,7 +6662,7 @@
           "otds"
         ],
         "summary": "Update Otd",
-        "description": "PUT /api/otds/{otd_id}: update an OTD. Tribe leader or admin.\n\nRequires ``assert_can_manage_tribe_reporting`` for the OTD's tribe; a changed\nowner is re-validated (``_validate_owner``). Audited.",
+        "description": "PUT /api/otds/{otd_id}: update an OTD.\n\nEcrit par le proprietaire de la portee (``_assert_can_write``). Un owner\nchange est revalide (``_validate_owner``). La portee, elle, ne se modifie pas.\nAudite.",
         "operationId": "update_otd_api_otds__otd_id__put",
         "parameters": [
           {
@@ -6695,7 +6711,7 @@
           "otds"
         ],
         "summary": "Delete Otd",
-        "description": "DELETE /api/otds/{otd_id}: delete an OTD (204). Tribe leader or admin,\nrequires ``assert_can_manage_tribe_reporting``.\n\nSide effect: member milestones keep existing; only their ``otd_id`` link is\ncleared. Audited.",
+        "description": "DELETE /api/otds/{otd_id}: delete an OTD (204). Proprietaire de la portee.\n\nSide effect: member milestones keep existing; only their link is cleared.\nAudited.",
         "operationId": "delete_otd_api_otds__otd_id__delete",
         "parameters": [
           {
@@ -6731,7 +6747,7 @@
           "otds"
         ],
         "summary": "Set Otd Jalons",
-        "description": "PUT /api/otds/{otd_id}/jalons: set the milestones that make up this OTD\n(replaces the current set). Tribe leader or admin.\n\nRequires ``assert_can_manage_tribe_reporting``. Only milestones from the OTD's\ntribe are accepted (400 otherwise); this is the ONLY place the milestone<->OTD\nlink is managed (squad leaders never touch it). Audited.",
+        "description": "PUT /api/otds/{otd_id}/jalons: set the milestones that make up this OTD\n(replaces the current set).\n\nEcrit par le proprietaire de la portee. Un engagement management accepte les\njalons de sa tribe; un engagement de squad n'accepte que ceux de sa squad, ce\nqui evite qu'un squad leader ne s'engage sur le travail d'une autre equipe.\nChaque portee ecrit son propre lien, donc rattacher ici ne detache jamais\nrien de l'autre cote. Audite.",
         "operationId": "set_otd_jalons_api_otds__otd_id__jalons_put",
         "parameters": [
           {
@@ -11989,6 +12005,26 @@
             "type": "integer",
             "title": "Display Order",
             "default": 0
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "management",
+              "squad"
+            ],
+            "title": "Scope",
+            "default": "management"
+          },
+          "squad_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Squad Id"
           }
         },
         "type": "object",
@@ -11998,7 +12034,7 @@
           "title"
         ],
         "title": "OtdCreate",
-        "description": "Fields to create an OTD (top-management budget delivery commitment)."
+        "description": "Fields to create an OTD.\n\n``scope`` decides who owns it: ``management`` is fixed by the tribe leader,\n``squad`` is taken by a squad leader on a squad they lead, and then\n``squad_id`` is required."
       },
       "OtdMembers": {
         "properties": {
@@ -12089,7 +12125,7 @@
         },
         "type": "object",
         "title": "OtdUpdate",
-        "description": "Partial edit of an OTD."
+        "description": "Partial edit of an OTD.\n\n``scope`` is absent on purpose: it is fixed at creation. A squad leader able\nto turn their own commitment into a management one would be granting\nthemselves write access to an object that is not theirs."
       },
       "PinIn": {
         "properties": {

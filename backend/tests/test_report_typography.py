@@ -25,7 +25,8 @@ import pytest
 from sqlalchemy import select
 
 from app import report as report_mod
-from app.models import Initiative, KeyMessage, Objective, RoadmapItem, Squad, SquadBudget, User
+from app.models import (Initiative, KeyMessage, Objective, Otd, RoadmapItem, Squad,
+                        SquadBudget, User)
 
 YEAR = 2026
 BANNED = {"\u2014": "em dash", "\u00b7": "middot"}  # escaped, so this file is clean too
@@ -44,10 +45,18 @@ def rich(db, seeded):
     db.add(Objective(squad_id=squad_id, year=YEAR, title="Halve the cold start",
                      target_date=dt.datetime(YEAR, 3, 31, tzinfo=dt.timezone.utc),
                      rag_status="amber", weight=1))
+    # La frise fait une ligne par engagement: sans engagement, elle n'a rien a
+    # dessiner, et ce test ne verrait plus les lignes qu'il doit relire.
+    squad = db.get(Squad, squad_id)
+    otd = Otd(tribe_id=tribe_id, year=YEAR, title="Agent in production",
+              committed_date=dt.datetime(YEAR, 6, 30, tzinfo=dt.timezone.utc),
+              owner_user_id=squad.leader_user_id)
+    db.add(otd)
+    db.flush()
     db.add(RoadmapItem(squad_id=squad_id, year=YEAR, quarter=2, title="Ship the new agent",
                        release_stage="GA", status="at_risk", owner="Bob Chen",
                        dependencies="Platform team", dependency_kind="tribe",
-                       dependency_tribe_id=seeded["t2"]))
+                       dependency_tribe_id=seeded["t2"], otd_id=otd.id))
     db.add(KeyMessage(squad_id=squad_id, year=YEAR, kind="risk", text="Vendor slipped a week"))
     # Over budget on purpose: that is the branch rendering the "+amount, percent" pair.
     db.add(SquadBudget(squad_id=squad_id, year=YEAR, total=100000, spent=80000, forecast=125000))
@@ -91,11 +100,11 @@ def test_the_single_squad_export_too(db, rich):
 
     deck = _deck_text(report_mod.render_pptx(data))
     _assert_clean(deck, "the single-squad PPTX")
-    # La ligne d'une initiative ne porte plus que son nom: elle repond a « quels
-    # jalons servent quoi », pas a « qui la porte ». L'owner et l'echeance vivent
-    # sur le document des initiatives, teste plus bas.
-    assert "Cut the build time" in deck
-    assert "Alice Martin" not in deck
+    # La ligne d'un engagement ne porte que son nom: elle repond a « quels jalons
+    # tiennent cette date », pas a « qui la porte ». L'initiative et son owner
+    # vivent sur le document des initiatives, teste plus bas.
+    assert "Agent in production" in deck
+    assert "Cut the build time" not in deck and "Alice Martin" not in deck
     assert "(80%)" in deck and "(125%)" in deck            # percentage after its amount
 
 

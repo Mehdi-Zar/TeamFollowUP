@@ -948,6 +948,9 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); width
 .mood-btn[disabled] { cursor: default; }
 .mood-card { font-size: 15px; filter: grayscale(1); opacity: .5; }
 .mood-card.on { filter: none; opacity: 1; }
+/* Le nuage remplace le visage: il se dessine, donc il ne depend d'aucune police. */
+.mood-cloud { display: block; }
+.mood-btn .mood-cloud { pointer-events: none; }
 
 /* Barre des tribus de l'organigramme: choisir la tribu qu'on regarde, et voir du
    meme coup ce qu'elle pese. Remplace une liste deroulante et une page entiere. */
@@ -1046,7 +1049,20 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); width
    de le coller en haut a gauche d'une carte vide. */
 .step-center { display: flex; flex-direction: column; align-items: center; padding: 14px 0; }
 .mood-big { gap: 10px; }
-.mood-big .mood-btn { font-size: 40px; padding: 8px 14px; border-radius: 16px; }
+.mood-big .mood-btn { padding: 8px 14px; border-radius: 16px; }
+
+/* La portee d'un engagement OTD: les memes deux couleurs que la frise exportee,
+   pour que la ligne du tableau et le repere du document se reconnaissent. */
+.otd-scope-management { --otd-scope: #1E2761; }
+.otd-scope-squad { --otd-scope: #0E7490; }
+.otd-scope-bar {
+  display: inline-block; width: 4px; height: 14px; border-radius: 2px;
+  background: var(--otd-scope, var(--navy)); margin-right: 8px; vertical-align: -2px;
+}
+.otd-scope-badge {
+  background: color-mix(in srgb, var(--otd-scope, var(--navy)) 12%, #fff);
+  color: var(--otd-scope, var(--navy));
+}
 .mood-note { width: min(460px, 100%); margin-top: 10px; text-align: center; }
 
 /* Le titre d'un engagement OTD, cliquable pour l'ouvrir. Il herite sinon de la

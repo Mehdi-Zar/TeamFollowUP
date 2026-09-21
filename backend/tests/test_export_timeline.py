@@ -6,7 +6,7 @@ Ils les posent maintenant sur un seul axe, le temps, qui est la seule chose que
 ces objets ont en commun.
 
 Ce qui se teste ici n'est pas la mise en page, qui bougera, mais ce qu'elle ne
-doit jamais perdre: un jalon rattache a son initiative, un jalon rattache a rien
+doit jamais perdre: un jalon rattache a son engagement, un jalon rattache a rien
 qui reste visible quand meme, un engagement pose au bon mois, un engagement sans
 date qui est dit plutot que tu, et deux engagements qui ne se recouvrent pas. Le
 JPG n'a pas de test propre: il est produit par le navigateur a partir de ce meme
@@ -51,21 +51,32 @@ def chained(db, seeded):
                     initiative_id=init.id, rag_status="amber", weight=1)
     db.add(obj)
     db.flush()
-    db.add(RoadmapItem(squad_id=squad_id, year=YEAR, quarter=1, title="Cache des dependances",
-                       release_stage="EA", status="on_track", objective_id=obj.id))
-    db.add(RoadmapItem(squad_id=squad_id, year=YEAR, quarter=3, title="Build incremental",
-                       release_stage="GA", status="at_risk", objective_id=obj.id))
-    # Celui-la ne repond a aucun objectif: il doit rester visible.
-    db.add(RoadmapItem(squad_id=squad_id, year=YEAR, quarter=2, title="Nettoyage des images",
-                       release_stage="EA", status="blocked"))
-
     leader = db.get(User, squad.leader_user_id)
-    db.add(Otd(tribe_id=tribe_id, year=YEAR, title="Plan VCF9 presente",
-               committed_date=_utc(2, 15), owner_user_id=leader.id, display_order=1))
+    manage = Otd(tribe_id=tribe_id, year=YEAR, title="Plan VCF9 presente",
+                 committed_date=_utc(2, 15), owner_user_id=leader.id, display_order=1)
+    db.add(manage)
     db.add(Otd(tribe_id=tribe_id, year=YEAR, title="Adoption du modele dans deux pays",
                committed_date=_utc(2, 20), owner_user_id=leader.id, display_order=2))
     db.add(Otd(tribe_id=tribe_id, year=YEAR, title="Engagement sans date arretee",
                committed_date=None, owner_user_id=leader.id, display_order=3))
+    # L'engagement que la squad prend elle-meme, a cote de celui du management.
+    own = Otd(tribe_id=tribe_id, year=YEAR, title="Bascule 25G", scope="squad",
+              squad_id=squad_id, committed_date=_utc(9, 30), owner_user_id=leader.id,
+              display_order=4)
+    db.add(own)
+    db.flush()
+
+    db.add(RoadmapItem(squad_id=squad_id, year=YEAR, quarter=1, title="Cache des dependances",
+                       release_stage="EA", status="on_track", objective_id=obj.id,
+                       otd_id=manage.id))
+    # Celui-ci tient les deux engagements a la fois: le lien du management et
+    # celui de la squad sont deux colonnes distinctes, justement pour cela.
+    db.add(RoadmapItem(squad_id=squad_id, year=YEAR, quarter=3, title="Build incremental",
+                       release_stage="GA", status="at_risk", objective_id=obj.id,
+                       otd_id=manage.id, squad_otd_id=own.id))
+    # Celui-la ne tient aucun engagement: il doit rester visible.
+    db.add(RoadmapItem(squad_id=squad_id, year=YEAR, quarter=2, title="Nettoyage des images",
+                       release_stage="EA", status="blocked"))
     db.commit()
     return squad_id, db.scalar(select(User).where(User.email == seeded["admin"]))
 
@@ -86,19 +97,45 @@ def _deck_text(blob: bytes) -> str:
 
 # ----- ce que la frise assemble --------------------------------------------------
 
-def test_the_milestones_hang_under_the_initiative_they_serve(db, chained):
-    """Le chainage existait deja en base, l'export le rend visible."""
+def test_the_milestones_hang_under_the_commitment_they_hold(db, chained):
+    """La frise repond a « quels jalons tiennent cet engagement », qui est la
+    question du comite: une initiative est une intention, un engagement est une date."""
     squad_id, viewer = chained
     det = _data(db, squad_id, viewer)["tribes"][0]["squads"][0]["detail"]
     rows = report_mod.timeline_rows(det, "fr")
 
-    served = next(r for r in rows if r["title"] == "Reduire le temps de build")
-    assert {it["title"] for it in served["items"]} == {"Cache des dependances", "Build incremental"}
-    assert {it["quarter"] for it in served["items"]} == {1, 3}
-    assert served["owner"] == "Alice Martin" and served["deadline"] == "2026-06-30"
+    held = next(r for r in rows if r["title"] == "Plan VCF9 presente")
+    assert {it["title"] for it in held["items"]} == {"Cache des dependances", "Build incremental"}
+    assert {it["quarter"] for it in held["items"]} == {1, 3}
+    assert held["scope"] == "management"
 
 
-def test_a_milestone_serving_nothing_keeps_its_own_row(db, chained):
+def test_a_milestone_holding_both_commitments_appears_under_both(db, chained):
+    """Le meme travail lu par deux promesses. Avec un lien unique, le dernier qui
+    rattache defaisait le travail de l'autre sans le lui dire."""
+    squad_id, viewer = chained
+    det = _data(db, squad_id, viewer)["tribes"][0]["squads"][0]["detail"]
+    rows = {r["title"]: r for r in report_mod.timeline_rows(det, "fr")}
+
+    assert "Build incremental" in {it["title"] for it in rows["Plan VCF9 presente"]["items"]}
+    assert [it["title"] for it in rows["Bascule 25G"]["items"]] == ["Build incremental"]
+    assert rows["Bascule 25G"]["scope"] == "squad"
+
+
+def test_the_two_scopes_are_told_apart_in_the_timeline_data(db, chained):
+    """La distinction doit exister dans la donnee, pas seulement dans la couleur:
+    c'est elle que les deux rendus peignent."""
+    squad_id, viewer = chained
+    det = _data(db, squad_id, viewer)["tribes"][0]["squads"][0]["detail"]
+    scopes = {o["title"]: o["scope"] for o in det["otds"]}
+
+    assert scopes["Plan VCF9 presente"] == "management"
+    assert scopes["Bascule 25G"] == "squad"
+    # Le management d'abord: la frise se lit de l'engagement subi vers celui qu'on choisit.
+    assert [o["scope"] for o in det["otds"]][-1] == "squad"
+
+
+def test_a_milestone_holding_nothing_keeps_its_own_row(db, chained):
     """Un jalon absent d'un export se lit comme un jalon qui n'existe pas."""
     squad_id, viewer = chained
     det = _data(db, squad_id, viewer)["tribes"][0]["squads"][0]["detail"]
@@ -169,10 +206,12 @@ def test_the_html_export_shows_the_whole_block(db, chained):
     assert 'class="xtl-grid"' in html
     assert len(re.findall(r"<b>Q[1-4]</b>", html)) == 4, "les quatre trimestres"
     assert len(re.findall(r'class="xtl-m"', html)) == 12, "les douze mois"
-    assert "Reduire le temps de build" in html and "Cache des dependances" in html
+    assert "Plan VCF9 presente" in html and "Cache des dependances" in html
     # Le jalon est la; la ligne qui le porte n'annonce aucune categorie.
     assert "Nettoyage des images" in html
-    assert "hors initiative" not in html
+    assert "hors engagement" not in html
+    # Les deux portees se distinguent, et leur legende voyage avec la frise.
+    assert "xtl-scope-squad" in html and "Engagement de la squad" in html
     # Un engagement sans date est cite sous la bande, pas efface.
     assert "Engagements sans date" in html and "Engagement sans date arretee" in html
     # Le moral, avec la date qui le date (le libelle part echappe, pas le niveau).
@@ -188,9 +227,10 @@ def test_the_deck_puts_one_squad_on_one_slide(db, chained):
 
     assert "Frise 2026" in text
     assert all(f"Q{q}" in text for q in (1, 2, 3, 4))
-    assert "Reduire le temps de build" in text and "Build incremental" in text
+    assert "Build incremental" in text
     assert "Nettoyage des images" in text
-    assert "Plan VCF9 presente" in text
+    assert "Plan VCF9 presente" in text and "Bascule 25G" in text
+    assert "Engagement management" in text, "la legende des deux portees"
     assert "Moyen" in text, "le moral declare"
 
 
@@ -206,23 +246,29 @@ def test_the_deck_says_the_release_stage_of_each_milestone(db, chained):
     assert "EA" in text and "GA" in text
     assert "Accès anticipé" in text and "Disponibilité générale" in text
 
-    # Et la phase ne doit pas se poser sur le titre qu'elle accompagne. La phase
-    # est posee dans la boite du jalon, donc les deux formes se recouvrent par
-    # construction: ce qui les separe est la marge droite du titre, qui doit
-    # reserver la colonne de la phase. C'est cette marge que l'on verifie.
+    # La phase suit son jalon dans la meme puce, a l'interieur de la carte: elle
+    # ne peut donc plus se poser sur le titre, ce qui etait le risque du modele
+    # precedent, ou les deux vivaient dans deux formes superposees.
     prs = pptx.Presentation(io.BytesIO(blob))
-    titles = {"Cache des dependances", "Build incremental", "Nettoyage des images"}
-    shapes = [sh for sh in prs.slides[0].shapes if sh.has_text_frame and sh.text_frame.text]
-    stages = [sh for sh in shapes if sh.text_frame.text in ("EA", "GA")]
-    assert len(stages) == 3, "une phase par jalon"
+    cards = [sh for sh in prs.slides[0].shapes
+             if sh.has_text_frame and "Build incremental" in sh.text_frame.text]
+    assert cards, "le jalon est dans une carte"
+    for card in cards:
+        assert "Build incremental (GA)" in card.text_frame.text
+        assert card.text_frame.word_wrap is True, "le texte passe a la ligne, il ne se coupe pas"
 
-    for st_box in stages:
-        host = next(sh for sh in shapes if sh.text_frame.text in titles
-                    and sh.left <= st_box.left and st_box.left + st_box.width <= sh.left + sh.width
-                    and sh.top <= st_box.top and st_box.top + st_box.height <= sh.top + sh.height)
-        text_right = host.left + host.width - host.text_frame.margin_right
-        assert text_right <= st_box.left, (
-            f"le titre « {host.text_frame.text} » court jusque sous sa phase")
+
+def test_no_title_is_cut_in_the_deck(db, chained):
+    """La demande tient en une phrase: on voit tout le texte, la largeur est fixe,
+    et au pire ca passe a la ligne. Un titre coupe ne dit plus rien, et personne
+    ne peut deviner ce qui manque."""
+    squad_id, viewer = chained
+    text = _deck_text(report_mod.render_pptx(_data(db, squad_id, viewer)))
+
+    for title in ("Cache des dependances", "Build incremental", "Nettoyage des images",
+                  "Plan VCF9 presente", "Adoption du modele dans deux pays", "Bascule 25G"):
+        assert title in text, f"« {title} » n'est pas sorti en entier"
+    assert "\u2026" not in text, "aucun titre n'est tronque par des points de suspension"
 
 
 def test_no_shape_falls_outside_the_slide(db, chained):
@@ -258,5 +304,5 @@ def test_a_squad_with_nothing_says_so_rather_than_showing_an_empty_grid(db, seed
     """Une squad vierge est un cas normal en janvier, pas une erreur."""
     viewer = db.scalar(select(User).where(User.email == seeded["admin"]))
     html = report_mod.render_html(_data(db, seeded["squad_b"], viewer))
-    assert "Aucune initiative, aucun jalon" in html
+    assert "Aucun engagement, aucun jalon" in html
     assert "Aucun OTD" in html

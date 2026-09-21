@@ -250,9 +250,21 @@ class Initiative(Base):
 
 
 class Otd(Base):
-    """A One-Time / On-Time Delivery commitment fixed by top management to track a
-    budget milestone. It groups milestones (RoadmapItem.otd_id) and carries a single
-    committed date; its on-time status is derived from those milestones."""
+    """An On-Time Delivery commitment: a dated promise, and the milestones that
+    make it true. Its on-time status is derived from those milestones.
+
+    Two scopes, same object. ``management`` is the commitment top management
+    fixes, and only the tribe leader (or an admin) writes it. ``squad`` is the
+    commitment a squad leader takes on their own squad, without asking anybody.
+    Two scopes rather than two tables because a commitment is a commitment: same
+    fields, same derived status, same way of grouping milestones, and a report
+    that has to show them side by side would otherwise merge two shapes back
+    together at read time.
+
+    Each scope carries its own link to a milestone (``RoadmapItem.otd_id`` for
+    management, ``RoadmapItem.squad_otd_id`` for the squad), so a milestone can
+    serve both at once and neither owner can quietly unhook the other's.
+    """
     __tablename__ = "otds"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -264,10 +276,27 @@ class Otd(Base):
     committed_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     owner_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     display_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # management | squad. Fixe a la creation et jamais modifiable ensuite: un
+    # squad leader qui pourrait basculer son engagement en « management »
+    # s'attribuerait un droit d'ecriture sur un objet du tribe leader.
+    scope: Mapped[str] = mapped_column(String(12), nullable=False, default="management")
+    # La squad proprietaire, pour un engagement de scope « squad ». Nulle pour un
+    # engagement management, dont le rattachement a une squad passe par son owner
+    # et par ses jalons, comme avant.
+    squad_id: Mapped[int | None] = mapped_column(
+        ForeignKey("squads.id", ondelete="CASCADE"), nullable=True, index=True)
 
     roadmap_items: Mapped[list["RoadmapItem"]] = relationship(back_populates="otd",
                                                               foreign_keys="RoadmapItem.otd_id")
+    squad_items: Mapped[list["RoadmapItem"]] = relationship(back_populates="squad_otd",
+                                                            foreign_keys="RoadmapItem.squad_otd_id")
     owner: Mapped["User | None"] = relationship(foreign_keys=[owner_user_id])
+    squad: Mapped["Squad | None"] = relationship(foreign_keys=[squad_id])
+
+    @property
+    def members(self) -> list["RoadmapItem"]:
+        """Les jalons de cet engagement, par le lien de son scope."""
+        return self.squad_items if self.scope == "squad" else self.roadmap_items
 
 
 class Objective(Base):
@@ -339,6 +368,11 @@ class RoadmapItem(Base):
     # Which top-management OTD (budget delivery commitment) this milestone belongs to.
     otd_id: Mapped[int | None] = mapped_column(
         ForeignKey("otds.id", ondelete="SET NULL"), nullable=True, index=True)
+    # L'engagement pris par la squad elle-meme. Un lien distinct de otd_id, et non
+    # le meme: un jalon sert souvent les deux a la fois, et avec un lien unique le
+    # dernier qui rattache defait le travail de l'autre sans le lui dire.
+    squad_otd_id: Mapped[int | None] = mapped_column(
+        ForeignKey("otds.id", ondelete="SET NULL"), nullable=True, index=True)
     # Which tribe initiative this milestone serves. Direct, because the road through
     # the objective (jalon -> objective -> initiative) had a link no screen ever set:
     # every exported timeline showed empty initiative rows and one anonymous row
@@ -352,6 +386,8 @@ class RoadmapItem(Base):
     dependency_tribe: Mapped["Tribe | None"] = relationship(foreign_keys=[dependency_tribe_id])
     objective: Mapped["Objective | None"] = relationship(back_populates="jalons", foreign_keys=[objective_id])
     otd: Mapped["Otd | None"] = relationship(back_populates="roadmap_items", foreign_keys=[otd_id])
+    squad_otd: Mapped["Otd | None"] = relationship(back_populates="squad_items",
+                                                   foreign_keys=[squad_otd_id])
     initiative: Mapped["Initiative | None"] = relationship(foreign_keys=[initiative_id])
 
 

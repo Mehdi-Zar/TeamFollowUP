@@ -171,6 +171,15 @@ def _wipe(db: Session) -> None:
     db.commit()
 
 
+# Les engagements que la squad prend elle-meme, a cote de ceux du management.
+# Deux par squad suffisent a montrer la distinction sur une slide: la couleur du
+# repere, celle du titre de la carte, et la legende du bas.
+SQUAD_OTD_SPECS = [
+    ("Montee de version du socle sans interruption", 3),
+    ("Bascule des environnements internes", 9),
+]
+
+
 def run(db: Session) -> None:
     """Wipe and regenerate the Cloud Platform tribe with rich fake data.
 
@@ -371,6 +380,26 @@ def run(db: Session) -> None:
             target = (same_q or free)
             if target:
                 target[0].otd_id = otd.id
+    db.flush()
+
+    # ---- Les engagements que la squad prend elle-meme. Sans eux, la slide ne
+    # montre qu'une seule des deux portees, et la distinction que le document doit
+    # rendre lisible n'a rien a distinguer. Le premier jalon rattache tient AUSSI
+    # un engagement du management: c'est le cas que les deux liens existent pour,
+    # et il faut le voir sur une slide pour juger si la lecture tient.
+    for si, (sq, _stype, _objs, jalons) in enumerate(squad_refs):
+        for k, (title, month) in enumerate(SQUAD_OTD_SPECS):
+            own = Otd(tribe_id=tribe.id, year=year, title=title, scope="squad",
+                      squad_id=sq.id, owner_user_id=sq.leader_user_id,
+                      display_order=len(OTD_SPECS) + k,
+                      committed_date=datetime(year, month, 15, tzinfo=timezone.utc),
+                      description=f"Engagement pris par la squad {sq.name} : {title.lower()}.")
+            db.add(own)
+            db.flush()
+            q = (month - 1) // 3 + 1
+            candidates = [j for j in jalons if j.quarter == q] or jalons
+            for j in candidates[k::2][:2]:
+                j.squad_otd_id = own.id
     db.flush()
 
     # ---- Org chart (grouped by domain) ----

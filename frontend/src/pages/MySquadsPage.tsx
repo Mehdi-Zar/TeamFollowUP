@@ -318,7 +318,7 @@ function EditSquadModal({ detail, leaders, tribes, isAdmin, onClose, onError }: 
           par initiative portant les jalons qui la servent. */}
       {step === 2 && (
         <div className="stack" style={{ gap: 16 }}>
-          <OtdPanel squad={d} canManage onChange={reload} />
+          <OtdPanel squad={d} canManage canOwn={isAdmin} onChange={reload} />
           <SquadInitiatives squad={d} onChange={reload} onError={onError} />
         </div>
       )}

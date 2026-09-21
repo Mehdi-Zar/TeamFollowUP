@@ -21,8 +21,8 @@ from .serializers import annual_progress, budget_out, dependency_label
 
 # Shared with the PPTX renderers; see reportcommon.
 from .reportcommon import (MOOD_EMOJI, STAGE_COLOR, _DEP_T, _INIT_T, _MONTHS, _lang,  # noqa: F401
-                           _status_label, _status_rag, group_by_theme, mood_label,
-                           pack_otds, rt, timeline_rows)
+                           _status_label, _status_rag, group_by_theme, mood_cloud_svg,
+                           mood_label, pack_otds, rt, timeline_rows)
 # Re-exported so `from .report import render_pptx` keeps working; the decks
 # themselves live in reportpptx.
 from .reportpptx import (_pptx_toolkit, render_dependencies_pptx,  # noqa: F401
@@ -171,26 +171,44 @@ def build_report_data(db: Session, scope_tribe: int | None, year: int | None = N
     if tribe_ids:
         otd_rows = db.scalars(
             select(Otd).where(Otd.year == year, Otd.tribe_id.in_(tribe_ids))
-            .options(selectinload(Otd.roadmap_items), selectinload(Otd.owner))
+            .options(selectinload(Otd.roadmap_items), selectinload(Otd.squad_items),
+                     selectinload(Otd.owner))
             .order_by(Otd.display_order, Otd.id)).all()
 
     def _otds_of(sq) -> list[dict]:
+        """Les engagements que cette squad porte, des deux portees.
+
+        Un engagement du management concerne la squad s'il lui est assigne ou s'il
+        embarque un de ses jalons; un engagement de squad est le sien par
+        construction. Les deux sortent dans la meme liste, avec leur ``scope``,
+        parce que la frise les montre cote a cote et que c'est la couleur, pas la
+        liste, qui doit dire lequel vient d'ou.
+        """
         out = []
         for o in otd_rows:
             if o.tribe_id != sq.tribe_id:
                 continue
-            if not (o.owner_user_id and o.owner_user_id == sq.leader_user_id) and                not any(j.squad_id == sq.id for j in o.roadmap_items):
+            if o.scope == "squad":
+                if o.squad_id != sq.id:
+                    continue
+            elif not (o.owner_user_id and o.owner_user_id == sq.leader_user_id) and \
+                    not any(j.squad_id == sq.id for j in o.roadmap_items):
                 continue
             d = _aware(o.committed_date)
+            members = o.squad_items if o.scope == "squad" else o.roadmap_items
             out.append({
-                "id": o.id, "title": o.title,
+                "id": o.id, "title": o.title, "scope": o.scope,
                 "date": d.date().isoformat() if d else None,
                 # Le rang du mois est ce qui pose l'engagement sur l'axe; une date
                 # d'une autre annee n'a pas de place sur cette frise.
                 "month": (d.month - 1) if d is not None and d.year == year else None,
-                "status": st.otd_status(o.roadmap_items, o.committed_date, now),
+                "status": st.otd_status(members, o.committed_date, now),
                 "owner": o.owner.display_name if o.owner else None,
             })
+        # Le management d'abord, la squad ensuite: la frise se lit de l'engagement
+        # subi vers l'engagement choisi, et deux blocs se reperent mieux qu'un
+        # melange ou seule la couleur trierait.
+        out.sort(key=lambda x: (x["scope"] != "management", x["month"] if x["month"] is not None else 99))
         return out
 
     by_tribe: dict[int | None, list[dict]] = {}
@@ -225,6 +243,11 @@ def build_report_data(db: Session, scope_tribe: int | None, year: int | None = N
                       "stage": r.release_stage, "theme": r.theme,
                       "objective_id": r.objective_id,
                       "initiative_id": r.initiative_id,
+                      # Les deux rattachements d'engagement, celui du management et
+                      # celui de la squad: la frise fait une ligne par engagement,
+                      # et un jalon qui sert les deux apparait sous les deux.
+                      "otd_id": r.otd_id,
+                      "squad_otd_id": r.squad_otd_id,
                       "dependency": dependency_label(r)}
                      for r in sorted(s.roadmap_items, key=lambda x: (x.display_order, x.id))
                      if r.year == year and r.quarter == q
@@ -555,6 +578,10 @@ _TIMELINE_CSS = """<style>
    reste ecrit dans l'infobulle et sous la bande. */
 .xtl-otd{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;
   line-height:1.2;color:var(--navy,#1E2761);margin-left:-6px}
+/* Deux couleurs, et deux seulement: ce qui est peint ici n'est pas le statut
+   (il se lit sur les jalons, en dessous) mais QUI a pris l'engagement. */
+.xtl-scope-management{color:#1E2761}
+.xtl-scope-squad{color:#0E7490}
 .xtl-otd i{width:11px;height:11px;flex:0 0 auto;background:currentColor;
   transform:rotate(45deg);border-radius:2px}
 .xtl-otd span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -566,6 +593,13 @@ _TIMELINE_CSS = """<style>
   padding-left:6px}
 .xtl-init .xtl-cell:last-child{border-right:1px solid var(--line,#E2E8F0);padding-right:6px}
 .xtl-init-name{font-weight:600;color:var(--navy,#1E2761)}
+/* La legende des deux portees, sous la frise: une couleur sans legende se
+   devine, et se devine mal en reunion. */
+.xtl-legend{display:flex;gap:16px;flex-wrap:wrap;font-size:11px;color:var(--grey,#64748B);
+  padding:8px 0 0}
+.xtl-legend span{display:inline-flex;align-items:center;gap:6px}
+.xtl-legend i{width:9px;height:9px;background:currentColor;transform:rotate(45deg);
+  border-radius:2px}
 .xtl-jalon{display:flex;align-items:flex-start;gap:6px;background:#fff;
   border:1px solid var(--line,#E2E8F0);border-left:3px solid var(--line,#E2E8F0);
   border-radius:8px;padding:5px 8px;font-size:12px}
@@ -579,7 +613,7 @@ _TIMELINE_CSS = """<style>
 .xtl-jalon em{font-style:normal;font-size:10px;color:var(--grey,#64748B);flex:0 0 auto}
 .xtl-none{font-size:12px;color:var(--grey,#64748B);grid-column:span 12;padding:4px 0}
 .xtl-mood{display:inline-flex;align-items:center;gap:8px}
-.xtl-mood b{font-size:22px;line-height:1}
+.xtl-mood .mood-cloud{display:block;flex:0 0 auto}
 .xtl .between{display:flex;justify-content:space-between;gap:16px}
 .xtl .small,.xtl-mood .small{font-size:12px}
 .xtl .muted,.xtl-mood .muted{color:var(--grey,#64748B)}
@@ -593,10 +627,12 @@ def _mood_html(r: dict, lang: str, e) -> str:
     """Le moral declare, avec sa date: un moral de mars affiche en septembre ment
     plus surement qu'une case vide."""
     mood = r.get("mood")
-    face = MOOD_EMOJI.get(mood or "", "")
+    # Un nuage dessine, pas un emoji: l'emoji depend de la police installee sur le
+    # poste qui ouvre le document, et sort en carre la ou elle manque.
+    face = mood_cloud_svg(mood, size=34)
     when = f' <span class="muted small">{e(rt(lang, "mood_at", d=r["mood_at"]))}</span>' if r.get("mood_at") else ""
     note = f' <span class="muted small">{e(r["mood_comment"])}</span>' if r.get("mood_comment") else ""
-    return (f'<span class="xtl-mood"><b>{face}</b>'
+    return (f'<span class="xtl-mood">{face}'
             f'<span class="small">{e(rt(lang, "h_mood"))} : {e(mood_label(mood, lang))}</span>'
             f'{when}{note}</span>')
 
@@ -641,7 +677,10 @@ def _timeline_html(det: dict, lang: str, e, year: int) -> str:
     P.append(f'<div class="xtl-row xtl-otds">'
              f'<div class="xtl-label small strong">{e(rt(lang, "h_otd_section"))}</div>')
     for o, month, width, row in placed:
-        P.append(f'<div class="xtl-otd" title="{e(o["title"])} : {e(rt(lang, "otd_" + o["status"]))}"'
+        scope = o.get("scope") or "management"
+        P.append(f'<div class="xtl-otd xtl-scope-{scope}"'
+                 f' title="{e(o["title"])} : {e(rt(lang, "otd_" + o["status"]))}'
+                 f' ({e(rt(lang, "otd_scope_" + scope))})"'
                  f' style="grid-column:{2 + month} / span {width};grid-row:{row + 1}">'
                  f'<i></i><span>{e(o["title"])}</span></div>')
     if bands == 0:
@@ -658,24 +697,23 @@ def _timeline_html(det: dict, lang: str, e, year: int) -> str:
         P.append(f'<div class="xtl-row"><div class="xtl-label"></div>'
                  f'<div class="xtl-none">{e(rt(lang, "no_otd"))}</div></div>')
 
-    # Une ligne par initiative, avec ses jalons dans leur trimestre.
+    # Une ligne par engagement, avec les jalons qui le tiennent dans leur trimestre.
+    # Un jalon qui sert a la fois l'engagement du management et celui de sa squad
+    # apparait sous les deux: c'est le meme travail lu par deux promesses.
+    #
+    # Les jalons qui ne tiennent aucun engagement n'ont pas de libelle: ils
+    # n'appartiennent pas a une categorie « sans engagement », ils n'appartiennent
+    # a rien, et nommer ce vide ajoute une ligne a lire.
     rows = timeline_rows(det, lang)
+    P.append(f'<div class="xtl-row xtl-init"><div class="xtl-label small strong">'
+             f'{e(rt(lang, "h_commitments"))}</div>'
+             f'<div class="xtl-cell" style="grid-column:span 12"></div></div>')
     for row in rows:
-        # Owner et echeance restent sur la ligne de l'initiative: la frise remplace
-        # trois blocs, elle ne se permet pas d'en perdre le contenu au passage.
-        #
-        # Les jalons qui ne servent aucune initiative, eux, n'ont pas de libelle:
-        # ils n'appartiennent pas a une categorie « sans initiative », ils
-        # n'appartiennent a rien, et nommer ce vide ajoute une ligne a lire.
-        #
-        # Le nom de l'initiative, seul. L'owner et l'echeance suivaient dessous et
-        # ne servaient a rien ici: la ligne repond a « quels jalons servent quoi »,
-        # pas a « qui la porte ». Les deux restent sur la carte des initiatives, qui
-        # est faite pour ca.
         if row["key"] == "none":
             label = ""
         else:
-            label = f'<div class="xtl-init-name">{e(row["title"])}</div>'
+            scope = row.get("scope") or "management"
+            label = (f'<div class="xtl-init-name xtl-scope-{scope}">{e(row["title"])}</div>')
         P.append(f'<div class="xtl-row xtl-init"><div class="xtl-label">{label}</div>')
         for q in (1, 2, 3, 4):
             P.append('<div class="xtl-cell" style="grid-column:span 3">')
@@ -694,7 +732,11 @@ def _timeline_html(det: dict, lang: str, e, year: int) -> str:
         P.append(f'<div class="xtl-row"><div class="xtl-label"></div>'
                  f'<div class="xtl-none">{e(rt(lang, "tl_empty"))}</div></div>')
 
-    P.append('</div></div></div>')
+    P.append('</div>')
+    P.append('<div class="xtl-legend">' + "".join(
+        f'<span class="xtl-scope-{sc}"><i></i>{e(rt(lang, "otd_scope_" + sc))}</span>'
+        for sc in ("management", "squad")) + '</div>')
+    P.append('</div></div>')
     return "".join(P)
 
 

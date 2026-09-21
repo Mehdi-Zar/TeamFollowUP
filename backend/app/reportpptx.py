@@ -23,9 +23,9 @@ from . import status as st
 from .generalconfig import get_general
 from .models import Squad, Tribe, utcnow
 from .serializers import annual_progress, budget_out, dependency_label
-from .reportcommon import (MOOD_COLOR, MOOD_EMOJI, STAGE_COLOR, _DEP_T, _INIT_T, _MONTHS,
-                           _lang, _status_label, _status_rag, group_by_theme, mood_label,
-                           pack_otds, rt, timeline_rows)
+from .reportcommon import (MOOD_CLOUD, MOOD_COLOR, OTD_SCOPE_COLOR, STAGE_COLOR, _DEP_T,
+                           _INIT_T, _MONTHS, _lang, _status_label, _status_rag,
+                           group_by_theme, mood_label, pack_otds, rt, timeline_rows)
 
 
 # ----- PPTX rendering -------------------------------------------------------------
@@ -65,8 +65,8 @@ def render_pptx(data: dict) -> bytes:
     """Render the weekly report as a branded deck (requires python-pptx):
     a summary one-pager (dropped for a single-squad export) followed by one slide
     per squad, each built on the year's timeline: quarters and their progress, OTD
-    commitments placed on their date, then one row per initiative carrying the
-    milestones that serve it, with key messages and budget along the bottom. The
+    commitments placed on their date, then one row per commitment carrying the
+    milestones that hold it, with key messages and budget along the bottom. The
     roadmap-only swimlane deck is produced separately by render_roadmap_pptx."""
     Presentation, Inches, Pt, Emu, RGBColor, PP_ALIGN, MSO_ANCHOR, MSO_SHAPE = _pptx_toolkit()
 
@@ -290,7 +290,7 @@ def render_pptx(data: dict) -> bytes:
     #
     # Meme bloc que la page d'une squad et que l'export HTML: les trimestres avec
     # leur avancement, les engagements OTD poses a leur date juste dessous, puis
-    # une ligne par initiative portant les jalons qui la servent. Les positions
+    # une ligne par engagement portant les jalons qui le tiennent. Les positions
     # sont calculees en pouces sur un axe unique, donc tout s'aligne: un jalon du
     # Q3 tombe sous l'entete du Q3, sans reglage a la main.
     LBL_X, LBL_W = 0.55, 1.55          # colonne des libelles, a gauche de l'axe
@@ -312,6 +312,49 @@ def render_pptx(data: dict) -> bytes:
         text = text or ""
         return text if len(text) <= chars else text[:max(1, chars - 1)].rstrip() + "\u2026"
 
+    def mood_cloud(s, x, y, w, mood):
+        """Le nuage du moral, dessine en formes plutot qu'en emoji.
+
+        Un emoji depend de la police installee sur le poste qui ouvre le fichier:
+        il sort en carre la ou elle manque, et change de style d'un support a
+        l'autre. Trois formes suffisent a le remplacer, et elles sortent pareil
+        partout. La bouche redit le niveau que la couleur donne, pour la lecture
+        en noir et blanc.
+        """
+        pal = MOOD_CLOUD[mood]
+        h = w * 0.72
+        cloud = s.shapes.add_shape(MSO_SHAPE.CLOUD, Inches(x), Inches(y), Inches(w), Inches(h))
+        cloud.fill.solid(); cloud.fill.fore_color.rgb = rgb(pal["fill"])
+        cloud.line.color.rgb = rgb(pal["ink"]); cloud.line.width = Pt(1.25)
+        cloud.shadow.inherit = False
+
+        eye = w * 0.075
+        for ex in (x + w * 0.36, x + w * 0.60):
+            o = s.shapes.add_shape(MSO_SHAPE.OVAL, Inches(ex), Inches(y + h * 0.42),
+                                   Inches(eye), Inches(eye))
+            o.fill.solid(); o.fill.fore_color.rgb = rgb(pal["ink"])
+            o.line.fill.background(); o.shadow.inherit = False
+
+        # La bouche: un trait epais pour « moyen », un arc pour les deux autres,
+        # approche par un polygone. Une forme d'arc dependrait de reglages que
+        # PowerPoint interprete, un polygone se dessine tel qu'on l'ecrit.
+        mx, my, mw = x + w * 0.33, y + h * 0.66, w * 0.34
+        th = h * 0.055
+        if mood == "mixed":
+            m = s.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(mx), Inches(my),
+                                   Inches(mw), Inches(th))
+            m.fill.solid(); m.fill.fore_color.rgb = rgb(pal["ink"])
+            m.line.fill.background(); m.shadow.inherit = False
+            return
+        depth = h * 0.16 * (1 if mood == "good" else -1)
+        pts = [(mx + mw * i / 4.0, my + depth * (1 - (2 * i / 4.0 - 1) ** 2)) for i in range(5)]
+        outline = pts + [(px, py - th) for px, py in reversed(pts)]
+        builder = s.shapes.build_freeform(Inches(outline[0][0]), Inches(outline[0][1]))
+        builder.add_line_segments([(Inches(px), Inches(py)) for px, py in outline[1:]], close=True)
+        mouth = builder.convert_to_shape()
+        mouth.fill.solid(); mouth.fill.fore_color.rgb = rgb(pal["ink"])
+        mouth.line.fill.background(); mouth.shadow.inherit = False
+
     def squad_slide(r):
         det = r.get("detail") or {}
         s = new_slide()
@@ -328,16 +371,16 @@ def render_pptx(data: dict) -> bytes:
         # Le moral: trois niveaux, et la date qui les date. Un moral de mars
         # projete en septembre ment plus surement qu'une case vide.
         mood = r.get("mood")
-        # Pas de visage quand rien n'est declare: un point d'interrogation se lirait
-        # comme un quatrieme niveau.
-        mlines = []
-        if mood in MOOD_EMOJI:
-            mlines.append((MOOD_EMOJI[mood], 20, B["ink"], False, PP_ALIGN.CENTER, 1))
-        mlines.append((mood_label(mood, lang), 9,
-                       rgb(_RAG_BRAND[MOOD_COLOR.get(mood or "", "grey")]), True, PP_ALIGN.CENTER, 0))
-        place(rrect(s, Inches(11.20), Inches(0.26), Inches(1.73), Inches(0.81),
-                    B["white"], line=B["line"], radius=0.08),
-              mlines, anchor=MSO_ANCHOR.MIDDLE, ml=0.04, mr=0.04, mt=0.04, mb=0.04)
+        # Pas de nuage quand rien n'est declare: un nuage gris se lirait comme un
+        # quatrieme niveau, alors que « non renseigne » n'en est pas un.
+        mcard = rrect(s, Inches(11.20), Inches(0.26), Inches(1.73), Inches(0.81),
+                      B["white"], line=B["line"], radius=0.08)
+        place(mcard, [(mood_label(mood, lang), 9,
+                       rgb(_RAG_BRAND[MOOD_COLOR.get(mood or "", "grey")]), True,
+                       PP_ALIGN.RIGHT, 0)],
+              anchor=MSO_ANCHOR.MIDDLE, ml=0.04, mr=0.12, mt=0.04, mb=0.04)
+        if mood in MOOD_CLOUD:
+            mood_cloud(s, 11.30, 0.40, 0.56, mood)
         # La date se range au-dessus de la carte, seule dans le coin de la slide, et
         # non dans l'encadre du visage. Elle date le moral, elle ne le dit pas: a
         # l'interieur, elle prenait le meme rang que le niveau, qui est la seule
@@ -381,157 +424,195 @@ def render_pptx(data: dict) -> bytes:
                     color=B["ink"], align=PP_ALIGN.CENTER)
         rect(s, Inches(LBL_X), Inches(2.34), Inches(AX1 - LBL_X), Inches(0.012), B["line"])
 
-        # ----- les engagements OTD, poses a leur date -----
-        textbox(s, Inches(LBL_X), Inches(2.42), Inches(LBL_W), Inches(0.2),
-                rt(lang, "h_otd_section"), 10, bold=True, color=B["navy"])
-        otds = det.get("otds") or []
-        # Deux engagements proches ne peuvent pas occuper la meme place: ils
-        # s'empilent, plutot que de se superposer et d'en rendre un illisible. Le
-        # rangement est celui de l'export HTML, au pouce pres.
-        # Une case de mois fait 0,88 pouce, soit environ treize caracteres en 9 pt.
-        placed, hidden = pack_otds(otds, chars_per_month=CPM, max_rows=OTD_ROWS)
-        # Ou s'arrete le dernier engagement pose sur chaque bande, en mois: c'est la
-        # limite de ce qu'un titre ecrit vers la gauche peut occuper sans recouvrir
-        # son voisin. Les engagements arrivent par mois croissant.
-        taken: dict[int, int] = {}
-        for o, month, width, row in placed:
-            # Le repere tombe sur le mois, le titre s'ecrit a cote. Une forme qui
-            # s'etire sur trois mois se lirait comme une periode, alors qu'un
-            # engagement est une date.
-            x0 = AX0 + month * MW
-            y0 = 2.42 + row * 0.26
-            # Une seule couleur pour tous les engagements: quatre teintes sur une
-            # meme rangee ne laissent plus ressortir les jalons en dessous, dont la
-            # couleur dit vraiment quelque chose. Le statut reste ecrit.
-            ink = B["navy"]
-            mark = s.shapes.add_shape(MSO_SHAPE.DIAMOND, Inches(x0 - 0.06), Inches(y0 + 0.04),
-                                      Inches(0.12), Inches(0.12))
-            mark.fill.solid(); mark.fill.fore_color.rgb = ink
-            mark.line.fill.background(); mark.shadow.inherit = False
-            # La place a droite du repere, que ``pack_otds`` a deja bornee a la fin
-            # de l'annee: un titre ne deborde jamais de l'axe, il se coupe avant.
-            right = width * MW - 0.10
-            # Les deux derniers mois n'ont presque plus rien devant eux. Le titre
-            # s'ecrit alors a gauche du repere, dans ce que le precedent de la
-            # bande laisse libre: mieux vaut un titre entier a gauche d'un point
-            # qu'un titre coupe a sa droite. Ailleurs sur l'axe il reste a droite,
-            # parce que le bord gauche du titre sur la date est ce qui fait lire la
-            # bande.
-            free = x0 - 0.08 - (AX0 + taken.get(row, 0) * MW)
-            if month >= 10 and free > right:
-                room = min(free, 2.40)
-                label = textbox(s, Inches(x0 - 0.08 - room), Inches(y0 + 0.02), Inches(room),
-                                Inches(0.18), fit(o["title"], int(room / MW * CPM)), 9,
-                                bold=True, color=ink, align=PP_ALIGN.RIGHT)
-            else:
-                room = right
-                label = textbox(s, Inches(x0 + 0.10), Inches(y0 + 0.02), Inches(room),
-                                Inches(0.18), fit(o["title"], int(room / MW * CPM)), 9,
-                                bold=True, color=ink)
-            label.text_frame.word_wrap = False
-            taken[row] = month + width
-        bands = max((row for _, _, _, row in placed), default=-1) + 1
-        otd_bottom = 2.42 + max(bands, 1) * 0.26
+        # ----- les engagements poses sur l'axe, et leurs jalons en cartes -----
+        #
+        # Une carte par engagement, sous la date a laquelle il est pris: son titre,
+        # sa date, puis ses jalons en puces. Un pointille relie la carte au repere
+        # pose sur l'axe, et les cartes se rangent en quinconce pour qu'aucune n'en
+        # recouvre une autre.
+        #
+        # Pourquoi des cartes et non des lignes: une ligne par engagement obligeait
+        # a couper chaque titre a la largeur d'une colonne de trimestre, et un titre
+        # coupe ne dit plus rien. Dans une carte, la largeur est fixe et le texte
+        # passe a la ligne, donc il se lit en entier.
+        from pptx.enum.dml import MSO_LINE_DASH_STYLE
+        from pptx.enum.shapes import MSO_CONNECTOR
 
-        # Ce qui n'a pas de place sur l'axe est dit, pas tu: un engagement absent
-        # d'un export se lit comme un engagement qui n'existe pas.
+        otds = det.get("otds") or []
+        by_id = {o["id"]: o for o in otds}
+        rows = timeline_rows(det, lang)
+
+        TOP, BOTTOM = 2.52, 5.86    # la bande ou les cartes se posent
+        GAP_X, GAP_Y = 0.12, 0.12
+        PAD = 0.09                  # marge interne d'une carte
+
+        def wrapped(text: str, fs: float, width: float) -> int:
+            """Combien de lignes ce texte prend, a cette taille, dans cette largeur.
+
+            PowerPoint ne rend pas la hauteur d'un texte avant de l'afficher: sans
+            cette estimation, une carte se dimensionne au juge et son dernier jalon
+            sort du cadre."""
+            per_char = 0.0068 * fs
+            cpl = max(8, int((width - 2 * PAD) / per_char))
+            return max(1, -(-len(text or "") // cpl))
+
+        def cards_of(row) -> list[dict]:
+            """Les cartes d'une ligne de frise: une par engagement, et une par
+            trimestre pour les jalons qui ne tiennent aucun engagement (ils ont un
+            trimestre, pas une date)."""
+            if row["key"] == "none":
+                out = []
+                for q in (1, 2, 3, 4):
+                    items = [it for it in row["items"] if it.get("quarter") == q]
+                    if items:
+                        out.append({"title": None, "scope": None, "date": None,
+                                    "month": (q - 1) * 3, "items": items})
+                return out
+            o = by_id.get(row["key"]) or {}
+            month = o.get("month")
+            if month is None:
+                # Sans date, la carte se pose sur le trimestre de son premier jalon:
+                # un engagement hors de l'axe serait invisible, et sa liste de jalons
+                # avec lui.
+                qs = [it.get("quarter") for it in row["items"] if it.get("quarter")]
+                month = (min(qs) - 1) * 3 if qs else 0
+            return [{"title": row["title"], "scope": row.get("scope") or "management",
+                     "date": o.get("date"), "month": month, "items": row["items"]}]
+
+        cards = [c for row in rows for c in cards_of(row)]
+        cards.sort(key=lambda c: (c["month"], c["title"] or ""))
+
+        def layout(cols: int, title_fs: float, item_fs: float):
+            """Range les cartes sur ``cols`` colonnes et rend (posees, debordantes).
+
+            Une carte va dans la colonne de son mois et s'empile sous celles qui y
+            sont deja. Quand cette colonne est pleine jusqu'en bas, elle prend la
+            colonne la moins remplie: le pointille garde le lien avec sa date, donc
+            une carte decalee reste juste, la ou une carte absente ne dit plus rien.
+            """
+            col_w = (AX1 - AX0) / cols
+            card_w = col_w - GAP_X
+            title_lh, item_lh = title_fs * 0.0200, item_fs * 0.0190
+            bottoms = [TOP] * cols
+            placed, spill = [], []
+
+            for c in cards:
+                h = 2 * PAD
+                if c["title"]:
+                    h += wrapped(c["title"], title_fs, card_w) * title_lh
+                    if c["date"]:
+                        h += item_lh
+                for it in c["items"]:
+                    label = it["title"] + (f' ({it["stage"]})' if it.get("stage") else "")
+                    h += wrapped("- " + label, item_fs, card_w) * item_lh
+
+                home = min(cols - 1, int(c["month"] * cols / 12))
+                if bottoms[home] + h <= BOTTOM:
+                    col = home
+                else:
+                    free = [(bottoms[i], abs(i - home), i) for i in range(cols)
+                            if bottoms[i] + h <= BOTTOM]
+                    if not free:
+                        spill.append(c)
+                        continue
+                    col = min(free)[2]
+                y = bottoms[col]
+                bottoms[col] = y + h + GAP_Y
+                placed.append({**c, "x": AX0 + col * col_w, "y": y, "h": h,
+                               "w": card_w, "title_fs": title_fs, "item_fs": item_fs})
+            return placed, spill
+
+        # Du plus lisible au plus dense: on ne coupe pas le texte pour faire tenir
+        # la slide, on ajoute une colonne puis on reduit le corps. Ce qui ne rentre
+        # toujours pas est compte en clair plutot que tu.
+        for cols, tfs, ifs in ((5, 9.5, 8.5), (5, 8.5, 7.5), (6, 8.5, 7.5), (6, 8, 7), (7, 7.5, 6.5)):
+            placed, spill = layout(cols, tfs, ifs)
+            if not spill:
+                break
+
+        for c in placed:
+            ink = (rgb(OTD_SCOPE_COLOR[c["scope"]]) if c["scope"] else B["muted"])
+            x, y, h, CARD_W = c["x"], c["y"], c["h"], c["w"]
+            title_fs, item_fs = c["title_fs"], c["item_fs"]
+
+            if c["title"]:
+                # Le repere sur l'axe: une etoile a la date, et un pointille qui
+                # descend vers la carte. Sans le trait, deux cartes voisines ne
+                # disent plus laquelle repond a quelle date.
+                mx = AX0 + c["month"] * MW + MW / 2
+                star = s.shapes.add_shape(MSO_SHAPE.STAR_5_POINT, Inches(mx - 0.09),
+                                          Inches(2.26), Inches(0.18), Inches(0.18))
+                star.fill.solid(); star.fill.fore_color.rgb = ink
+                star.line.fill.background(); star.shadow.inherit = False
+                # Le trait ne se justifie que si la carte est proche de son etoile.
+                # Quand elle a ete rangee ailleurs, un pointille en diagonale
+                # traverse toute la frise et croise les autres: il coute plus en
+                # bruit qu'il ne rapporte, et la date ecrite dans la carte dit deja
+                # a quel repere elle repond.
+                anchor = min(max(mx, x + 0.2), x + CARD_W - 0.2)
+                if abs(anchor - mx) < CARD_W * 0.75:
+                    link = s.shapes.add_connector(MSO_CONNECTOR.STRAIGHT, Inches(mx), Inches(2.44),
+                                                  Inches(anchor), Inches(y))
+                    link.line.color.rgb = ink
+                    link.line.width = Pt(0.75)
+                    link.line.dash_style = MSO_LINE_DASH_STYLE.ROUND_DOT
+
+            box = rrect(s, Inches(x), Inches(y), Inches(CARD_W), Inches(h),
+                        B["white"], line=ink, radius=0.05)
+            box.line.dash_style = MSO_LINE_DASH_STYLE.DASH
+
+            tf = box.text_frame
+            tf.word_wrap = True          # la largeur est fixe, le texte passe a la ligne
+            tf.margin_left = tf.margin_right = Inches(PAD)
+            tf.margin_top = Inches(PAD * 0.7); tf.margin_bottom = Inches(PAD * 0.5)
+            tf.vertical_anchor = MSO_ANCHOR.TOP
+
+            first = True
+
+            def para():
+                nonlocal first
+                pp = tf.paragraphs[0] if first else tf.add_paragraph()
+                first = False
+                pp.space_after = Pt(0.5)
+                pp.alignment = PP_ALIGN.LEFT
+                return pp
+
+            if c["title"]:
+                pt_ = para()
+                run = pt_.add_run(); run.text = c["title"]
+                run.font.size = Pt(title_fs); run.font.bold = True; run.font.color.rgb = ink
+                if c["date"]:
+                    pd = para()
+                    rd = pd.add_run()
+                    rd.text = f'{rt(lang, "otd_commit")} {c["date"]}'
+                    rd.font.size = Pt(item_fs - 0.5); rd.font.color.rgb = B["muted"]
+
+            for it in c["items"]:
+                pi = para()
+                # La puce porte le statut, la legende du bas la traduit. Un mot de
+                # statut par jalon prendrait une ligne sur deux dans la carte.
+                rb = pi.add_run(); rb.text = "\u2022 "
+                rb.font.size = Pt(item_fs)
+                rb.font.color.rgb = rgb(_RAG_BRAND[_status_rag(it["status"])])
+                rr = pi.add_run(); rr.text = it["title"]
+                rr.font.size = Pt(item_fs); rr.font.color.rgb = B["ink"]
+                if it.get("stage"):
+                    rs = pi.add_run(); rs.text = f' ({it["stage"]})'
+                    rs.font.size = Pt(item_fs - 0.5); rs.font.color.rgb = B["muted"]
+
+        # Ce qui n'a pas trouve de place est dit, pas tu: une carte absente d'un
+        # export se lit comme un engagement qui n'existe pas.
         notes = []
         undated = [o["title"] for o in otds if o.get("month") is None]
         if undated:
             notes.append(f'{rt(lang, "tl_no_date")} : {", ".join(undated)}')
-        if hidden:
-            notes.append(f'+{hidden}')
-        if not otds:
-            notes.append(rt(lang, "no_otd"))
+        if spill:
+            notes.append(f'+{len(spill)}')
+        if not cards:
+            notes.append(rt(lang, "tl_empty"))
         if notes:
-            textbox(s, Inches(AX0), Inches(otd_bottom), Inches(AX1 - AX0), Inches(0.18),
-                    ", ".join(notes)[:150], 8, color=B["muted"])
-            otd_bottom += 0.18
-
-        # ----- les colonnes de trimestre, tracees jusqu'en bas -----
-        #
-        # Quatre colonnes sans separation obligent le lecteur a mesurer a l'oeil
-        # de quel trimestre releve un jalon. Les traits descendent des entetes
-        # Q1 a Q4 et traversent toute la frise, sous les boites mais au-dessus du
-        # fond: c'est le repere que la frise promettait sans le donner.
-        BOTTOM = 5.84
-        for qi in range(5):
-            x = AX0 + qi * QW
-            rect(s, Inches(min(x, AX1)), Inches(qy + 0.54), Inches(0.008),
-                 Inches(BOTTOM - qy - 0.54), rgb("#DDE3EE"))
-
-        # ----- une ligne par initiative, ses jalons dans leur trimestre -----
-        #
-        # La colonne de gauche est titree, comme l'est la bande des engagements
-        # au-dessus. Sans ce mot, le lecteur y trouvait un nom suivi d'une personne
-        # et d'une date, sans rien qui dise de quoi il s'agit: un intitule sans
-        # categorie se devine, et la question posee en comite est justement
-        # « c'est quoi, ce titre a gauche ».
-        rows = timeline_rows(det, lang)
-        y = otd_bottom + 0.06
-        textbox(s, Inches(LBL_X), Inches(y), Inches(LBL_W), Inches(0.2),
-                rt(lang, "h_initiatives"), 10, bold=True, color=B["navy"])
-        y += 0.24
-        drawn = 0
-        for row in rows:
-            per_q = {q: [it for it in row["items"] if it.get("quarter") == q] for q in (1, 2, 3, 4)}
-            tallest = max((len(v) for v in per_q.values()), default=0)
-            # Un jalon prend deux lignes de texte quand son titre est long, donc la
-            # hauteur d'une boite est fixe et connue: la ligne s'y ajuste.
-            rh = max(0.56, JALON_H * tallest + 0.12)
-            if y + rh > BOTTOM:
-                break
-            rect(s, Inches(LBL_X), Inches(y), Inches(AX1 - LBL_X), Inches(0.012), B["line"])
-
-            # Le libelle de la ligne. Les jalons qui ne servent aucune initiative
-            # n'appartiennent pas a une categorie « sans initiative »: ils
-            # n'appartiennent a rien, et leur ligne n'annonce donc rien.
-            # Le nom de l'initiative, seul. L'owner et l'echeance suivaient dessous
-            # et ne servaient a rien ici: la ligne repond a « quels jalons servent
-            # quoi », pas a « qui la porte ». Les deux restent sur la carte des
-            # initiatives, qui est faite pour ca.
-            if row["key"] != "none":
-                textbox(s, Inches(LBL_X), Inches(y + 0.06), Inches(LBL_W), Inches(rh - 0.1),
-                        fit(row["title"], 52), 9.5, bold=True, color=B["navy"])
-
-            for qi, q in enumerate((1, 2, 3, 4)):
-                for k, it in enumerate(per_q[q]):
-                    jx, jy = AX0 + qi * QW + 0.05, y + 0.06 + k * JALON_H
-                    jb = rrect(s, Inches(jx), Inches(jy), Inches(QW - 0.14), Inches(JALON_H - 0.06),
-                               B["white"], line=B["line"], radius=0.12)
-                    # Le filet de couleur porte le statut. Il reste, mais il a
-                    # desormais sa legende au bas de la slide: une couleur sans
-                    # legende se devine, et se devine mal en reunion.
-                    rect(s, Inches(jx), Inches(jy), Inches(0.05), Inches(JALON_H - 0.06),
-                         rgb(_RAG_BRAND[_status_rag(it["status"])]))
-                    # Le titre, puis la phase a droite. La dependance, elle, reste
-                    # dehors: a trois informations sur une ligne c'est le titre qui
-                    # etait coupe, et c'est la seule qu'on lit de loin. EA ou GA
-                    # tient en deux lettres et se range dans une colonne fixe, donc
-                    # le titre sait ou s'arreter au lieu de passer dessous.
-                    stage = (it.get("stage") or "").strip()
-                    place(jb, [(fit(it["title"], 2 * JALON_CPL), 9, B["ink"],
-                                False, PP_ALIGN.LEFT, 0)],
-                          anchor=MSO_ANCHOR.MIDDLE, ml=0.10,
-                          mr=0.07 + (STAGE_W if stage else 0), mt=0.01, mb=0.01)
-                    jb.text_frame.word_wrap = True
-                    if stage:
-                        # En encre de service et non aux couleurs de la phase: le
-                        # bord gauche de la boite porte deja une couleur, celle du
-                        # statut, et deux codes couleur dans une boite de deux
-                        # centimetres ne se distinguent plus de loin.
-                        textbox(s, Inches(jx + QW - 0.14 - STAGE_W - 0.05),
-                                Inches(jy + (JALON_H - 0.06) / 2 - 0.06),
-                                Inches(STAGE_W), Inches(0.13), stage, 8, bold=True,
-                                color=B["muted"], align=PP_ALIGN.RIGHT)
-            y += rh
-            drawn += 1
-        if not rows:
-            textbox(s, Inches(AX0), Inches(y + 0.06), Inches(AX1 - AX0), Inches(0.2),
-                    rt(lang, "tl_empty"), 10, color=B["muted"])
-        elif drawn < len(rows):
-            textbox(s, Inches(AX0), Inches(min(y, BOTTOM) + 0.02), Inches(AX1 - AX0), Inches(0.2),
-                    f'+{len(rows) - drawn}', 9, color=B["muted"])
+            textbox(s, Inches(AX0), Inches(BOTTOM + 0.02), Inches(AX1 - AX0), Inches(0.18),
+                    ", ".join(notes)[:170], 8, color=B["muted"])
 
         # ----- bas de slide: messages cles et budget -----
         def list_card(x, y2, w, h, title, lines, empty):
@@ -590,6 +671,18 @@ def render_pptx(data: dict) -> bytes:
         # et deux lettres suffisent a dire.
         LEG_CW = 0.048                 # largeur d'un caractere en 7 pt
         lx = 0.4
+        # D'abord les deux portees d'engagement: c'est la distinction nouvelle, et
+        # une couleur sans legende se devine, mal, en reunion. Le meme repere que
+        # sur l'axe, sinon la legende explique un signe qui ne s'y trouve pas.
+        for scope in ("management", "squad"):
+            mk = s.shapes.add_shape(MSO_SHAPE.STAR_5_POINT, Inches(lx), Inches(7.30),
+                                    Inches(0.13), Inches(0.13))
+            mk.fill.solid(); mk.fill.fore_color.rgb = rgb(OTD_SCOPE_COLOR[scope])
+            mk.line.fill.background(); mk.shadow.inherit = False
+            leg = rt(lang, "otd_scope_" + scope)
+            textbox(s, Inches(lx + 0.13), Inches(7.31), Inches(LEG_CW * len(leg) + 0.06),
+                    Inches(0.14), leg, 7, color=B["muted"])
+            lx += 0.26 + LEG_CW * len(leg)
         for rag, codes in (("green", ("on_track", "done")), ("amber", ("at_risk",)),
                            ("red", ("blocked",))):
             rect(s, Inches(lx), Inches(7.33), Inches(0.09), Inches(0.09), rgb(_RAG_BRAND[rag]))
@@ -633,7 +726,6 @@ _RM = {
     "sub": "#97A3AA",    # month sub-headers
     "card": "#F2F2F2",   # milestone cards
     "card_ink": "#002060",
-    "arrow": "#DCE3EA",
     "muted": "#6B7280",
     "white": "#FFFFFF",
 }
@@ -643,8 +735,8 @@ _RM = {
 
 def render_roadmap_pptx(data: dict) -> bytes:
     """Roadmap swimlane deck (mirrors the reference layout): quarters in columns
-    with month sub-headers and a timeline arrow, squads as swimlane rows, and one
-    milestone card per (squad, quarter) with status-coloured bullets."""
+    with month sub-headers, squads as swimlane rows, and one milestone card per
+    (squad, quarter) with status-coloured bullets."""
     Presentation, Inches, Pt, Emu, RGBColor, PP_ALIGN, MSO_ANCHOR, MSO_SHAPE = _pptx_toolkit()
 
     def rgb(hexstr: str) -> RGBColor:
@@ -669,8 +761,11 @@ def render_roadmap_pptx(data: dict) -> bytes:
     def col_x(i): return MARGIN + i * (COL_W + GAP)
     Y_Q, H_Q = 0.92, 0.34          # quarter header
     Y_M, H_M = 1.30, 0.28          # month sub-headers
-    Y_ARROW, H_ARROW = 1.66, 0.30  # timeline arrow
-    Y_TOP, Y_BOTTOM = 2.10, 7.18   # swimlane content band
+    # Pas de fleche de temps sous les mois: les quatre trimestres et leurs mois
+    # disent deja le sens de lecture, et la bande rendait un demi-pouce de hauteur
+    # a une decoration. Recupere, ce demi-pouce va aux cartes de jalons, qui sont
+    # ce que la slide doit faire tenir.
+    Y_TOP, Y_BOTTOM = 1.72, 7.18   # swimlane content band
 
     squads = [r for blk in data["tribes"] for r in blk["squads"]]
 
@@ -722,9 +817,6 @@ def render_roadmap_pptx(data: dict) -> bytes:
         legend = [("EA  ", STAGE["EA"], True), (rt(lang, "stage_ea") + "      ", C["dark"], False),
                   ("GA  ", STAGE["GA"], True), (rt(lang, "stage_ga"), C["dark"], False)]
         textbox(s, SLIDE_W - 5.9, 0.34, 5.4, 0.3, legend, 10, align=PP_ALIGN.RIGHT)
-        # timeline arrow spanning the columns
-        shape(s, MSO_SHAPE.RIGHT_ARROW, MARGIN - 0.1, Y_ARROW,
-              (col_x(3) + COL_W) - (MARGIN - 0.1) + 0.18, H_ARROW, C["arrow"], round_adj=None)
         for i, q in enumerate((1, 2, 3, 4)):
             x = col_x(i)
             set_text(shape(s, MSO_SHAPE.RECTANGLE, x, Y_Q, COL_W, H_Q, C["dark"]),

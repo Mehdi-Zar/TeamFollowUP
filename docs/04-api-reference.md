@@ -89,6 +89,27 @@ servent l'initiative (remplace le precedent). C'est le **seul** endroit ou ce li
 se pose, comme `PUT /api/otds/{id}/jalons` l'est pour un engagement : il ne figure
 pas dans l'edition d'un jalon, ou deux ecrans finiraient par se contredire.
 
+### otds (`/api/otds`)
+`GET ""` - les engagements de l'annee, avec leur statut derive et leurs jalons.
+`POST ""`; `PUT /{id}`; `DELETE /{id}`; `PUT /{id}/jalons`;
+`GET /candidate-jalons?year=&tribe_id=&squad_id=`.
+
+Deux portees, deux proprietaires. `scope="management"` est ecrit par le tribe
+leader ou l'admin, sur sa tribe. `scope="squad"` exige `squad_id` et n'est ecrit
+que par un leader de cette squad, tribe leader compris **exclu** : un engagement
+qu'un tiers peut corriger n'est plus l'engagement de celui qui l'a pris. La portee
+n'est pas dans `OtdUpdate`, donc elle ne se modifie pas apres coup.
+
+Lecture : le tribe leader et l'admin voient tout ce qui concerne leur tribe, les
+deux portees comprises, puisque leurs rapports les montrent. Un squad leader voit
+les siens, plus les engagements management qui lui sont assignes ou qui embarquent
+un de ses jalons. Les autres n'en voient aucun.
+
+`PUT /{id}/jalons` ecrit le lien de SA portee (`roadmap_items.otd_id` pour le
+management, `squad_otd_id` pour la squad), donc rattacher d'un cote ne detache
+jamais rien de l'autre. Un engagement management accepte les jalons de sa tribe,
+un engagement de squad seulement ceux de sa squad.
+
 ### roadmap (`/api/roadmap-items`) - module `squad_content.roadmap`
 `POST ""`; `PUT /{id}`; `DELETE /{id}` (writer + can-edit-squad). Normalizes EA/GA + dependency.
 

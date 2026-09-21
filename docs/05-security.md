@@ -189,6 +189,15 @@ Three independent layers, all enforced **server-side** (the SPA only hides UI):
 Plus **tribe scoping** (`assert_tribe_scope`, `visible_tribe_id`) and **ownership**
 (`assert_can_edit_squad`) for data-level isolation. Every privileged mutation writes to `audit_log`.
 
+**Les deux portees d'un engagement OTD.** `scope="management"` est ecrit par le
+tribe leader (ou l'admin) de la tribe; `scope="squad"` par un leader de la squad
+designee, et par lui seul. Le tribe leader lit un engagement de squad, il ne
+l'ecrit pas: c'est ce qui fait qu'il reste l'engagement de la squad. La portee est
+posee a la creation et absente de `OtdUpdate`, sans quoi un squad leader se
+donnerait un droit d'ecriture sur un objet du tribe leader en rebaptisant le sien.
+Le rattachement des jalons suit la meme regle, et chaque portee ecrit sa propre
+colonne (`otd_id` contre `squad_otd_id`).
+
 **Co-leaders.** A squad has one named leader (`leader_user_id`, the identity an OTD is
 committed on) and any number of **co-leaders** (`squad_coleaders`) holding exactly the
 same rights over that squad. Every squad-level check goes through a single helper,

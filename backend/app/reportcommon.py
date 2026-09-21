@@ -47,9 +47,12 @@ _RT = {
         "h_jalon": "Jalon", "h_stage": "Phase", "h_otd": "OTD (engagements de livraison)",
         "no_otd": "Aucun OTD", "otd_commit": "engagé",
         "h_otd_section": "OTD", "h_freshness_ok": "Données à jour",
-        # --- Frise annuelle (trimestres + engagements OTD + initiatives/jalons) ---
-        "h_timeline": "Frise {year}", "tl_hint": "Les engagements OTD sur l'axe, puis les jalons de chaque initiative",
-        "tl_empty": "Aucune initiative, aucun jalon",
+        # --- Frise annuelle (trimestres + engagements OTD + leurs jalons) ---
+        "h_timeline": "Frise {year}", "tl_hint": "Les engagements OTD sur l'axe, puis les jalons de chaque engagement",
+        "tl_empty": "Aucun engagement, aucun jalon",
+        "h_commitments": "Engagements et jalons",
+        "otd_scope_management": "Engagement management",
+        "otd_scope_squad": "Engagement de la squad",
         "tl_no_date": "Engagements sans date",
         "otd_on_track": "À l'heure", "otd_at_risk": "À risque", "otd_late": "En retard",
         "otd_delivered": "Livré",
@@ -102,9 +105,12 @@ _RT = {
         "h_jalon": "Milestone", "h_stage": "Stage", "h_otd": "OTD (delivery commitments)",
         "no_otd": "No OTD", "otd_commit": "committed",
         "h_otd_section": "OTD", "h_freshness_ok": "Up to date",
-        # --- Annual timeline (quarters + OTD commitments + initiatives/milestones) ---
-        "h_timeline": "Timeline {year}", "tl_hint": "OTD commitments on the axis, then each initiative's milestones",
-        "tl_empty": "No initiative, no milestone",
+        # --- Annual timeline (quarters + OTD commitments + their milestones) ---
+        "h_timeline": "Timeline {year}", "tl_hint": "OTD commitments on the axis, then each commitment's milestones",
+        "tl_empty": "No commitment, no milestone",
+        "h_commitments": "Commitments and milestones",
+        "otd_scope_management": "Management commitment",
+        "otd_scope_squad": "Squad commitment",
         "tl_no_date": "Commitments with no date",
         "otd_on_track": "On time", "otd_at_risk": "At risk", "otd_late": "Late",
         "otd_delivered": "Delivered",
@@ -249,6 +255,53 @@ _MONTHS = {
 MOOD_EMOJI = {"good": "\U0001F600", "mixed": "\U0001F610", "bad": "\U0001F641"}
 MOOD_COLOR = {"good": "green", "mixed": "amber", "bad": "red"}
 
+# La couleur qui distingue les deux portees d'engagement, partout: bandeau de la
+# frise, libelle de ligne, legende, HTML comme PPTX. Le bleu de marque pour ce qui
+# vient du management, un cyan profond pour ce que la squad prend elle-meme. Deux
+# teintes soutenues et non une pale: sur un videoprojecteur, une nuance claire
+# disparait, et c'est justement la distinction qui est demandee.
+OTD_SCOPE_COLOR = {"management": "#1E2761", "squad": "#0E7490"}
+
+# Le moral se dessine en nuage plutot qu'en emoji. Un emoji depend de la police
+# installee: il sort en carre sur un poste sans jeu couleur, et il change de style
+# d'un support a l'autre. Un nuage dessine sort pareil partout, et il reste sobre.
+# Trois teintes: la couleur porte le niveau, la bouche le redit pour qui imprime
+# en noir et blanc.
+MOOD_CLOUD = {
+    "good": {"ink": "#027A48", "fill": "#ECFDF3"},
+    "mixed": {"ink": "#B54708", "fill": "#FFFAEB"},
+    "bad": {"ink": "#B42318", "fill": "#FEF3F2"},
+}
+
+
+def mood_cloud_svg(mood: str | None, size: int = 34) -> str:
+    """Le nuage du moral, en SVG autonome (aucune police, aucune image externe).
+
+    Rendu vide pour un moral non declare: un nuage gris se lirait comme un moral
+    moyen, alors que « non renseigne » n'est pas un niveau.
+    """
+    palette = MOOD_CLOUD.get(mood or "")
+    if palette is None:
+        return ""
+    ink, fill = palette["ink"], palette["fill"]
+    # La bouche dit le niveau sans la couleur: sourire, trait, moue.
+    mouth = {
+        "good": "M24 27 Q32 34 40 27",
+        "mixed": "M25 29 L39 29",
+        "bad": "M24 32 Q32 25 40 32",
+    }[mood]
+    h = int(size * 0.72)
+    return (
+        f'<svg class="mood-cloud" width="{size}" height="{h}" viewBox="0 0 64 46" '
+        f'role="img" aria-hidden="true" focusable="false">'
+        f'<path d="M18 40 A11 11 0 0 1 18 18 A13 13 0 0 1 43 14 A11 11 0 0 1 47 40 Z" '
+        f'fill="{fill}" stroke="{ink}" stroke-width="2.5" stroke-linejoin="round"/>'
+        f'<circle cx="26" cy="23" r="2.4" fill="{ink}"/>'
+        f'<circle cx="39" cy="23" r="2.4" fill="{ink}"/>'
+        f'<path d="{mouth}" fill="none" stroke="{ink}" stroke-width="2.5" stroke-linecap="round"/>'
+        f'</svg>'
+    )
+
 
 def mood_label(mood: str | None, lang: str) -> str:
     """Libelle du moral declare, ou « non renseigne » quand il ne l'est pas."""
@@ -256,40 +309,47 @@ def mood_label(mood: str | None, lang: str) -> str:
 
 
 def timeline_rows(det: dict, lang: str) -> list[dict]:
-    """Une ligne par initiative, portant les jalons qui la servent.
+    """Une ligne par engagement OTD, portant les jalons qui le tiennent.
 
-    Un jalon designe son initiative. Il l'a longtemps designee a travers son
-    objectif annuel (jalon -> objectif -> initiative), un chemin dont aucun ecran
-    ne posait le second maillon: chaque frise affichait alors des lignes
-    d'initiative vides et une ligne anonyme portant tous les jalons. L'ancien
-    chemin reste lu en second, pour des donnees qui n'auraient pas ete reprises.
+    La frise repondait « quels jalons servent quelle initiative ». Elle repond
+    desormais « quels jalons tiennent quel engagement », qui est la question posee
+    en comite: une initiative est une intention, un engagement est une date.
 
-    Les jalons qui ne servent rien, et ceux qui servent une initiative portee par
-    une autre squad, se retrouvent dans une ligne « hors initiative » plutot que de
-    disparaitre de la frise: un jalon absent d'un export se lit comme un jalon qui
-    n'existe pas.
+    Un jalon porte deux rattachements, celui de l'engagement du management
+    (``otd_id``) et celui de l'engagement de sa squad (``squad_otd_id``). Il sert
+    souvent les deux, et il apparait alors sous les deux lignes: c'est le meme
+    travail lu par deux promesses differentes, pas un doublon.
+
+    Les jalons qui ne tiennent aucun engagement restent sur une derniere ligne
+    sans titre plutot que de disparaitre: un jalon absent d'un export se lit comme
+    un jalon qui n'existe pas. Sans titre, et non « hors engagement », parce qu'ils
+    ne forment pas une categorie, ils sont ceux qui n'en ont pas.
     """
-    obj_to_init = {o["id"]: o.get("initiative_id") for o in det.get("objectives") or []}
     groups: dict[object, list[dict]] = {}
+    orphans: list[dict] = []
     for qd in det.get("quarters") or []:
         for it in qd.get("items") or []:
-            key = (it.get("initiative_id")
-                   or obj_to_init.get(it.get("objective_id")) or "none")
-            groups.setdefault(key, []).append(dict(it, quarter=qd["q"]))
+            item = dict(it, quarter=qd["q"])
+            keys = [k for k in (it.get("otd_id"), it.get("squad_otd_id")) if k]
+            if not keys:
+                orphans.append(item)
+            for key in keys:
+                groups.setdefault(key, []).append(item)
 
     rows: list[dict] = []
-    known = set()
-    for ini in det.get("initiatives") or []:
-        known.add(ini["id"])
-        rows.append({"key": ini["id"], "title": ini["title"], "owner": ini.get("owner"),
-                     "deadline": ini.get("deadline"), "items": groups.get(ini["id"], [])})
-    orphans = [it for key, items in groups.items() if key not in known for it in items]
+    for otd in det.get("otds") or []:
+        items = groups.get(otd["id"], [])
+        # Un engagement sans jalon garde sa place. Il est la promesse la plus
+        # fragile du lot, puisque rien n'est encore pose pour la tenir: le retirer
+        # du document ferait disparaitre justement celle qu'il faut regarder.
+        rows.append({"key": otd["id"], "title": otd["title"],
+                     "scope": otd.get("scope", "management"),
+                     "status": otd.get("status"), "date": otd.get("date"),
+                     "owner": otd.get("owner"), "deadline": otd.get("date"),
+                     "items": items})
     if orphans:
-        # Sans titre, et non « Jalons hors initiative »: ces jalons ne forment pas
-        # une categorie, ils sont ceux qui n'en ont pas. Nommer ce vide ajoute une
-        # ligne a lire dans un document qui doit se lire de loin.
-        rows.append({"key": "none", "title": None, "owner": None,
-                     "deadline": None, "items": orphans})
+        rows.append({"key": "none", "title": None, "scope": None, "status": None,
+                     "date": None, "owner": None, "deadline": None, "items": orphans})
     return rows
 
 

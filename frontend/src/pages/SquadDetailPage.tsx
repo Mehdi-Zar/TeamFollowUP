@@ -154,7 +154,7 @@ export default function SquadDetailPage() {
       {/* Les engagements OTD de cette squad: dates, avec leur statut. Ils vivent au
           niveau de la tribu, d'ou un panneau qui va les chercher lui-meme. C'est ce
           que les exports montrent, et ce que cette page taisait. */}
-      {privileged && <OtdPanel squad={squad} canManage={canToggleBudget} onChange={reload} />}
+      {privileged && <OtdPanel squad={squad} canManage={canToggleBudget} canOwn={leadsThisSquad} onChange={reload} />}
 
       {/* Les objectifs de squad: le maillon entre un engagement et les jalons qui
           le servent. Autre chose que les OTD ci-dessus, donc une autre carte. */}

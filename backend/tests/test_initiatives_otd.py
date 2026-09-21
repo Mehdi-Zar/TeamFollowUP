@@ -106,26 +106,31 @@ def test_an_initiative_carries_the_jalons_that_serve_it(client, seeded):
     assert cands[b["id"]]["initiative_id"] is None
 
 
-def test_the_timeline_hangs_those_jalons_under_that_initiative(client, seeded, db):
-    """Le seul but du lien: que la frise cesse d'afficher une ligne vide et une
-    ligne anonyme."""
+def test_the_timeline_hangs_those_jalons_under_that_commitment(client, seeded, db):
+    """La frise fait une ligne par engagement, pas par initiative: ce que le comite
+    demande est « quels jalons tiennent cette date ». L'initiative garde son lien
+    et son propre document, elle ne structure plus la frise."""
     from app import report as report_mod
     from app.models import User
     from sqlalchemy import select
 
     login(client, seeded["admin"])
     sq = seeded["squad_a"]
-    init = _init(client, seeded["t1"], title="Portail unifié", squad_id=sq)
-    served = _jalon(client, sq, "Cache des dépendances", 1)
-    _jalon(client, sq, "Nettoyage des images", 2)          # ne sert rien
-    client.put(f"/api/initiatives/{init['id']}/jalons", json={"jalon_ids": [served["id"]]})
+    otd = client.post("/api/otds", json={
+        "tribe_id": seeded["t1"], "year": YEAR, "title": "Portail unifié en production",
+        "committed_date": f"{YEAR}-06-30T00:00:00Z"}).json()
+    held = _jalon(client, sq, "Cache des dépendances", 1)
+    _jalon(client, sq, "Nettoyage des images", 2)          # ne tient rien
+    r = client.put(f"/api/otds/{otd['id']}/jalons", json={"jalon_ids": [held["id"]]})
+    assert r.status_code == 200, r.text
 
     viewer = db.scalar(select(User).where(User.email == seeded["admin"]))
     det = report_mod.build_report_data(db, None, YEAR, 7, lang="fr", viewer=viewer,
                                        squad_id=sq)["tribes"][0]["squads"][0]["detail"]
     rows = report_mod.timeline_rows(det, "fr")
-    named = next(r for r in rows if r["title"] == "Portail unifié")
+    named = next(r for r in rows if r["title"] == "Portail unifié en production")
     assert [it["title"] for it in named["items"]] == ["Cache des dépendances"]
+    assert named["scope"] == "management"
     orphans = next(r for r in rows if r["key"] == "none")
     assert [it["title"] for it in orphans["items"]] == ["Nettoyage des images"]
 

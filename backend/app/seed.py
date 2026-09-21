@@ -534,6 +534,28 @@ def run_seed(db: Session) -> None:
     otd(tribe_a, "Bascule PSP v2 a 100%", "paiements", 3, paiements)
     otd(tribe_b, "Datamart finance v1 livre", "analytics", 2, analytics)
 
+    # ---- Les engagements que la squad prend elle-meme, a cote de ceux du
+    #      management. La demonstration montre les deux portees, sinon la
+    #      distinction que les documents rendent lisible n'a rien a distinguer.
+    def squad_otd(squad, title, committed_q, jalon_max=2):
+        """Un engagement de squad, avec ses propres jalons. Le lien passe par
+        ``squad_otd_id``: un jalon peut ainsi tenir a la fois cet engagement et
+        celui du management, ce qui est le cas courant."""
+        o = Otd(tribe_id=squad.tribe_id, year=year, title=title, scope="squad",
+                squad_id=squad.id, owner_user_id=squad.leader_user_id,
+                committed_date=qdate(committed_q, 15))
+        db.add(o)
+        db.flush()
+        js = db.scalars(
+            select(RoadmapItem).where(RoadmapItem.squad_id == squad.id)
+            .order_by(RoadmapItem.quarter, RoadmapItem.id).limit(jalon_max)
+        ).all()
+        for j in js:
+            j.squad_otd_id = o.id
+    squad_otd(gcp, "Montee de version du socle sans interruption", 2)
+    squad_otd(paiements, "Bascule des environnements internes", 4)
+    squad_otd(analytics, "Reprise des flux historiques", 3)
+
     db.commit()
     logger.info("Seed appliqué : %d squads (année %d), objectifs datés, jalons détaillés, "
                 "frise de progression, fil live. Mot de passe démo : 'demo'.", len(all_squads), year)

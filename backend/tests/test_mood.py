@@ -96,3 +96,65 @@ def test_a_co_leader_declares_it_too(client, db, seeded):
     login(client, seeded["sl_b"])
     assert client.put(f"/api/squads/{seeded['squad_a']}/mood",
                       json={"mood": "good"}).status_code == 200
+
+
+# ----- le nuage, dans les documents ----------------------------------------------
+
+def test_the_html_export_draws_a_cloud_and_no_emoji(client, db, seeded):
+    """Un emoji depend de la police du poste qui ouvre le document: il sort en
+    carre la ou elle manque. Le nuage est dessine, donc il sort partout pareil."""
+    from app import report as report_mod
+    from app.models import User
+
+    login(client, seeded["sl_a"])
+    client.put(f"/api/squads/{seeded['squad_a']}/mood", json={"mood": "good"})
+
+    viewer = db.scalar(select(User).where(User.email == seeded["admin"]))
+    data = report_mod.build_report_data(db, None, 2026, 7, lang="fr", viewer=viewer,
+                                        squad_id=seeded["squad_a"])
+    html = report_mod.render_html(data)
+
+    assert 'class="mood-cloud"' in html, "le nuage est dessine dans le document"
+    assert "\U0001F600" not in html and "\U0001F610" not in html and "\U0001F641" not in html
+
+
+def test_an_undeclared_mood_draws_nothing(client, db, seeded):
+    """Un nuage gris se lirait comme un quatrieme niveau, alors que
+    « non renseigne » n'en est pas un."""
+    from app.reportcommon import mood_cloud_svg
+
+    assert mood_cloud_svg(None) == ""
+    assert mood_cloud_svg("good").startswith("<svg")
+    # La bouche redit le niveau, pour qui imprime en noir et blanc.
+    assert mood_cloud_svg("good") != mood_cloud_svg("bad")
+
+
+def test_the_deck_draws_the_cloud_as_shapes(client, db, seeded):
+    """Sur une slide, le nuage est un assemblage de formes: nuage, deux yeux, une
+    bouche. C'est ce qui lui permet de sortir sans aucune police."""
+    import io as _io
+
+    import pytest
+
+    pptx = pytest.importorskip("pptx")
+    from app import report as report_mod
+    from app.models import User
+
+    login(client, seeded["sl_a"])
+    client.put(f"/api/squads/{seeded['squad_a']}/mood", json={"mood": "bad"})
+
+    viewer = db.scalar(select(User).where(User.email == seeded["admin"]))
+    blob = report_mod.render_pptx(report_mod.build_report_data(
+        db, None, 2026, 7, lang="fr", viewer=viewer, squad_id=seeded["squad_a"]))
+    prs = pptx.Presentation(_io.BytesIO(blob))
+    # La geometrie d'une forme automatique se lit dans auto_shape_type; shape_type
+    # dit seulement "forme automatique" et ne distingue donc pas un nuage d'un carre.
+    kinds = []
+    for sh in prs.slides[0].shapes:
+        try:
+            kinds.append(str(sh.auto_shape_type))
+        except (ValueError, AttributeError, TypeError):
+            continue
+
+    assert any(k.startswith("CLOUD") for k in kinds), "le nuage lui-meme"
+    assert sum(1 for k in kinds if k.startswith("OVAL")) >= 2, "les deux yeux"

@@ -105,13 +105,75 @@ l'axe il reste a droite, parce que le bord gauche du titre pose sur la date est
 ce qui fait lire la bande. Quand la bande est deja occupee jusqu'au repere, il n'y
 a pas de place a gauche non plus et le titre se coupe, ce qui reste honnete.
 
+## 1 bis. Un engagement, une carte, ses jalons dedans
+
+La frise groupait par initiative. Elle groupe desormais par **engagement OTD**,
+avec les jalons qui le tiennent. La question posee en comite est « quels jalons
+tiennent cette date » : une initiative est une intention, un engagement est une
+date, et c'est la date qui est lue.
+
+Les deux portees se distinguent par la couleur, la meme partout : bleu de marque
+pour l'engagement du management, cyan profond pour celui que la squad prend
+elle-meme. L'etoile posee sur l'axe, le titre de la carte et la legende partagent
+cette couleur, et la legende figure sous la frise parce qu'une couleur sans
+legende se devine, mal, en reunion.
+
+Un jalon qui tient les deux engagements apparait dans les deux cartes : c'est le
+meme travail lu par deux promesses, pas un doublon. Un engagement sans jalon garde
+sa carte : c'est la promesse la plus fragile du lot, puisque rien n'est encore
+pose pour la tenir. Les jalons qui ne tiennent aucun engagement se regroupent par
+trimestre dans une carte sans titre : ils ne forment pas une categorie, ils sont
+ceux qui n'en ont pas.
+
+Les initiatives ne figurent plus sur la slide du dashboard. Elles gardent leur
+propre document (`render_initiatives_pptx`) et leur carte a l'ecran.
+
+### Pourquoi des cartes, et pas des lignes (slide PPTX)
+
+Une ligne par engagement obligeait a couper chaque titre a la largeur d'une
+colonne de trimestre, et un titre coupe ne dit plus rien : personne ne peut
+deviner ce qui manque. Dans une carte, la largeur est fixe et le texte passe a la
+ligne, donc il se lit en entier. C'est la seule regle a laquelle la mise en page
+ne deroge pas.
+
+Le rangement suit une **grille de colonnes** (cinq, six ou sept selon la charge).
+Une carte va dans la colonne de son mois et s'empile sous celles qui y sont deja ;
+si cette colonne est pleine jusqu'en bas, elle prend la moins remplie, et sa date
+reste ecrite dans son en-tete. Le placement libre a ete essaye d'abord : deux
+cartes decalees d'un demi-mois se genent sans qu'aucune n'utilise la place
+restante, et une carte de decembre finissait comptee en « +1 » alors que le milieu
+de la frise etait vide.
+
+Quand tout ne rentre pas, l'ordre est : ajouter une colonne, puis reduire le corps
+(9,5 pt jusqu'a 7,5 pt), et seulement en dernier recours compter en clair ce qui
+n'a pas de place. Jamais couper un texte.
+
+Une etoile marque la date sur l'axe et un pointille la relie a sa carte, mais
+seulement quand la carte est restee pres de son mois : quand elle a ete rangee
+ailleurs, le trait traverse la frise en diagonale et croise les autres, ce qui
+coute plus en bruit qu'il ne rapporte, alors que la date ecrite dans la carte dit
+deja a quel repere elle repond.
+
+Dans chaque carte, un jalon est une puce dont la couleur porte le statut, avec sa
+phase (EA ou GA) en gris derriere son titre. La legende du bas traduit les deux
+codes, une fois pour toute la slide.
+
 ## 2. Le moral de l'equipe
 
-Chaque document porte le moral declare par la squad, en haut a droite : 😀 ça va
-bien, 😐 moyen, 🙁 ça ne va pas, avec la date, rangee en petit dans le coin de la
-carte. Elle date le moral, elle ne le dit pas : sous le visage, sur une troisieme
-ligne centree, elle prenait le meme rang que le niveau, qui est la seule chose a
-lire de loin.
+Chaque document porte le moral declare par la squad, en haut a droite : un petit
+nuage, vert quand ça va bien, ambre quand c'est moyen, rouge quand ça ne va pas,
+avec la date rangee en petit dans le coin de la carte. Elle date le moral, elle ne
+le dit pas : sous le nuage, sur une troisieme ligne centree, elle prenait le meme
+rang que le niveau, qui est la seule chose a lire de loin.
+
+**Un nuage dessine, pas un emoji.** Un emoji depend de la police installee sur le
+poste qui ouvre le document : il change de style d'un support a l'autre et sort en
+carre la ou le jeu couleur manque. Le nuage est dessine, donc il sort partout
+pareil : en SVG dans l'ecran et dans l'export HTML (`reportcommon.mood_cloud_svg`,
+repris a l'identique par `MoodCloud` cote interface), en formes PowerPoint dans le
+deck (un nuage, deux yeux, une bouche construite en polygone plutot qu'en arc,
+dont le rendu dependrait de reglages que PowerPoint interprete). La bouche redit
+le niveau que la couleur donne, pour qui imprime en noir et blanc.
 
 **Trois niveaux et pas cinq.** Une echelle fine invite a la nuance, or ce qu'on
 cherche ici est un signal. Trois choix se decident en une seconde, ce qui est la
@@ -130,8 +192,9 @@ courant retire la declaration, ce qui est la seule facon de dire « je ne me
 prononce plus » sans inventer un quatrieme niveau, et efface aussi la date, sinon
 une date resterait a l'ecran sans rien dater.
 
-Quand rien n'est declare, les documents ecrivent « non renseigne » sans visage :
-un point d'interrogation se lirait comme un quatrieme niveau.
+Quand rien n'est declare, les documents ecrivent « non renseigne » sans nuage :
+un nuage gris se lirait comme un quatrieme niveau, alors que « non renseigne »
+n'en est pas un.
 
 ## 3. Les trois formats
 

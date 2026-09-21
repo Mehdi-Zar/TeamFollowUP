@@ -86,6 +86,9 @@ export interface Initiative {
 
 /** An OTD (On-Time Delivery): a dated delivery commitment the tribe leader
  *  places on a squad leader, covering a set of milestones. */
+/** La portee d'un engagement: fixe par le management, ou pris par la squad. */
+export type OtdScope = "management" | "squad";
+
 export interface Otd {
   id: number;
   tribe_id: number;
@@ -96,6 +99,8 @@ export interface Otd {
   committed_date?: string | null;
   owner_user_id?: number | null;
   display_order: number;
+  scope?: OtdScope;
+  squad_id?: number | null;
 }
 
 // Reporting (read) shapes returned by the report endpoints.
@@ -125,6 +130,7 @@ export interface InitiativeReport {
  *  covered milestones on top of the base {@link Otd}. */
 export interface OtdReport extends Otd {
   owner_name?: string | null;
+  squad_name?: string | null;
   status: OtdStatus;
   counts: { total: number; done: number; blocked: number; at_risk: number };
   jalons: { id: number; title: string; quarter: number; stage?: string | null; status: RoadmapStatus; squad_id: number; squad_name: string }[];
@@ -133,7 +139,7 @@ export interface OtdReport extends Otd {
  *  prend deja s'il y en a une. */
 export interface CandidateInitiativeJalon { id: number; title: string; quarter: number; squad_id: number; initiative_id?: number | null; }
 /** A milestone selectable when linking milestones to an OTD. */
-export interface CandidateJalon { id: number; title: string; quarter: number; theme?: string | null; squad_id: number; squad_name: string; otd_id?: number | null; }
+export interface CandidateJalon { id: number; title: string; quarter: number; theme?: string | null; squad_id: number; squad_name: string; otd_id?: number | null; squad_otd_id?: number | null; }
 
 /** Account lifecycle for SSO-provisioned users: awaiting approval, active, or revoked. */
 export type AccessStatus = "pending" | "active" | "disabled";

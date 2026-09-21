@@ -13,7 +13,33 @@ import { useI18n } from "../i18n";
 
 export const MOODS = ["good", "mixed", "bad"] as const;
 export type Mood = (typeof MOODS)[number];
-export const MOOD_EMOJI: Record<Mood, string> = { good: "😀", mixed: "😐", bad: "🙁" };
+
+// Un nuage dessine plutot qu'un emoji. Un emoji depend de la police installee: il
+// change de style d'un poste a l'autre et sort en carre la ou le jeu couleur
+// manque, y compris dans les documents exportes. Les memes trois teintes et la
+// meme geometrie qu'en HTML et en PPTX (voir backend/app/reportcommon.py), pour
+// que le moral se reconnaisse d'un support a l'autre.
+const CLOUD: Record<Mood, { ink: string; fill: string; mouth: string }> = {
+  good: { ink: "#027A48", fill: "#ECFDF3", mouth: "M24 27 Q32 34 40 27" },
+  mixed: { ink: "#B54708", fill: "#FFFAEB", mouth: "M25 29 L39 29" },
+  bad: { ink: "#B42318", fill: "#FEF3F2", mouth: "M24 32 Q32 25 40 32" },
+};
+
+/** Le nuage d'un niveau de moral. La couleur porte le niveau, la bouche le redit
+ *  pour qui imprime en noir et blanc, ou ne distingue pas les teintes. */
+export function MoodCloud({ mood, size = 30 }: { mood: Mood; size?: number }) {
+  const c = CLOUD[mood];
+  return (
+    <svg className="mood-cloud" width={size} height={Math.round(size * 0.72)}
+         viewBox="0 0 64 46" role="img" aria-hidden="true" focusable="false">
+      <path d="M18 40 A11 11 0 0 1 18 18 A13 13 0 0 1 43 14 A11 11 0 0 1 47 40 Z"
+            fill={c.fill} stroke={c.ink} strokeWidth="2.5" strokeLinejoin="round" />
+      <circle cx="26" cy="23" r="2.4" fill={c.ink} />
+      <circle cx="39" cy="23" r="2.4" fill={c.ink} />
+      <path d={c.mouth} fill="none" stroke={c.ink} strokeWidth="2.5" strokeLinecap="round" />
+    </svg>
+  );
+}
 
 /** Au-dela de ce delai, le moral affiche est signale comme ancien. */
 const STALE_DAYS = 45;
@@ -64,7 +90,7 @@ export default function TeamMood({ squadId, mood, moodAt, comment, canEdit, onCh
                   aria-label={t(`mood.${m}`)}
                   title={canEdit ? t(`mood.${m}`) : t(`mood.${m}`)}
                   onClick={() => pick(m)}>
-            {MOOD_EMOJI[m]}
+            <MoodCloud mood={m} size={big ? 54 : 30} />
           </button>
         ))}
       </div>
@@ -127,7 +153,7 @@ export function MoodBadge({ mood, moodAt }: { mood?: Mood | null; moodAt?: strin
   return (
     <span className={`mood-card${stale ? "" : " on"}`}
           title={`${t("mood.title")} : ${t(`mood.${mood}`)}${moodAt ? `, ${formatDate(moodAt)}` : ""}`}>
-      {MOOD_EMOJI[mood]}
+      <MoodCloud mood={mood} size={22} />
     </span>
   );
 }

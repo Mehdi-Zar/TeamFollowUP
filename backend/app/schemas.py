@@ -28,6 +28,8 @@ ReleaseStage = Literal["EA", "GA"]  # Early Access | General Availability
 QuarterHealth = Literal["on_track", "at_risk", "blocked"]
 Trend = Literal["on_target", "under_pressure", "missed"]
 Quarter = Literal[1, 2, 3, 4]
+# La portee d un engagement: fixe par le management, ou pris par la squad.
+OtdScope = Literal["management", "squad"]
 # Open-ended: "product" (roadmap) and "transverse" (initiatives/OTD) ship today, but
 # any custom type key is accepted so new squad types can be added without a schema change.
 SquadType = str
@@ -305,7 +307,12 @@ class InitiativeOut(ORMModel):
 
 
 class OtdCreate(BaseModel):
-    """Fields to create an OTD (top-management budget delivery commitment)."""
+    """Fields to create an OTD.
+
+    ``scope`` decides who owns it: ``management`` is fixed by the tribe leader,
+    ``squad`` is taken by a squad leader on a squad they lead, and then
+    ``squad_id`` is required.
+    """
     tribe_id: int
     year: int
     title: str = Field(min_length=1, max_length=300)
@@ -313,10 +320,17 @@ class OtdCreate(BaseModel):
     committed_date: Optional[datetime] = None
     owner_user_id: Optional[int] = None  # the squad leader this OTD is assigned to
     display_order: int = 0
+    scope: OtdScope = "management"
+    squad_id: Optional[int] = None
 
 
 class OtdUpdate(BaseModel):
-    """Partial edit of an OTD."""
+    """Partial edit of an OTD.
+
+    ``scope`` is absent on purpose: it is fixed at creation. A squad leader able
+    to turn their own commitment into a management one would be granting
+    themselves write access to an object that is not theirs.
+    """
     title: Optional[str] = Field(default=None, min_length=1, max_length=300)
     description: Optional[str] = None
     committed_date: Optional[datetime] = None
@@ -335,6 +349,8 @@ class OtdOut(ORMModel):
     committed_date: Optional[datetime] = None
     owner_user_id: Optional[int] = None
     display_order: int
+    scope: OtdScope = "management"
+    squad_id: Optional[int] = None
 
 
 class InitiativeMembers(BaseModel):
