@@ -37,6 +37,7 @@ understand, run, operate and extend the product **without further explanation**.
 | 25 | [Acces, et les ecrans qui gerent une squad](25-acces-et-ecrans-de-gestion.md) | Admins / Tribe leaders |
 | 26 | [Ranger les ecrans : menus, valeurs par defaut, mode d'emploi](26-ranger-les-ecrans.md) | Admins |
 | 27 | [Le parcours de reporting, et les trois listes du tableau de bord](27-parcours-de-reporting-et-listes.md) | Squad leaders / Tribe leaders |
+| 28 | [Socle applicatif reutilisable (demarrer une autre application)](28-socle-applicatif-reutilisable.md) | Engineers / Architects |
 | - | [Guide des menus (captures, regenerable)](Guide-des-menus.html) | Tout le monde |
 | - | [Architecture Decision Records (ADR)](adr/README.md) | Engineers / Architects |
 
