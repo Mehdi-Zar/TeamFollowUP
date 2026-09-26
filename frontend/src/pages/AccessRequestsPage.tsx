@@ -1,0 +1,260 @@
+// AccessRequestsPage - approval queue for pending (typically SSO-provisioned)
+// accounts. An approver assigns a role and the appropriate tribe/squad, or denies
+// the request. The set of grantable roles/tribes/squads and whether denial is
+// allowed all come from the backend, which enforces the same scope server-side.
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { api, errorText } from "../api";
+import { useI18n } from "../i18n";
+import { useAuth } from "../auth";
+import { AccessHistoryEntry, AccessOptions, AccessRequest, ManagedAccount, Role } from "../types";
+import { Spinner, ErrorBanner, EmptyState } from "../components/ui";
+import { useSetPageChrome } from "../components/pageChrome";
+
+/**
+ * Manager queue to validate SSO-provisioned accounts. Each approver only sees the
+ * roles / squads / tribes they may grant (the backend enforces the same scope).
+ *
+ * Business logic:
+ * - Guarded by `canReviewAccess`: users without it get an "not allowed" state and
+ *   no fetch is made.
+ * - Loads `/api/access-requests`, which returns both the pending requests and the
+ *   grantable options (roles/tribes/squads, whether deny is permitted).
+ * - `act()` wraps every approve/deny call: it shows a result message, reloads the
+ *   queue, and refreshes auth (the approver's own scope may have changed).
+ *
+ * Access: reviewers only (managers / leaders with the access-review capability).
+ */
+export default function AccessRequestsPage() {
+  const { t, role: roleLabel, formatDateTime } = useI18n();
+  const { canReviewAccess, refresh } = useAuth();
+  const navigate = useNavigate();
+  const [data, setData] = useState<AccessOptions | null>(null);
+  // What has already been decided. Kept beside the queue so the screen answers
+  // "what happened here", not only "what is left to do".
+  const [history, setHistory] = useState<AccessHistoryEntry[] | null>(null);
+  // Les comptes deja decides. Sans eux l'ecran ne sait repondre qu'a « que
+  // reste-t-il a faire », jamais a « qui a acces », qui est la question du
+  // lendemain: apres une validation, ou apres un effacement des comptes.
+  const [accounts, setAccounts] = useState<ManagedAccount[] | null>(null);
+  const [accQuery, setAccQuery] = useState("");
+  const [reinstating, setReinstating] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  useSetPageChrome({ title: t("access.title") }, [t]);
+
+  async function load() {
+    try {
+      setData(await api.get<AccessOptions>("/api/access-requests"));
+      const h = await api.get<{ entries: AccessHistoryEntry[] }>("/api/access-requests/history");
+      setHistory(h.entries);
+      const a = await api.get<{ accounts: ManagedAccount[] }>("/api/access-requests/accounts");
+      setAccounts(a.accounts);
+    }
+    catch (e) { setError(errorText(e)); }
+  }
+  useEffect(() => { if (canReviewAccess) load(); }, [canReviewAccess]);
+
+  if (!canReviewAccess) return <EmptyState message={t("access.not_allowed")} />;
+  if (error) return <ErrorBanner message={error} />;
+  if (!data) return <Spinner />;
+
+  // Run an approve/deny mutation, then reflect the result and re-sync state.
+  // refresh() re-pulls auth because approving may alter the approver's own scope.
+  async function act(fn: () => Promise<unknown>, okKey: string) {
+    setMsg(null);
+    try { await fn(); setMsg(t(okKey)); await load(); await refresh(); }
+    catch (e) { setMsg(errorText(e)); }
+  }
+
+  return (
+    <div className="stack" style={{ gap: 16, maxWidth: 900 }}>
+      <div className="banner">{t("access.intro")}</div>
+      {msg && <div className="small muted">{msg}</div>}
+      {data.requests.length === 0 ? (
+        <EmptyState message={t("access.none")} />
+      ) : (
+        <div className="stack" style={{ gap: 12 }}>
+          {data.requests.map((r) => (
+            <RequestRow key={r.id} req={r} opts={data} roleLabel={roleLabel} t={t}
+              onApprove={(body) => act(() => api.post(`/api/access-requests/${r.id}/approve`, body), "access.approved")}
+              onDeny={() => act(() => api.post(`/api/access-requests/${r.id}/deny`, {}), "access.denied")} />
+          ))}
+        </div>
+      )}
+      {/* Les comptes deja decides: revoquer un acces accorde, rendre un acces
+          revoque. Vide pour un squad leader, qui ne revoque pas. */}
+      {!!accounts?.length && (
+        <div className="card stack" style={{ gap: 10 }}>
+          <div className="between" style={{ alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            <h3 style={{ margin: 0 }}>{t("access.accounts_title")}</h3>
+            <input style={{ width: 220 }} value={accQuery} placeholder={t("access.accounts_search")}
+                   aria-label={t("access.accounts_search")}
+                   onChange={(e) => setAccQuery(e.target.value)} />
+          </div>
+          <div className="small muted">{t("access.accounts_hint")}</div>
+          <div className="stack" style={{ gap: 0 }}>
+            {accounts
+              .filter((a) => {
+                const q = accQuery.trim().toLowerCase();
+                return !q || a.email.toLowerCase().includes(q) || a.display_name.toLowerCase().includes(q);
+              })
+              .map((a) => (
+                <div key={a.id} className="item-row" style={{ gap: 10, flexWrap: "wrap", alignItems: "baseline" }}>
+                  <span className={`badge ${a.status === "active" ? "badge-green" : "badge-grey"}`}>
+                    {t(`access.status_${a.status}`)}
+                  </span>
+                  <span className="strong">{a.display_name}</span>
+                  <span className="small muted">{a.email}</span>
+                  <span className="pill-cat">{roleLabel(a.role)}</span>
+                  {a.tribe && <span className="small muted">{a.tribe}</span>}
+                  <span className="small muted" style={{ marginLeft: "auto" }}>
+                    {a.last_login_at ? formatDateTime(a.last_login_at) : t("access.never_signed_in")}
+                  </span>
+                  {a.status === "active" && !a.is_self && data.can_deny && (
+                    <button className="btn-danger btn-sm"
+                            onClick={() => { if (confirm(t("access.revoke_confirm", { name: a.display_name }))) act(() => api.post(`/api/access-requests/${a.id}/deny`, {}), "access.revoked"); }}>
+                      {t("access.revoke")}
+                    </button>
+                  )}
+                  {a.status === "disabled" && (
+                    <button className="btn-secondary btn-sm"
+                            onClick={() => setReinstating(reinstating === a.id ? null : a.id)}>
+                      {t("access.reinstate")}
+                    </button>
+                  )}
+                  {reinstating === a.id && (
+                    <div style={{ flexBasis: "100%" }}>
+                      <RequestRow
+                        req={{ id: a.id, email: a.email, display_name: a.display_name, role: a.role }}
+                        opts={data} roleLabel={roleLabel} t={t} submitLabel={t("access.reinstate")}
+                        onApprove={(body) => { setReinstating(null); return act(() => api.post(`/api/access-requests/${a.id}/approve`, body), "access.reinstated"); }} />
+                    </div>
+                  )}
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
+
+      <div className="card stack" style={{ gap: 10 }}>
+        <h3 style={{ margin: 0 }}>{t("access.history_title")}</h3>
+        <div className="small muted">{t("access.history_hint")}</div>
+        {history === null ? <Spinner /> : history.length === 0 ? (
+          <div className="small muted">{t("access.history_none")}</div>
+        ) : (
+          <div className="stack" style={{ gap: 6 }}>
+            {history.map((h) => <HistoryRow key={h.id} h={h} t={t} roleLabel={roleLabel} formatDateTime={formatDateTime} />)}
+          </div>
+        )}
+      </div>
+
+      <button className="btn-ghost btn-sm" style={{ alignSelf: "flex-start" }} onClick={() => navigate("/")}>← {t("action.close")}</button>
+    </div>
+  );
+}
+
+/**
+ * One line of the access history. The action decides the wording and the colour,
+ * so approvals, refusals and plain SSO arrivals are told apart at a glance rather
+ * than read one by one.
+ */
+function HistoryRow({ h, t, roleLabel, formatDateTime }: {
+  h: AccessHistoryEntry;
+  t: (k: string, v?: Record<string, string | number>) => string;
+  roleLabel: (r: string) => string;
+  formatDateTime: (iso?: string | null) => string;
+}) {
+  const arrived = h.action.startsWith("user.provisioned.");
+  const kind = arrived ? "arrived" : h.action === "access.approve" ? "approved" : "denied";
+  const tone = { approved: "var(--ok, #1c7a6e)", denied: "var(--danger, #b03a3a)", arrived: "var(--muted, #5d696d)" }[kind];
+
+  // Where the person was placed, shown only when there is something to show.
+  const placement = [h.tribe, h.squad].filter(Boolean).join(", ");
+
+  return (
+    <div className="item-row" style={{ alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+      <span className="small strong" style={{ color: tone, minWidth: 84 }}>{t(`access.history_${kind}`)}</span>
+      <span className="strong">{h.email || "?"}</span>
+      {!arrived && h.role && <span className="pill-cat">{roleLabel(h.role)}</span>}
+      {placement && <span className="small muted">{placement}</span>}
+      {arrived && <span className="small muted">{t(`access.history_via_${h.action.endsWith("oidc") ? "oidc" : "saml"}`)}</span>}
+      {h.actor && !arrived && <span className="small muted">{t("access.history_by", { name: h.actor })}</span>}
+      <span className="small muted" style={{ marginLeft: "auto" }}>{formatDateTime(h.at)}</span>
+    </div>
+  );
+}
+
+/**
+ * One pending request card with inline role / tribe / squad selectors and the
+ * approve (and optionally deny) actions.
+ *
+ * Field visibility is driven by the approver's granted `opts`:
+ * - Tribe selector appears only when the approver isn't locked to a single tribe.
+ * - Squad selector appears whenever squads are offered; it becomes *required*
+ *   when a squad leader (no deny right, tribe locked) must place the person into
+ *   one of their own squads - the Approve button stays disabled until chosen.
+ *
+ * @param req       the account awaiting validation (name, email, SSO flag)
+ * @param opts      grantable roles/tribes/squads and permission flags
+ * @param onApprove approve with the chosen role and optional tribe/squad ids
+ * @param onDeny    reject the request (only rendered when `opts.can_deny`)
+ */
+function RequestRow({ req, opts, roleLabel, t, onApprove, onDeny, submitLabel }: {
+  req: AccessRequest; opts: AccessOptions; roleLabel: (r: Role) => string; t: (k: string) => string;
+  onApprove: (body: { role: Role; tribe_id?: number | null; squad_id?: number | null }) => void;
+  // Absent quand la ligne sert a retablir un acces: on ne refuse pas un compte
+  // deja refuse, on le rend.
+  onDeny?: () => void;
+  submitLabel?: string;
+}) {
+  const [role, setRole] = useState<Role>(opts.roles[0]);
+  const [tribeId, setTribeId] = useState<number | "">(opts.tribes[0]?.id ?? "");
+  const [squadId, setSquadId] = useState<number | "">("");
+  // A squad leader must place the person into one of their squads.
+  const squadRequired = !opts.can_deny && opts.tribe_locked && opts.squads.length > 0;
+
+  return (
+    <div className="card stack" style={{ gap: 10 }}>
+      <div className="between" style={{ alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+        <div>
+          <div className="strong">{req.display_name}</div>
+          <div className="small muted">{req.email}{req.auth_subject ? ", SSO" : ""}</div>
+        </div>
+        <span className="badge">{t("access.proposed")}{t("common.colon")}{roleLabel(req.role)}</span>
+      </div>
+
+      <div className="inline" style={{ gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+        <div>
+          <label>{t("access.role")}</label>
+          <select value={role} onChange={(e) => setRole(e.target.value as Role)}>
+            {opts.roles.map((r) => <option key={r} value={r}>{roleLabel(r)}</option>)}
+          </select>
+        </div>
+        {!opts.tribe_locked && opts.tribes.length > 0 && (
+          <div>
+            <label>{t("access.tribe")}</label>
+            <select value={tribeId} onChange={(e) => setTribeId(e.target.value ? Number(e.target.value) : "")}>
+              {opts.tribes.map((tr) => <option key={tr.id} value={tr.id}>{tr.name}</option>)}
+            </select>
+          </div>
+        )}
+        {opts.squads.length > 0 && (
+          <div>
+            <label>{t("access.squad")}{squadRequired ? " *" : ""}</label>
+            <select value={squadId} onChange={(e) => setSquadId(e.target.value ? Number(e.target.value) : "")}>
+              <option value="">{squadRequired ? t("access.choose_squad") : "-"}</option>
+              {opts.squads.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          </div>
+        )}
+        <button className="btn" disabled={squadRequired && !squadId}
+          onClick={() => onApprove({ role, tribe_id: tribeId === "" ? null : tribeId, squad_id: squadId === "" ? null : squadId })}>
+          {submitLabel ?? t("access.approve")}
+        </button>
+        {opts.can_deny && onDeny && <button className="btn-secondary" onClick={onDeny}>{t("access.deny")}</button>}
+      </div>
+    </div>
+  );
+}

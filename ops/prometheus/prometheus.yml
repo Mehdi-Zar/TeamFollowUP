@@ -1,0 +1,44 @@
+# Prometheus configuration for a local observability stack.
+#
+# Used by ops/docker-compose.observability.yml. See docs/17 for the walkthrough,
+# including how to adapt this file to a real deployment (Kubernetes, GKE Managed
+# Prometheus) and how to authenticate the scrape when METRICS_TOKEN is set.
+
+global:
+  # How often every target is scraped. 15s is the usual compromise: fine enough
+  # to see a spike, coarse enough not to store a point per second per series.
+  scrape_interval: 15s
+  # How often the alert rules below are evaluated. Keeping it equal to the scrape
+  # interval avoids evaluating a rule twice against the same data point.
+  evaluation_interval: 15s
+
+# Alert rules live in their own file so they can be reviewed, and reused as-is by
+# a Kubernetes PrometheusRule.
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+scrape_configs:
+  # The application itself.
+  - job_name: teamfollowup
+    metrics_path: /metrics
+    static_configs:
+      # host.docker.internal points at the host from inside the container, which
+      # is how Prometheus reaches an app started by the project's own
+      # docker-compose. Replace with the service name when both run in the same
+      # compose project (e.g. app:8000), or with the pod address in Kubernetes.
+      - targets: ["host.docker.internal:8000"]
+        labels:
+          env: local
+
+    # When METRICS_TOKEN is set on the app, uncomment this block and put the same
+    # value in the file. Prometheus reads it at scrape time, so the token never
+    # appears in the process arguments or in this file.
+    # authorization:
+    #   type: Bearer
+    #   credentials_file: /etc/prometheus/metrics-token
+
+  # Prometheus scraping itself: free, and it is how you notice the monitoring is
+  # the thing that broke.
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

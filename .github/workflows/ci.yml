@@ -1,0 +1,125 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  backend:
+    name: Backend (pytest + coverage + OpenAPI snapshot)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Run tests with coverage
+        working-directory: backend
+        # The floor lives in backend/.coveragerc (fail_under). It is a ratchet:
+        # raise it when the suite improves, never lower it to make a build pass.
+        run: python -m pytest -p no:warnings -q --cov=app --cov-report=term
+      - name: OpenAPI snapshot is up to date
+        working-directory: backend
+        run: python scripts/dump_openapi.py --check
+
+  frontend:
+    name: Frontend (typecheck + unit tests + build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci || npm install
+      - name: Type-check
+        working-directory: frontend
+        run: npx tsc --noEmit
+      # Vitest carries the guards that used to be duplicated as inline node scripts
+      # here: FR/EN key parity (i18n.parity.test.ts) and the typography rule
+      # (typography.test.ts). One implementation, runnable locally.
+      - name: Unit tests (Vitest)
+        working-directory: frontend
+        run: npm test
+      - name: Build
+        working-directory: frontend
+        run: npm run build
+
+  e2e:
+    name: End-to-end (Playwright, real stack)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+      - name: Start the application, exactly as a deployment would
+        # No .env file: the values below are the ones the suite needs and nothing
+        # else, so the run cannot silently depend on somebody's local settings.
+        env:
+          BREAKGLASS_PASSWORD: changeme-admin
+          SEED_DEMO: "false"
+          COOKIE_SECURE: "false"
+        run: docker compose up -d --build
+      - name: Wait until it answers
+        run: |
+          for i in $(seq 1 60); do
+            curl -fsS http://localhost:8000/api/health && exit 0
+            sleep 5
+          done
+          echo "the app never became healthy"; docker compose logs app; exit 1
+      - name: Install Playwright
+        working-directory: e2e
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Run the suite
+        working-directory: e2e
+        run: npm test
+      - name: Application logs (on failure)
+        if: failure()
+        run: docker compose logs app
+      - name: Keep the report (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: e2e/playwright-report
+          retention-days: 7
+
+  docker:
+    name: Docker image builds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build image
+        run: docker build -t teamfollowup:ci .
+
+  audit:
+    name: Dependency audit (non-blocking)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: pip-audit (backend)
+        run: |
+          pip install pip-audit
+          pip-audit -r backend/requirements.txt || true
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+      - name: npm audit (frontend)
+        working-directory: frontend
+        run: |
+          npm install --package-lock-only
+          npm audit --omit=dev || true
