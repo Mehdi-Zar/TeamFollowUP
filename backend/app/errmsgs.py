@@ -15,6 +15,20 @@ has an entry, so a new message cannot be forgotten.
 import re
 
 EN: dict[str, str] = {
+    # Pentest remediation (authorization).
+    "Mot de passe trop court : 12 caractères au moins": "Password too short: 12 characters at least",
+    "Vous ne pouvez pas modifier les onglets de votre propre persona": "You cannot change the tabs of your own persona",
+    "Une clé d'API se rattache à votre tribe, et vous n'en avez pas": "An API key belongs to your tribe, and you have none",
+    "Seul un administrateur modifie le persona administrateur": "Only an administrator changes the administrator persona",
+    "Vous ne pouvez pas accorder un onglet que vous n'avez pas": "You cannot grant a tab you do not hold",
+    "Seul un administrateur peut définir le mot de passe d'un autre compte": "Only an administrator can set another account's password",
+    "Ce compte se connecte par SSO : confirmez l'ajout d'un mot de passe local": "This account signs in with SSO: confirm adding a local password",
+    "Fichier trop volumineux (50 Mo au plus)": "File too large (50 MB at most)",
+    "Fichier trop volumineux une fois décompressé": "File too large once decompressed",
+    "Rattachez-vous d'abord à une tribe pour publier": "Join a tribe first to post",
+    "Seul le tribe leader peut ajouter cette personne à une squad": "Only the tribe leader can add this person to a squad",
+    "Le rapport ne part qu'à votre adresse ou à celle d'une personne de votre tribe": "The report can only go to your address or to someone of your tribe",
+    "Vous ne pouvez supprimer que votre tribe": "You can only delete your own tribe",
     # Not found
     "Absence introuvable": "Leave not found",
     "Clé introuvable": "Key not found",
@@ -46,6 +60,13 @@ EN: dict[str, str] = {
 
     # Authentication and sessions
     "Non authentifié": "Not signed in",
+    "Session expirée": "Session expired",
+    "Votre adresse de messagerie n'est pas vérifiée par le fournisseur d'identité.":
+        "Your email address is not verified by the identity provider.",
+    "Ce compte ne se connecte pas par SSO.": "This account does not sign in with SSO.",
+    "Ce compte est déjà lié à une autre identité SSO.": "This account is already bound to another SSO identity.",
+    "Le mot de passe doit faire au moins 12 caractères": "The password must be at least 12 characters long",
+    "Requête refusée (origine croisée)": "Request refused (cross-origin)",
     "Session invalide": "Invalid session",
     "Identifiants invalides": "Invalid credentials",
     "Trop de tentatives de connexion. Réessayez plus tard.": "Too many sign-in attempts. Try again later.",
@@ -214,6 +235,8 @@ def _label(m: re.Match) -> dict:
 
 # Messages built with values. Named groups are reused in the English template.
 PATTERNS: list[tuple[re.Pattern, str]] = [
+    (re.compile(r"^(?P<name>.+) n'a pas encore d'accès validé dans une tribe$"),
+     "{name} has no validated access in a tribe yet"),
     (re.compile(r"^Le champ « (?P<label>.+?) » dépasse (?P<max>\d+) caractères \((?P<len>\d+)\)\.$"),
      "The \"{label}\" field is longer than {max} characters ({len})."),
     (re.compile(r"^Le champ « (?P<label>.+?) » ne peut pas être vide\.$"),

@@ -18,13 +18,16 @@ def test_login_throttle_blocks_after_max_failures(client, seeded):
 
 
 def test_successful_login_resets_throttle(client, seeded):
+    from app.routers.auth import _account_failures
     _login_failures.clear()
+    _account_failures.clear()
     for _ in range(settings.login_max_attempts - 1):
         client.post("/api/auth/login", json={"email": "nope@x", "password": "bad"})
     login(client, seeded["admin"])  # success clears the counter
     # we can fail again without being immediately throttled
     assert client.post("/api/auth/login", json={"email": "nope@x", "password": "bad"}).status_code == 401
     _login_failures.clear()
+    _account_failures.clear()
 
 
 def test_audit_retention_purge(db, seeded, monkeypatch):

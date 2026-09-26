@@ -42,6 +42,7 @@ understand, run, operate and extend the product **without further explanation**.
 | 30 | [Rapports planifies, mails de modification et droits d'administration](30-rapports-notifications-et-droits.md) | Admins / Tribe leaders |
 | 31 | [Coherence de la saisie et du reporting](31-coherence-saisie-et-reporting.md) | Squad leaders / Tribe leaders |
 | 32 | [Mails et documents envoyes](32-mails-et-documents-envoyes.md) | Admins / Tribe leaders |
+| 33 | [Sécurité : pentest et durcissement](33-securite-et-pentest.md) | Admins / Ops |
 | - | [Guide des menus (captures, regenerable)](Guide-des-menus.html) | Tout le monde |
 | - | [Architecture Decision Records (ADR)](adr/README.md) | Engineers / Architects |
 

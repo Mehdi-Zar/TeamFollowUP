@@ -28,6 +28,8 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-tribe}
       POSTGRES_USER: ${POSTGRES_USER:-tribe}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tribe}
+      # The default below is for a laptop only: with PUBLIC_BASE_URL set, the app
+      # refuses to start on it (anyone could forge a session). Set SECRET_KEY.
       SECRET_KEY: ${SECRET_KEY:-change-me-in-prod-please-32chars-min-secret}
       STALENESS_THRESHOLD_DAYS: ${STALENESS_THRESHOLD_DAYS:-7}
       SEED_DEMO: ${SEED_DEMO:-false}

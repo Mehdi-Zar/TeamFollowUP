@@ -111,7 +111,9 @@ def test_authorization_helper_is_open_only_when_no_token(monkeypatch):
     assert metrics_mod.metrics_authorized("bearer abc") is True  # scheme is case-insensitive
 
 
-def test_metrics_endpoint_is_absent_from_the_openapi_contract(client):
+def test_metrics_endpoint_is_absent_from_the_openapi_contract(client, seeded):
     """It is an operations endpoint, not part of the product's API contract."""
+    from tests.conftest import login
+    login(client, seeded["admin"])  # the schema is for administrators
     schema = client.get("/openapi.json").json()
     assert "/metrics" not in schema["paths"]

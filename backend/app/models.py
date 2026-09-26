@@ -13,6 +13,8 @@ column type are documented inline next to each field.
 """
 from datetime import date, datetime, timezone
 
+from sqlalchemy import event
+from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy import (
     Boolean,
     Column,
@@ -104,6 +106,9 @@ class User(Base):
     report_last_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Moves on logout and on any password, role or status change: every session
+    # token carries it ("sv"), and a token with an older version is refused.
+    session_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
 
     # Squads this user leads (via Squad.leader_user_id); explicit FK because
     # Squad references users more than once.
@@ -889,3 +894,20 @@ class DataSnapshot(Base):
     payload: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
 
     created_by: Mapped["User | None"] = relationship(foreign_keys=[created_by_user_id])
+
+
+# A password, role or status change ends the account's existing sessions,
+# whichever screen made it (admin, access review, SSO group mapping...).
+_SESSION_SENSITIVE = ("password_hash", "role", "status")
+
+
+@event.listens_for(OrmSession, "before_flush")
+def _bump_session_on_sensitive_change(session, flush_context, instances):
+    from sqlalchemy import inspect as _inspect
+    for obj in session.dirty:
+        if not isinstance(obj, User):
+            continue
+        state = _inspect(obj)
+        if any(state.attrs[a].history.has_changes() for a in _SESSION_SENSITIVE):
+            if not state.attrs["session_version"].history.has_changes():
+                obj.session_version = int(obj.session_version or 0) + 1

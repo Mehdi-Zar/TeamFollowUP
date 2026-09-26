@@ -64,9 +64,13 @@ def ensure_breakglass(db: Session, commit: bool = True) -> None:
 
     banner = "=" * 70
     if generated:
-        logger.warning(
-            "\n%s\nCOMPTE DE SECOURS (BREAKING-GLASS) CRÉÉ\n  Email    : %s\n  Mot de passe (généré, NOTEZ-LE) : %s\n%s",
-            banner, email, password, banner,
-        )
+        # Straight to the console, once: never through the logging system, whose
+        # records also land in the in-app log buffer (Admin > Ops) and the log
+        # export, where the password would be readable by others.
+        import sys
+        print(f"\n{banner}\nCOMPTE DE SECOURS (BREAKING-GLASS) CRÉÉ\n  Email    : {email}\n"
+              f"  Mot de passe (généré, NOTEZ-LE) : {password}\n{banner}", file=sys.stderr, flush=True)
+        logger.warning("Compte de secours créé pour %s avec un mot de passe généré, affiché une seule "
+                       "fois sur la console du conteneur.", email)
     else:
         logger.info("Compte de secours créé pour %s (mot de passe fourni via l'environnement).", email)

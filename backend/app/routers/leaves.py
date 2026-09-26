@@ -18,9 +18,10 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..tabaccess import acting_manager
 from ..deps import (ADMIN, SQUAD, TRIBE, scoped_tribe_id, update_data, can_manage_leave, can_see_leaves_of,
-                    get_current_user, led_squad_ids, record_audit, require_admin,
+                    get_current_user, led_squad_ids, record_audit, require_admin, require_strict_admin,
                     require_capability, require_module)
 from ..leavesconfig import ACTIVE_STATUSES, leave_days
+from ..sheetsafe import row_safe
 from ..models import Leave, LeaveType, Member, Squad, Tribe, User, utcnow
 from ..schemas import (LeaveConfigIn, LeaveConfigOut, LeaveDecisionIn, LeaveIn,
                        LeaveOut, LeaveOverlapDay, LeaveTypeIn, LeaveTypeOut, LeaveUpdate)
@@ -128,7 +129,7 @@ def list_types(include_inactive: bool = Query(default=False),
 
 
 @router.post("/types", response_model=LeaveTypeOut, status_code=201)
-def create_type(payload: LeaveTypeIn, db: Session = Depends(get_db), user: User = Depends(require_admin)):
+def create_type(payload: LeaveTypeIn, db: Session = Depends(get_db), user: User = Depends(require_strict_admin)):
     """Create a leave type.
 
     POST /api/leaves/types
@@ -146,7 +147,7 @@ def create_type(payload: LeaveTypeIn, db: Session = Depends(get_db), user: User 
 
 @router.put("/types/{type_id}", response_model=LeaveTypeOut)
 def update_type(type_id: int, payload: LeaveTypeIn, db: Session = Depends(get_db),
-                user: User = Depends(require_admin)):
+                user: User = Depends(require_strict_admin)):
     """Update a leave type (label/color/order/active flag/detail required).
 
     PUT /api/leaves/types/{type_id}
@@ -160,13 +161,15 @@ def update_type(type_id: int, payload: LeaveTypeIn, db: Session = Depends(get_db
     lt.display_order = payload.display_order
     lt.is_active = payload.is_active
     lt.requires_detail = payload.requires_detail
+    record_audit(db, user.id, "leave_type.update", entity="leave_type", entity_id=lt.id,
+                 detail={"label": lt.label, "is_active": lt.is_active})
     db.commit()
     db.refresh(lt)
     return lt
 
 
 @router.delete("/types/{type_id}", status_code=204)
-def delete_type(type_id: int, db: Session = Depends(get_db), user: User = Depends(require_admin)):
+def delete_type(type_id: int, db: Session = Depends(get_db), user: User = Depends(require_strict_admin)):
     """Delete (or soft-retire) a leave type.
 
     DELETE /api/leaves/types/{type_id} -> 204 No Content
@@ -178,6 +181,8 @@ def delete_type(type_id: int, db: Session = Depends(get_db), user: User = Depend
     if lt is None:
         raise HTTPException(status_code=404, detail="Type d'absence introuvable")
     used = db.scalar(select(Leave.id).where(Leave.type_id == type_id).limit(1))
+    record_audit(db, user.id, "leave_type.delete", entity="leave_type", entity_id=lt.id,
+                 detail={"label": lt.label, "retired_only": bool(used)})
     if used:  # keep referential integrity: deactivate instead of deleting
         lt.is_active = False
     else:
@@ -529,8 +534,9 @@ def export_csv(
     w.writerow(["Personne", "Type", "Précision", "Début", "Fin", "Jours", "Statut", "Motif"])
     for lv in rows:
         out = _serialize(db, lv, user, cache)
-        w.writerow([out.user_name, out.type_label, out.detail or "", out.start_date.isoformat(),
-                    out.end_date.isoformat(), out.days, out.status, out.comment or ""])
+        # Free text is typed by users: never a formula once opened in Excel.
+        w.writerow(row_safe([out.user_name, out.type_label, out.detail or "", out.start_date.isoformat(),
+                             out.end_date.isoformat(), out.days, out.status, out.comment or ""]))
     # Buffered CSV → plain Response so Content-Length is set (not chunked).
     return Response(content=buf.getvalue(), media_type="text/csv; charset=utf-8",
                     headers={"Content-Disposition": 'attachment; filename="absences.csv"'})

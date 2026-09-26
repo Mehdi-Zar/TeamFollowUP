@@ -53,6 +53,14 @@ def _git_sha() -> str | None:
     return None
 
 
+def secret_key_is_weak() -> bool:
+    """The session signing key is the shipped default or shorter than 32
+    characters: anyone who knows it forges an administrator session."""
+    from .config import settings
+    key = str(settings.secret_key or "")
+    return key.startswith("change-me") or len(key) < 32
+
+
 def insecure_defaults() -> list[dict]:
     """Which shipped defaults are still in use, and how bad each one is here.
 
@@ -68,7 +76,7 @@ def insecure_defaults() -> list[dict]:
     looks_deployed = bool((settings.public_base_url or "").strip())
     sev = "critical" if looks_deployed else "warning"
     out: list[dict] = []
-    if str(settings.secret_key).startswith("change-me"):
+    if secret_key_is_weak():
         out.append({"key": "SECRET_KEY", "severity": sev,
                     "detail": "Every session cookie is signed with a key that is public "
                               "in the repository: anyone can forge one."})

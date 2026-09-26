@@ -84,6 +84,21 @@ def configure_logging(fmt: str = "text", level: str | int = "INFO") -> None:
     logbuffer.install()
 
 
+class RedactQueryFilter(logging.Filter):
+    """Hide secrets carried in a query string from the access log: the secret
+    link's token (``k=``) and the OAuth ``code`` / ``state``."""
+
+    import re as _re
+    _PATTERN = _re.compile(r"([?&](?:k|code|state)=)[^&\s]*")
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.args, tuple) and len(record.args) >= 3 and isinstance(record.args[2], str):
+            args = list(record.args)
+            args[2] = self._PATTERN.sub(r"\1***", args[2])
+            record.args = tuple(args)
+        return True
+
+
 def uvicorn_log_config(fmt: str = "text", level: str = "INFO") -> dict:
     """Return a uvicorn ``log_config`` dict wiring its loggers to our format.
 
@@ -102,6 +117,7 @@ def uvicorn_log_config(fmt: str = "text", level: str = "INFO") -> dict:
         "version": 1,
         "disable_existing_loggers": False,
         "formatters": {"default": formatter},
+        "filters": {"redact": {"()": "app.logconfig.RedactQueryFilter"}},
         "handlers": {
             "default": {"class": "logging.StreamHandler", "formatter": "default"},
             "ringbuffer": {"()": "app.logbuffer.ring_handler"},
@@ -109,7 +125,8 @@ def uvicorn_log_config(fmt: str = "text", level: str = "INFO") -> dict:
         "loggers": {
             "uvicorn": {"handlers": ["default", "ringbuffer"], "level": level, "propagate": False},
             "uvicorn.error": {"handlers": ["default", "ringbuffer"], "level": level, "propagate": False},
-            "uvicorn.access": {"handlers": ["default", "ringbuffer"], "level": level, "propagate": False},
+            "uvicorn.access": {"handlers": ["default", "ringbuffer"], "level": level, "propagate": False,
+                               "filters": ["redact"]},
         },
         "root": {"handlers": ["default", "ringbuffer"], "level": level},
     }

@@ -30,12 +30,17 @@ ADMIN_TAB_OPTIONS = ["tribes", "tribe", "squads", "platforms", "users", "persona
                      "auth", "api", "smtp", "trust",
                      "audit", "moderation", "logs", "data", "ops"]
 _DEFAULT_TABS = {"tribe_leader": ["tribe", "platforms", "users", "leaves", "report"]}
+# Tabs that are, by nature, the whole administration: the SSO configuration
+# (point the login at another identity provider, map a group to the admin role)
+# and the trusted authorities (accept any certificate). Handing one out handed
+# out admin; they stay the administrator's and cannot be ticked for a persona.
+ADMIN_ONLY_TABS = ["auth", "trust"]
 
 
 def _clean_tabs(raw) -> list[str]:
-    """Known tabs only, in menu order."""
+    """Known, delegable tabs only, in menu order."""
     raw = set(raw) if isinstance(raw, (list, tuple, set)) else set()
-    return [t for t in ADMIN_TAB_OPTIONS if t in raw]
+    return [t for t in ADMIN_TAB_OPTIONS if t in raw and t not in ADMIN_ONLY_TABS]
 
 
 def _default_caps(key: str) -> dict:
@@ -212,7 +217,7 @@ def admin_tabs_for(db: Session, user) -> list[str]:
         return list(ADMIN_TABS["admin"])
     for p in get_personas(db):
         if p["key"] == user.role:
-            return list(p.get("admin_tabs") or [])
+            return [t for t in (p.get("admin_tabs") or []) if t not in ADMIN_ONLY_TABS]
     return []
 
 

@@ -37,6 +37,11 @@ RUN chmod +x ./docker-entrypoint.sh
 # authorities imported in Administration). The DB stays the source of truth.
 ENV CERT_DIR=/app/certs
 RUN mkdir -p /app/certs
+# Not root: an unprivileged account owns the app (a flaw in the app would
+# otherwise act as root in the container).
+RUN useradd --system --uid 10001 --home /app --shell /usr/sbin/nologin app \
+    && chown -R app:app /app
+USER 10001
 
 # One port, plain HTTP: TLS is terminated by the infrastructure in front of the
 # container, HTTP->HTTPS redirection included. See ADR 0013.

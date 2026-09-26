@@ -27,10 +27,47 @@ from sqlalchemy.orm import Session
 from .. import datareset, datasnapshots
 from ..bootstrap import ensure_breakglass
 from ..database import get_db
-from ..deps import record_audit, require_admin
+from ..deps import ADMIN, record_audit, require_admin, require_strict_admin
 from ..models import DataSnapshot, User
 
 router = APIRouter(prefix="/api/admin/data", tags=["admin-data"])
+
+# The Data tab may be delegated to see and keep copies. Erasing, restoring and
+# importing stay the administrator's: a restored (or forged, then imported) copy
+# rewrites every account, roles included, so it was a way to become admin.
+# Upload limits: a .json.gz is small; a "zip bomb" of a few hundred KB used to
+# unfold into hundreds of MB in memory.
+MAX_UPLOAD = 50 * 1024 * 1024
+MAX_UNPACKED = 300 * 1024 * 1024
+# What a delegate's download leaves out: password and API key hashes.
+_SECRET_COLUMNS = {"users": ("password_hash",), "api_keys": ("key_hash",)}
+
+
+def _unpack(raw: bytes) -> bytes:
+    """gzip-decompress with a ceiling (413 past MAX_UNPACKED)."""
+    import io
+    out = io.BytesIO()
+    with gzip.GzipFile(fileobj=io.BytesIO(raw)) as gz:
+        while True:
+            chunk = gz.read(1024 * 1024)
+            if not chunk:
+                break
+            out.write(chunk)
+            if out.tell() > MAX_UNPACKED:
+                raise HTTPException(status_code=413, detail="Fichier trop volumineux une fois décompressé")
+    return out.getvalue()
+
+
+def _without_secrets(payload: bytes) -> bytes:
+    """The same copy with password and API key hashes blanked (delegates)."""
+    data = json.loads(gzip.decompress(payload).decode("utf-8"))
+    for table, cols in _SECRET_COLUMNS.items():
+        for row in data.get(table) or []:
+            if isinstance(row, dict):
+                for c in cols:
+                    if c in row:
+                        row[c] = None
+    return gzip.compress(json.dumps(data, ensure_ascii=False).encode("utf-8"))
 
 
 def _require_confirm(payload: dict | None) -> None:
@@ -75,7 +112,7 @@ def _surviving(db: Session, user_id: int) -> int | None:
 
 @router.post("/reset")
 def reset(payload: dict = Body(...), db: Session = Depends(get_db),
-          admin: User = Depends(require_admin)):
+          admin: User = Depends(require_strict_admin)):
     """POST /api/admin/data/reset: erase the selected domains. Admin only. Audited.
 
     Body: ``{"domains": [...], "confirm": true, "snapshot_first": true}``. The
@@ -125,7 +162,7 @@ def create_snapshot(payload: dict = Body(default=None), db: Session = Depends(ge
 
 @router.post("/snapshots/{snapshot_id}/restore")
 def restore_snapshot(snapshot_id: int, payload: dict = Body(...), db: Session = Depends(get_db),
-                     admin: User = Depends(require_admin)):
+                     admin: User = Depends(require_strict_admin)):
     """POST /api/admin/data/snapshots/{id}/restore: rewind to that copy. Audited.
 
     Everything the snapshot covers is emptied and rewritten, ids included. A
@@ -151,7 +188,7 @@ def restore_snapshot(snapshot_id: int, payload: dict = Body(...), db: Session = 
 
 @router.delete("/snapshots/{snapshot_id}", status_code=204)
 def delete_snapshot(snapshot_id: int, db: Session = Depends(get_db),
-                    admin: User = Depends(require_admin)):
+                    admin: User = Depends(require_strict_admin)):
     """DELETE /api/admin/data/snapshots/{id}: remove a copy. Admin only. Audited."""
     snap = db.get(DataSnapshot, snapshot_id)
     if snap is None:
@@ -174,8 +211,9 @@ def download_snapshot(snapshot_id: int, db: Session = Depends(get_db),
     if snap is None:
         raise HTTPException(status_code=404, detail="Sauvegarde introuvable")
     slug = "".join(c if c.isalnum() else "-" for c in snap.name).strip("-").lower() or "snapshot"
+    content = snap.payload if admin.role == ADMIN else _without_secrets(snap.payload)
     return Response(
-        content=snap.payload,
+        content=content,
         media_type="application/gzip",
         headers={"Content-Disposition": f'attachment; filename="teamfollowup.{slug}.json.gz"'},
     )
@@ -183,17 +221,21 @@ def download_snapshot(snapshot_id: int, db: Session = Depends(get_db),
 
 @router.post("/snapshots/import", status_code=201)
 def import_snapshot(file: UploadFile = File(...), db: Session = Depends(get_db),
-                    admin: User = Depends(require_admin)):
+                    admin: User = Depends(require_strict_admin)):
     """POST /api/admin/data/snapshots/import: upload a .json.gz back as a snapshot.
 
     Stored, not applied: importing a file and restoring it are two decisions, and
     only the second one erases anything. The payload is parsed here so a truncated
     or foreign file is refused now rather than halfway through a restore."""
-    raw = file.file.read()
+    raw = file.file.read(MAX_UPLOAD + 1)
+    if len(raw) > MAX_UPLOAD:
+        raise HTTPException(status_code=413, detail="Fichier trop volumineux (50 Mo au plus)")
     try:
-        data = json.loads(gzip.decompress(raw).decode("utf-8"))
+        data = json.loads(_unpack(raw).decode("utf-8"))
         if not isinstance(data, dict):
             raise ValueError("racine JSON inattendue")
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Fichier illisible : {exc}")
     known = {t.name for t in datasnapshots.covered_tables()}

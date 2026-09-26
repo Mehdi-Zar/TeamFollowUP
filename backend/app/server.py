@@ -64,6 +64,8 @@ def main() -> None:
         forwarded_allow_ips="*",
         timeout_keep_alive=KEEPALIVE_TIMEOUT,
         log_config=log_cfg,
+        # No "Server: uvicorn" banner.
+        server_header=False,
     )
     uvicorn.Server(http_cfg).run()
 

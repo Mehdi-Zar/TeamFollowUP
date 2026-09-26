@@ -419,13 +419,19 @@ export function PersonasAdmin() {
   const { t, role: roleLabel } = useI18n();
   const [caps, setCaps] = useState<string[]>([]);
   const [tabs, setTabs] = useState<string[]>([]);
+  // Tabs that are the whole administration by nature (SSO, trusted authorities):
+  // shown, but only the administrator's.
+  const [adminOnly, setAdminOnly] = useState<Set<string>>(new Set());
   const [personas, setPersonas] = useState<Persona[]>([]);
   const [newLabel, setNewLabel] = useState("");
   const [saved, setSaved] = useState(false);
   const { error, wrap } = useErr();
 
-  type Out = { capabilities: string[]; admin_tab_options: string[]; personas: Persona[] };
-  function apply(out: Out) { setCaps(out.capabilities); setTabs(out.admin_tab_options ?? []); setPersonas(out.personas); }
+  type Out = { capabilities: string[]; admin_tab_options: string[]; admin_only_tabs?: string[]; personas: Persona[] };
+  function apply(out: Out) {
+    setCaps(out.capabilities); setTabs(out.admin_tab_options ?? []); setPersonas(out.personas);
+    setAdminOnly(new Set(out.admin_only_tabs ?? []));
+  }
   async function load() {
     const out = await wrap(() => api.get<Out>("/api/admin/personas"));
     if (out) apply(out);
@@ -518,8 +524,10 @@ export function PersonasAdmin() {
                       <td className="persona-option">{label}</td>
                       {personas.map((p) => (
                         <td key={p.key}>
-                          {cell(p, (p.admin_tabs ?? []).includes(tab), (v) => setTab(p.key, tab, v), label,
-                                p.key === "admin" ? adminHas.has(tab) : undefined)}
+                          {adminOnly.has(tab) && p.key !== "admin" ? (
+                            <span className="muted" title={t("personas.admin_only")}>{t("personas.admin_only_short")}</span>
+                          ) : cell(p, (p.admin_tabs ?? []).includes(tab), (v) => setTab(p.key, tab, v), label,
+                                   p.key === "admin" ? adminHas.has(tab) : undefined)}
                         </td>
                       ))}
                     </tr>

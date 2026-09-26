@@ -371,6 +371,24 @@ def set_my_subscription(payload: ReportSubscriptionIn, db: Session = Depends(get
     return _sub_out(db, sub, payload.squad_id)
 
 
+def assert_allowed_recipient(db: Session, user: User, to: str) -> None:
+    """Where a report may be mailed from the app: anywhere for the admin; for
+    anyone else, their own address or an active account of their tribe. (The
+    company mail server otherwise carried the tribe's reporting, budgets
+    included, to any outside address.)"""
+    if user.role == "admin":
+        return
+    from sqlalchemy import func, select
+    for addr in [a.strip().lower() for a in to.replace(";", ",").split(",") if a.strip()]:
+        if user.email and addr == user.email.lower():
+            continue
+        ok = db.scalar(select(User.id).where(func.lower(User.email) == addr, User.status == "active",
+                                            User.tribe_id == user.tribe_id)) if user.tribe_id else None
+        if ok is None:
+            raise HTTPException(status_code=403,
+                                detail="Le rapport ne part qu'à votre adresse ou à celle d'une personne de votre tribe")
+
+
 @router.post("/weekly/email", dependencies=[_report_gate, _report_cap])
 def weekly_email(request: Request, payload: dict = Body(default=None), db: Session = Depends(get_db),
                  user: User = Depends(get_current_user)):
@@ -403,6 +421,7 @@ def weekly_email(request: Request, payload: dict = Body(default=None), db: Sessi
     # relecture d'un comite: « renvoie-moi ce qu'on avait envoye le 12 ».
     as_of = payload.get("as_of")
 
+    assert_allowed_recipient(db, user, to)
     cfg = get_smtp(db)
     if not cfg.get("enabled"):
         raise HTTPException(status_code=400, detail="SMTP non configuré (activez-le dans l'Administration)")

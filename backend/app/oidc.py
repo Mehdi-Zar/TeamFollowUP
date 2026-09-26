@@ -59,6 +59,14 @@ def get_oauth(cfg: dict) -> OAuth:
             "scope": scope_string(cfg.get("oidc_scopes")),
             "code_challenge_method": "S256",
             "verify": trust.context(),
+            # Every outbound fetch (discovery, JWKS, token) is checked: never the
+            # link-local / cloud metadata range, redirects included (SSRF).
+            "event_hooks": {"request": [_guard_request]},
         },
     )
     return oauth
+
+
+async def _guard_request(request) -> None:
+    from .netguard import check_outbound_url
+    check_outbound_url(str(request.url))

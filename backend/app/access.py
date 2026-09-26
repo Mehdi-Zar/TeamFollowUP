@@ -80,7 +80,15 @@ def decision_history(db: Session, actor: User, limit: int = 60) -> list[dict]:
     from .models import AuditLog
 
     stmt = select(AuditLog).where(AuditLog.action.in_(HISTORY_ACTIONS))
-    rows = list(db.scalars(stmt.order_by(AuditLog.timestamp.desc()).limit(limit)).all())
+    rows = list(db.scalars(stmt.order_by(AuditLog.timestamp.desc()).limit(limit * 4 if actor.role != ADMIN else limit)).all())
+    if actor.role != ADMIN:
+        # A tribe leader: the decisions on accounts of their tribe, and those on
+        # accounts that have no tribe yet (the arrivals waiting for someone).
+        ids = {r.entity_id for r in rows if r.entity_id}
+        tribe_of = {u.id: u.tribe_id for u in db.scalars(select(User).where(User.id.in_(ids)))} if ids else {}
+        rows = [r for r in rows
+                if (r.detail or {}).get("tribe_id") in (None, actor.tribe_id)
+                and tribe_of.get(r.entity_id) in (None, actor.tribe_id)][:limit]
 
     # Resolve the names in one pass rather than per row.
     actor_ids = {r.user_id for r in rows if r.user_id}
@@ -144,6 +152,8 @@ def approve(db: Session, actor: User, target: User, *, role: str,
     # back an account of their own tribe, and never an administrator. Otherwise a
     # tribe leader could pull another tribe's revoked account, or a former admin,
     # into their tribe.
+    if actor.role != ADMIN and target.tribe_id is not None and target.tribe_id != actor.tribe_id:
+        raise HTTPException(status_code=403, detail="Ce compte n'est pas dans votre tribe.")
     if was == "disabled" and actor.role != ADMIN:
         if target.role == ADMIN:
             raise HTTPException(status_code=403, detail="Seul un administrateur rétablit un administrateur.")
@@ -205,6 +215,9 @@ def deny(db: Session, actor: User, target: User) -> User:
     if actor.role == TRIBE:
         if target.role == ADMIN:
             raise HTTPException(status_code=403, detail="Un tribe leader ne révoque pas un administrateur.")
+        # A request already attached to another tribe is that tribe's to decide.
+        if target.tribe_id is not None and target.tribe_id != actor.tribe_id:
+            raise HTTPException(status_code=403, detail="Ce compte n'est pas dans votre tribe.")
         if target.status != "pending" and target.tribe_id != actor.tribe_id:
             raise HTTPException(status_code=403, detail="Ce compte n'est pas dans votre tribe.")
     if _would_leave_no_gatekeeper(db, target):

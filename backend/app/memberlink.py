@@ -46,8 +46,9 @@ def name_from_email(email: str) -> str:
 def account_for(db: Session, squad: Squad, email: str | None) -> User | None:
     """The account of the squad's tribe with this email, if any.
 
-    409 when the email is an account of another tribe: saying so beats a member
-    silently left unlinked, and the link itself is refused (see module docstring).
+    An account of another tribe is not linked, and answered exactly like an
+    unknown email: a distinct message told anyone which addresses have an
+    account elsewhere (enumeration).
     """
     if not email:
         return None
@@ -55,7 +56,7 @@ def account_for(db: Session, squad: Squad, email: str | None) -> User | None:
     if user is None:
         return None
     if user.tribe_id is not None and user.tribe_id != squad.tribe_id:
-        raise HTTPException(status_code=409, detail="Ce compte appartient à une autre tribe")
+        return None
     # An account without a tribe yet (pending) is linked when it gets one.
     return user if user.tribe_id == squad.tribe_id else None
 

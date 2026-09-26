@@ -9,13 +9,15 @@ built single-page app with client-side-routing fallback. This is the module
 import logging
 import os
 
-from fastapi import Depends, FastAPI, Header, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 from .config import settings
 from .database import get_db
+from .deps import get_current_user
+from .models import User
 from .routers import (
     admin,
     audit,
@@ -51,11 +53,78 @@ app = FastAPI(
     title=settings.app_name,
     description="Outil de pilotage de tribe : consolidation, drill-down, saisie, organigramme, exports.",
     version="2.1.0",
+    # The API documentation is served below, to administrators only: public, it
+    # handed the whole map of the API to anyone who could reach the app.
+    docs_url=None, redoc_url=None, openapi_url=None,
 )
 
-# Session middleware is required by Authlib (OIDC state/PKCE).
-app.add_middleware(SessionMiddleware, secret_key=settings.secret_key,
+# Security headers on every response, and no caching of the API (personal data
+# behind a shared proxy). The SPA and the exports get a strict CSP; the API docs
+# page loads Swagger UI from its CDN, so it gets its own.
+_CSP_APP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; "
+            "object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'")
+_CSP_DOCS = ("default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+             "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data: "
+             "https://fastapi.tiangolo.com https://cdn.redoc.ly; font-src 'self' data: https://fonts.gstatic.com; "
+             "connect-src 'self'; worker-src 'self' blob:; object-src 'none'; frame-ancestors 'none'")
+
+
+@app.middleware("http")
+async def _security_headers(request, call_next):
+    response = await call_next(request)
+    path = request.url.path
+    h = response.headers
+    h.setdefault("X-Content-Type-Options", "nosniff")
+    h.setdefault("X-Frame-Options", "SAMEORIGIN")
+    h.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    h.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()")
+    # Only obeyed by the browser on the HTTPS response the infrastructure serves.
+    h.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    h.setdefault("Content-Security-Policy", _CSP_DOCS if path in ("/docs", "/redoc") else _CSP_APP)
+    if path.startswith("/api/") or path in ("/openapi.json", "/metrics"):
+        h.setdefault("Cache-Control", "no-store")
+    return response
+
+# Refuse to serve with a configuration that hands out sessions (see config).
+for _reason in settings.startup_refusals():
+    import logging as _logging
+    _logging.getLogger("trt.security").critical("SECURITY: refusing to start: %s", _reason)
+if settings.startup_refusals():
+    raise SystemExit("SECURITY: " + " ".join(settings.startup_refusals()))
+
+# Session middleware is required by Authlib (OIDC state/PKCE). Its cookie only
+# carries a login in progress: ten minutes are plenty.
+app.add_middleware(SessionMiddleware, secret_key=settings.secret_key, max_age=600,
                    same_site=settings.cookie_samesite, https_only=settings.cookie_secure)
+
+# CSRF, defence in depth on top of SameSite=Lax: a state-changing API call made
+# with the session cookie must come from the app's own pages. The browser says
+# where a request comes from (Sec-Fetch-Site, Origin); a cross-site one is
+# refused. API keys (Authorization header) are not browser credentials and are
+# not concerned; the SAML ACS is posted by the IdP, cross-site by design.
+_CSRF_EXEMPT = ("/api/auth/saml/acs",)
+
+
+@app.middleware("http")
+async def _csrf_guard(request, call_next):
+    if (request.method in ("POST", "PUT", "PATCH", "DELETE") and request.url.path.startswith("/api/")
+            and request.url.path not in _CSRF_EXEMPT and not request.headers.get("authorization")):
+        site = (request.headers.get("sec-fetch-site") or "").lower()
+        origin = request.headers.get("origin")
+        bad = bool(site) and site not in ("same-origin", "none")
+        if not bad and origin and origin != "null":
+            from urllib.parse import urlsplit
+            allowed = {h.split(",")[0].strip().lower() for h in (
+                request.headers.get("x-forwarded-host"), request.headers.get("host")) if h}
+            if settings.public_base_url:
+                allowed.add(urlsplit(settings.public_base_url).netloc.lower())
+            bad = urlsplit(origin).netloc.lower() not in allowed
+        elif origin == "null":
+            bad = True
+        if bad:
+            return JSONResponse(status_code=403, content={"detail": "Requête refusée (origine croisée)"})
+    return await call_next(request)
 
 # Metrics wrap everything, including the session middleware, so the latency they
 # record is the latency the client experienced. Added last = outermost, since
@@ -101,6 +170,14 @@ def custom_openapi():
 
 
 app.openapi = custom_openapi
+
+
+def require_admin_docs(user: User = Depends(get_current_user)) -> User:
+    """The API documentation: administrators only (it is where production is
+    troubleshot from a browser, and a full map of the API for anyone else)."""
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="Accès réservé aux administrateurs")
+    return user
 
 
 @app.on_event("startup")
@@ -252,8 +329,29 @@ def health():
     return {"status": "ok", "app": settings.app_name}
 
 
+@app.get("/openapi.json", include_in_schema=False)
+def openapi_json(admin: User = Depends(require_admin_docs)):
+    """The API schema, for administrators (the Swagger page reads it)."""
+    return JSONResponse(app.openapi())
+
+
+@app.get("/docs", include_in_schema=False)
+def swagger_ui(admin: User = Depends(require_admin_docs)):
+    """Swagger UI, for administrators: the way to troubleshoot production from a
+    browser. Its "Authorize" button still takes an API key."""
+    from fastapi.openapi.docs import get_swagger_ui_html
+    return get_swagger_ui_html(openapi_url="/openapi.json", title=f"{settings.app_name} API")
+
+
+@app.get("/redoc", include_in_schema=False)
+def redoc_ui(admin: User = Depends(require_admin_docs)):
+    """ReDoc, for administrators."""
+    from fastapi.openapi.docs import get_redoc_html
+    return get_redoc_html(openapi_url="/openapi.json", title=f"{settings.app_name} API")
+
+
 @app.get("/metrics", include_in_schema=False)
-def metrics(authorization: str | None = Header(default=None)):
+def metrics(request: Request, authorization: str | None = Header(default=None)):
     """Prometheus exposition endpoint. See app/metrics.py and docs/17.
 
     Kept out of the OpenAPI schema: it is an operational endpoint, not part of
@@ -263,6 +361,12 @@ def metrics(authorization: str | None = Header(default=None)):
     from .metrics import metrics_authorized, render
     if not settings.metrics_enabled:
         return PlainTextResponse("metrics disabled", status_code=404)
+    # Without a token, only a direct scrape (inside the cluster) is served: a
+    # request that came through a proxy or gateway (forwarded headers) is from
+    # outside, and the metrics describe the whole API and its traffic.
+    if not (settings.metrics_token or "").strip() and (
+            request.headers.get("x-forwarded-for") or request.headers.get("forwarded")):
+        return PlainTextResponse("not found", status_code=404)
     if not metrics_authorized(authorization):
         # 401 + the challenge header, so a misconfigured scraper reports
         # "unauthorized" rather than a bare parse failure on an HTML error page.
@@ -299,8 +403,13 @@ def spa(full_path: str, request: Request):
     if full_path.startswith("api/"):
         en = errors.lang_of(request) == "en"
         return JSONResponse(status_code=404, content={"detail": "Unknown route" if en else "Route inconnue"})
-    candidate = os.path.join(STATIC_DIR, full_path)
-    if full_path and os.path.isfile(candidate):
+    # Only a file INSIDE the built SPA folder. "//etc/passwd", "../../x" or an
+    # encoded "..%2f" used to leave STATIC_DIR (os.path.join with an absolute or
+    # climbing segment) and read any file of the server, unauthenticated.
+    root = os.path.realpath(STATIC_DIR)
+    candidate = os.path.realpath(os.path.join(root, full_path.lstrip("/\\")))
+    inside = candidate.startswith(root + os.sep)
+    if full_path and inside and os.path.isfile(candidate):
         headers = _INDEX_HEADERS if os.path.basename(candidate) == "index.html" else None
         return FileResponse(candidate, headers=headers)
     index = os.path.join(STATIC_DIR, "index.html")

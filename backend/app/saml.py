@@ -35,7 +35,11 @@ def _fetch_idp_metadata(url: str) -> str:
 
     from . import trust
 
-    resp = httpx.get(url, timeout=15.0, follow_redirects=True, verify=trust.context())
+    from .netguard import guarded_client
+
+    # Never the link-local / cloud metadata range, redirects included (SSRF).
+    with guarded_client(timeout=15.0, follow_redirects=True, verify=trust.context()) as client:
+        resp = client.get(url)
     resp.raise_for_status()
     return resp.text
 
@@ -146,3 +150,100 @@ async def make_auth(request: Request, cfg: dict):
 
     req = await _prepare_request(request, cfg)
     return OneLogin_Saml2_Auth(req, build_settings(cfg))
+
+
+# ---------------------------------------------------------------------------
+# One answer per request, once. The ACS accepts a SAMLResponse only when it
+# answers an AuthnRequest this app sent (InResponseTo, kept server-side for ten
+# minutes and consumed on use), and an assertion id is never accepted twice
+# before it expires. Without this, a response captured once could be replayed,
+# and an attacker could post their own valid response into a victim's browser
+# (login CSRF). Kept in app_settings: small, and shared by every replica.
+# ---------------------------------------------------------------------------
+_PENDING_KEY = "saml_pending_requests"
+_SEEN_KEY = "saml_seen_assertions"
+_REQUEST_TTL = 10 * 60
+
+
+def _load(db, key: str) -> dict:
+    import json
+    from .models import AppSetting
+    row = db.get(AppSetting, key)
+    if row is None:
+        return {}
+    try:
+        data = json.loads(row.value)
+        return data if isinstance(data, dict) else {}
+    except (ValueError, TypeError):
+        return {}
+
+
+def _save(db, key: str, data: dict) -> None:
+    import json
+    from .models import AppSetting
+    row = db.get(AppSetting, key)
+    if row is None:
+        db.add(AppSetting(key=key, value=json.dumps(data)))
+    else:
+        row.value = json.dumps(data)
+    db.flush()
+
+
+def remember_request(db, request_id: str | None) -> None:
+    """Keep the id of an AuthnRequest just sent (pruned after ten minutes)."""
+    import time
+    if not request_id:
+        return
+    now = time.time()
+    pending = {k: v for k, v in _load(db, _PENDING_KEY).items() if now - float(v) < _REQUEST_TTL}
+    pending[request_id] = now
+    _save(db, _PENDING_KEY, pending)
+
+
+def consume_request(db, request_id: str) -> bool:
+    """True once for a request id this app sent less than ten minutes ago."""
+    import time
+    now = time.time()
+    pending = {k: v for k, v in _load(db, _PENDING_KEY).items() if now - float(v) < _REQUEST_TTL}
+    ok = request_id in pending
+    pending.pop(request_id, None)
+    _save(db, _PENDING_KEY, pending)
+    return ok
+
+
+def remember_assertion(db, assertion_id: str | None, not_on_or_after) -> bool:
+    """Record an assertion id until it expires; False when it was already seen."""
+    import time
+    if not assertion_id:
+        return False
+    now = time.time()
+    try:
+        exp = float(not_on_or_after) if not_on_or_after else now + _REQUEST_TTL
+    except (TypeError, ValueError):
+        exp = now + _REQUEST_TTL
+    seen = {k: v for k, v in _load(db, _SEEN_KEY).items() if float(v) > now}
+    if assertion_id in seen:
+        return False
+    seen[assertion_id] = max(exp, now + 60)
+    _save(db, _SEEN_KEY, seen)
+    return True
+
+
+def in_response_to(saml_response_b64: str | None) -> str | None:
+    """The InResponseTo of a posted SAMLResponse, read with a parser that
+    refuses DTDs and entities; None when absent or unreadable."""
+    import base64
+    import xml.etree.ElementTree as ET
+    if not saml_response_b64:
+        return None
+    try:
+        raw = base64.b64decode(saml_response_b64)
+        # No DTD, no entity: the only way XML reaches files or blows up memory.
+        low = raw.lower()
+        if b"<!doctype" in low or b"<!entity" in low:
+            return None
+        root = ET.fromstring(raw)
+    except Exception:
+        return None
+    value = root.attrib.get("InResponseTo")
+    return value or None

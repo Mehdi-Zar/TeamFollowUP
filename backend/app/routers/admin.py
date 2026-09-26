@@ -49,6 +49,71 @@ def _check_tribe(db: Session, tribe_id) -> None:
         raise HTTPException(status_code=400, detail="Tribe introuvable")
 
 
+# Stored secrets never leave the server in clear: the screens get this mask when
+# one is set, and a mask sent back means "keep the stored value". (The SMTP
+# password and the SSO client secret / SP key used to come back in clear.)
+SECRET_MASK = "********"
+_SMTP_SECRETS = ("password",)
+_AUTH_SECRETS = ("oidc_client_secret", "saml_sp_key")
+
+
+def _masked(cfg: dict, keys) -> dict:
+    out = dict(cfg)
+    for k in keys:
+        if k in out:
+            out[k] = SECRET_MASK if out.get(k) else ""
+    return out
+
+
+def _without_masks(payload: dict, keys) -> dict:
+    return {k: v for k, v in (payload or {}).items() if not (k in keys and v == SECRET_MASK)}
+
+
+def _assert_persona_edit_allowed(db: Session, actor: User, incoming: list, current: list[dict]) -> None:
+    """What a delegate of the Personas tab may not do: change the Administration
+    tabs of their own persona, grant a tab they do not hold, or touch the admin
+    persona. (Holding this tab used to mean granting oneself every other tab.)"""
+    from ..tabaccess import has_tab
+    cur = {p["key"]: p for p in current}
+    for p in incoming if isinstance(incoming, list) else []:
+        if not isinstance(p, dict) or not p.get("key"):
+            continue
+        key = p["key"]
+        before = set((cur.get(key) or {}).get("admin_tabs") or [])
+        after = set(p.get("admin_tabs") or []) if "admin_tabs" in p else before
+        if key == "admin" and (p.get("caps") or p.get("admin_tabs")) and key in cur:
+            if p.get("caps") and p.get("caps") != cur[key].get("caps"):
+                raise HTTPException(status_code=403, detail="Seul un administrateur modifie le persona administrateur")
+            continue
+        if after == before:
+            continue
+        if key == actor.role:
+            raise HTTPException(status_code=403,
+                                detail="Vous ne pouvez pas modifier les onglets de votre propre persona")
+        for tab in after - before:
+            if not has_tab(db, actor, tab):
+                raise HTTPException(status_code=403,
+                                    detail="Vous ne pouvez pas accorder un onglet que vous n'avez pas")
+
+
+def _validate_password(pw: str) -> None:
+    """A password good enough to protect an account (app.security's rule when it
+    has one, else at least 12 characters)."""
+    from .. import security
+    if hasattr(security, "validate_password"):
+        security.validate_password(pw)
+        return
+    if len(pw or "") < 12:
+        raise HTTPException(status_code=422, detail="Mot de passe trop court : 12 caractères au moins")
+
+
+def _bump_session(user: User) -> None:
+    """End the sessions already open for this account (password or role changed)."""
+    from .. import security
+    if hasattr(security, "bump_session"):
+        security.bump_session(user)
+
+
 def _assert_can_assign(db: Session, actor: User, role: str) -> None:
     """Guard: verify ``actor`` is allowed to grant ``role`` to a user.
 
@@ -129,15 +194,31 @@ def update_user(user_id: int, payload: UserUpdate, db: Session = Depends(get_db)
     if not can_manage_user(actor, user):
         raise HTTPException(status_code=403, detail="Cet utilisateur n'est pas dans votre périmètre")
     data = update_data(payload, User)
+    allow_local = bool(payload.allow_local_password)
+    data.pop("allow_local_password", None)
+    session_changed = False
     if "password" in data:
         pw = data.pop("password")
         if pw:
+            # Setting someone else's password is taking their account: the admin
+            # only. A tribe leader (or a delegate of the users tab) used to log in
+            # as anyone of the tribe that way, SSO accounts included.
+            if actor.role != ADMIN and user.id != actor.id:
+                raise HTTPException(status_code=403,
+                                    detail="Seul un administrateur peut définir le mot de passe d'un autre compte")
+            if user.auth_subject and not allow_local:
+                raise HTTPException(status_code=400,
+                                    detail="Ce compte se connecte par SSO : confirmez l'ajout d'un mot de passe local")
+            _validate_password(pw)
             user.password_hash = hash_password(pw)
+            session_changed = True
     # Role changes must stay within what the actor may assign.
     if "role" in data and data["role"] is not None:
         if user.is_break_glass and data["role"] != "admin":
             raise HTTPException(status_code=400, detail="Le compte de secours doit rester administrateur")
         _assert_can_assign(db, actor, data["role"])
+        if data["role"] != user.role:
+            session_changed = True
     # Only an admin may move a user to another tribe.
     if "tribe_id" in data and actor.role != "admin" and data["tribe_id"] != actor.tribe_id:
         raise HTTPException(status_code=403, detail="Vous ne pouvez pas déplacer un utilisateur hors de votre tribe")
@@ -155,7 +236,10 @@ def update_user(user_id: int, payload: UserUpdate, db: Session = Depends(get_db)
     if "tribe_id" in data:
         db.flush()
         link_members_to(db, user)  # its team lines follow the tribe
-    record_audit(db, actor.id, "user.update", entity="user", entity_id=user.id, detail=data)
+    if session_changed:
+        _bump_session(user)
+    record_audit(db, actor.id, "user.update", entity="user", entity_id=user.id,
+                 detail={**data, **({"password": "changed"} if session_changed and "role" not in data else {})})
     db.commit()
     db.refresh(user)
     return user
@@ -212,18 +296,18 @@ def read_auth_config(request: Request, db: Session = Depends(get_db), admin: Use
 
     ``request`` lets the SSO URLs be derived from the URL the admin is actually
     browsing when no public base URL is configured (see authconfig)."""
-    return get_auth_config(db, request)
+    return _masked(get_auth_config(db, request), _AUTH_SECRETS)
 
 
 @router.put("/auth-config")
 def update_auth_config(request: Request, payload: dict = Body(...), db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     """PUT /api/admin/auth-config: update the OIDC/SAML auth config. Admin only;
     audits which providers are enabled."""
-    cfg = set_auth_config(db, payload, request)
+    cfg = set_auth_config(db, _without_masks(payload, _AUTH_SECRETS), request)
     record_audit(db, admin.id, "auth_config.update", entity="auth_config",
                  detail={"oidc_enabled": cfg["oidc_enabled"], "saml_enabled": cfg["saml_enabled"]})
     db.commit()
-    return cfg
+    return _masked(cfg, _AUTH_SECRETS)
 
 
 @router.post("/auth-config/test")
@@ -240,7 +324,7 @@ def test_auth_config(request: Request, payload: dict = Body(...), db: Session = 
     provider = (payload.get("provider") or "").lower()
     cfg = get_auth_config(db, request)
     # Draft values from the form win, but only for keys we actually manage.
-    for key, value in (payload.get("config") or {}).items():
+    for key, value in _without_masks(payload.get("config") or {}, _AUTH_SECRETS).items():
         if key in cfg:
             cfg[key] = value
     # A blank SSO URL in the draft still means "derive it", so re-resolve.
@@ -260,17 +344,17 @@ def test_auth_config(request: Request, payload: dict = Body(...), db: Session = 
 def read_smtp_config(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     """GET /api/admin/smtp-config: read outbound email (SMTP) config. Admin only."""
     from ..smtpconfig import get_smtp
-    return get_smtp(db)
+    return _masked(get_smtp(db), _SMTP_SECRETS)
 
 
 @router.put("/smtp-config")
 def update_smtp_config(payload: dict = Body(...), db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     """PUT /api/admin/smtp-config: update the SMTP config. Admin only; audited."""
     from ..smtpconfig import set_smtp
-    cfg = set_smtp(db, payload)
+    cfg = set_smtp(db, _without_masks(payload, _SMTP_SECRETS))
     record_audit(db, admin.id, "smtp_config.update", entity="smtp", detail={"enabled": cfg["enabled"], "host": cfg["host"]})
     db.commit()
-    return cfg
+    return _masked(cfg, _SMTP_SECRETS)
 
 
 @router.post("/smtp-config/test")
@@ -302,7 +386,9 @@ def read_personas(db: Session = Depends(get_db), admin: User = Depends(require_a
     """GET /api/admin/personas: list personas (roles) and the full capability
     catalogue the UI can toggle. Admin only."""
     from ..personasconfig import get_personas, CAPABILITIES, ADMIN_TAB_OPTIONS
-    return {"capabilities": CAPABILITIES, "admin_tab_options": ADMIN_TAB_OPTIONS, "personas": get_personas(db)}
+    from ..personasconfig import ADMIN_ONLY_TABS
+    return {"capabilities": CAPABILITIES, "admin_tab_options": ADMIN_TAB_OPTIONS,
+            "admin_only_tabs": ADMIN_ONLY_TABS, "personas": get_personas(db)}
 
 
 @router.put("/personas")
@@ -313,8 +399,11 @@ def update_personas(payload: dict = Body(...), db: Session = Depends(get_db),
     Side effect: any user whose persona no longer exists is downgraded to
     ``member`` (the break-glass account is left untouched) so nobody is stranded
     with an invalid role. Audited."""
-    from ..personasconfig import set_personas, valid_role_keys, CAPABILITIES
-    personas = set_personas(db, payload.get("personas", []))
+    from ..personasconfig import get_personas, set_personas, valid_role_keys, CAPABILITIES
+    incoming = payload.get("personas", [])
+    if admin.role != ADMIN:
+        _assert_persona_edit_allowed(db, admin, incoming, get_personas(db))
+    personas = set_personas(db, incoming)
     # Reassign users whose persona was removed, so nobody is left without access.
     valid = valid_role_keys(db)
     for u in db.scalars(select(User)).all():
@@ -323,8 +412,9 @@ def update_personas(payload: dict = Body(...), db: Session = Depends(get_db),
     record_audit(db, admin.id, "personas.update", entity="personas",
                  detail={"keys": [p["key"] for p in personas]})
     db.commit()
-    from ..personasconfig import ADMIN_TAB_OPTIONS
-    return {"capabilities": CAPABILITIES, "admin_tab_options": ADMIN_TAB_OPTIONS, "personas": personas}
+    from ..personasconfig import ADMIN_ONLY_TABS, ADMIN_TAB_OPTIONS
+    return {"capabilities": CAPABILITIES, "admin_tab_options": ADMIN_TAB_OPTIONS,
+            "admin_only_tabs": ADMIN_ONLY_TABS, "personas": personas}
 
 
 @router.get("/modules-config")
@@ -437,6 +527,8 @@ def test_report_config(payload: dict = Body(default=None), tribe_id: int | None 
 
     tid = _report_tribe(db, user, tribe_id)
     to = (payload or {}).get("to") or user.email
+    from .reports import assert_allowed_recipient
+    assert_allowed_recipient(db, user, to or "")
     cfg = get_smtp(db)
     if not cfg.get("enabled"):
         raise HTTPException(status_code=400, detail="SMTP désactivé")
@@ -766,7 +858,10 @@ def list_api_keys(db: Session = Depends(get_db), admin: User = Depends(require_a
     the secret) plus the catalogue of assignable scopes. Admin only."""
     from ..apikeys import SCOPES, public
     from ..models import ApiKey
-    keys = db.scalars(select(ApiKey).order_by(ApiKey.created_at.desc())).all()
+    q = select(ApiKey).order_by(ApiKey.created_at.desc())
+    if admin.role != ADMIN:  # a delegate of the API tab: their tribe's keys only
+        q = q.where(ApiKey.tribe_id == admin.tribe_id)
+    keys = db.scalars(q).all()
     return {"scopes": SCOPES, "keys": [public(k) for k in keys]}
 
 
@@ -802,6 +897,12 @@ def create_api_key(payload: dict = Body(...), db: Session = Depends(get_db),
             raise HTTPException(status_code=400, detail="Durée de validité invalide")
         expires_at = utcnow() + timedelta(days=days)
 
+    # A key without a tribe reads every tribe (it acts as an admin reader): only
+    # the admin mints one. A delegate's keys are bound to their own tribe.
+    if admin.role != ADMIN:
+        if admin.tribe_id is None:
+            raise HTTPException(status_code=403, detail="Une clé d'API se rattache à votre tribe, et vous n'en avez pas")
+        payload["tribe_id"] = admin.tribe_id
     _check_tribe(db, payload.get("tribe_id"))
     secret, prefix = generate_key()
     key = ApiKey(
@@ -834,7 +935,7 @@ def revoke_api_key(key_id: int, db: Session = Depends(get_db),
     from ..apikeys import public
     from ..models import ApiKey, utcnow
     key = db.get(ApiKey, key_id)
-    if key is None:
+    if key is None or (admin.role != ADMIN and key.tribe_id != admin.tribe_id):
         raise HTTPException(status_code=404, detail="Clé introuvable")
     if key.revoked_at is None:
         key.revoked_at = utcnow()
@@ -852,7 +953,7 @@ def delete_api_key(key_id: int, db: Session = Depends(get_db),
     Audited."""
     from ..models import ApiKey
     key = db.get(ApiKey, key_id)
-    if key is None:
+    if key is None or (admin.role != ADMIN and key.tribe_id != admin.tribe_id):
         raise HTTPException(status_code=404, detail="Clé introuvable")
     record_audit(db, admin.id, "api_key.delete", entity="api_key", entity_id=key.id,
                  detail={"name": key.name, "prefix": key.prefix})

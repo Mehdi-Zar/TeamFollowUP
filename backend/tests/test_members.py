@@ -95,7 +95,8 @@ def test_no_link_across_tribes(client, db, seeded):
     """Being someone's member hands their leaves to the squad leader: never across tribes."""
     login(client, seeded["sl_a"])
     r = client.post("/api/members", json={"squad_id": seeded["squad_a"], "email": "tribe2@test"})
-    assert r.status_code == 409
+    # Answered like an unknown email (no enumeration), and never linked.
+    assert r.status_code == 201 and r.json()["user_id"] is None
     other = client.get(f"/api/members/candidates?squad_id={seeded['squad_a']}").json()
     assert "tribe2@test" not in [c["email"] for c in other]
     assert "member@test" in [c["email"] for c in other]

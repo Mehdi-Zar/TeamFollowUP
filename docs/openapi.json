@@ -104,7 +104,7 @@
           "auth"
         ],
         "summary": "Logout",
-        "description": "Clear the session cookie. Stateless: nothing server-side to invalidate.",
+        "description": "Clear the session cookie AND revoke the token server-side: the account's\nsession version moves, so a copy of the cookie (stolen, cached) no longer\nworks. During a simulation, the admin's version moves (their simulation\ntoken ends); the simulated person keeps their own sessions.",
         "operationId": "logout_api_auth_logout_post",
         "responses": {
           "200": {
@@ -14743,6 +14743,17 @@
               }
             ],
             "title": "Password"
+          },
+          "allow_local_password": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allow Local Password"
           }
         },
         "type": "object",

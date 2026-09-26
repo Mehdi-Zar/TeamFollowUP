@@ -30,32 +30,48 @@ from ..deps import get_current_user_any_status, record_audit, require_strict_adm
 from ..memberlink import link_members_to
 from ..models import User, utcnow
 from ..schemas import AuthConfig, LoginIn, UserOut
-from ..security import create_session_token, verify_password
+from ..security import bump_session, burn_verify_time, create_session_token, verify_password
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 log = logging.getLogger("trt.auth")
 
 
-def _set_session(response: Response, user_id: int, impersonator_id: int | None = None) -> None:
-    """Issue the signed session cookie for ``user_id``.
+def _set_session(response: Response, user: User, impersonator: User | None = None) -> None:
+    """Issue the signed session cookie for ``user``.
 
-    ``impersonator_id`` is embedded when an admin is viewing the app as someone
-    else, so the real actor is still recoverable. The cookie is HttpOnly (no JS
-    access, mitigates XSS token theft) and its SameSite/Secure flags come from
+    The token carries the account's session version (revoked by logout and by a
+    password/role/status change). ``impersonator`` is embedded when an admin is
+    viewing the app as someone else, so the real actor is still recoverable and
+    the simulation ends with the admin's own session. The cookie is HttpOnly (no
+    JS access, mitigates XSS token theft) and its SameSite/Secure flags come from
     settings.
     """
+    token = create_session_token(
+        user.id, impersonator.id if impersonator else None,
+        session_version=user.session_version or 0,
+        impersonator_version=(impersonator.session_version or 0) if impersonator else 0)
+    from ..security import IMPERSONATION_MAX_AGE_SECONDS
+    max_age = settings.session_max_age_seconds
+    if impersonator is not None:
+        max_age = min(max_age, IMPERSONATION_MAX_AGE_SECONDS)
     response.set_cookie(
         key=settings.session_cookie,
-        value=create_session_token(user_id, impersonator_id),
-        max_age=settings.session_max_age_seconds,
+        value=token,
+        max_age=max_age,
         httponly=True,
         samesite=settings.cookie_samesite,
         secure=settings.cookie_secure,
     )
 
 
-# Simple in-memory per-IP login throttle (single-replica; see ADR-0009 for scale).
+# In-memory login throttle (single-replica; see ADR-0009 for scale): failures
+# per client IP and, separately, per account, so changing IP (or forging a
+# forwarded header) does not buy more guesses on one account.
 _login_failures: dict[str, deque] = defaultdict(deque)
+_account_failures: dict[str, deque] = defaultdict(deque)
+# Bound on the number of tracked keys: an attacker cycling random IPs or emails
+# must not grow the dictionaries without limit.
+_MAX_TRACKED = 10_000
 
 
 def _count_login(outcome: str) -> None:
@@ -75,30 +91,61 @@ def _count_login(outcome: str) -> None:
 def _client_ip(request: Request) -> str:
     """Best-effort client IP for throttling.
 
-    Trusts the first X-Forwarded-For hop (we sit behind a known reverse proxy);
-    falls back to the socket peer. Only used as a rate-limit key, not for authz.
+    Takes the LAST X-Forwarded-For hop: the one our own reverse proxy appended.
+    The first hop is whatever the client wrote in the header, and trusting it let
+    a new fake address come with every guess. Falls back to the socket peer.
+    Only used as a rate-limit key, not for authz.
     """
     xff = request.headers.get("x-forwarded-for")
     if xff:
-        return xff.split(",")[0].strip()
+        hops = [h.strip() for h in xff.split(",") if h.strip()]
+        if hops:
+            return hops[-1]
     return request.client.host if request.client else "unknown"
 
 
-def _check_login_rate(ip: str) -> None:
-    """Sliding-window brute-force guard: 429 once an IP exceeds the failure budget.
+def _prune(table: dict[str, deque], now: float) -> None:
+    """Drop expired failures and, past the size bound, the oldest keys."""
+    window = settings.login_window_seconds
+    if len(table) < _MAX_TRACKED:
+        return
+    for key in list(table.keys()):
+        q = table[key]
+        while q and now - q[0] > window:
+            q.popleft()
+        if not q:
+            del table[key]
+    while len(table) >= _MAX_TRACKED:
+        table.pop(next(iter(table)))
 
-    Prunes failures older than the window, then rejects if too many recent ones
-    remain. ``login_max_attempts <= 0`` disables the throttle entirely.
+
+def _too_many(q: deque, now: float) -> bool:
+    while q and now - q[0] > settings.login_window_seconds:
+        q.popleft()
+    return len(q) >= settings.login_max_attempts
+
+
+def _check_login_rate(ip: str, account: str = "") -> None:
+    """Sliding-window brute-force guard: 429 once an IP, or an account, exceeds
+    the failure budget within the window. ``login_max_attempts <= 0`` disables
+    the throttle entirely.
     """
     if settings.login_max_attempts <= 0:
         return
     now = time.time()
-    q = _login_failures[ip]
-    while q and now - q[0] > settings.login_window_seconds:
-        q.popleft()
-    if len(q) >= settings.login_max_attempts:
+    if (ip in _login_failures and _too_many(_login_failures[ip], now)) or (
+            account and account in _account_failures and _too_many(_account_failures[account], now)):
         _count_login("throttled")
         raise HTTPException(status_code=429, detail="Trop de tentatives de connexion. Réessayez plus tard.")
+
+
+def _record_failure(ip: str, account: str) -> None:
+    now = time.time()
+    _prune(_login_failures, now)
+    _prune(_account_failures, now)
+    _login_failures[ip].append(now)
+    if account:
+        _account_failures[account].append(now)
 
 
 @router.get("/config", response_model=AuthConfig)
@@ -130,29 +177,47 @@ def login(payload: LoginIn, request: Request, response: Response, db: Session = 
         break-glass account gets a distinct action for traceability).
     """
     ip = _client_ip(request)
-    _check_login_rate(ip)
-    user = db.scalar(select(User).where(User.email == payload.email.lower().strip()))
-    if user is None or not user.password_hash or not verify_password(payload.password, user.password_hash):
+    account = payload.email.lower().strip()
+    _check_login_rate(ip, account)
+    user = db.scalar(select(User).where(User.email == account))
+    if user is None or not user.password_hash:
+        # Same cost as a real check: an unknown email must not answer faster.
+        burn_verify_time(payload.password)
+        ok = False
+    else:
+        ok = verify_password(payload.password, user.password_hash)
+    if not ok:
         # Uniform failure path: do not reveal which of the three conditions failed.
-        _login_failures[ip].append(time.time())
+        _record_failure(ip, account)
         _count_login("failure")
         raise HTTPException(status_code=401, detail="Identifiants invalides")
     if user.status == "disabled":
         raise HTTPException(status_code=403, detail="Votre accès à cette application a été révoqué.")
     _login_failures.pop(ip, None)  # reset throttle on success
+    _account_failures.pop(account, None)
     _count_login("success")
     user.last_login_at = utcnow()
     link_members_to(db, user)  # members added by email before the account existed
     record_audit(db, user.id, "login.breakglass" if user.is_break_glass else "login.local",
                  entity="user", entity_id=user.id, detail={"email": user.email})
     db.commit()
-    _set_session(response, user.id)
+    _set_session(response, user)
     return user
 
 
 @router.post("/logout")
-def logout(response: Response):
-    """Clear the session cookie. Stateless: nothing server-side to invalidate."""
+def logout(request: Request, response: Response, db: Session = Depends(get_db)):
+    """Clear the session cookie AND revoke the token server-side: the account's
+    session version moves, so a copy of the cookie (stolen, cached) no longer
+    works. During a simulation, the admin's version moves (their simulation
+    token ends); the simulated person keeps their own sessions."""
+    from ..security import decode_session_claims
+    claims = decode_session_claims(request.cookies.get(settings.session_cookie) or "")
+    if claims is not None:
+        target = db.get(User, claims["imp"] if claims["imp"] is not None else claims["sub"])
+        if target is not None:
+            bump_session(target)
+            db.commit()
     response.delete_cookie(settings.session_cookie)
     return {"ok": True}
 
@@ -187,8 +252,13 @@ def my_permissions(request: Request, db: Session = Depends(get_db), user: User =
     # Admins may assign any persona (built-in or custom); others keep their subset.
     if user.role == "admin":
         payload["assignable_roles"] = [p["key"] for p in get_personas(db)]
-    # Impersonation context, so the SPA can show the "viewing as" banner.
+    # Security alerts shown to administrators on every page until fixed (the Ops
+    # screen listed them, where nobody looked).
     imp_id = getattr(request.state, "impersonator_id", None)
+    if user.role == "admin" or imp_id is not None:
+        from ..ops import secret_key_is_weak
+        payload["security_alerts"] = ["secret_key"] if secret_key_is_weak() else []
+    # Impersonation context, so the SPA can show the "viewing as" banner.
     payload["impersonating"] = imp_id is not None
     payload["viewing_as"] = user.display_name if imp_id is not None else None
     if imp_id is not None:
@@ -208,14 +278,15 @@ def impersonate(payload: dict, response: Response, request: Request,
     target = db.get(User, target_id) if target_id is not None else None
     if target is None:
         raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+    real_admin = db.get(User, real_admin_id)
     if target.id == real_admin_id:
         # "viewing as myself" → just stop impersonating.
-        _set_session(response, real_admin_id)
-        return db.get(User, real_admin_id)
+        _set_session(response, real_admin)
+        return real_admin
     record_audit(db, real_admin_id, "impersonate.start", entity="user", entity_id=target.id,
                  detail={"email": target.email})
     db.commit()
-    _set_session(response, target.id, impersonator_id=real_admin_id)
+    _set_session(response, target, impersonator=real_admin)
     return target
 
 
@@ -233,11 +304,15 @@ def stop_impersonation(response: Response, request: Request,
     admin = db.get(User, imp_id)
     if admin is None:
         raise HTTPException(status_code=404, detail="Compte administrateur introuvable")
-    _set_session(response, admin.id)
+    record_audit(db, admin.id, "impersonate.stop", entity="user", entity_id=user.id,
+                 detail={"email": user.email})
+    db.commit()
+    _set_session(response, admin)
     return admin
 
 
-def _provision(db: Session, *, subject: str | None, email: str, name: str, groups, cfg, source: str) -> User:
+def _provision(db: Session, *, subject: str | None, email: str, name: str, groups, cfg, source: str,
+               email_verified: bool | None = None) -> User:
     """Just-in-time provisioning for an SSO-authenticated identity (OIDC or SAML).
 
     Resolves the local account for the asserted identity and returns it ready to
@@ -263,12 +338,29 @@ def _provision(db: Session, *, subject: str | None, email: str, name: str, group
     Side effects: writes audit rows and may enqueue notifications. Does not
     commit: the calling endpoint owns the transaction.
     """
+    # An email the IdP itself says is not verified proves nothing: an attacker
+    # could have typed the admin's address in their IdP profile.
+    if email_verified is False:
+        log.warning("SSO %s refusé : email non vérifié par le fournisseur (%s)", source, email)
+        raise HTTPException(status_code=403, detail="Votre adresse de messagerie n'est pas vérifiée par le fournisseur d'identité.")
     user = None
+    linked_by_email = False
     if subject:
         # Prefer the stable IdP subject; email can change, the subject shouldn't.
         user = db.scalar(select(User).where(User.auth_subject == subject))
     if user is None and email:
         user = db.scalar(select(User).where(User.email == email))
+        linked_by_email = user is not None
+    if user is not None and user.is_break_glass:
+        # The emergency account is local by design: never reachable through SSO.
+        log.warning("SSO %s refusé : tentative sur le compte de secours (%s)", source, email)
+        raise HTTPException(status_code=403, detail="Ce compte ne se connecte pas par SSO.")
+    if user is not None and linked_by_email and subject and user.auth_subject and user.auth_subject != subject:
+        # Already bound to another IdP identity: an email match does not move it.
+        log.warning("SSO %s refusé : %s est déjà lié à une autre identité", source, email)
+        raise HTTPException(status_code=403, detail="Ce compte est déjà lié à une autre identité SSO.")
+    if user is not None and linked_by_email and not user.auth_subject and not email_domain_allowed(cfg, email):
+        raise HTTPException(status_code=403, detail="Votre domaine de messagerie n'est pas autorisé à accéder à cette application.")
     if user is None:
         # First gate: only allowed email domains may even be provisioned.
         if not email_domain_allowed(cfg, email):
@@ -296,7 +388,9 @@ def _provision(db: Session, *, subject: str | None, email: str, name: str, group
         # elevate or re-activate a pending/disabled one from IdP group claims.
         if user.status == "active":
             mapped = role_from_groups(cfg, groups)
-            if mapped:
+            if mapped and mapped != user.role:
+                record_audit(db, user.id, "user.role.sso", entity="user", entity_id=user.id,
+                             detail={"email": user.email, "from": user.role, "to": mapped, "source": source})
                 user.role = mapped
     user.last_login_at = utcnow()
     link_members_to(db, user)  # members added by email before the account existed
@@ -330,6 +424,11 @@ async def oidc_login(request: Request, db: Session = Depends(get_db)):
     cfg = get_auth_config(db, request)
     if not cfg["oidc_enabled"] or not cfg["oidc_issuer_url"] or not cfg["oidc_client_id"]:
         raise HTTPException(status_code=404, detail="OIDC désactivé ou mal configuré")
+    from ..netguard import BlockedURL, check_outbound_url
+    try:
+        check_outbound_url(cfg["oidc_issuer_url"])
+    except BlockedURL as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     from ..oidc import get_oauth, scope_string
     oauth = get_oauth(cfg)
     log.info("OIDC login: scopes=%r redirect_uri=%s",
@@ -375,10 +474,14 @@ async def oidc_callback(request: Request, db: Session = Depends(get_db)):
     groups = info.get(cfg.get("oidc_groups_claim") or "groups")
     if not email and not sub:
         raise HTTPException(status_code=400, detail="Réponse OIDC sans identité exploitable")
-    user = _provision(db, subject=sub, email=email, name=name, groups=groups, cfg=cfg, source="oidc")
+    verified = info.get("email_verified")
+    if isinstance(verified, str):
+        verified = verified.strip().lower() == "true"
+    user = _provision(db, subject=sub, email=email, name=name, groups=groups, cfg=cfg, source="oidc",
+                      email_verified=verified if verified is not None else None)
     db.commit()
     response = RedirectResponse(url=_safe_next(request.session.pop("_next", "/")))
-    _set_session(response, user.id)
+    _set_session(response, user)
     return response
 
 
@@ -409,11 +512,15 @@ async def saml_login(request: Request, db: Session = Depends(get_db)):
     cfg = get_auth_config(db, request)
     if not cfg["saml_enabled"]:
         raise HTTPException(status_code=404, detail="SAML désactivé")
-    from ..saml import make_auth
+    from ..saml import make_auth, remember_request
     auth = await make_auth(request, cfg)
     # The page to come back to travels as RelayState: the IdP posts it back to
     # the ACS, where the session cookie (SameSite) may not come along.
-    return RedirectResponse(url=auth.login(return_to=_safe_next(request.query_params.get("next"))))
+    url = auth.login(return_to=_safe_next(request.query_params.get("next")))
+    # The request id is kept server-side: the ACS only accepts an answer to it.
+    remember_request(db, auth.get_last_request_id())
+    db.commit()
+    return RedirectResponse(url=url)
 
 
 @router.post("/saml/acs")
@@ -428,10 +535,21 @@ async def saml_acs(request: Request, db: Session = Depends(get_db)):
     cfg = get_auth_config(db, request)
     if not cfg["saml_enabled"]:
         raise HTTPException(status_code=404, detail="SAML désactivé")
-    from ..saml import make_auth
+    from ..saml import consume_request, in_response_to, make_auth, remember_assertion
+    form = await request.form()
+    # Only an answer to a request this app sent, once: an unsolicited response
+    # (login CSRF) or a replayed one is refused before any processing.
+    request_id = in_response_to(form.get("SAMLResponse"))
+    if not request_id or not consume_request(db, request_id):
+        db.commit()
+        raise HTTPException(status_code=401, detail="Authentification SAML refusée")
     auth = await make_auth(request, cfg)
-    auth.process_response()
+    auth.process_response(request_id=request_id)
     if auth.get_errors() or not auth.is_authenticated():
+        db.commit()
+        raise HTTPException(status_code=401, detail="Authentification SAML refusée")
+    if not remember_assertion(db, auth.get_last_assertion_id(), auth.get_last_assertion_not_on_or_after()):
+        db.commit()
         raise HTTPException(status_code=401, detail="Authentification SAML refusée")
     attrs = auth.get_attributes()
     nameid = auth.get_nameid()
@@ -440,9 +558,8 @@ async def saml_acs(request: Request, db: Session = Depends(get_db)):
     groups = attrs.get(cfg.get("saml_groups_attr") or "groups")
     user = _provision(db, subject=nameid, email=email, name=name, groups=groups, cfg=cfg, source="saml")
     db.commit()
-    form = await request.form()
     response = RedirectResponse(url=_safe_next(form.get("RelayState")), status_code=303)
-    _set_session(response, user.id)
+    _set_session(response, user)
     return response
 
 

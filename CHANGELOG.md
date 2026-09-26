@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Security (pentest du 26/09/2026)
+- **Critique corrigee** : lecture de fichiers arbitraires sans authentification par le
+  repli de la SPA (`//etc/passwd`, `..%2f`). Faire tourner SECRET_KEY et les mots de passe.
+- Prise de compte par un tribe leader (mot de passe d'un autre compte), elevation par les
+  onglets delegues (personas, data, api, auth, trust, tribes), restauration forgee : fermees.
+- SECRET_KEY par defaut refusee en production, sessions revocables (deconnexion, mot de
+  passe, role), simulation bornee et tracee, force brute par compte, SSO sans email non
+  verifie, SAML sans rejeu, defense CSRF, en-tetes de securite, `/docs` et `/metrics`
+  proteges, secrets masques, formules de tableur neutralisees, SSRF bloque, conteneur non
+  root. Voir [33 - Securite](docs/33-securite-et-pentest.md).
+
 ### Passes de qualite (10 passes experience et technique, 3 passes mails et PPTX)
 - **Mails lisibles partout** : un resume en tableaux (Outlook, Gmail, telephone), un bouton
   vers l'application, une ligne « pourquoi vous recevez ce mail » ; le PPTX joint, le HTML

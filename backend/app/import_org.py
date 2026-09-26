@@ -452,13 +452,15 @@ def template_bytes() -> bytes:
     import io
 
     buf = io.BytesIO()
-    build_template_workbook().save(buf)
+    from .sheetsafe import neutralize_workbook
+    neutralize_workbook(build_template_workbook()).save(buf)
     return buf.getvalue()
 
 
 def write_template(path: str) -> None:
     """Write the Excel template (5 sheets) to ``path`` for the user to fill."""
-    build_template_workbook().save(path)
+    from .sheetsafe import neutralize_workbook
+    neutralize_workbook(build_template_workbook()).save(path)
 
 
 def main(argv: list[str] | None = None) -> None:

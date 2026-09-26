@@ -49,6 +49,20 @@ def _resolve_account(db: Session, squad: Squad, email: str | None, user_id: int 
     return email, account_for(db, squad, email)
 
 
+def _assert_may_enrol(db: Session, actor: User, squad: Squad, account: User | None) -> None:
+    """Putting an account in a squad hands its leaders that person's absences
+    (approve, refuse, read the reasons). A squad leader may do it for people of
+    the tribe, not for an admin, a tribe leader or the leader of another squad:
+    that is the tribe leader's (or the admin's) call."""
+    if account is None or actor.role in ("admin", "tribe_leader"):
+        return
+    leads_other = db.scalar(select(Squad.id).where(Squad.leader_user_id == account.id,
+                                                   Squad.id != squad.id)) is not None
+    if account.role in ("admin", "tribe_leader") or leads_other:
+        raise HTTPException(status_code=403,
+                            detail="Seul le tribe leader peut ajouter cette personne à une squad")
+
+
 def _check_unique(db: Session, squad_id: int, email: str | None, user_id: int | None,
                   member_id: int | None = None) -> None:
     """The same person appears once in a squad (by email or by account)."""
@@ -97,6 +111,7 @@ def create_member(payload: MemberCreate, db: Session = Depends(get_db), user: Us
     assert_can_edit_squad(db, user, payload.squad_id)
     _check_manager(db, payload.squad_id, payload.manager_id)
     email, account = _resolve_account(db, squad, normalize_email(payload.email), payload.user_id)
+    _assert_may_enrol(db, user, squad, account)
     typed = " ".join(p.strip() for p in (payload.first_name, payload.last_name) if p and p.strip())
     full_name = ((payload.full_name or "").strip() or typed
                  or (account.display_name if account else "") or (name_from_email(email) if email else ""))
@@ -137,6 +152,7 @@ def update_member(member_id: int, payload: MemberUpdate, db: Session = Depends(g
         # A new email (or account) re-links: the old link goes with the old email.
         email = normalize_email(data["email"]) if "email" in data else member.email
         email, account = _resolve_account(db, member.squad, email, data.get("user_id"))
+        _assert_may_enrol(db, user, member.squad, account)
         _check_unique(db, member.squad_id, email, account.id if account else None, member.id)
         data["email"], data["user_id"] = email, (account.id if account else None)
     for k, v in data.items():

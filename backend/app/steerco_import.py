@@ -245,7 +245,8 @@ def build_template_workbook(period: str | None = None, kpi_labels: list[str] | N
 def template_bytes(period: str | None = None, kpi_labels: list[str] | None = None,
                    sla_services: list[str] | None = None, squad_name: str = "") -> bytes:
     buf = io.BytesIO()
-    build_template_workbook(period, kpi_labels, sla_services, squad_name).save(buf)
+    from .sheetsafe import neutralize_workbook
+    neutralize_workbook(build_template_workbook(period, kpi_labels, sla_services, squad_name)).save(buf)
     return buf.getvalue()
 
 

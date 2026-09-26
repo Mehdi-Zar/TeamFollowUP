@@ -126,6 +126,8 @@ class UserUpdate(BaseModel):
     role: Optional[str] = None
     tribe_id: Optional[int] = None
     password: Optional[str] = None
+    # An SSO account gets a local password only when the admin says so.
+    allow_local_password: Optional[bool] = None
 
 
 # ---------- Tribe (tenant) ----------

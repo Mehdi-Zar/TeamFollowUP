@@ -54,9 +54,8 @@ def test_oidc(cfg: dict) -> dict[str, Any]:
     ``unauthorized_client`` even when the secret is wrong. Nothing is consumed by
     the bogus code, and no user interaction is needed.
     """
-    import httpx
-
     from . import trust
+    from .netguard import guarded_client
 
     checks: list[dict] = []
     issuer = (cfg.get("oidc_issuer_url") or "").strip().rstrip("/")
@@ -69,7 +68,7 @@ def test_oidc(cfg: dict) -> dict[str, Any]:
 
     well_known = f"{issuer}/.well-known/openid-configuration"
     try:
-        with httpx.Client(timeout=TIMEOUT, follow_redirects=True, verify=trust.context()) as client:
+        with guarded_client(timeout=TIMEOUT, follow_redirects=True, verify=trust.context()) as client:
             resp = client.get(well_known)
     except Exception as exc:
         return _result("oidc", checks + [
@@ -108,7 +107,7 @@ def test_oidc(cfg: dict) -> dict[str, Any]:
     jwks_uri = doc.get("jwks_uri")
     if jwks_uri:
         try:
-            with httpx.Client(timeout=TIMEOUT, follow_redirects=True, verify=trust.context()) as client:
+            with guarded_client(timeout=TIMEOUT, follow_redirects=True, verify=trust.context()) as client:
                 jwks = client.get(jwks_uri)
             keys = (jwks.json() or {}).get("keys") or []
             checks.append(_check("Clés de signature récupérées", bool(keys), f"{len(keys)} clé(s)"))
@@ -122,7 +121,7 @@ def test_oidc(cfg: dict) -> dict[str, Any]:
     token_endpoint = doc.get("token_endpoint")
     if token_endpoint:
         try:
-            with httpx.Client(timeout=TIMEOUT, follow_redirects=True, verify=trust.context()) as client:
+            with guarded_client(timeout=TIMEOUT, follow_redirects=True, verify=trust.context()) as client:
                 probe = client.post(token_endpoint, data={
                     "grant_type": "authorization_code",
                     "code": "teamfollowup-connectivity-probe",

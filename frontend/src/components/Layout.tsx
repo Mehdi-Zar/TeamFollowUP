@@ -72,7 +72,7 @@ const COLLAPSE_KEY = "sidebar.collapsed";
  *  hosts the current page through <Outlet/>. Owns cross-page UI state (sidebar
  *  collapse, mobile drawer, admin impersonation picker, first-login welcome). */
 export default function Layout() {
-  const { user, logout, effectiveRole, isPreview, impersonate, stopImpersonation, can, pendingAccessCount, adminTabs, canReviewAccess } = useAuth();
+  const { user, logout, effectiveRole, isPreview, impersonate, stopImpersonation, can, pendingAccessCount, adminTabs, canReviewAccess, securityAlerts } = useAuth();
   const { t, role: roleLabel, lang, setLang } = useI18n();
   // A save that failed after its field was left (see api.reportSaveError).
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -292,6 +292,17 @@ export default function Layout() {
           )}
         </header>
 
+        {securityAlerts.includes("secret_key") && (
+          <div className="no-print banner banner-red stack" role="alert" style={{ margin: "8px 16px", gap: 6 }}>
+            <strong>{t("sec.secret_key.title")}</strong>
+            <span className="small">{t("sec.secret_key.why")}</span>
+            <ol className="small" style={{ margin: 0, paddingLeft: 20 }}>
+              <li>{t("sec.secret_key.step1")} <code>python -c "import secrets; print(secrets.token_urlsafe(48))"</code></li>
+              <li>{t("sec.secret_key.step2")}</li>
+              <li>{t("sec.secret_key.step3")}</li>
+            </ol>
+          </div>
+        )}
         {saveError && (
           <div className="no-print banner banner-red between" role="alert" style={{ margin: "8px 16px", alignItems: "center" }}>
             <span className="small">{t("common.save_failed", { msg: saveError })}</span>

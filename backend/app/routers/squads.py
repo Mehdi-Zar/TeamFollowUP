@@ -83,7 +83,19 @@ from ..serializers import budget_out, squad_detail
 router = APIRouter(prefix="/api/squads", tags=["squads"])
 
 
-def _set_co_leaders(db: Session, squad: Squad, user_ids: list[int]) -> None:
+def _assert_nameable(target: User, actor: User | None) -> None:
+    """Who may be named leader, co-leader or contributor: an active account of a
+    tribe. An account still waiting for access (or without a tribe) was pulled
+    into the tribe and given a role that way, bypassing the access review. The
+    admin may still name anyone."""
+    if actor is not None and actor.role == ADMIN:
+        return
+    if target.status != "active" or target.tribe_id is None:
+        raise HTTPException(status_code=400,
+                            detail=f"{target.display_name} n'a pas encore d'accès validé dans une tribe")
+
+
+def _set_co_leaders(db: Session, squad: Squad, user_ids: list[int], actor: User | None = None) -> None:
     """Replace a squad's co-leaders, refusing anyone outside its tribe.
 
     A co-leader of another tribe would read that tribe's squad through a door the
@@ -102,6 +114,7 @@ def _set_co_leaders(db: Session, squad: Squad, user_ids: list[int]) -> None:
         if target.tribe_id is not None and target.tribe_id != squad.tribe_id:
             raise HTTPException(status_code=400,
                                 detail=f"{target.display_name} n'appartient pas à la tribe de cette squad")
+        _assert_nameable(target, actor)
         if target.role in (MEMBER, CONTRIB):
             target.role = SQUAD
             target.tribe_id = target.tribe_id or squad.tribe_id
@@ -111,7 +124,7 @@ def _set_co_leaders(db: Session, squad: Squad, user_ids: list[int]) -> None:
     squad.contributors = [u for u in squad.contributors if u not in people]
 
 
-def _set_contributors(db: Session, squad: Squad, user_ids: list[int]) -> None:
+def _set_contributors(db: Session, squad: Squad, user_ids: list[int], actor: User | None = None) -> None:
     """Replace a squad's contributors, refusing anyone outside its tribe.
 
     Naming a plain member contributor gives them the "contributor" persona, so
@@ -125,6 +138,7 @@ def _set_contributors(db: Session, squad: Squad, user_ids: list[int]) -> None:
         if target.tribe_id is not None and target.tribe_id != squad.tribe_id:
             raise HTTPException(status_code=400,
                                 detail=f"{target.display_name} n'appartient pas à la tribe de cette squad")
+        _assert_nameable(target, actor)
         if target.role == MEMBER:
             target.role = CONTRIB
             target.tribe_id = target.tribe_id or squad.tribe_id
@@ -149,6 +163,7 @@ def _name_leader(db: Session, user: User, squad: Squad, leader_id: int) -> None:
         raise HTTPException(status_code=404, detail="Utilisateur introuvable")
     if leader.tribe_id is not None and leader.tribe_id != squad.tribe_id and user.role != ADMIN:
         raise HTTPException(status_code=400, detail=f"{leader.display_name} n'appartient pas à la tribe de cette squad")
+    _assert_nameable(leader, user)
     if leader.role in (MEMBER, CONTRIB):
         leader.role = SQUAD
         leader.tribe_id = leader.tribe_id or squad.tribe_id
@@ -358,11 +373,11 @@ def update_squad(squad_id: int, payload: SquadUpdate, db: Session = Depends(get_
     # on the account (see _set_co_leaders), so it is applied apart from the plain
     # field copy below.
     if "co_leader_user_ids" in data:
-        _set_co_leaders(db, squad, data.pop("co_leader_user_ids") or [])
+        _set_co_leaders(db, squad, data.pop("co_leader_user_ids") or [], user)
     # Contributors: the squad's leadership names them too (the tribe scope and
     # the edit right were checked above).
     if "contributor_user_ids" in data:
-        _set_contributors(db, squad, data.pop("contributor_user_ids") or [])
+        _set_contributors(db, squad, data.pop("contributor_user_ids") or [], user)
     # Naming the leader promotes a member or contributor, as for a co-leader, and
     # takes them out of the contributors (leading includes the reporting).
     if data.get("leader_user_id"):

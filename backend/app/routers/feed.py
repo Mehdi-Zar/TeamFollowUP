@@ -156,6 +156,10 @@ def create_post(payload: FeedPostCreate, db: Session = Depends(get_db), user: Us
     # Optional restriction: when scope is "leaders", ordinary members can't post.
     if cfg.get("feed_post_scope", "leaders") == "leaders" and user.role not in ("admin", "tribe_leader", "squad_leader"):
         raise HTTPException(status_code=403, detail="Seuls les leaders peuvent publier")
+    # Without a tribe, a post would be global (every tribe reads it): only an
+    # admin speaks to everyone.
+    if user.role != "admin" and user.tribe_id is None:
+        raise HTTPException(status_code=403, detail="Rattachez-vous d'abord à une tribe pour publier")
     squad = db.get(Squad, payload.squad_id) if payload.squad_id is not None else None
     # A squad of another tribe is not taggable (the post would sit in the
     # author's tribe under a foreign squad's name). Admins tag any squad.

@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     # Session cookie hardening - set COOKIE_SECURE=true behind TLS in production.
     cookie_secure: bool = False
     cookie_samesite: str = "lax"  # lax | strict | none
+    # Escape hatch: start a deployed instance (PUBLIC_BASE_URL set) even with the
+    # default SECRET_KEY. Never in production: anyone can forge a session then.
+    allow_insecure_secret_key: bool = False
 
     # --- Serving ---
     # The app serves plain HTTP on this port and never terminates TLS: the
@@ -111,6 +114,26 @@ class Settings(BaseSettings):
     saml_acs_url: str = ""
     saml_sp_cert: str = ""
     saml_sp_key: str = ""
+
+    def startup_refusals(self) -> list[str]:
+        """Reasons this configuration must not serve (empty list = fine).
+
+        A default or short SECRET_KEY lets anyone forge an admin session: refused
+        on a deployed instance (PUBLIC_BASE_URL set) unless
+        ALLOW_INSECURE_SECRET_KEY is set; a laptop without PUBLIC_BASE_URL only
+        gets the warning. SameSite=none cookies without Secure would travel to
+        any site: always refused.
+        """
+        out = []
+        key = str(self.secret_key or "")
+        weak = key.startswith("change-me") or len(key) < 32
+        if weak and self.public_base_url and not self.allow_insecure_secret_key:
+            out.append("SECRET_KEY is the default or shorter than 32 characters on a deployed "
+                       "instance (PUBLIC_BASE_URL is set). Set a strong SECRET_KEY "
+                       "(or ALLOW_INSECURE_SECRET_KEY=1 to override, never in production).")
+        if str(self.cookie_samesite).lower() == "none" and not self.cookie_secure:
+            out.append("COOKIE_SAMESITE=none requires COOKIE_SECURE=true.")
+        return out
 
     @property
     def database_url(self) -> str:

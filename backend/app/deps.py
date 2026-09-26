@@ -26,7 +26,7 @@ from sqlalchemy.orm import Session
 from .config import settings
 from .database import get_db
 from .models import AuditLog, Squad, User
-from .security import decode_session
+from .security import decode_session_claims
 
 THRESHOLD_KEY = "staleness_threshold_days"
 
@@ -58,7 +58,14 @@ def record_audit(db: Session, user_id, action, entity=None, entity_id=None, deta
     Only stages the row (no commit) so the audit line lives or dies with the
     business change it records. ``entity_id`` is coerced to str for uniform
     storage across entity types.
+
+    During an impersonation ("view as"), the admin really acting is recorded in
+    ``detail["impersonator_id"]``: the row's user is the simulated account.
     """
+    imp = db.info.get("impersonator_id") if hasattr(db, "info") else None
+    if imp is not None:
+        detail = dict(detail or {})
+        detail.setdefault("impersonator_id", imp)
     db.add(AuditLog(user_id=user_id, action=action, entity=entity,
                     entity_id=str(entity_id) if entity_id is not None else None, detail=detail))
 
@@ -70,16 +77,29 @@ def get_current_user_any_status(request: Request, db: Session = Depends(get_db))
     token = request.cookies.get(settings.session_cookie)
     if not token:
         raise HTTPException(status_code=401, detail="Non authentifié")
-    user_id, impersonator_id = decode_session(token)
-    if user_id is None:
+    claims = decode_session_claims(token)
+    if claims is None:
         raise HTTPException(status_code=401, detail="Session invalide")
+    user_id, impersonator_id = claims["sub"], claims["imp"]
     user = db.get(User, user_id)
     if user is None:
         # Session referenced a user that no longer exists (deleted account).
         raise HTTPException(status_code=401, detail="Utilisateur introuvable")
+    if impersonator_id is None:
+        # Logged out, or password/role/status changed since: the token is revoked.
+        if claims["sv"] != int(user.session_version or 0):
+            raise HTTPException(status_code=401, detail="Session expirée")
+    else:
+        # A simulation holds only while the admin behind it is still an active
+        # admin, with the session they started it from.
+        admin = db.get(User, impersonator_id)
+        if (admin is None or admin.role != ADMIN or admin.status != "active"
+                or claims["isv"] != int(admin.session_version or 0)):
+            raise HTTPException(status_code=401, detail="Session expirée")
     # Surface impersonation context (admin viewing the app as another user) on
-    # request.state so downstream code/audit can tell who is really acting.
+    # request.state, and on the DB session so record_audit names the real actor.
     request.state.impersonator_id = impersonator_id
+    db.info["impersonator_id"] = impersonator_id
     return user
 
 
@@ -385,6 +405,15 @@ def can_manage_leave(db: Session, viewer: User, target_user_id: int) -> bool:
         return target.tribe_id is not None and target.tribe_id == viewer.tribe_id
     # Nobody below the tribe leader approves their own absence.
     if target_user_id == viewer.id:
+        return False
+    # A squad leader does not manage the absences of an admin, a tribe leader or
+    # the leader of another squad, even if that person was added to their squad.
+    if target.role in (ADMIN, TRIBE):
+        return False
+    from sqlalchemy import select as _select
+    from .models import Squad as _Squad
+    if db.scalar(_select(_Squad.id).where(_Squad.leader_user_id == target_user_id,
+                                          _Squad.id.notin_(led_squad_ids(db, viewer)))) is not None:
         return False
     # Leading a squad is a job, not a persona: whoever leads a squad the person
     # belongs to (any role) manages their absences.

@@ -62,7 +62,10 @@ def org_overview(db: Session = Depends(get_db), admin: User = Depends(require_ad
         count_by_tribe[s.tribe_id] = count_by_tribe.get(s.tribe_id, 0) + 1
     nodes = list(db.scalars(select(OrgNode)).all())
     out = []
-    for t in db.scalars(select(Tribe).order_by(Tribe.display_order, Tribe.id)).all():
+    tq = select(Tribe).order_by(Tribe.display_order, Tribe.id)
+    if admin.role != "admin":  # a delegate of the Tribes tab: their own tribe only
+        tq = tq.where(Tribe.id == admin.tribe_id)
+    for t in db.scalars(tq).all():
         tribe_nodes = [n for n in nodes if n.tribe_id == t.id]
         out.append(TribeOrg(
             tribe_id=t.id, tribe_name=t.name,
@@ -120,10 +123,12 @@ def update_tribe(tribe_id: int, payload: TribeUpdate, db: Session = Depends(get_
     if tribe is None:
         raise HTTPException(status_code=404, detail="Tribe introuvable")
     # "Tribes" edits every tribe; "My tribe" one's own, as its tribe leader.
+    # A delegate (either tab) edits their own tribe only.
     from ..tabaccess import has_tab
-    if user.role != "admin" and not has_tab(db, user, "tribes"):
-        user = acting_manager(db, user, "tribe")
-        if not can_edit_tribe(user, tribe_id):
+    if user.role != "admin":
+        if not has_tab(db, user, "tribes"):
+            user = acting_manager(db, user, "tribe")
+        if user.tribe_id != tribe_id or not (has_tab(db, user, "tribes") or can_edit_tribe(user, tribe_id)):
             raise HTTPException(status_code=403, detail="Vous ne pouvez modifier que votre tribe")
     data = update_data(payload, Tribe)
     # display_order is a global ordering concern → admin only.
@@ -150,6 +155,8 @@ def delete_tribe(tribe_id: int, db: Session = Depends(get_db), admin: User = Dep
     tribe = db.get(Tribe, tribe_id)
     if tribe is None:
         raise HTTPException(status_code=404, detail="Tribe introuvable")
+    if admin.role != "admin" and tribe_id != admin.tribe_id:  # a delegate: their own tribe only
+        raise HTTPException(status_code=403, detail="Vous ne pouvez supprimer que votre tribe")
     if db.scalar(select(Squad).where(Squad.tribe_id == tribe_id)) is not None:
         raise HTTPException(status_code=409, detail="Supprimez ou déplacez d'abord les squads de cette tribe")
     if db.scalar(select(Initiative.id).where(Initiative.tribe_id == tribe_id)) is not None:

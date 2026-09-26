@@ -25,7 +25,6 @@ TRIBE = "tribe_leader"
 # Route prefix -> the tab that opens it. Longest prefix wins.
 ROUTE_TABS: list[tuple[str, str]] = [
     ("/api/admin/settings", "settings"),
-    ("/api/admin/auth-config", "auth"),
     ("/api/admin/smtp-config", "smtp"),
     ("/api/admin/personas", "personas"),
     ("/api/admin/modules-config", "modules"),
@@ -33,7 +32,6 @@ ROUTE_TABS: list[tuple[str, str]] = [
     ("/api/admin/log-export-config", "logs"),
     ("/api/admin/logs", "logs"),
     ("/api/admin/log-level", "logs"),
-    ("/api/admin/trust-store", "trust"),
     ("/api/admin/runtime", "ops"),
     ("/api/admin/restart", "ops"),
     ("/api/admin/api-keys", "api"),
@@ -43,7 +41,6 @@ ROUTE_TABS: list[tuple[str, str]] = [
     ("/api/admin/pptx-template", "branding"),
     ("/api/admin/data", "data"),
     ("/api/audit-log", "audit"),
-    ("/api/leaves/types", "leaves"),
     ("/api/tribes", "tribes"),
     ("/api/squads", "squads"),
 ]

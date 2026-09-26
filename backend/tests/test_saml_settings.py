@@ -103,11 +103,22 @@ def test_idp_metadata_is_fetched_over_a_verified_connection(monkeypatch):
         def raise_for_status(self):
             pass
 
-    def _get(url, **kw):
-        seen.update(kw, url=url)
-        return Resp()
+    class Client:
+        def __init__(self, **kw):
+            seen.update(kw)
 
-    monkeypatch.setattr(httpx, "get", _get)
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def get(self, url):
+            seen["url"] = url
+            return Resp()
+
+    from app import netguard
+    monkeypatch.setattr(netguard, "guarded_client", lambda **kw: Client(**kw))
 
     assert saml._fetch_idp_metadata("https://idp.internal.example/metadata") == "<EntityDescriptor/>"
     assert seen["url"] == "https://idp.internal.example/metadata"
