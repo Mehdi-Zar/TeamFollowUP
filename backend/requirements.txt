@@ -11,7 +11,7 @@ PyJWT==2.13.0
 authlib==1.7.2
 httpx==0.28.1
 google-auth==2.56.3
-prometheus-client==0.21.1
+prometheus-client==0.26.0
 itsdangerous==2.2.0
 python3-saml==1.16.0
 cryptography==49.0.0
