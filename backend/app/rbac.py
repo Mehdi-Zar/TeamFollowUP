@@ -1,0 +1,165 @@
+"""Central RBAC model.
+
+One place that answers "can actor X do action Y on object Z?" so routers and the
+SPA stay consistent. Three management scopes:
+
+  - admin         : everything, all tribes (global configuration included).
+  - tribe_leader  : own tribe (edit) + its squads (CRUD) + users of that tribe
+                    (assignable roles capped at squad_leader / member).
+  - squad_leader  : squads they lead (content, members, KPIs on/off).
+
+Members have no management scope. Global configuration (modules, SMTP, SSO,
+logs, audit, general settings, weekly report) is admin-only.
+"""
+from __future__ import annotations
+
+from .models import Squad, User
+
+ADMIN = "admin"
+TRIBE = "tribe_leader"
+SQUAD = "squad_leader"
+MEMBER = "member"
+# Fills in the reporting of the squads they are named contributor of, nothing else.
+CONTRIB = "contributor"
+
+MANAGER_ROLES = (ADMIN, TRIBE, SQUAD)
+
+# Admin tabs each role may open. Global-config tabs are admin-only.
+ADMIN_TABS = {
+    ADMIN: ["tribes", "import", "squads", "platforms", "users", "personas", "modules", "report", "leaves",
+            "moderation", "auth", "api", "smtp", "trust", "logs", "settings", "branding", "data",
+            "audit", "ops"],
+    # Tribe & squad leaders manage their squads on the dedicated "my squads"
+    # page, not in Administration. Tribe leaders may set their own tribe's leave rules.
+    # Platforms are theirs too: a steerco slide and who owes each figure on it is a
+    # tribe-level decision, not something a squad leader hands itself.
+    # The default only: the tribe leader's tabs are chosen in Admin > Personas
+    # (personasconfig.admin_tabs_for), this list is what an untouched install gives.
+    TRIBE: ["tribe", "platforms", "users", "leaves", "report"],
+    SQUAD: [],
+    CONTRIB: [],
+    MEMBER: [],
+}
+
+
+def can_access_admin(user: User) -> bool:
+    """True if the user has any management scope (admin / tribe / squad leader).
+
+    Gate for reaching the Administration area at all; which tabs are shown is
+    then narrowed by :data:`ADMIN_TABS`.
+    """
+    return user.role in MANAGER_ROLES
+
+
+# ----- tribes -------------------------------------------------------------------
+
+def can_create_or_delete_tribe(user: User) -> bool:
+    """Only admins may create or delete tribes (they are the top-level tenants)."""
+    return user.role == ADMIN
+
+
+def can_edit_tribe(user: User, tribe_id: int | None) -> bool:
+    """True if the user may edit the given tribe.
+
+    Admins may edit any tribe; a tribe leader may edit only their own tribe.
+    ``tribe_id`` is optional so callers can pass an unresolved value safely - a
+    missing id can never match a leader's own tribe.
+    """
+    if user.role == ADMIN:
+        return True
+    if user.role == TRIBE:
+        return tribe_id is not None and tribe_id == user.tribe_id
+    return False
+
+
+# ----- squads -------------------------------------------------------------------
+
+def can_manage_squads_in_tribe(user: User, tribe_id: int | None) -> bool:
+    """Create / delete / set leader & order of squads in a tribe.
+
+    Managing a tribe's squads is the same scope as editing the tribe itself, so
+    this simply delegates to :func:`can_edit_tribe`.
+    """
+    return can_edit_tribe(user, tribe_id)
+
+
+def leads_squad(user: User, squad: Squad) -> bool:
+    """True if the user leads this specific squad, as leader or co-leader.
+
+    Note it requires the SQUAD role: admins and tribe leaders are handled by the
+    tribe-level checks, not by direct squad leadership.
+    """
+    if user.role != SQUAD:
+        return False
+    return squad.leader_user_id == user.id or any(u.id == user.id for u in squad.co_leaders)
+
+
+# ----- users --------------------------------------------------------------------
+
+def can_manage_users(user: User) -> bool:
+    """True if the user may manage accounts (admins globally, tribe leaders in-tribe)."""
+    return user.role in (ADMIN, TRIBE)
+
+
+def assignable_roles(user: User) -> list[str]:
+    """Roles this actor is allowed to grant to others.
+
+    Enforces privilege capping: a tribe leader may only create squad leaders and
+    members (never admins or other tribe leaders); members may grant nothing.
+    """
+    if user.role == ADMIN:
+        return [ADMIN, TRIBE, SQUAD, CONTRIB, MEMBER]
+    if user.role == TRIBE:
+        return [SQUAD, CONTRIB, MEMBER]
+    return []
+
+
+def users_scope_tribe(user: User) -> int | None:
+    """Tribe filter for the users a manager may see (None = all, admin). A tribe
+    leader without a tribe sees nobody (-1 matches no row, like deps.NO_TRIBE)."""
+    if user.role == ADMIN:
+        return None
+    return user.tribe_id if user.tribe_id is not None else -1
+
+
+def can_manage_user(actor: User, target: User) -> bool:
+    """Edit/delete an existing user account.
+
+    Break-glass accounts are protected: only an admin may ever touch them, so a
+    tribe leader can never disable the emergency admin. Otherwise admins manage
+    anyone, and a tribe leader manages only squad leaders / members in their own
+    tribe.
+    """
+    # Guard the emergency admin account against non-admin actors first.
+    if target.is_break_glass and actor.role != ADMIN:
+        return False
+    if actor.role == ADMIN:
+        return True
+    if actor.role == TRIBE:
+        return target.tribe_id == actor.tribe_id and target.role in (SQUAD, CONTRIB, MEMBER)
+    return False
+
+
+def can_assign_role(actor: User, role: str) -> bool:
+    """True if ``actor`` is permitted to grant ``role`` (see :func:`assignable_roles`)."""
+    return role in assignable_roles(actor)
+
+
+def permissions_payload(user: User, db=None) -> dict:
+    """Capability summary consumed by the SPA to drive the admin UI. With a
+    session, the admin tabs come from the personas config (what an admin set)."""
+    if db is not None:
+        from .personasconfig import admin_tabs_for
+        tabs = admin_tabs_for(db, user)
+    else:
+        tabs = ADMIN_TABS.get(user.role, [])
+    return {
+        "role": user.role,
+        "tribe_id": user.tribe_id,
+        # With a session, reaching Administration means holding at least one tab.
+        "can_access_admin": bool(tabs) if db is not None else can_access_admin(user),
+        "admin_tabs": tabs,
+        "assignable_roles": assignable_roles(user),
+        "can_create_tribe": can_create_or_delete_tribe(user),
+        "can_manage_users": can_manage_users(user),
+    }

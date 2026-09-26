@@ -1,0 +1,158 @@
+# 02 - Architecture
+
+## Tech stack
+
+| Layer | Technology |
+|-------|------------|
+| Frontend | React 18, TypeScript 5, React Router 6, Vite 5 (no UI framework; custom CSS design system in `theme.css`) |
+| Backend | FastAPI 0.115, Pydantic 2, SQLAlchemy 2, Uvicorn |
+| Database | PostgreSQL 16 |
+| Migrations | Alembic 1.14 |
+| Auth | Starlette SessionMiddleware (itsdangerous), Argon2 (argon2-cffi), Authlib (OIDC), python3-saml (SAML), PyJWT |
+| Reporting | python-pptx (PPTX), hand-rendered HTML |
+| Observability | prometheus-client (`/metrics`), structured JSON logs, in-app log ring buffer |
+| Packaging | Multi-stage Docker (node build → python runtime serving the SPA) |
+
+## C4 - System context
+
+```mermaid
+flowchart TB
+  subgraph Users
+    A[Admin]
+    TL[Tribe leader]
+    SL[Squad leader]
+    M[Member]
+  end
+  Users -->|HTTPS, session cookie| APP[TeamFollowUP\nFastAPI + SPA]
+  APP -->|SQL| DB[(PostgreSQL)]
+  APP -->|SMTP| MAIL[(Mail server)]
+  APP -->|OIDC / SAML| IDP[(Identity Provider)]
+```
+
+## C4 - Containers / deployment
+
+```mermaid
+flowchart LR
+  subgraph docker-compose
+    direction LR
+    APP["app container\n(python:3.12-slim)\nUvicorn HTTP :8000 (single port)\nserves /api + built SPA"]
+    DB[("db container\npostgres:16-alpine\nvolume db_data")]
+  end
+  APP -->|psycopg2| DB
+  Browser -->|HTTPS| PROXY["Gateway / ALB / reverse proxy\nterminates TLS"]
+  PROXY -->|HTTP :8000\nX-Forwarded-Proto/Host| APP
+```
+
+- A single **app** image is built in two stages (Dockerfile): stage 1 `npm run build` produces the
+  SPA into `frontend/dist`, copied into `app/static`; stage 2 is the Python runtime.
+- `docker-entrypoint.sh`: waits for DB → `alembic upgrade head` → `python -m app.init_db` (break-glass
+  admin + demo seed) → `python -m app.server`, which binds **one** port: plain HTTP
+  `:8000`. TLS is terminated upstream, HTTP→HTTPS redirection included, e.g. by the
+  GKE Gateway API (ADR 0013).
+- The public URL the browser uses is independent of that listen port. It is
+  `PUBLIC_BASE_URL` (or deduced from `X-Forwarded-Proto` / `-Host`), and every SSO
+  callback URL is derived from it - see `docs/05` and `docs/12` §2.1.
+- The API serves the SPA: `/assets` via `StaticFiles`, every other non-`/api` path falls back to
+  `index.html` (client-side routing). See [ADR-0001](adr/0001-monolith-serves-spa.md).
+- **Observability rides the same port.** A pure-ASGI middleware (`app/metrics.py`) times every
+  request and `/metrics` exposes the counters in the Prometheus format. It sits outermost, so
+  the latency it records is the one the client experienced, and it labels by **route template**
+  (never the raw path) to keep the number of time series bounded. Because it shares the app's
+  single port, `/metrics` must be kept off the public route or behind `METRICS_TOKEN` -
+  see [17](17-observabilite.md).
+
+### Frontend layout
+
+`src/pages/` holds one file per route. The exception is Administration, which is a
+single route hosting twenty-odd independent panels: `AdminPage.tsx` is the shell
+(permissions, tab resolution, `?section=` deep link, navigation) and the panels
+live in `src/pages/admin/`, one module per navigation group - `organisation`,
+`imports`, `configuration`, `authentication`, `oversight`, plus `shared` for the
+two hooks more than one panel needs. The split is held in place by an end-to-end
+test that opens every section and asserts it renders ([18](18-tests-e2e.md)).
+
+### Reporting modules
+
+`report.py` builds the payloads and renders the HTML; `reportpptx.py` renders the
+four PowerPoint decks; `reportcommon.py` holds the eleven declarations both
+formats share (the translation table, the status labels and colours, the month
+labels, `group_by_theme`). The dependency runs one way only - `reportpptx` imports
+`reportcommon` and never `report` - and `report` re-exports the deck renderers, so
+`from .report import render_pptx` keeps working for every caller.
+
+## Backend module map
+
+```mermaid
+flowchart TB
+  main[main.py\nFastAPI app + routers + startup scheduler]
+  main --> routers[routers\nauth, tribes, squads, dashboard, org, orgexport,\nroadmap, roadmapview, kpis,\nmembers, snapshots, feed, notifications,\nadmin, audit, reports, initiatives,\notds, access, leaves, committees,\nsteerco, data]
+  routers --> deps[deps.py\nauth + RBAC + capability + module guards]
+  routers --> serializers[serializers.py]
+  routers --> schemas[schemas.py\nPydantic DTOs]
+  serializers --> status[status.py\nhealth/progress/derived status]
+  serializers --> models[models.py\nSQLAlchemy ORM]
+  routers --> domain[Domain services\nreport.py, status.py,\nsubscriptions.py, notify.py]
+  config[Config stores in app_settings\ngeneralconfig, modulesconfig, personasconfig,\nsmtpconfig, reportconfig, authconfig] --> deps
+  models --> db[(database.py\nSQLAlchemy engine/session)]
+```
+
+### Layering / separation of concerns
+- **Routers** = HTTP boundary (validation via Pydantic schemas, dependency-injected guards).
+- **deps.py** = cross-cutting access control: `get_current_user`, `require_admin/_writer/_tribe_or_admin`,
+  `require_module(module[,feature])`, `require_capability(cap)`, `assert_can_edit_squad`, etc.
+- **serializers.py** = ORM → DTO assembly (and derived values like objective status).
+- **status.py / report.py** = domain logic (health/derived status, report & roadmap rendering).
+- **\*config.py** = typed accessors over the `app_settings` JSON key/value store ([ADR-0004](adr/0004-app-settings-json-config.md)).
+
+## Background scheduler
+
+```mermaid
+sequenceDiagram
+  participant U as Uvicorn startup
+  participant L as async loop (every 3600s)
+  participant DB as Postgres
+  U->>L: spawn task (after 20s)
+  loop hourly
+    L->>DB: ensure_weekly() (weekly progress points)
+    L->>DB: send_due_weekly_reports() (scheduled email, idempotent per ISO week)
+    L->>DB: send_personal_subscriptions() (per-user cadence)
+    L->>L: sleep 3600s
+  end
+```
+
+In-process, single-instance scheduler started in `main.py` `@app.on_event("startup")`. It is
+**not** distributed - see risks in [10](10-tech-debt-and-risk-register.md) and [ADR-0009](adr/0009-in-process-scheduler.md).
+
+## Request → response sequence (typical authenticated read)
+
+```mermaid
+sequenceDiagram
+  participant B as Browser (SPA)
+  participant API as FastAPI router
+  participant G as Guards (deps.py)
+  participant S as Serializer/Domain
+  participant DB as Postgres
+  B->>API: GET /api/dashboard (cookie)
+  API->>G: get_current_user + require_module + require_capability
+  G-->>API: User (or 401/403/404)
+  API->>S: squad_card()/status computations
+  S->>DB: SELECT squads, roadmap, progress
+  DB-->>S: rows
+  S-->>API: DTOs
+  API-->>B: JSON
+```
+
+## Frontend architecture
+
+- **SPA** with React Router. `App.tsx` declares routes wrapped by guards: `Protected` (auth/admin),
+  `ModuleGuard` and `Section` (module + persona capability).
+- **Cross-cutting context**: `auth.tsx` (user, effective role, **capabilities**, impersonation),
+  `config.tsx` (public config + modules), `i18n.tsx` (FR/EN, 540 keys, parity-checked).
+- **Layout** = sidebar nav (mobile drawer) + topbar (page chrome, notifications). The
+  command palette is still there, reached by its keyboard shortcut; its button left the
+  top bar, which was already crowded, and a button whose only job is to announce a
+  shortcut earns little.
+- **Design system**: `components/ui.tsx` (Modal, EmptyState, Spinner, Dot, StatusBadge, Collapsible…)
+  + `theme.css` (CSS variables). See [04 UI in the audit](09-audit-report.md).
+- **API client**: `api.ts` thin fetch wrapper (credentials: include, JSON, typed errors).
+</content>

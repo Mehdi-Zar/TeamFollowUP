@@ -1,0 +1,79 @@
+"""Create in-app notifications (and optional emails) for feed events."""
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from .mail import send_async
+from .models import FeedPost, FeedReply, Notification, User
+from .modulesconfig import get_modules, is_active
+from .smtpconfig import get_smtp
+
+
+def _excerpt(text: str, n: int = 140) -> str:
+    """Single-line preview of a post/reply, truncated with an ellipsis at n chars."""
+    text = (text or "").strip().replace("\n", " ")
+    return text if len(text) <= n else text[: n - 1] + "…"
+
+
+# Mail subjects, in the instance's language (the whole mail follows it).
+_SUBJECT = {
+    "fr": {"tweet": "Nouveau message de {actor}", "reply": "{actor} a répondu à votre message"},
+    "en": {"tweet": "New post from {actor}", "reply": "{actor} replied to your post"},
+}
+
+
+def _emit(db: Session, smtp: dict, mods: dict, user: User, kind: str, actor: str,
+          excerpt: str, link: str, subject: str) -> None:
+    """Deliver one notification to a user across the enabled channels.
+
+    Adds an in-app Notification when the in-app channel is on, and sends an email
+    when the email channel is on AND the user opted in AND SMTP is configured.
+    Each channel is gated independently so one being off never blocks the other."""
+    if is_active(mods, "notifications", "inapp"):
+        db.add(Notification(user_id=user.id, kind=kind, actor_name=actor, excerpt=excerpt, link=link))
+    email_on = is_active(mods, "notifications", "email")
+    if email_on and user.email_notifications and user.email and smtp.get("enabled"):
+        from html import escape
+        from .mailbody import app_link, instance_lang, simple_mail
+        lang = instance_lang(db)
+        subj = _SUBJECT[lang][kind].format(actor=actor)
+        name = smtp.get("from_name") or "TeamFollowUP"
+        body = simple_mail(subj, [f"<strong>{escape(actor)}</strong>", escape(excerpt)], lang=lang,
+                           why="feed", link=app_link(db, link),
+                           link_label="Open the feed" if lang == "en" else "Ouvrir le fil")
+        send_async(smtp, user.email, f"[{name}] {subj}", body, html=True, lang=lang)
+
+
+def notify_new_post(db: Session, post: FeedPost) -> None:
+    """Notify everyone who opted into feed posts about a new post.
+
+    Skips the author, and for a tribe-scoped post only notifies that tribe's
+    members. No-op when the notifications module is disabled."""
+    mods = get_modules(db)
+    if not is_active(mods, "notifications"):
+        return
+    smtp = get_smtp(db)
+    actor = post.author.display_name if post.author else "?"
+    excerpt = _excerpt(post.content)
+    q = select(User).where(User.notify_tweets.is_(True), User.id != post.author_user_id)
+    if post.tribe_id is not None:
+        q = q.where(User.tribe_id == post.tribe_id)
+    for user in db.scalars(q).all():
+        _emit(db, smtp, mods, user, "tweet", actor, excerpt, "/fil", f"Nouveau message - {actor}")
+
+
+def notify_reply(db: Session, post: FeedPost, reply: FeedReply) -> None:
+    """Notify the original poster that someone replied.
+
+    Only the post author is notified, and never for their own reply; also honours
+    the author's per-user 'notify_replies' preference. No-op when the module is off."""
+    if post.author_user_id is None or post.author_user_id == reply.author_user_id:
+        return
+    mods = get_modules(db)
+    if not is_active(mods, "notifications"):
+        return
+    target = db.get(User, post.author_user_id)
+    if target is None or not target.notify_replies:
+        return
+    smtp = get_smtp(db)
+    actor = reply.author.display_name if reply.author else "?"
+    _emit(db, smtp, mods, target, "reply", actor, _excerpt(reply.content), "/fil", f"Réponse à votre message - {actor}")

@@ -1,0 +1,73 @@
+# Keycloak: a real identity provider, speaking BOTH OIDC and SAML 2.0 against the
+# same realm and the same user, so the two flows are compared on equal footing.
+#
+# Runs in dev mode with an embedded database: this is a test IdP, and the point of
+# the exercise is the protocol exchange, not Keycloak's own persistence.
+# The realm (clients, mappers, user, group) is imported at boot from a ConfigMap,
+# so the whole IdP configuration is declarative and reviewable.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keycloak
+  namespace: tfu
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: keycloak }
+  template:
+    metadata:
+      labels: { app: keycloak }
+    spec:
+      containers:
+        - name: keycloak
+          image: quay.io/keycloak/keycloak:26.0
+          imagePullPolicy: IfNotPresent
+          args: ["start-dev", "--import-realm"]
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: KC_BOOTSTRAP_ADMIN_USERNAME
+              value: admin
+            - name: KC_BOOTSTRAP_ADMIN_PASSWORD
+              value: admin-pw
+            # The public URL of the IdP. Keycloak stamps it into the OIDC issuer,
+            # the discovery document and the SAML descriptor, so it has to be the
+            # gateway address, not the pod's.
+            - name: KC_HOSTNAME
+              value: https://idp.localtest.me
+            - name: KC_HOSTNAME_STRICT
+              value: "false"
+            - name: KC_HTTP_ENABLED
+              value: "true"
+            - name: KC_PROXY_HEADERS       # TLS terminates at the gateway
+              value: xforwarded
+          volumeMounts:
+            - name: realm
+              mountPath: /opt/keycloak/data/import
+              readOnly: true
+          readinessProbe:
+            httpGet: { path: /realms/tribe, port: 8080 }
+            initialDelaySeconds: 20
+            periodSeconds: 5
+            failureThreshold: 40
+          resources:
+            requests: { cpu: "400m", memory: "768Mi" }
+      volumes:
+        - name: realm
+          configMap:
+            name: keycloak-realm
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak
+  namespace: tfu
+spec:
+  type: ClusterIP
+  selector: { app: keycloak }
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+      appProtocol: HTTP

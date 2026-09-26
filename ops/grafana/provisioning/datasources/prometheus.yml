@@ -1,0 +1,15 @@
+# Grafana provisioning: declare the Prometheus datasource so nobody has to click
+# through the setup wizard. Grafana reads this at startup.
+#
+# `prometheus:9090` is the service name from docker-compose.observability.yml,
+# resolved on the compose network.
+
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false

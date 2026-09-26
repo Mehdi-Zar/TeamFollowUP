@@ -1,0 +1,86 @@
+"""Squad governance meetings ("comitologie").
+
+A squad leader declares the recurring committees their squad runs; the tribe
+leader (and admin) get read/edit oversight. Standing entities (not year-scoped).
+Gated by the optional `committees` module.
+"""
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+
+from ..database import get_db
+from ..deps import assert_can_edit_squad, record_audit, require_module, require_writer, update_data
+from ..models import Committee, Squad, User
+from ..changenotify import notify_change
+from ..schemas import CommitteeCreate, CommitteeOut, CommitteeUpdate
+
+router = APIRouter(prefix="/api/committees", tags=["committees"],
+                   dependencies=[Depends(require_module("committees"))])
+
+
+@router.post("", response_model=CommitteeOut, status_code=201)
+def create_committee(payload: CommitteeCreate, db: Session = Depends(get_db),
+                     user: User = Depends(require_writer)):
+    """Declare a committee for a squad.
+
+    POST /api/committees
+    Access: writer role + edit rights on the target squad (assert_can_edit_squad).
+    Side effects: records the creator and writes a "committee.create" audit entry.
+    Returns 404 if the referenced squad does not exist.
+    """
+    if db.get(Squad, payload.squad_id) is None:
+        raise HTTPException(status_code=404, detail="Squad introuvable")
+    assert_can_edit_squad(db, user, payload.squad_id)
+    item = Committee(**payload.model_dump(), created_by_user_id=user.id)
+    db.add(item)
+    db.flush()
+    record_audit(db, user.id, "committee.create", entity="committee", entity_id=item.id,
+                 detail={"squad_id": item.squad_id, "name": item.name})
+    db.commit()
+    db.refresh(item)
+    notify_change(item.squad_id, "committee", user)
+    return item
+
+
+@router.put("/{committee_id}", response_model=CommitteeOut)
+def update_committee(committee_id: int, payload: CommitteeUpdate, db: Session = Depends(get_db),
+                     user: User = Depends(require_writer)):
+    """Partially update a committee.
+
+    PUT /api/committees/{committee_id}
+    Access: writer role + edit rights on the committee's squad.
+    Side effects: writes a "committee.update" audit entry (with the changed fields).
+    Only fields present in the payload are applied (exclude_unset). 404 if unknown.
+    """
+    item = db.get(Committee, committee_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Comité introuvable")
+    assert_can_edit_squad(db, user, item.squad_id)
+    data = update_data(payload, Committee)
+    for k, v in data.items():
+        setattr(item, k, v)
+    record_audit(db, user.id, "committee.update", entity="committee", entity_id=item.id, detail=data)
+    db.commit()
+    db.refresh(item)
+    notify_change(item.squad_id, "committee", user)
+    return item
+
+
+@router.delete("/{committee_id}", status_code=204)
+def delete_committee(committee_id: int, db: Session = Depends(get_db),
+                     user: User = Depends(require_writer)):
+    """Delete a committee.
+
+    DELETE /api/committees/{committee_id} -> 204 No Content
+    Access: writer role + edit rights on the committee's squad.
+    Side effects: writes a "committee.delete" audit entry. 404 if unknown.
+    """
+    item = db.get(Committee, committee_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Comité introuvable")
+    assert_can_edit_squad(db, user, item.squad_id)
+    record_audit(db, user.id, "committee.delete", entity="committee", entity_id=item.id,
+                 detail={"squad_id": item.squad_id})
+    sid = item.squad_id
+    db.delete(item)
+    db.commit()
+    notify_change(sid, "committee", user)

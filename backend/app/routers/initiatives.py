@@ -1,0 +1,228 @@
+"""Initiatives: a flat list (initiative / owner / squad / deadline) set by the tribe
+leader and visible to everyone. Each initiative is assigned to one squad, so it
+surfaces in that squad's report + dashboard, and carries the milestones that serve
+it: the exported timeline makes one row per initiative out of exactly that link."""
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import HTMLResponse, Response
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from .. import pptxtpl
+from ..database import get_db
+from ..generalconfig import reference_year
+from ..deps import (update_data, assert_can_manage_tribe_reporting, get_current_user, record_audit,
+                    require_tribe_or_admin, visible_tribe_id)
+from ..models import Initiative, RoadmapItem, Squad, Tribe, User
+from ..schemas import (InitiativeCreate, InitiativeMembers, InitiativeOut,
+                       InitiativeUpdate)
+
+router = APIRouter(prefix="/api/initiatives", tags=["initiatives"])
+
+
+def _scope_tribe(user: User, tribe_id: int | None) -> int | None:
+    """Resolve which tribe to read: admins may pass any; others are pinned."""
+    if user.role == "admin":
+        return tribe_id
+    return user.tribe_id
+
+
+def _out(init: Initiative) -> InitiativeOut:
+    """Serialize an initiative, filling in the assigned squad's display name."""
+    out = InitiativeOut.model_validate(init)
+    out.squad_name = init.squad.name if init.squad else None
+    return out
+
+
+def _validate_squad(db: Session, tribe_id: int, squad_id: int | None) -> None:
+    """Guard: the optionally-assigned squad must belong to this initiative's tribe
+    (400 otherwise). Prevents assigning an initiative to a foreign squad."""
+    if squad_id is None:
+        return
+    sq = db.get(Squad, squad_id)
+    if sq is None or sq.tribe_id != tribe_id:
+        raise HTTPException(status_code=400, detail="La squad choisie n'appartient pas à cette tribe")
+
+
+@router.get("", response_model=list[InitiativeOut])
+def list_initiatives(tribe_id: int | None = Query(default=None), year: int | None = Query(default=None),
+                     squad_id: int | None = Query(default=None),
+                     db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """GET /api/initiatives: flat list of initiatives, visible to everyone in
+    scope (read-only for non tribe-leaders).
+
+    Scope: an admin may target any ``tribe_id``; others are pinned to their
+    visible tribe. Optionally filtered to a single ``squad_id`` (for that squad's
+    report) and a ``year`` (defaults to current)."""
+    year = year or reference_year(db)
+    scope = _scope_tribe(user, tribe_id) if user.role == "admin" else visible_tribe_id(user)
+    q = select(Initiative).where(Initiative.year == year).order_by(Initiative.display_order, Initiative.id)
+    if scope is not None:
+        q = q.where(Initiative.tribe_id == scope)
+    if squad_id is not None:
+        q = q.where(Initiative.squad_id == squad_id)
+    return [_out(i) for i in db.scalars(q).all()]
+
+
+@router.post("", response_model=InitiativeOut, status_code=201)
+def create_initiative(payload: InitiativeCreate, db: Session = Depends(get_db),
+                      user: User = Depends(require_tribe_or_admin)):
+    """POST /api/initiatives: create an initiative (201). Tribe leader or admin.
+
+    Requires ``assert_can_manage_tribe_reporting`` for the target tribe (404 if
+    the tribe is unknown) and that any assigned squad belongs to that tribe.
+    Audited."""
+    if db.get(Tribe, payload.tribe_id) is None:
+        raise HTTPException(status_code=404, detail="Tribe introuvable")
+    assert_can_manage_tribe_reporting(user, payload.tribe_id)
+    _validate_squad(db, payload.tribe_id, payload.squad_id)
+    init = Initiative(**payload.model_dump())
+    db.add(init)
+    db.flush()
+    record_audit(db, user.id, "initiative.create", entity="initiative", entity_id=init.id,
+                 detail={"tribe_id": init.tribe_id, "title": init.title, "squad_id": init.squad_id})
+    db.commit()
+    db.refresh(init)
+    return _out(init)
+
+
+@router.put("/{initiative_id}", response_model=InitiativeOut)
+def update_initiative(initiative_id: int, payload: InitiativeUpdate, db: Session = Depends(get_db),
+                      user: User = Depends(require_tribe_or_admin)):
+    """PUT /api/initiatives/{initiative_id}: update an initiative. Tribe leader
+    or admin.
+
+    Requires ``assert_can_manage_tribe_reporting`` for the initiative's tribe;
+    any (re)assigned squad is re-validated against that tribe. Audited."""
+    init = db.get(Initiative, initiative_id)
+    if init is None:
+        raise HTTPException(status_code=404, detail="Initiative introuvable")
+    assert_can_manage_tribe_reporting(user, init.tribe_id)
+    data = update_data(payload, Initiative)
+    for k, v in data.items():
+        setattr(init, k, v)
+    _validate_squad(db, init.tribe_id, init.squad_id)
+    if "squad_id" in data:
+        # Moved to another squad (or to none): the milestones of the squad it
+        # left no longer serve it. They stayed attached and showed on its row.
+        for item in db.scalars(select(RoadmapItem).where(RoadmapItem.initiative_id == init.id)).all():
+            if item.squad_id != init.squad_id:
+                item.initiative_id = None
+    record_audit(db, user.id, "initiative.update", entity="initiative", entity_id=init.id, detail=list(data.keys()))
+    db.commit()
+    db.refresh(init)
+    return _out(init)
+
+
+@router.get("/candidate-jalons")
+def candidate_jalons(squad_id: int = Query(...), year: int | None = Query(default=None),
+                     db: Session = Depends(get_db), user: User = Depends(require_tribe_or_admin)):
+    """GET /api/initiatives/candidate-jalons: one squad's milestones, for attaching
+    them to an initiative. Tribe leader or admin.
+
+    Chaque ligne porte son ``initiative_id`` actuel, pour que l'ecran montre ce qui
+    est deja pris et par quoi, plutot que de le decouvrir a l'enregistrement."""
+    sq = db.get(Squad, squad_id)
+    if sq is None:
+        raise HTTPException(status_code=404, detail="Squad introuvable")
+    assert_can_manage_tribe_reporting(user, sq.tribe_id)
+    year = year or reference_year(db)
+    q = (select(RoadmapItem)
+         .where(RoadmapItem.squad_id == squad_id, RoadmapItem.year == year)
+         .order_by(RoadmapItem.quarter, RoadmapItem.display_order, RoadmapItem.id))
+    return [{"id": j.id, "title": j.title, "quarter": j.quarter, "squad_id": j.squad_id,
+             "initiative_id": j.initiative_id} for j in db.scalars(q).all()]
+
+
+@router.put("/{initiative_id}/jalons")
+def set_initiative_jalons(initiative_id: int, payload: InitiativeMembers,
+                          db: Session = Depends(get_db),
+                          user: User = Depends(require_tribe_or_admin)):
+    """PUT /api/initiatives/{initiative_id}/jalons: set the milestones serving this
+    initiative (replaces the current set). Tribe leader or admin.
+
+    Le pendant exact de la meme route cote OTD, et pour la meme raison: c'est le
+    seul endroit ou ce lien se pose. Le remplacement ne touche que les jalons des
+    squads de la tribe de l'initiative, sinon une initiative pourrait s'attacher le
+    jalon d'une autre tribe."""
+    init = db.get(Initiative, initiative_id)
+    if init is None:
+        raise HTTPException(status_code=404, detail="Initiative introuvable")
+    assert_can_manage_tribe_reporting(user, init.tribe_id)
+    wanted = set(payload.jalon_ids)
+    if wanted:
+        rows = db.execute(
+            select(RoadmapItem).join(Squad, Squad.id == RoadmapItem.squad_id)
+            .where(RoadmapItem.id.in_(wanted), Squad.tribe_id == init.tribe_id)
+        ).scalars().all()
+        if len(rows) != len(wanted):
+            raise HTTPException(status_code=400, detail="Un jalon n'appartient pas à cette tribe")
+    current = db.scalars(select(RoadmapItem).where(RoadmapItem.initiative_id == init.id)).all()
+    for j in current:
+        j.initiative_id = None
+    for j in db.scalars(select(RoadmapItem).where(RoadmapItem.id.in_(wanted))).all() if wanted else []:
+        j.initiative_id = init.id
+    record_audit(db, user.id, "initiative.set_jalons", entity="initiative", entity_id=init.id,
+                 detail={"jalon_ids": sorted(wanted)})
+    db.commit()
+    db.refresh(init)
+    return _out(init)
+
+
+@router.delete("/{initiative_id}", status_code=204)
+def delete_initiative(initiative_id: int, db: Session = Depends(get_db),
+                      user: User = Depends(require_tribe_or_admin)):
+    """DELETE /api/initiatives/{initiative_id}: delete an initiative (204). Tribe
+    leader or admin, requires ``assert_can_manage_tribe_reporting``. Audited."""
+    init = db.get(Initiative, initiative_id)
+    if init is None:
+        raise HTTPException(status_code=404, detail="Initiative introuvable")
+    assert_can_manage_tribe_reporting(user, init.tribe_id)
+    record_audit(db, user.id, "initiative.delete", entity="initiative", entity_id=init.id,
+                 detail={"tribe_id": init.tribe_id})
+    db.delete(init)
+    db.commit()
+
+
+@router.get("/report.html", response_class=HTMLResponse)
+def initiatives_html(tribe_id: int | None = Query(default=None), year: int | None = Query(default=None),
+                     lang: str | None = Query(default=None),
+                     db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """GET /api/initiatives/report.html: flat initiatives list as a standalone
+    page. Any authenticated user; scoped like the list endpoint (admins may target
+    a tribe, others are pinned)."""
+    from ..report import build_initiative_list, render_initiatives_html
+    year = year or reference_year(db)
+    scope = _scope_tribe(user, tribe_id) if user.role == "admin" else visible_tribe_id(user)
+    # The instance's language when the page does not say: it was always French.
+    from ..generalconfig import get_general
+    lang = lang or get_general(db).get("default_lang") or "fr"
+    data = build_initiative_list(db, scope, year, lang)
+    return HTMLResponse(render_initiatives_html(data, lang=lang, standalone=True))
+
+
+@router.get("/report.pptx")
+def initiatives_pptx(tribe_id: int | None = Query(default=None), year: int | None = Query(default=None),
+                     lang: str | None = Query(default=None),
+                     db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """GET /api/initiatives/report.pptx: flat initiatives list as a branded deck.
+
+    Any authenticated user; scoped like the list endpoint. Returns 501 if
+    python-pptx is not installed."""
+    from ..report import build_initiative_list, render_initiatives_pptx
+    year = year or reference_year(db)
+    scope = _scope_tribe(user, tribe_id) if user.role == "admin" else visible_tribe_id(user)
+    # The instance's language when the page does not say: it was always French.
+    from ..generalconfig import get_general
+    lang = lang or get_general(db).get("default_lang") or "fr"
+    data = build_initiative_list(db, scope, year, lang)
+    try:
+        pptxtpl.use(pptxtpl.get(db))
+        payload = render_initiatives_pptx(data, lang=lang)
+    except ImportError:
+        raise HTTPException(status_code=501, detail="Génération PPTX indisponible (python-pptx non installé)")
+    # Buffered artifact → plain Response so Content-Length is set (not chunked).
+    return Response(
+        content=payload,
+        media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        headers={"Content-Disposition": f'attachment; filename="initiatives_{data["year"]}.pptx"'},
+    )

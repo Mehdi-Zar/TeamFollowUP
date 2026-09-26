@@ -1,0 +1,360 @@
+// ExportMenu: the single "Export / Share" dropdown reused across pages. It gathers
+// every export (HTML preview, JPG render, PPTX download) and the "email report"
+// action behind one button, showing only the documents allowed by the current
+// tab, the enabled modules, and the persona's capabilities. HTML opens in an
+// in-app window (HtmlPreviewModal); global roadmap/dashboard exports first pick
+// which squads to include via SquadExportPicker.
+import { useEffect, useRef, useState } from "react";
+import { api, errorText } from "../api";
+import { useI18n } from "../i18n";
+import { useConfig, useModule } from "../config";
+import { useAuth } from "../auth";
+import { Squad, Tribe } from "../types";
+import { Modal, PickItem } from "./ui";
+import { HtmlPreviewModal } from "./HtmlPreview";
+
+/** One tidy "Export / Share" dropdown that groups every export & email action
+ *  (HTML/PPTX report, roadmap with squad selection, send by mail). HTML opens in
+ *  an in-app window (not a new tab). Items appear only when their module/SMTP
+ *  allows it. Report subscriptions live in the "Subscribe to a report" popup. */
+/** Which documents/actions this menu may offer. Lets each page keep its export
+ *  menu coherent with the tab you're on (e.g. the Roadmap tab exports only the
+ *  roadmap, not the dashboard or the weekly report). Omit = offer everything the
+ *  modules/capabilities allow (used on the full squad page). */
+type DocKind = "dashboard" | "roadmap" | "dependencies" | "report" | "steerco";
+
+type Props = {
+  year?: number;
+  squadId?: number;
+  sinceDays?: number;
+  docs?: DocKind[];
+  // Steerco one-pager export: the current period and (optional) selected squad.
+  // When "" / omitted the squad, the consolidated all-squads document is exported.
+  steerco?: { period: string; platformId?: string };
+};
+
+type View = "menu" | "emailReport";
+/** Une version disponible: un jour ou des squads du perimetre ont fige leur saisie.
+ *  Le nombre de squads dit si la version est complete. */
+type Version = { date: string; squads: number; labels?: string[] };
+type Preview = { url: string; title: string };
+
+/** Render an export's HTML to a JPG (image equivalent of the HTML export):
+ *  fetch the HTML, lay it out in an isolated off-screen iframe, html2canvas it. */
+export async function renderHtmlToJpg(url: string, filename: string): Promise<void> {
+  const iframe = document.createElement("iframe");
+  try {
+    const html = await (await fetch(url, { credentials: "include" })).text();
+    Object.assign(iframe.style, { position: "fixed", left: "-10000px", top: "0", width: "1160px", height: "1200px", border: "0" });
+    document.body.appendChild(iframe);
+    await new Promise<void>((resolve) => { iframe.onload = () => resolve(); iframe.srcdoc = html; });
+    await new Promise((r) => setTimeout(r, 400)); // let fonts / layout settle
+    const doc = iframe.contentDocument!;
+    const body = doc.body;
+    const w = Math.max(1160, body.scrollWidth);
+    const h = Math.max(body.scrollHeight, doc.documentElement.scrollHeight);
+    iframe.style.height = h + "px";
+    const html2canvas = (await import("html2canvas")).default;
+    const canvas = await html2canvas(body, { scale: 2, backgroundColor: "#F5F7FA", useCORS: true, windowWidth: w, windowHeight: h, width: w, height: h });
+    const a = document.createElement("a");
+    a.href = canvas.toDataURL("image/jpeg", 0.95);
+    a.download = filename; a.click();
+  } finally {
+    iframe.remove();
+  }
+}
+
+/** The export/share dropdown. `squadId` scopes exports to one squad (per-squad
+ *  roadmap/dashboard); when absent the global variants open a squad picker.
+ *  `docs` restricts which documents this instance may offer (see DocKind). */
+export default function ExportMenu({ year, squadId, sinceDays = 7, docs, steerco }: Props) {
+  const { t, lang } = useI18n();
+  const { smtp_enabled } = useConfig();
+  const m = useModule();
+  const { user, can } = useAuth();
+  // A document is offered when: (1) this menu is allowed to show it on the current
+  // tab (`docs` whitelist, or all if omitted), (2) its module is on, AND (3) the
+  // persona holds the capability of the section it exports - the same pair the API
+  // enforces (backend/app/routers/reports.py). The capability check must live here
+  // too because the squad page has no capability guard of its own.
+  const allow = (d: DocKind) => !docs || docs.includes(d);
+  const reportOn = allow("report") && m("review", "weekly_report") && can("dashboard");
+  const roadmapOn = allow("roadmap") && m("squad_content", "roadmap") && can("roadmap");
+  const dependenciesOn = allow("dependencies") && m("squad_content", "roadmap") && can("roadmap");
+  const dashboardOn = allow("dashboard") && m("dashboard") && can("dashboard");
+  const steercoOn = allow("steerco") && !!steerco && m("steerco") && can("dashboard");
+
+  const ref = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  const [view, setView] = useState<View>("menu");
+  const [to, setTo] = useState(user?.email || "");
+  const [msg, setMsg] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  // HTML exports open in this in-app window rather than a new browser tab.
+  const [preview, setPreview] = useState<Preview | null>(null);
+  // Global roadmap / dashboard: pick which squads appear (in a dedicated modal).
+  const [roadmapModal, setRoadmapModal] = useState(false);
+  const [dashModal, setDashModal] = useState(false);
+  // Les versions disponibles: les jours ou une squad du perimetre a fige sa saisie.
+  // Vide = le document du jour, qui reste le cas courant et donc le defaut.
+  const [versions, setVersions] = useState<Version[]>([]);
+  const [asOf, setAsOf] = useState("");
+
+  // Une version passee voyage sur toutes les URL d'export: on la choisit une fois,
+  // et le document rejoue est le meme document, avec d'autres chiffres dedans.
+  const vqs = asOf ? `&as_of=${asOf}` : "";
+  // The year on screen travels with every document, as with the versions and the mail.
+  const rqs = `since_days=${sinceDays}${squadId ? `&squad_id=${squadId}` : ""}${year ? `&year=${year}` : ""}&lang=${lang}${vqs}`;
+  // Per-squad → the squad's own roadmap; otherwise (dashboard/roadmap/tribe) → the
+  // global roadmap matrix with squad selection. Both gated by the roadmap module.
+  const roadmapAvail = roadmapOn;
+  const roadmapBase = squadId ? `/api/squads/${squadId}/roadmap` : "/api/reports/roadmap";
+  const roadmapQs = squadId ? `${year ? `year=${year}&` : ""}lang=${lang}${vqs}` : rqs;
+  // Steerco one-pager: a single squad's, or the consolidated all-squads document.
+  const steercoPq = steerco ? encodeURIComponent(steerco.period) : "";
+  const steercoHtml = steerco?.platformId
+    ? `/api/steerco/onepager.html?platform_id=${steerco.platformId}&period=${steercoPq}&lang=${lang}`
+    : `/api/steerco/document.html?period=${steercoPq}&lang=${lang}`;
+  const steercoPptx = `/api/steerco/document.pptx?period=${steercoPq}&lang=${lang}` +
+    (steerco?.platformId ? `&platform_id=${steerco.platformId}` : "");
+
+  // The versions belong to a year and a squad: a change of either empties the
+  // list (and the chosen version) so the next opening fetches the right ones.
+  useEffect(() => { setVersions([]); setAsOf(""); }, [year, squadId]);
+  useEffect(() => {
+    if (!open || versions.length || !(dashboardOn || roadmapOn)) return;
+    const qs = `${year ? `year=${year}&` : ""}${squadId ? `squad_id=${squadId}` : ""}`;
+    let alive = true;  // the versions of another year or squad are dropped
+    api.get<{ versions: Version[] }>(`/api/reports/versions?${qs}`)
+      .then((r) => { if (alive) setVersions(r.versions || []); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [open, year, squadId]);
+
+  useEffect(() => {
+    function onDoc(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) { setOpen(false); setView("menu"); }
+    }
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, []);
+
+  const hasDownloads = roadmapAvail || dashboardOn || dependenciesOn || steercoOn;
+  const hasEmail = smtp_enabled && reportOn;
+  if (!hasDownloads && !hasEmail) return null;
+
+  async function sendReport() {
+    if (!to.trim()) return;
+    setBusy(true); setMsg(null);
+    try {
+      // Same year and version as the downloads of this menu, not the current ones.
+      await api.post("/api/reports/weekly/email", { to: to.trim(), since_days: sinceDays, squad_id: squadId ?? null,
+                                                    lang, year, as_of: asOf || undefined });
+      setMsg(t("export.sent", { to: to.trim() }));
+    } catch (e) { setMsg(errorText(e)); } finally { setBusy(false); }
+  }
+  // JPG equivalent of an HTML export (renders the export HTML to an image).
+  async function htmlToJpg(url: string, filename: string) {
+    setOpen(false); setBusy(true); setMsg(t("export.jpg_busy"));
+    try {
+      await renderHtmlToJpg(url, filename);
+      setMsg(null);
+    } catch {
+      setMsg(t("export.jpg_fail"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // A single menu row: renders as a link when `href` is given (download or new
+  // tab), otherwise as a button that runs `onClick`. Closes the menu on activation.
+  const Item = ({ children, onClick, href, download }: any) =>
+    href ? (
+      <a className="menu-item" href={href} target={download ? undefined : "_blank"} rel="noreferrer" onClick={() => setOpen(false)}>{children}</a>
+    ) : (
+      <button className="menu-item" onClick={onClick}>{children}</button>
+    );
+  // One row per document; the three formats sit in a tidy segmented control.
+  const ExportRow = ({ label, html, pptx }: { label: string; html: string; pptx: string }) => (
+    <div className="export-row">
+      <span className="export-row-label">{label}</span>
+      <span className="seg">
+        <button onClick={() => { setPreview({ url: html, title: label }); setOpen(false); }}>HTML</button>
+        <button onClick={() => htmlToJpg(html, `${label}.jpg`)}>JPG</button>
+        <a href={pptx} download onClick={() => setOpen(false)}>PPTX</a>
+      </span>
+    </div>
+  );
+
+  return (
+    <div ref={ref} style={{ position: "relative", display: "inline-block" }}>
+      <button className="btn btn-secondary btn-sm" onClick={() => { setOpen((o) => !o); setView("menu"); setMsg(null); }}>
+        {t("export.menu")} ▾
+      </button>
+      {open && (
+        <div className="card menu-pop export-pop" style={{ position: "absolute", right: 0, top: 42, zIndex: 60 }}>
+          {view === "menu" && (
+            <>
+              {hasDownloads && versions.length > 0 && (
+                <div className="export-row">
+                  <span className="export-row-label">{t("export.version")}</span>
+                  <select value={asOf} onChange={(e) => setAsOf(e.target.value)}
+                          title={t("export.version_hint")} style={{ maxWidth: 210 }}>
+                    <option value="">{t("export.version_current")}</option>
+                    {versions.map((v) => (
+                      <option key={v.date} value={v.date}>
+                        {t("export.version_at", { d: v.date, n: v.squads })}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              {hasDownloads && <div className="menu-label">{t("export.group_download")}</div>}
+              {dashboardOn && squadId && <ExportRow label={t("export.doc_dashboard")} html={`/api/reports/dashboard.html?${rqs}`} pptx={`/api/reports/dashboard.pptx?${rqs}`} />}
+              {dashboardOn && !squadId && <Item onClick={() => { setDashModal(true); setOpen(false); }}>{t("export.doc_dashboard")} …</Item>}
+              {roadmapAvail && squadId && <ExportRow label={t("export.doc_roadmap")} html={`${roadmapBase}.html?${roadmapQs}`} pptx={`${roadmapBase}.pptx?${roadmapQs}`} />}
+              {roadmapAvail && !squadId && <Item onClick={() => { setRoadmapModal(true); setOpen(false); }}>{t("export.doc_roadmap")} …</Item>}
+              {dependenciesOn && <ExportRow label={t("export.doc_dependencies")} html={`/api/reports/dependencies.html?${rqs}`} pptx={`/api/reports/dependencies.pptx?${rqs}`} />}
+              {steercoOn && <ExportRow label={t("export.doc_steerco")} html={steercoHtml} pptx={steercoPptx} />}
+
+              {hasEmail && <div className="menu-label" style={{ marginTop: 6 }}>{t("export.group_email")}</div>}
+              {hasEmail && <Item onClick={() => { setView("emailReport"); setMsg(null); }}>{t("export.send_report")} …</Item>}
+            </>
+          )}
+
+          {view === "emailReport" && (
+            <div className="export-form stack" style={{ gap: 12 }}>
+              <button className="export-back" onClick={() => setView("menu")}>← {t("export.send_report")}</button>
+              <div>
+                <label className="field-label">{t("export.to")}</label>
+                <input value={to} onChange={(e) => setTo(e.target.value)} placeholder="nom@exemple.com" />
+              </div>
+              <div className="inline" style={{ justifyContent: "flex-end", gap: 8 }}>
+                <button className="btn-ghost btn-sm" onClick={() => setView("menu")}>{t("action.cancel")}</button>
+                <button className="btn btn-sm" disabled={busy || !to.trim()} onClick={sendReport}>{busy ? t("common.sending") : t("export.send")}</button>
+              </div>
+            </div>
+          )}
+
+          {msg && <div className="small muted" style={{ padding: "8px 8px 2px" }}>{msg}</div>}
+        </div>
+      )}
+      {roadmapModal && (
+        <SquadExportPicker base="roadmap" title={t("export.roadmap_modal_title")}
+          htmlLabel={t("export.roadmap_html")} pptxLabel={t("export.roadmap_pptx")}
+          sinceDays={sinceDays} year={year} lang={lang} asOf={asOf} onClose={() => setRoadmapModal(false)}
+          onPreview={(url, title) => setPreview({ url, title })} />
+      )}
+      {dashModal && (
+        <SquadExportPicker base="dashboard" title={t("export.dashboard_modal_title")}
+          htmlLabel={t("export.dashboard_html")} pptxLabel={t("export.dashboard_pptx")}
+          sinceDays={sinceDays} year={year} lang={lang} asOf={asOf} onClose={() => setDashModal(false)}
+          onPreview={(url, title) => setPreview({ url, title })} />
+      )}
+      {preview && <HtmlPreviewModal url={preview.url} title={preview.title} onClose={() => setPreview(null)} />}
+    </div>
+  );
+}
+
+/** Wide, easy-to-use modal to pick which squads (grouped by tribe) appear in a
+ *  global export (roadmap or dashboard). Responsive multi-column grid. */
+function SquadExportPicker({ base, title, htmlLabel, pptxLabel, sinceDays, year, lang, asOf, onClose, onPreview }: {
+  base: "roadmap" | "dashboard"; title: string; htmlLabel: string; pptxLabel: string;
+  sinceDays: number; year?: number; lang: string; asOf?: string; onClose: () => void;
+  onPreview: (url: string, title: string) => void;
+}) {
+  const { t } = useI18n();
+  const [squads, setSquads] = useState<Squad[]>([]);
+  const [tribes, setTribes] = useState<Tribe[]>([]);
+  const [sel, setSel] = useState<Set<number>>(new Set());
+  const [jpgBusy, setJpgBusy] = useState(false);
+
+  useEffect(() => {
+    Promise.all([
+      api.get<Squad[]>("/api/squads").catch(() => [] as Squad[]),
+      api.get<Tribe[]>("/api/tribes").catch(() => [] as Tribe[]),
+    ]).then(([sq, tr]) => {
+      setSquads(sq);
+      setTribes(tr);
+      setSel(new Set(sq.map((s) => s.id)));  // default: everything selected
+    });
+  }, []);
+
+  const tribeName = (id: number) => tribes.find((tr) => tr.id === id)?.name ?? "-";
+  // Group squads by tribe, tribes ordered by display_order then name.
+  const groups = Array.from(new Set(squads.map((s) => s.tribe_id)))
+    .map((tid) => ({ tid, name: tribeName(tid), squads: squads.filter((s) => s.tribe_id === tid) }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  const toggle = (id: number) => setSel((prev) => {
+    const n = new Set(prev);
+    if (n.has(id)) n.delete(id); else n.add(id);
+    return n;
+  });
+  const setMany = (ids: number[], on: boolean) => setSel((prev) => {
+    const n = new Set(prev);
+    ids.forEach((id) => (on ? n.add(id) : n.delete(id)));
+    return n;
+  });
+  const allOn = squads.length > 0 && sel.size === squads.length;
+
+  const selIds = Array.from(sel);
+  const url = (fmt: "html" | "pptx") =>
+    `/api/reports/${base}.${fmt}?since_days=${sinceDays}&lang=${lang}${year ? `&year=${year}` : ""}` +
+    (asOf ? `&as_of=${asOf}` : "") +
+    selIds.map((id) => `&squad_ids=${id}`).join("");
+
+  return (
+    <Modal
+      width={820}
+      title={title}
+      onClose={onClose}
+      footer={
+        <div className="between" style={{ width: "100%", alignItems: "center" }}>
+          <span className="small muted">{t("export.roadmap_selected", { n: sel.size, total: squads.length })}</span>
+          <div className="inline" style={{ gap: 8 }}>
+            <button className="btn-secondary" onClick={onClose}>{t("action.close")}</button>
+            <button className={`btn btn-secondary${selIds.length ? "" : " disabled"}`}
+               disabled={!selIds.length}
+               onClick={() => { if (!selIds.length) return; onPreview(url("html"), title); onClose(); }}>{htmlLabel}</button>
+            <button className="btn btn-secondary" disabled={!selIds.length || jpgBusy}
+                    onClick={async () => { if (!selIds.length) return; setJpgBusy(true); try { await renderHtmlToJpg(url("html"), `${base}.jpg`); onClose(); } finally { setJpgBusy(false); } }}>
+              {jpgBusy ? t("common.preparing") : t("export.jpg")}
+            </button>
+            <a className={`btn${selIds.length ? "" : " disabled"}`}
+               href={selIds.length ? url("pptx") : undefined} download
+               aria-disabled={!selIds.length} onClick={() => selIds.length && onClose()}>{pptxLabel}</a>
+          </div>
+        </div>
+      }
+    >
+      <div className="between" style={{ marginBottom: 12 }}>
+        <div className="small muted">{t("export.roadmap_pick")}</div>
+        <button className="btn-ghost btn-sm" onClick={() => setMany(squads.map((s) => s.id), !allOn)}>
+          {allOn ? t("export.none") : t("export.all")}
+        </button>
+      </div>
+      <div className="stack" style={{ gap: 16 }}>
+        {groups.map((g) => {
+          const ids = g.squads.map((s) => s.id);
+          const groupOn = ids.every((id) => sel.has(id));
+          return (
+            <div key={g.tid}>
+              <label className="pick-group-head" onClick={(e) => { e.preventDefault(); setMany(ids, !groupOn); }}>
+                <span className={`pick-box${groupOn ? " on" : ""}`}>{groupOn ? "✓" : ""}</span>
+                <span className="strong">{g.name}</span>
+                <span className="small muted">({g.squads.length})</span>
+              </label>
+              <div className="pick-grid">
+                {g.squads.map((s) => (
+                  <PickItem key={s.id} selected={sel.has(s.id)} onToggle={() => toggle(s.id)} title={s.name} />
+                ))}
+              </div>
+            </div>
+          );
+        })}
+        {squads.length === 0 && <div className="small muted">{t("common.loading")}</div>}
+      </div>
+    </Modal>
+  );
+}

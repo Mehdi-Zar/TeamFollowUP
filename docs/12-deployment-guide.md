@@ -1,0 +1,1156 @@
+# 12 - Deployment Guide (VMware, GCP, Sovereign cloud, AWS, Azure)
+
+This guide explains how to deploy **TeamFollowUP** to production on the main
+target platforms. The application ships as **one container image** plus a
+**PostgreSQL** database - nothing else is required.
+
+---
+
+## 0. In plain words - the whole deployment, start to finish
+
+If you have never deployed anything before, read this section first. It is the
+entire process in order, with no jargon. Each step points to the detailed section
+that follows.
+
+The app is just **two things talking to each other**: a *program* (one Docker
+image) and a *database* (PostgreSQL, where all the data is stored). Deploying =
+starting the database, then starting the program and telling it where the database
+is. That's it. Everything below is detail around those two moves.
+
+**Do them in this order:**
+
+1. **Get a machine (or a cloud project).** A Linux VM, a Kubernetes cluster, or a
+   cloud account - whatever you have. This is where the app will run. → see your
+   platform's section (4 VMware, 5 GCP, 6 Sovereign cloud, 7 AWS, 8 Azure).
+2. **Create the database.** Stand up a PostgreSQL 16 instance and write down 5
+   things: its **host**, **port** (usually 5432), **database name**, **user**, and
+   **password**. You'll hand these to the app in the next step. → §3, §4.
+3. **Prepare the settings (environment variables).** Copy `.env.example` and fill
+   in: the 5 database values above, a long random `SECRET_KEY`, and a
+   `BREAKGLASS_EMAIL` (the emergency admin login). In production also set
+   `COOKIE_SECURE=true`, `SEED_DEMO=false`, and `PUBLIC_BASE_URL` = the address
+   users will type in their browser (this is what every SSO callback URL is built
+   from). → §2, §2.1.
+4. **Get the program (the image).** Either build it from the source
+   (`docker build`) or pull a pre-built image. If your servers have **no internet**,
+   you build it on a connected machine, save it to a file, carry the file over, and
+   load it on the other side. → §9 (build), §6.x (air-gapped transfer).
+5. **Start it.** Run the image and pass it the settings from step 3. On the very
+   first start the app **creates all its tables automatically** (it runs the
+   database migrations for you) and creates the emergency admin account. → §3, §4.
+6. **Expose it through the API Gateway.** The app is **never** published directly:
+   you declare an **API Gateway** (Kubernetes **Gateway API**) with **HTTP routes**
+   (`HTTPRoute`), and GKE provisions an **internal Application Load Balancer (ALB)**
+   in front of it. The ALB terminates TLS - with a **self-signed certificate** to get
+   you running on day one, swapped for **your PKI certificate** later without touching
+   a manifest - and forwards to the pod. The pod binds **exactly one port**, plain
+   **HTTP :8000**, and the Gateway does the TLS and the HTTP→HTTPS redirect. This is the
+   **only** supported exposure path - no `Service: LoadBalancer`, no `Ingress`. → §6.9.
+7. **Check it works.** Open the site, log in with the break-glass admin, and click
+   around. Then configure SSO, SMTP (for emails), backups, etc. from the admin UI. → §10.
+   To rehearse the whole chain (gateway TLS, forwarded headers, OIDC **and** SAML
+   against a real IdP) on your own machine before touching the platform, follow
+   **[16 - Banc Kubernetes de bout en bout](16-banc-kubernetes-sso.md)**.
+
+**When a new version comes out later**, you do **not** redo all this. You only
+swap the image for the newer one and restart - the data stays in the database
+untouched. That update procedure has its own document: **`13-maintenance-and-updates.md`**.
+
+> **The one rule that protects your data:** the database is the only thing that
+> holds state. As long as you don't delete the database (or its disk/volume), you
+> can stop, restart, upgrade, or rebuild the program as often as you like without
+> losing anything. Back up the database (§10) before any upgrade.
+
+---
+
+## 1. Architecture recap (what you deploy)
+
+```
+            ┌───────────────────┐     ┌──────────────────────────────┐
+  users ───▶│  API Gateway      │────▶│  TeamFollowUP (1 image)      │───▶  PostgreSQL 16
+  HTTPS 443 │  Gateway+HTTPRoute│ HTTP│  FastAPI + built React SPA   │      (managed or self-hosted)
+            │  = internal ALB   │:8000│  HTTP :8000 (single port)    │
+            │  self-signed cert │     └──────────────────────────────┘
+            │  → PKI cert later │
+            └───────────────────┘
+```
+
+> **Exposure - one path, no alternatives.** The application is published **only**
+> through the **API Gateway** (Kubernetes **Gateway API**: a `Gateway` plus **HTTP
+> routes**), which provisions an **internal Application Load Balancer**. A `Service` of
+> type `LoadBalancer` and an `Ingress` are **not** supported topologies here and appear
+> nowhere in this guide - the app's `Service` is a `ClusterIP`, unreachable from outside
+> the cluster by design. See **§6.9**, and keep it in mind when reading the other
+> platform sections (§4, §7, §8), which predate this decision.
+
+- **Single image** (`Dockerfile`, multi-stage): builds the React SPA, then serves it
+  together with the API from FastAPI/uvicorn, on **one** port, plain **HTTP on :8000**
+  (`app/server.py`). TLS termination and the HTTP→HTTPS redirect belong to the
+  infrastructure in front of it ([ADR-0013](adr/0013-tls-terminated-by-the-infrastructure.md), §6.9).
+- **Stateless app**: all state lives in PostgreSQL. You can run **N replicas**.
+  The in-process weekly scheduler uses a **Postgres advisory lock**, so only one
+  replica ticks at a time - horizontal scaling is safe.
+- **Migrations**: the entrypoint runs `alembic upgrade head` then `python -m app.init_db`
+  (bootstraps the break-glass admin; seeds demo data only if `SEED_DEMO=true`).
+
+> **Migrations & multiple replicas.** Every instance runs `alembic upgrade head`
+> on start. For the *first* rollout of a new version, deploy with **1 instance**
+> (or a dedicated migration job) so two instances don't race the schema, then
+> scale out. Same-version restarts are idempotent and safe.
+
+---
+
+## 2. Configuration (environment variables)
+
+All config is via environment variables (see `.env.example`). The essentials:
+
+| Variable | Required | Notes |
+|---|---|---|
+| `SECRET_KEY` | **yes** | Session/JWT signing key. 32+ random chars. |
+| `POSTGRES_HOST` | **yes** | Hostname/IP of PostgreSQL (managed instance, proxy, or `db` in compose). |
+| `POSTGRES_PORT` | | Default `5432`. |
+| `POSTGRES_DB` / `POSTGRES_USER` / `POSTGRES_PASSWORD` | **yes** | DB name / user / password. |
+| `PUBLIC_BASE_URL` | **prod (SSO)** | The app's public URL, e.g. `https://teamfollowup.example.com`. Base of every OIDC/SAML callback URL. Empty = derived per request from `X-Forwarded-Proto` / `-Host`. |
+| `COOKIE_SECURE` | **prod** | `true` as soon as the app is reached over HTTPS, including when TLS terminates upstream. Must be `false` for a plain-HTTP local run. |
+| `HTTP_PORT` | | Container listen port, plain HTTP. Default `8000`. |
+| `APP_HTTP_PORT` | | Host-side compose mapping only (read by `docker-compose.yml`, not by the app). Default `8000`. |
+| `CERT_DIR` | | Scratch directory for the outbound trust bundle (`/app/certs`). The authorities themselves live in the database. |
+| `COOKIE_SAMESITE` | | `lax` (default) or `strict`. |
+| `SEED_DEMO` | | `false` in production (no demo data). |
+| `BREAKGLASS_EMAIL` / `BREAKGLASS_PASSWORD` | **yes** | Emergency admin. If password is empty, a random one is printed in the logs on first boot. |
+| `STALENESS_THRESHOLD_DAYS` | | Default `7`. Also editable in the admin UI. |
+| `LOG_FORMAT` | | `json` emits one JSON object per line, the shape GCP Cloud Logging parses natively. Anything else keeps human-readable lines. |
+| `LOG_LEVEL` | | Boot level (`DEBUG`..`CRITICAL`, default `INFO`). Changeable live, and persistable, in Admin → Ops. |
+| `METRICS_ENABLED` | | `true` (default) exposes Prometheus metrics on `/metrics`. `false` disables the middleware and answers 404. See [17](17-observabilite.md). |
+| `METRICS_TOKEN` | **prod** | Empty = `/metrics` is open to whoever can reach the app. Either set a token (the scraper presents it as a bearer) **or** keep `/metrics` off the public route. The app warns at boot when neither is done. |
+| `OIDC_*` | optional | SSO via OpenID Connect (Authorization Code + PKCE). |
+| `SAML_*` | optional | SSO via SAML 2.0 (xmlsec is bundled in the image). |
+
+> The app builds its DB URL from the discrete `POSTGRES_*` vars (not a single
+> `DATABASE_URL`). When pointing at a managed database, set `POSTGRES_HOST` to the
+> instance host (or the local socket/proxy address - see GCP/AWS/Azure below).
+
+### 2.1 The one URL that matters: `PUBLIC_BASE_URL`
+
+Every URL an identity provider needs is the public base URL plus a fixed path:
+
+| What the IdP asks for | Value |
+|---|---|
+| OIDC redirect URI | `<PUBLIC_BASE_URL>/api/auth/oidc/callback` |
+| SAML SP entity ID | `<PUBLIC_BASE_URL>/api/auth/saml/metadata` |
+| SAML ACS URL | `<PUBLIC_BASE_URL>/api/auth/saml/acs` |
+
+Set the base URL and the three follow. **It is the browser-facing address, not the
+container's listen port**: with the recommended model the pod serves HTTP on `:8000`
+while `PUBLIC_BASE_URL` is `https://teamfollowup.example.com` (port 443, TLS handled
+by the Gateway/ALB). Getting this backwards is the usual cause of an SSO login that
+loops or is rejected by the IdP for a redirect-URI mismatch.
+
+Leaving it empty is fine when the app answers on a single hostname, **including behind
+a Google ALB**. Worth knowing, because it is not obvious: Google Cloud load balancers
+(Gateway API `gke-l7-rilb` / `gke-l7-global-external-managed`, and the classic
+ingress ALBs) **do not send `X-Forwarded-Host`**. They append `X-Forwarded-For`, set
+`X-Forwarded-Proto`, and forward the client's `Host` header **unchanged**. The app
+handles both conventions (`authconfig.base_url_from_request`): it prefers
+`X-Forwarded-Host` when a proxy rewrites `Host` (common with nginx), and otherwise
+combines `X-Forwarded-Proto` with the received `Host`. On GKE that second path is the
+one that runs, and it yields `https://<your Gateway hostname>` even though the pod
+itself only ever spoke plain HTTP on `:8000`.
+
+Set it explicitly anyway in production, as the manifests in §6.9 do. Three
+reasons: the app may be reachable through several hostnames (the Gateway hostname, a
+`kubectl port-forward`, an internal probe); a request that arrives by IP rather than
+by name would derive an IP-based URL no IdP will accept; and a configured value is not
+influenced by request headers at all. A configured `PUBLIC_BASE_URL` wins over
+everything, so it makes the SSO URLs deterministic regardless of who calls what.
+
+The same values are shown ready to copy, with the effective base URL, in
+**Administration → Authentification**, where they can also be changed at runtime
+without redeploying. `OIDC_REDIRECT_URI`, `SAML_SP_ENTITY_ID` and `SAML_ACS_URL`
+exist only to pin a URL an existing IdP registration mandates; leave them empty.
+
+**Secrets** (`SECRET_KEY`, `POSTGRES_PASSWORD`, OIDC/SAML secrets) should come
+from the platform's secret manager, never from a committed file.
+
+---
+
+## 3. Build & push the image (once, for any cloud)
+
+```bash
+# Build
+docker build -t teamfollowup:2.1.0 .
+
+# Tag & push to your registry (examples)
+docker tag teamfollowup:2.1.0 REGISTRY/teamfollowup:2.1.0
+docker push REGISTRY/teamfollowup:2.1.0
+```
+
+> **Tag with the version, and never re-push a tag.** Kubernetes defaults
+> `imagePullPolicy` to `IfNotPresent` for any tag other than `:latest`, so a node that
+> already has this tag cached **will not pull your new image** and keeps serving the old
+> one. The first symptom is almost never "the old version is running" - it is Alembic
+> refusing to start with `Can't locate revision` (see §11, Troubleshooting). The
+> application version lives in `backend/app/main.py`; `docker images --digests` gives you
+> the digest if you prefer to pin that instead.
+
+
+Registry per platform: **GCP** → Artifact Registry (`REGION-docker.pkg.dev/PROJECT/REPO`),
+**Sovereign cloud** → Artifact Registry on its own host (`REGION-docker.REGISTRY_DOMAIN/PROJECT/REPO` - see §6),
+**AWS** → ECR (`ACCOUNT.dkr.ecr.REGION.amazonaws.com/REPO`), **Azure** → ACR
+(`REGISTRY.azurecr.io/REPO`), **VMware** → any registry (Harbor, Docker Hub, …).
+
+A multi-arch build (`docker buildx build --platform linux/amd64,linux/arm64 …`)
+is recommended if your runtime is ARM (e.g. AWS Graviton).
+
+---
+
+## 4. VMware (vSphere VM with Docker Compose)
+
+Simplest, fully self-hosted. Ideal for on-prem / sovereign-by-default.
+
+1. Provision a Linux VM (e.g. Ubuntu 22.04, 2 vCPU / 4 GB / 40 GB) on vSphere.
+2. Install Docker Engine + Compose plugin.
+3. Copy the repo (or just `docker-compose.yml` + `.env`) to the VM:
+   ```bash
+   cp .env.example .env
+   # edit .env: set SECRET_KEY, POSTGRES_PASSWORD, BREAKGLASS_PASSWORD,
+   #            SEED_DEMO=false, COOKIE_SECURE=true (if TLS terminates upstream),
+   #            PUBLIC_BASE_URL=<the URL users will type>  (§2.1)
+   docker compose up -d --build       # or: pull the prebuilt image and `up -d`
+   ```
+4. **Exposure.** This compose setup has no API Gateway, so it is a **development /
+   evaluation** target only - the supported production exposure is the Gateway API +
+   HTTP routes → internal ALB path (§1, §6.9), which requires GKE. For a local trial,
+   reach the app directly on `http://VM:8000` (the compose default). If that VM is on a
+   network where plain HTTP is not acceptable, put a reverse proxy in front of it and let
+   it terminate TLS, as the platform sections do.
+5. **Backups**: the compose file ships an optional `pg_dump` sidecar - enable it
+   with `docker compose --profile backup up -d`, or snapshot the VM/volume.
+
+This is the only target where the bundled PostgreSQL container is used; on the
+managed-cloud options below, use the **managed** database instead.
+
+---
+
+## 5. Google Cloud (GCP) - Cloud Run + Cloud SQL
+
+Serverless, scales to zero, managed Postgres.
+
+> **Serving mode on Cloud Run.** Cloud Run terminates TLS at its edge and speaks **plain
+> HTTP** to the container, which is exactly what the app serves (§6.9): set
+> `HTTP_PORT=8080` and point `--port 8080` at it. The app trusts `X-Forwarded-Proto`, so
+> keep `COOKIE_SECURE=true`.
+
+1. **Database**: create a **Cloud SQL for PostgreSQL 16** instance + a database +
+   user.
+2. **Image**: push to **Artifact Registry**.
+3. **Service**: deploy to **Cloud Run**, attaching the Cloud SQL instance:
+   ```bash
+   gcloud run deploy teamfollowup \
+     --image REGION-docker.pkg.dev/PROJECT/REPO/teamfollowup:2.1.0 \
+     --region REGION --port 8080 --allow-unauthenticated \
+     --add-cloudsql-instances PROJECT:REGION:INSTANCE \
+     --set-env-vars HTTP_PORT=8080,POSTGRES_HOST=/cloudsql/PROJECT:REGION:INSTANCE,POSTGRES_DB=tribe,POSTGRES_USER=tribe,COOKIE_SECURE=true,SEED_DEMO=false,PUBLIC_BASE_URL=https://teamfollowup.example.com \
+     --set-secrets SECRET_KEY=tribe-secret:latest,POSTGRES_PASSWORD=tribe-db-pw:latest,BREAKGLASS_PASSWORD=tribe-admin:latest \
+     --min-instances 1 --max-instances 4
+   ```
+   - With the Cloud SQL **Unix socket**, `POSTGRES_HOST=/cloudsql/PROJECT:REGION:INSTANCE`
+     and `psycopg2` connects over the socket.
+   - Secrets come from **Secret Manager** (`--set-secrets`).
+   - Keep `--min-instances 1` for the first rollout so migrations don't race; then
+     raise `--max-instances` as needed.
+4. **TLS / domain**: Cloud Run provides HTTPS out of the box; map a custom domain
+   if desired. Cloud Run already sets `X-Forwarded-*`.
+5. **Alternative**: GKE (Deployment + Service + managed cert) if you need
+   long-running/VPC-native workloads.
+
+---
+
+## 6. A sovereign cloud (partner GCP universe) from an air-gapped site - full walkthrough
+
+> **Who this is for.** You must put this app on **the sovereign cloud** (a partner
+> Confiance" - a SecNumCloud-qualified sovereign cloud built on Google), and you
+> do it from an **air-gapped corporate network** (no internet). You may never have
+> deployed anything before. Every command below is copy-paste, and each one says
+> *what it does* and *what you should see*. Anything in CAPITALS (`PROJECT`, `REPO`,
+> `POOL_ID`…) is a value **you** replace - ask your Sovereign cloud administrator for the ones
+> you don't have. The single Sovereign cloud region is **`REGION`** (already filled in
+> for you everywhere below).
+
+### 6.0 The big picture (read this once - it makes the rest obvious)
+
+The app is only **two things**: a **program** (one Docker image) and a **database**
+(PostgreSQL). To run it: push the program image into Sovereign cloud, start PostgreSQL, then
+start the program pointing at the database. That's the whole job.
+
+What makes *your* case harder is **two walls** stacked on top of that simple idea:
+
+```
+  ┌──────────── WALL 1: the air gap ────────────┐   ┌──── WALL 2: Sovereign cloud ≠ normal GCP ────┐
+ (1) machine WITH internet      (2) carry files     (3) machine INSIDE the Sovereign cloud network
+   git clone + docker build  ─►  USB / secure   ─►  docker load → docker push → Sovereign cloud
+   docker save  (→ .tar)        transfer             Artifact Registry → GKE runs it → Postgres
+```
+
+- **Wall 1 - the air gap.** Inside the secure zone there is *no internet*, so you
+  cannot `docker build` (it downloads `node`/`python` base layers) or pull public
+  images there. You do all the downloading **outside**, package it into files, carry
+  them in, and load them.
+- **Wall 2 - Sovereign cloud is a separate cloud, not normal Google Cloud.** Same tools
+  (`gcloud`, `kubectl`, `docker`) but **different addresses**: a different login
+  ("universe"), a different image-registry domain (`…REGISTRY_DOMAIN`, *not*
+  `pkg.dev`), and a **single region** `REGION`. §6.3-6.5 handle this.
+
+Order of play: one-time setup (§6.2 checklist, §6.3 gcloud, §6.4 registry) → move the
+image in (§6.5) → create the cluster (§6.6) → pick a database (§6.7) → prepare (§6.8)
+→ follow the end-to-end path in §6.9. Future updates are
+just §6.5 + one command (§6.12).
+
+### 6.1 What's different about Sovereign cloud (the limitations, in plain words)
+
+| Limitation | What it means for you | Where |
+|---|---|---|
+| **Separate "universe"** (not google.com) | `gcloud` must point at Sovereign cloud domains (`sovereign-cloud.example`, `CONSOLE_DOMAIN`) and you log in through **your company IdP** (Workforce Identity Federation), not a Google account. | §6.3 |
+| **Custom image registry** | Images live at `REGION-docker.REGISTRY_DOMAIN/…`, **not** `…-docker.pkg.dev/…`. Every tag uses that host. | §6.4-6.5 |
+| **One region only** | Everything goes in **`REGION`** (zones `-a/-b/-c`). No choice to make. | all |
+| **Limited service catalogue** | ~30 services, not all of GCP. The ones this app needs **are** available: **Artifact Registry, GKE, Cloud SQL, Cloud Load Balancing, IAM, KMS, VPC**. Verify any time with `gcloud services list --available`. | §6.6-6.7 |
+| **Air-gapped operations** | No internet inside: build & download **outside**, transfer, push to the Sovereign cloud registry; GKE then pulls **internally**. | §6.5 |
+| **Sovereign encryption** | Data is encrypted at rest by **Sovereign cloud-managed keys** by default - nothing to do. If policy requires **your own keys**, use **Cloud KMS** (available) and turn on CMEK for GKE/Cloud SQL. | optional |
+
+No application code change is needed. Point SSO at your **internal IdP**
+(`SAML_*` / `OIDC_*`, already supported - e.g. PingFederate via SAML).
+
+### 6.2 Before you start - the checklist
+
+Get these from your Sovereign cloud / platform administrator and write them down:
+
+- **Project ID** (`PROJECT`) - your Sovereign cloud project.
+- **Region** - always `REGION` (no need to ask).
+- **Workforce pool + provider IDs** (`POOL_ID`, `PROVIDER_ID`) - they identify your
+  company login. Needed once, in §6.3.
+- **IAM roles on your account**: *Artifact Registry Administrator* (create repo +
+  push), *Kubernetes Engine Admin* (deploy), and *Cloud SQL Admin* only if you pick
+  managed Postgres (§6.7 option B).
+- **The VPC to use** (`VPC_NAME` / `SUBNET_NAME`) - the cluster and the Cloud SQL
+  instance must share it (option B). Ask whether **private services access** is
+  already configured on it; if not, your network admin must set it up before §6.7.1.
+- **Two machines**:
+  1. an **internet machine** (laptop / external VM) with **Docker** - to build &
+     download;
+  2. an **inside machine** on the Sovereign cloud network with **Docker**, **gcloud** and
+     **kubectl** - to push & deploy. *(If one machine reaches both the internet and
+     Sovereign cloud, skip the save/transfer/load steps.)*
+- **An approved way to move files** across the gap (sanctioned USB, data diode,
+  transfer portal - follow your site's rules).
+- **A TLS certificate** for your service hostname - eventually. Public Let's Encrypt
+  can't validate an internal-only name, so your PKI/security team must issue it. **This
+  is not a blocker**: §6.8.3 starts the gateway on a **self-signed** certificate you
+  generate yourself in one command, and swaps in the real one later with no manifest
+  change. Request the certificate now, deploy without waiting for it.
+
+### 6.3 One-time: point `gcloud` at the Sovereign cloud "universe" (on the inside machine)
+
+Plain `gcloud` talks to Google; these commands make it talk to **Sovereign cloud** instead.
+
+```bash
+# 1) Keep Sovereign cloud settings in their own profile (so they don't clash with normal gcloud)
+gcloud config configurations create sovereign
+gcloud config configurations activate sovereign
+
+# 2) Tell gcloud this is a sovereign GCP universe (its API domain)
+gcloud config set universe_domain sovereign-cloud.example
+
+# 3) Build a login file tied to YOUR company identity provider.
+#    POOL_ID / PROVIDER_ID come from your admin (see §6.2).
+AUDIENCE="locations/global/workforcePools/POOL_ID/providers/PROVIDER_ID"
+gcloud iam workforce-pools create-login-config "$AUDIENCE" \
+  --universe-cloud-web-domain="CONSOLE_DOMAIN" \
+  --universe-domain="sovereign-cloud.example" \
+  --output-file="wif-login-config.json"
+
+# 4) Log in (opens your org's IdP), then choose project + region
+gcloud auth login --login-config=wif-login-config.json
+gcloud config set project PROJECT
+gcloud config set compute/region REGION
+```
+
+*What you should see:* `gcloud config list` now shows `universe_domain = sovereign-cloud.example`,
+your `project`, and `region = REGION`. If `gcloud projects list` returns your
+project, the connection works.
+
+### 6.4 One-time: create the image registry (Artifact Registry)
+
+A "repository" is just a folder for your images inside Sovereign cloud.
+
+```bash
+# Create a Docker repository named "tribe" in the only region
+gcloud artifacts repositories create tribe \
+  --repository-format=docker --location=REGION \
+  --project=PROJECT --description="TeamFollowUP images"
+
+# Let docker authenticate to the Sovereign cloud registry host (note: REGISTRY_DOMAIN, NOT pkg.dev)
+gcloud auth configure-docker REGION-docker.REGISTRY_DOMAIN
+```
+
+From now on, every image is named:
+`REGION-docker.REGISTRY_DOMAIN/PROJECT/tribe/NAME:TAG`.
+
+---
+
+### 6.5 Bring the image across the air gap (step by step)
+
+**The problem.** Your air-gapped Sovereign cloud environment has no internet. A `docker build`
+downloads base images (`node`, `python`) from the internet, and GKE would
+normally pull images from the internet too - both impossible here. **The trick:**
+prepare every image on a machine **that has internet**, carry them into the Sovereign cloud
+zone, push them to your **sovereign-cloud Artifact Registry**, then let GKE pull from there
+(internal, no internet needed).
+
+**What you need:**
+- A **build machine WITH internet** (your laptop or an external VM) with **Docker**.
+- A way to move files into the air-gapped zone (approved USB / secure transfer).
+- An **inside machine** (in the Sovereign cloud zone) that can reach the Sovereign cloud Artifact
+  Registry, with **Docker** and **gcloud** installed.
+- *(If one machine has BOTH internet and access to the Sovereign cloud registry, skip the
+  save/transfer/load steps and push directly.)*
+
+> In the commands below, replace `PROJECT` with your Sovereign cloud project id. The region is
+> always `REGION` and the repo is `tribe` (created in §6.4) - already filled in.
+
+**Step 1 - On the internet machine: get the source**
+```bash
+git clone https://github.com/Mehdi-Zar/TeamFollowUP.git
+cd TeamFollowUP
+```
+
+**Step 2 - Build the application image** (this is the only build; it downloads
+`node` + `python` and bakes the React frontend + FastAPI backend into one image):
+```bash
+docker build -t teamfollowup:2.1.0 .
+```
+
+**Step 3 - Also fetch the database image, if you need one** (see §6.7):
+- **Option A - Postgres inside the cluster**: pull the image.
+  ```bash
+  docker pull postgres:16-alpine
+  ```
+- **Option B - Cloud SQL** (managed Postgres on Sovereign cloud, private IP): **no extra image at
+  all** - the app connects straight to the instance. Skip this step.
+
+**Step 4 - Save the images to files** (so you can carry them):
+```bash
+docker save teamfollowup:2.1.0 -o app.tar
+docker save postgres:16-alpine    -o postgres.tar     # option A only
+```
+
+**Step 5 - Move the `.tar` files into the Sovereign cloud zone** (approved USB / transfer).
+
+**Step 6 - On the inside machine: load the images back into Docker**
+```bash
+docker load -i app.tar
+docker load -i postgres.tar        # option A only
+```
+
+**Step 7 - Make sure docker can push to Sovereign cloud.** You already pointed `gcloud` at the
+Sovereign cloud universe and logged in (§6.3) and let docker authenticate (§6.4). If this is a
+fresh machine, do §6.3 + §6.4 first. To re-check the docker credential helper:
+```bash
+gcloud auth configure-docker REGION-docker.REGISTRY_DOMAIN
+```
+
+**Step 8 - Re-tag the images for YOUR Sovereign cloud registry, then push**
+```bash
+# App image
+docker tag teamfollowup:2.1.0 \
+  REGION-docker.REGISTRY_DOMAIN/PROJECT/tribe/teamfollowup:2.1.0
+docker push REGION-docker.REGISTRY_DOMAIN/PROJECT/tribe/teamfollowup:2.1.0
+
+# Postgres - option A only (in-cluster DB)
+docker tag postgres:16-alpine \
+  REGION-docker.REGISTRY_DOMAIN/PROJECT/tribe/postgres:16-alpine
+docker push REGION-docker.REGISTRY_DOMAIN/PROJECT/tribe/postgres:16-alpine
+```
+
+> **Every image the cluster runs must come from your Sovereign cloud registry.** A manifest that
+> still points at a public address (`gcr.io/…`, `docker.io/…`) leaves the pod in
+> `ImagePullBackOff` forever - that host is on the internet and the cluster cannot reach
+> it.
+
+**Step 9 - Confirm the images are there:**
+```bash
+gcloud artifacts docker images list \
+  REGION-docker.REGISTRY_DOMAIN/PROJECT/tribe
+```
+You should see `teamfollowup` (and `postgres`, if you chose option A). The images
+now live in Sovereign cloud; GKE pulls them with **no internet**. For every new version, repeat
+steps 2 → 9 with a new tag (`:1.1`, …) - see §6.12.
+
+---
+
+### 6.6 Create the GKE cluster
+
+GKE is the container runtime we use on Sovereign cloud. **Autopilot** means Google/Sovereign cloud manage
+the nodes for you - you only deploy pods. Create it once, then load its credentials so
+`kubectl` talks to it:
+```bash
+gcloud container clusters create-auto tribe-cluster \
+  --region REGION \
+  --network VPC_NAME --subnetwork SUBNET_NAME     # same VPC as Cloud SQL (option B)
+gcloud container clusters get-credentials tribe-cluster --region REGION
+```
+*Check:* `kubectl get nodes` eventually lists nodes (Autopilot adds them on demand).
+
+> **If you plan on Cloud SQL (option B), the cluster must sit on the same VPC as the
+> instance** - that is what lets the pod reach its private IP. Use the same `VPC_NAME`
+> here and in §6.7.1. (With option A, the in-cluster Postgres, the network flags are
+> optional and you can drop them.)
+
+### 6.7 Choose your database, then 6.8 deploy
+
+Pick **one** database option, then continue to §6.8:
+
+- **Option A - Postgres inside the cluster.** Simplest; fewest moving parts; uses the
+  `postgres:16-alpine` image you pushed in §6.5. Good to get running fast. You own the
+  backups (§10). → deploy the StatefulSet in §6.8, `POSTGRES_HOST=postgres`.
+- **Option B - Cloud SQL for PostgreSQL** (managed: automatic backups, HA, patching).
+  The app connects **straight to the instance's private IP** over your VPC - no proxy,
+  no sidecar, no extra image. → §6.7.1 (create the instance), §6.7.2 (connect to it).
+
+#### 6.7.1 Option B - create the Cloud SQL instance
+
+Everything stays inside Sovereign cloud: the instance gets a **private IP** on your VPC and **no
+public IP** at all.
+
+```bash
+# 0) The API must be enabled once per project
+gcloud services enable sqladmin.googleapis.com --project PROJECT
+
+# 1) The instance (PostgreSQL 16, private IP only, in the single Sovereign cloud region)
+gcloud sql instances create tribe-db \
+  --database-version=POSTGRES_16 \
+  --region=REGION \
+  --tier=db-custom-2-7680 \
+  --network=projects/PROJECT/global/networks/VPC_NAME \
+  --no-assign-ip \
+  --storage-auto-increase \
+  --backup --backup-start-time=02:00 \
+  --project=PROJECT
+
+# 2) The database and its user (the password goes in the k8s Secret in §6.8)
+gcloud sql databases create tribe --instance=tribe-db --project=PROJECT
+gcloud sql users create tribe --instance=tribe-db --password='<db password>' --project=PROJECT
+```
+
+> **Prerequisite - private services access.** `--network` requires the VPC to have a
+> *private services access* peering range already allocated, otherwise instance
+> creation fails. Your network administrator does this once
+> (`gcloud compute addresses create … --purpose=VPC_PEERING` +
+> `gcloud services vpc-peerings connect`). Ask for it in §6.2 if it isn't there.
+
+Write down the **private IP** - it is the one value §6.8 needs:
+
+```bash
+gcloud sql instances describe tribe-db --project PROJECT \
+  --format='value(ipAddresses[0].ipAddress)'          # e.g. 10.42.0.3
+```
+
+#### 6.7.2 Option B - connect to the private IP
+
+The app pod talks to `10.42.0.3:5432` directly over the VPC. **No proxy, no sidecar, no
+extra image, no IAM plumbing.** The one requirement is that the GKE cluster and the
+instance sit on the **same VPC** - they do, if you passed the same `--network` in §6.6
+and §6.7.1.
+
+What you do in §6.8: **skip** the Postgres StatefulSet (Cloud SQL *is* the database) and
+set `POSTGRES_HOST` to that private IP.
+
+> **Encryption in transit to the DB.** The connection crosses only your VPC, and is
+> unencrypted unless you enforce TLS on the instance. If your security policy requires
+> it, turn it on at the instance level - no application change:
+> `gcloud sql instances patch tribe-db --require-ssl --project PROJECT`.
+
+### 6.8 Prepare the deploy
+
+Do §6.8 once (secrets, database wiring, the gateway certificate), then follow **§6.9**
+top to bottom.
+
+#### 6.8.1 The application secrets (`teamfollowup-secrets.yaml`)
+
+Never commit real values - create the Secret directly, or from your platform's secret
+manager.
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: teamfollowup-secrets
+type: Opaque
+stringData:
+  SECRET_KEY: "<32+ random chars>"
+  POSTGRES_PASSWORD: "<db password>"
+  BREAKGLASS_PASSWORD: "<admin password>"
+```
+
+#### 6.8.2 The database
+
+You picked one option in §6.7. Only the value of `POSTGRES_HOST` differs later:
+
+- **Option A - Postgres in the cluster** (`postgres.yaml`, uses the image you pushed in
+  §6.5). `POSTGRES_HOST` will be the `postgres` Service name. Apply the manifest below.
+- **Option B - Cloud SQL**: **skip this StatefulSet**, the instance already exists (§6.7.1).
+  `POSTGRES_HOST` will be its private IP.
+
+```yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: REGION-docker.REGISTRY_DOMAIN/PROJECT/tribe/postgres:16-alpine
+          env:
+            - name: POSTGRES_DB
+              value: tribe
+            - name: POSTGRES_USER
+              value: tribe
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: teamfollowup-secrets
+                  key: POSTGRES_PASSWORD
+          ports:
+            - containerPort: 5432
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 10Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+spec:
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
+```
+
+#### 6.8.3 Gateway prerequisites (proxy-only subnet + the gateway certificate)
+
+The app is published **only** through a regional internal Application Load Balancer driven
+by the **Kubernetes Gateway API** - never a `Service: LoadBalancer` or an `Ingress`, which
+are deliberately absent from this guide. Two one-time prerequisites, identical for both TLS
+models:
+
+**a) The proxy-only subnet** - the regional internal ALB runs its Envoy proxies here.
+Without it the Gateway stays `PROGRAMMING/False` forever. One per VPC + region.
+```bash
+gcloud compute networks subnets create tribe-proxy-only \
+  --purpose=REGIONAL_MANAGED_PROXY --role=ACTIVE \
+  --region=REGION --network=VPC_NAME --range=10.129.0.0/23 \
+  --project=PROJECT
+```
+*The Gateway API CRDs are already installed on Autopilot clusters (§6.6) - check with
+`kubectl get gatewayclass`, you should see `gke-l7-rilb`. On a Standard cluster, enable them
+once with `gcloud container clusters update tribe-cluster --gateway-api=standard --region
+REGION`.*
+
+**b) The gateway certificate** (`teamfollowup-tls`) - this is the certificate the **ALB
+presents to users**, and the only certificate in the deployment. Start self-signed to bring the platform up now,
+then swap in your PKI certificate later without touching any manifest (the secret name never
+changes).
+
+Self-signed, to get running today (browsers will warn - expected):
+```bash
+# The SAN is what browsers check; the CN alone is ignored by modern browsers.
+openssl req -x509 -newkey rsa:2048 -nodes -days 365 \
+  -keyout tls.key -out tls.crt \
+  -subj "/CN=tribe.internal.example/O=TeamFollowUP" \
+  -addext "subjectAltName=DNS:tribe.internal.example"
+
+kubectl create secret tls teamfollowup-tls --cert=tls.crt --key=tls.key
+```
+> Traffic is **encrypted** exactly as with a real certificate, but **not authenticated**:
+> browsers show "your connection is not private" until a trusted certificate is installed.
+> Fine for an internal pilot; not for production. Either distribute `tls.crt` as a trusted
+> root to client machines, or move to your PKI below.
+
+When your PKI certificate arrives, overwrite the secret in place - no manifest edit, no
+Gateway recreation (the ALB picks it up within a minute):
+```bash
+kubectl create secret tls teamfollowup-tls \
+  --cert=server.crt --key=server.key \
+  --dry-run=client -o yaml | kubectl apply -f -
+```
+*(`server.crt` must be the **full chain** - your server certificate followed by any
+intermediate CA certificates - or some clients reject it even when a browser accepts it.)*
+
+---
+
+### 6.9 End-to-end: TLS terminated by the infrastructure
+
+The pod serves plain HTTP on :8000 and the Gateway/ALB does all the TLS, so there is no
+certificate on the pod and no HTTPS backend to health-check. `COOKIE_SECURE=true` still
+applies: clients reach the ALB over HTTPS and the pod reads `X-Forwarded-Proto`. Follow
+steps 1 to 5 in order.
+
+```
+  user ──HTTPS 443──▶  Gateway (gke-l7-rilb)  ──HTTP──▶  Service teamfollowup-app  ──▶  pod :8000 (HTTP)
+                       = internal ALB           :80       (ClusterIP, appProtocol HTTP)
+                       cert: teamfollowup-tls
+```
+
+**Step 1 - The application (`app.yaml`).** The container serves HTTP on :8000. Set
+`POSTGRES_HOST` to the `postgres` Service (option A) or the Cloud SQL private IP (option B).
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: teamfollowup-app
+spec:
+  replicas: 1                      # keep 1 for the first rollout (migrations); scale up after
+  selector:
+    matchLabels:
+      app: teamfollowup-app
+  template:
+    metadata:
+      labels:
+        app: teamfollowup-app
+    spec:
+      containers:
+        - name: app
+          # Use an IMMUTABLE tag: the version you are deploying, never a tag you
+          # re-push. Kubernetes defaults imagePullPolicy to IfNotPresent for any
+          # tag other than :latest, so a node that already cached this tag will
+          # keep serving the OLD image - and the first symptom is usually Alembic
+          # refusing to start (see the troubleshooting table). Best of all, pin
+          # the digest: ...teamfollowup@sha256:<digest>.
+          image: REGION-docker.REGISTRY_DOMAIN/PROJECT/tribe/teamfollowup:2.1.0
+          ports:
+            - containerPort: 8000
+              name: http
+          env:
+            - name: HTTP_PORT
+              value: "8000"
+            - name: LOG_FORMAT           # structured logs for GCP Cloud Logging
+              value: "json"
+            - name: POSTGRES_HOST
+              value: postgres            # option A: the Service name
+            #  option B (Cloud SQL): value: "10.42.0.3"  <- the private IP from §6.7.1
+            - name: POSTGRES_PORT
+              value: "5432"
+            - name: POSTGRES_DB
+              value: tribe
+            - name: POSTGRES_USER
+              value: tribe
+            - name: SEED_DEMO
+              value: "false"
+            - name: COOKIE_SECURE        # clients still reach the ALB over HTTPS
+              value: "true"
+            - name: PUBLIC_BASE_URL      # public address, NOT the container port (§2.1)
+              value: "https://tribe.internal.example"     # <- the Gateway listener hostname below
+            - name: BREAKGLASS_EMAIL
+              value: admin@local
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: teamfollowup-secrets
+                  key: SECRET_KEY
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: teamfollowup-secrets
+                  key: POSTGRES_PASSWORD
+            - name: BREAKGLASS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: teamfollowup-secrets
+                  key: BREAKGLASS_PASSWORD
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 8000
+              scheme: HTTP
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          resources:                     # Autopilot requires explicit requests
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: teamfollowup-app
+spec:
+  type: ClusterIP                        # exposure is the Gateway's job (Step 3)
+  selector:
+    app: teamfollowup-app
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8000
+      appProtocol: HTTP                  # the ALB talks plain HTTP to the pod
+```
+
+**Step 2 - Apply it and check the pod.**
+```bash
+# Option A (in-cluster Postgres):
+kubectl apply -f teamfollowup-secrets.yaml -f postgres.yaml -f app.yaml
+# Option B (Cloud SQL - no postgres.yaml, the database already exists):
+kubectl apply -f teamfollowup-secrets.yaml -f app.yaml
+
+kubectl rollout status deployment/teamfollowup-app
+kubectl logs deploy/teamfollowup-app | grep -i "migration\|secours"   # migrations + break-glass
+```
+The entrypoint waits for the database (60 x 2 s), runs `alembic upgrade head`, then starts
+the server - so the first pod migrates the DB. Once healthy, scale with `kubectl scale
+deployment/teamfollowup-app --replicas=3` (the in-process scheduler is multi-replica safe via
+a Postgres advisory lock). The `Service` is a `ClusterIP`, so the app is not reachable yet -
+that is Step 3. To sanity-check the pod first: `kubectl port-forward deploy/teamfollowup-app
+8000:8000` then `curl http://localhost:8000/api/health`.
+
+**Step 3 - The Gateway and its routes (`gateway.yaml`).** The Gateway serves your
+`teamfollowup-tls` certificate (§6.8.3) to users and forwards **plain HTTP** to the app on
+port 80. No `HealthCheckPolicy` is needed here - the ALB's default HTTP health check works.
+```yaml
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: teamfollowup-gateway
+spec:
+  gatewayClassName: gke-l7-rilb          # regional INTERNAL Application Load Balancer
+  listeners:
+    - name: https
+      protocol: HTTPS
+      port: 443
+      hostname: tribe.internal.example
+      tls:
+        mode: Terminate                  # the ALB terminates TLS with your cert
+        certificateRefs:
+          - name: teamfollowup-tls
+    - name: http
+      protocol: HTTP
+      port: 80                           # only exists to redirect users to HTTPS
+      hostname: tribe.internal.example
+---
+# Everything under / goes to the app, over plain HTTP (port 80 = the Service port).
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: teamfollowup-app-route
+spec:
+  parentRefs:
+    - name: teamfollowup-gateway
+      sectionName: https
+  hostnames:
+    - tribe.internal.example
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: teamfollowup-app
+          port: 80
+---
+# Plain HTTP never reaches the app: the Gateway itself 301s it to HTTPS.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: teamfollowup-https-redirect
+spec:
+  parentRefs:
+    - name: teamfollowup-gateway
+      sectionName: http
+  hostnames:
+    - tribe.internal.example
+  rules:
+    - filters:
+        - type: RequestRedirect
+          requestRedirect:
+            scheme: https
+            statusCode: 301
+```
+*To expose only part of the API, add `rules` to `teamfollowup-app-route` (first match wins).
+A route that keeps the admin surface off the gateway is shown below; here the `backendRefs`
+port is `80`, not `443`.*
+
+**Step 4 - Apply and wire DNS.**
+```bash
+kubectl apply -f gateway.yaml
+
+kubectl wait --for=condition=Programmed gateway/teamfollowup-gateway --timeout=10m
+kubectl get gateway teamfollowup-gateway -o jsonpath='{.status.addresses[0].value}'   # e.g. 10.128.0.30
+```
+Point your internal **DNS** record (`tribe.internal.example`) at that address. Keep
+`COOKIE_SECURE=true`: the ALB sets `X-Forwarded-*`, which the app honours (uvicorn
+`proxy_headers=True`), so it still sees requests as `https`.
+
+**Step 5 - Verify.**
+```bash
+kubectl get pods                        # teamfollowup-app Running (+ postgres, with option A)
+kubectl get gateway teamfollowup-gateway    # PROGRAMMED=True + an ADDRESS
+kubectl get httproute                   # both routes Accepted
+
+curl -k https://tribe.internal.example/api/health   # {"status":"ok"} - via the ALB
+curl -I http://tribe.internal.example/              # 301 to https://
+```
+*Drop the `-k` once the gateway serves your **PKI** certificate (§6.8.3) - that is exactly
+the check that the swap worked. While it is still self-signed, `-k` is required and browsers
+warn; that is expected.* Then open the URL, log in with the break-glass admin
+(`BREAKGLASS_EMAIL` / the password you set, or the random one printed in the logs on first
+boot), and finish setup (SSO, SMTP, backups) from the admin UI (§9-§10).
+
+### 6.10 (Optional) Keyless GCP identity for audit-log export
+
+If you use **Admin → Logs** to export the audit log to **GCS or BigQuery**, do
+**not** paste a service-account JSON key - that is a long-lived secret Google
+recommends against ([ADR-0012](adr/0012-gcp-auth-keyless.md)). On GKE the pod can
+authenticate **keyless** by binding its Kubernetes ServiceAccount (KSA) to a
+Google service account (GSA) - the app then selects **`adc`** (the default) in the
+Logs screen and needs no credential at all.
+
+```bash
+# 1) The Google service account that will read/write GCS or BigQuery
+gcloud iam service-accounts create tribe-logs --project PROJECT
+
+# 2) Grant it ONLY what the export needs
+#    GCS:      roles/storage.objectCreator on the bucket
+#    BigQuery: roles/bigquery.dataEditor on the dataset
+gcloud projects add-iam-policy-binding PROJECT \
+  --member="serviceAccount:tribe-logs@PROJECT.iam.gserviceaccount.com" \
+  --role="roles/storage.objectCreator"
+
+# 3) Let the pod's KSA impersonate that GSA (Workload Identity binding).
+#    KSA = the ServiceAccount the teamfollowup-app pod runs as (default: "default" in its namespace).
+gcloud iam service-accounts add-iam-policy-binding \
+  tribe-logs@PROJECT.iam.gserviceaccount.com \
+  --role="roles/iam.workloadIdentityUser" \
+  --member="serviceAccount:PROJECT.svc.id.goog[default/default]"
+
+# 4) Annotate the KSA so GKE maps it to the GSA
+kubectl annotate serviceaccount default \
+  iam.gke.io/gcp-service-account=tribe-logs@PROJECT.iam.gserviceaccount.com
+```
+
+*(On Sovereign cloud the mechanism is identical; the universe is `sovereign-cloud.example`, which the app
+already honours for the storage/bigquery/IAM endpoints.)* For a workload running
+**off** GKE (the VMware target, §4), use **`wif`** (an `external_account` config
+file) or, only if nothing else is possible, the **`key`** method.
+
+### 6.11 When something fails (the usual suspects)
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| `Can't locate revision identified by '00NN_xxx'` on startup | The **database is ahead of the image**: `alembic_version` names a migration the running image does not contain. Almost always a stale image - a re-pushed tag the node kept cached, or an older tag deployed over a database a newer build had already migrated. | Confirm with the three commands below, then deploy an image at least as recent as the database. **Do not `alembic stamp` backwards**: the tables that migration created still exist, so the newer image would then try to create them again. |
+| Pod stuck `ImagePullBackOff` | wrong registry host, image not pushed, or no pull permission | Check the `image:` host is `REGION-docker.REGISTRY_DOMAIN/PROJECT/tribe/…`; re-run §6.5 step 9 to confirm it exists; ensure the cluster's service account has *Artifact Registry Reader*. |
+| `gcloud` errors / wrong account | gcloud not on a sovereign GCP universe | Re-run §6.3; check `gcloud config list` shows `universe_domain = sovereign-cloud.example`. |
+| `docker push` denied | docker not authenticated to Sovereign cloud | Re-run `gcloud auth configure-docker REGION-docker.REGISTRY_DOMAIN` (§6.4). |
+| App pod crashes, logs show DB connection refused | wrong `POSTGRES_HOST` / DB not up | **A**: `kubectl get pods` - is `postgres` Running? Host must be the Service name `postgres`. **B**: host must be the instance's **private IP** (§6.7.1), *not* a hostname and *not* `127.0.0.1`. |
+| App pod hangs on `[entrypoint] DB indisponible` then dies after 60 tries | the pod cannot route to the Cloud SQL private IP | The instance needs **private services access** on the VPC, and the cluster must sit on that **same VPC** (§6.6 `--network`). Check from inside the cluster: `kubectl run -it --rm pg --image=… -- psql -h 10.42.0.3 -U tribe`. |
+| App logs: `password authentication failed for user "tribe"` | `POSTGRES_PASSWORD` mismatch | The value in `teamfollowup-secrets` must equal the password set by `gcloud sql users create` (§6.7.1). |
+| App logs: `no pg_hba.conf entry … SSL off` | the instance enforces TLS (`--require-ssl`) | Either drop the requirement, or keep it and configure the client TLS material - the app connects with plain psycopg2 settings. |
+| Readiness probe never passes, `curl` to the app port refused | probe/Service port doesn't match the listener | The pod has exactly one listener, **HTTP :8000**: probe `port: 8000, scheme: HTTP`, Service `targetPort: 8000` (§6.9). |
+| `Gateway` stuck, `Programmed=False`, never gets an address | the **proxy-only subnet** is missing | Create it once per VPC + region - §6.8.3 (`--purpose=REGIONAL_MANAGED_PROXY`). This is by far the most common Gateway failure. |
+| Gateway is up but every request returns **502** | the ALB cannot health-check the backend | The pod speaks plain HTTP on :8000 and the Service must say so: `appProtocol: HTTP`, `targetPort: 8000` (§6.9 Step 1). Check backend health: `gcloud compute backend-services get-health …`. |
+| Backend is **healthy** yet requests intermittently fail with `upstream connect error or disconnect/reset before headers. reset reason: connection termination` | the app's HTTP keep-alive timeout is **shorter** than the ALB's backend idle timeout, so the LB reuses a connection uvicorn just closed | The server sets `timeout_keep_alive=620s` (> the Google ALB default of 600s) - see `app/server.py` (`KEEPALIVE_TIMEOUT`). If your LB uses a longer idle timeout, raise it via the `KEEPALIVE_TIMEOUT` env var so it stays above the LB's. |
+| `HTTPRoute` shows `Accepted=False` / `NotAllowedByListeners` | hostname or `sectionName` mismatch | The route's `hostnames` must match the listener's `hostname`, and `parentRefs.sectionName` must name an existing listener (`https` / `http`). |
+| Browser: "your connection is not private" / `NET::ERR_CERT_AUTHORITY_INVALID` | the gateway is still on the **self-signed** certificate | Expected - click through, or swap in your PKI cert (§6.8.3). Not a misconfiguration. |
+| `Gateway` listener `Programmed=False`, `Invalid certificate` | the `teamfollowup-tls` secret is missing, or key and cert don't match | `kubectl get secret teamfollowup-tls`; recreate it (§6.8.3). The **ALB** serves this certificate - the pod's own self-signed one is never shown to users. |
+| Browser accepts the cert but a CLI client rejects it | the secret holds the leaf certificate without its **intermediate CA chain** | Rebuild `server.crt` as the full chain (leaf + intermediates) and re-apply the secret (§6.8.3). |
+| `kubectl get gatewayclass` returns nothing | Gateway API not enabled (Standard cluster) | `gcloud container clusters update tribe-cluster --gateway-api=standard --region REGION`. Autopilot has it on by default. |
+| Two pods race the migration on first deploy | scaled out too early | First rollout with **1 replica** (the manifest already does); scale up only after it's healthy. |
+
+### Is the pod really running the image you pushed?
+
+The three commands that settle an "old code is running" suspicion, in order. The third is
+the only one that cannot be argued with.
+
+```bash
+# 1. What the DATABASE believes it has been migrated to.
+kubectl -n NAMESPACE exec deploy/teamfollowup-app --   python -c "from app.database import engine; import sqlalchemy as sa;              print(engine.connect().execute(sa.text('select version_num from alembic_version')).all())"
+
+# 2. What the IMAGE actually carries.
+kubectl -n NAMESPACE exec deploy/teamfollowup-app -- ls alembic/versions | tail -3
+
+# 3. WHICH image is running, by digest - not by tag, which lies.
+kubectl -n NAMESPACE get pods -l app=teamfollowup-app   -o jsonpath='{range .items[*]}{.status.containerStatuses[*].imageID}{"
+"}{end}'
+```
+
+If (1) names a revision that is not in (2), the database is ahead of the image. Compare the
+digest from (3) with the one your registry holds for that tag
+(`gcloud artifacts docker images describe REGISTRY/teamfollowup:TAG`): if they differ, the
+node is serving a cached image and the tag was re-pushed.
+
+**The fix is to move forward, never backward.** Build and push under a new, immutable tag,
+point the Deployment at it, and wait for the rollout:
+
+```bash
+kubectl -n NAMESPACE set image deploy/teamfollowup-app app=REGISTRY/teamfollowup:2.1.0
+kubectl -n NAMESPACE rollout status deploy/teamfollowup-app
+```
+
+Do **not** reach for `alembic stamp` to make the error go away. Stamping the database back
+to the older revision leaves the tables that migration created in place, unrecorded; the
+next deployment of the newer image then tries to create them again and fails on a
+relation that already exists. Downgrading properly is worse still - it drops those tables,
+and with them their data.
+
+### 6.12 Ship a new version later
+
+You do **not** redo all of the above. The data stays in the database. Just:
+```bash
+# OUTSIDE (internet): build the new tag and save it
+docker build -t teamfollowup:1.1 . && docker save teamfollowup:1.1 -o app-1.1.tar
+# …transfer app-1.1.tar across the gap…
+# INSIDE: load, tag, push, then roll the deployment
+docker load -i app-1.1.tar
+docker tag teamfollowup:1.1 REGION-docker.REGISTRY_DOMAIN/PROJECT/tribe/teamfollowup:1.1
+docker push REGION-docker.REGISTRY_DOMAIN/PROJECT/tribe/teamfollowup:1.1
+kubectl set image deployment/teamfollowup-app app=REGION-docker.REGISTRY_DOMAIN/PROJECT/tribe/teamfollowup:1.1
+kubectl rollout status deployment/teamfollowup-app
+```
+The new pod runs `alembic upgrade head` automatically. **Back up the database first**
+(§10). Full upgrade/rollback playbook: `13-maintenance-and-updates.md`.
+
+> **Sovereign cloud references** (verify specifics against your tenant - the catalogue evolves):
+> [Sovereign cloud docs](https://documentation.sovereign.fr/products),
+> [set up gcloud for Sovereign cloud](https://documentation.sovereign.fr/docs/get-started-tpc/setup-gcloud),
+> [regions & zones](https://documentation.sovereign.fr/docs/get-started-tpc/regions-and-zones),
+> [Artifact Registry (Docker)](https://documentation.sovereign.fr/artifact-registry/docs/docker/store-docker-container-images).
+
+---
+
+## 7. AWS - ECS Fargate + RDS
+
+> **Not the supported exposure path.** Exposure is standardized on the **API Gateway
+> (Gateway API) + HTTP routes → internal ALB** topology of §6.9, which is GKE-specific.
+> This section is kept for reference only. If AWS ever becomes a real target, the
+> equivalent is **API Gateway (HTTP API) → VPC Link → internal ALB → ECS**, and this
+> section must be rewritten around it - do not publish the ECS service straight from a
+> public ALB.
+
+1. **Database**: create **RDS for PostgreSQL 16** (Multi-AZ for HA), a DB and user.
+2. **Image**: push to **ECR**.
+3. **Service**: an **ECS Fargate** service behind an **Application Load Balancer**:
+   - task container port **8000**; ALB target group with
+     protocol **HTTP** → 8000, health check `GET /api/health`. The ALB listener on
+     443 uses your **ACM** certificate and terminates TLS.
+   - Env from the task definition; secrets from **Secrets Manager / SSM** mapped to
+     `SECRET_KEY`, `POSTGRES_PASSWORD`, etc.
+   - `POSTGRES_HOST` = the RDS endpoint; open the security group from the ECS tasks
+     to RDS:5432.
+   - Set `COOKIE_SECURE=true`, `SEED_DEMO=false`, and `PUBLIC_BASE_URL` to the ALB's
+     public hostname (§2.1).
+   - Run the service in private subnets; the ALB (public subnets) terminates TLS
+     (ACM cert) and forwards `X-Forwarded-*`.
+4. **First rollout**: deploy `desiredCount=1` (migrations), then scale out. Or run
+   migrations as a one-off `aws ecs run-task` with the same image (the entrypoint
+   migrates and you can stop it after).
+5. **Alternative**: **AWS App Runner** (image + env/secrets + RDS) for a simpler,
+   ALB-free setup.
+
+---
+
+## 8. Azure - Container Apps + PostgreSQL Flexible Server
+
+> **Not the standardized exposure path.** Exposure is standardized on the **API Gateway +
+> HTTP routes → internal ALB** topology of §6.9, and Container Apps' built-in ingress
+> is not that - so this section is kept for reference. The app itself runs fine here
+> (Container Apps forwards plain HTTP to the container, which is what the app serves, and
+> terminates TLS at its edge). If Azure becomes a first-class target, use
+> **AKS** and port the §6.8-§6.9 manifests (the Gateway API is portable; only the
+> `gatewayClassName` changes).
+
+1. **Database**: **Azure Database for PostgreSQL - Flexible Server** (v16), a DB
+   and user. Enable VNet/private access if possible.
+2. **Image**: push to **Azure Container Registry (ACR)**.
+3. **App**: **Azure Container Apps**:
+   ```bash
+   az containerapp create -n teamfollowup -g RG --environment ENV \
+     --image REGISTRY.azurecr.io/teamfollowup:2.1.0 \
+     --target-port 8000 --ingress external \
+     --min-replicas 1 --max-replicas 4 \
+     --env-vars HTTP_PORT=8000 POSTGRES_HOST=SERVER.postgres.database.azure.com POSTGRES_DB=tribe POSTGRES_USER=tribe COOKIE_SECURE=true SEED_DEMO=false PUBLIC_BASE_URL=https://teamfollowup.example.com \
+     --secrets tribe-secret=... db-pw=... admin-pw=... \
+     --env-vars SECRET_KEY=secretref:tribe-secret POSTGRES_PASSWORD=secretref:db-pw BREAKGLASS_PASSWORD=secretref:admin-pw
+   ```
+   - Container Apps provides external HTTPS ingress and `X-Forwarded-*`.
+   - Secrets via Container Apps secrets (or Key Vault references).
+   - Keep `--min-replicas 1` for the first migration, then scale.
+4. **Alternative**: **App Service for Containers** (single image) + the same
+   Flexible Server.
+
+---
+
+## 9. Post-deployment checklist
+
+- [ ] `GET /api/health` returns `{"status":"ok"}` **through the API Gateway** (the ALB
+      address), not just via `kubectl port-forward`.
+- [ ] `kubectl get gateway` shows `PROGRAMMED=True`; the `HTTPRoute`s are `Accepted`.
+- [ ] The app's `Service` is a **`ClusterIP`** - no `LoadBalancer`, no `Ingress` anywhere.
+- [ ] Plain HTTP on the gateway 301-redirects to HTTPS.
+- [ ] First admin login works (break-glass `BREAKGLASS_EMAIL` / `BREAKGLASS_PASSWORD`,
+      or the random password printed in the logs).
+- [ ] `SECRET_KEY` and `POSTGRES_PASSWORD` are **not** defaults and come from a
+      secret manager.
+- [ ] `COOKIE_SECURE=true` and the app is only reachable over HTTPS.
+- [ ] `SEED_DEMO=false` (no demo tribes/squads in production).
+- [ ] `PUBLIC_BASE_URL` set to the real public URL (or the proxy forwards
+      `X-Forwarded-Proto` / `-Host`); **Administration → Authentification** shows the
+      expected redirect/ACS URLs, and they match what the IdP has registered (§2.1).
+- [ ] Database backups scheduled (managed automated backups, or the `pg_dump`
+      sidecar on VMware).
+- [ ] Migrations ran (`alembic upgrade head`) - check the startup logs.
+
+### Loading the real organization (optional)
+
+Helper scripts live in `backend/scripts/`:
+- `seed_real_org.py` - wipes org content (keeps user accounts) and loads the real
+  tribe/squads with products/hardware.
+- `prune_users.py` - keeps the admin + one impersonation account per role.
+
+Run them once against the deployed container, e.g.:
+```bash
+docker compose exec -T app python - < backend/scripts/seed_real_org.py
+```
+(or the platform equivalent of `exec` into the running container). These are
+**destructive** - review before running on a populated database.
+
+---
+
+## 10. Sizing & scaling
+
+- **App**: 0.5-1 vCPU / 512 MB-1 GB per replica is plenty; scale replicas behind
+  the LB. The scheduler is multi-replica safe (advisory lock).
+- **Database**: a small managed instance (1-2 vCPU) covers typical tribe usage;
+  size storage for snapshots/audit retention (configurable via
+  `AUDIT_RETENTION_DAYS`).
+- **TLS**: the **API Gateway (internal ALB)** terminates TLS for users - self-signed at
+  first, your PKI certificate once issued. The ALB-to-pod hop is plain HTTP to :8000
+  (§6.9); the pod trusts `X-Forwarded-*` (uvicorn `proxy_headers=True`), and the gateway's
+  redirect route handles HTTP→HTTPS.
+
+See also `docs/05-security.md` and `docs/06-operations-runbook.md`.

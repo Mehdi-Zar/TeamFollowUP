@@ -1,0 +1,133 @@
+# Alert rules for TeamFollowUP.
+#
+# Each rule is written to fire on a symptom a person would act on, not on a
+# number that merely moved. The `for:` clause is what keeps them quiet: an alert
+# that fires on a single bad scrape trains everyone to ignore it.
+#
+# Copy this file as-is into a Kubernetes PrometheusRule (the `groups:` block is
+# the same schema). docs/17 explains what each rule means and how to tune it.
+
+groups:
+  - name: teamfollowup
+    rules:
+
+      # ---- Availability ---------------------------------------------------
+      - alert: TeamFollowUPDown
+        expr: up{job="teamfollowup"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "TeamFollowUP is not answering the scrape"
+          description: >-
+            Prometheus has failed to scrape {{ $labels.instance }} for 2 minutes.
+            Either the process is down, or it is too busy to answer. Check the pod
+            status and the application logs first.
+
+      # ---- Errors ---------------------------------------------------------
+      - alert: TeamFollowUPHighErrorRate
+        # 5xx as a share of all traffic. Ratio, not a count: 20 errors a minute is
+        # a catastrophe on a quiet instance and noise on a busy one.
+        expr: |
+          sum(rate(teamfollowup_http_requests_total{status=~"5.."}[5m]))
+            /
+          sum(rate(teamfollowup_http_requests_total[5m]))
+            > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "More than 5% of requests are failing with a server error"
+          description: >-
+            Over the last 5 minutes, {{ $value | humanizePercentage }} of requests
+            returned a 5xx. Break it down by route with:
+            topk(5, sum by (route) (rate(teamfollowup_http_requests_total{status=~"5.."}[5m])))
+
+      # ---- Latency --------------------------------------------------------
+      - alert: TeamFollowUPSlowRequests
+        # The exports (PPTX/HTML) legitimately take seconds, so they are excluded
+        # here and covered by their own, looser rule below. Without that exclusion
+        # a single deck export drags the global p95 over any sane threshold.
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (
+              rate(teamfollowup_http_request_duration_seconds_bucket{route!~".*(pptx|html)"}[5m])
+            )
+          ) > 2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "95th percentile latency above 2s (exports excluded)"
+          description: >-
+            p95 is {{ $value | humanizeDuration }}. The usual causes, in order:
+            the database (see the pool metrics), a report generation running on a
+            large scope, or a saturated node.
+
+      - alert: TeamFollowUPExportsVerySlow
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (
+              rate(teamfollowup_http_request_duration_seconds_bucket{route=~".*(pptx|html)"}[15m])
+            )
+          ) > 30
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Report exports are taking more than 30s at p95"
+          description: >-
+            Exports are expected to take seconds, not half a minute. Check the
+            size of the scope being exported and the database load.
+
+      # ---- Saturation -----------------------------------------------------
+      - alert: TeamFollowUPDatabasePoolExhausted
+        # Positive overflow means the pool ran out of its configured connections
+        # and is opening extra ones. Every request then waits, and the symptom
+        # (everything is slow) says nothing about the cause. This rule names it.
+        expr: teamfollowup_db_pool_overflow > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "The database connection pool is exhausted"
+          description: >-
+            {{ $value }} connections have been opened beyond the configured pool
+            size for 5 minutes. Either a query is holding connections far too long,
+            or the instance needs a larger pool.
+
+      # ---- Background work ------------------------------------------------
+      - alert: TeamFollowUPSchedulerStale
+        # The weekly-report scheduler ticks hourly. Two hours without a successful
+        # tick means the loop is wedged - and because it is what sends the weekly
+        # reports, nobody would notice until a Monday morning with no email.
+        # The gauge is 0 until the first tick, hence the second condition.
+        expr: |
+          teamfollowup_scheduler_last_success_timestamp_seconds > 0
+            and
+          (time() - teamfollowup_scheduler_last_success_timestamp_seconds) > 7200
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "The scheduler has not completed a tick in over 2 hours"
+          description: >-
+            It runs hourly and sends the weekly reports and the personal
+            subscriptions. Check the logs for "weekly scheduler error", and check
+            that the Postgres advisory lock is not held by a dead replica.
+
+      # ---- Security -------------------------------------------------------
+      - alert: TeamFollowUPLoginFailureSpike
+        # The per-IP throttle already blocks a naive brute force; this catches the
+        # distributed version, which the throttle cannot see.
+        expr: sum(rate(teamfollowup_logins_total{outcome="failure"}[5m])) > 1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Sustained rate of failed logins"
+          description: >-
+            More than one failed login per second, averaged over 5 minutes, for
+            10 minutes. Cross-check the audit log and the throttle counter
+            (outcome="throttled") to tell a credential-stuffing attempt from a
+            broken integration retrying with stale credentials.

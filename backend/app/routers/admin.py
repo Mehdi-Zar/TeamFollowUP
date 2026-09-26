@@ -1,0 +1,1054 @@
+"""Admin console endpoints (prefix ``/api/admin``).
+
+This router groups everything managed from the Admin area: user management,
+application settings, authentication (OIDC/SAML) and SMTP config, personas
+(custom roles + capabilities), feature modules, the weekly report and
+change-notification emails, log export, the trusted certificate authorities used
+for outbound TLS, and service API keys.
+
+Access model: most endpoints are admin-only (``require_admin``). User management
+is the exception: it is opened to tribe leaders as well, but strictly scoped to
+their own tribe (see ``tabaccess.acting_manager`` / ``users_scope_tribe``). Every
+mutating endpoint writes an audit entry via ``record_audit`` before committing.
+"""
+from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi.responses import PlainTextResponse, Response
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from .. import pptxtpl
+from ..authconfig import get_auth_config, set_auth_config
+from ..database import get_db
+from ..generalconfig import reference_year
+from ..deps import ADMIN, get_current_user, record_audit, require_admin, require_admin_tab, require_strict_admin, update_data
+from ..generalconfig import get_general, set_general
+from ..memberlink import link_members_to
+from ..tabaccess import acting_manager
+from ..models import Squad, Tribe, User, utcnow
+from ..userpurge import purge_user_references
+from ..rbac import (
+    assignable_roles,
+    can_assign_role,
+    can_manage_user,
+    users_scope_tribe,
+)
+from ..schemas import (
+    UserCreate,
+    UserOut,
+    UserUpdate,
+)
+from ..security import hash_password
+
+router = APIRouter(prefix="/api/admin", tags=["admin"])
+
+
+def _check_tribe(db: Session, tribe_id) -> None:
+    """A tribe id given by the admin must exist: the foreign key otherwise failed
+    as a 500 at commit."""
+    if tribe_id is not None and db.get(Tribe, tribe_id) is None:
+        raise HTTPException(status_code=400, detail="Tribe introuvable")
+
+
+def _assert_can_assign(db: Session, actor: User, role: str) -> None:
+    """Guard: verify ``actor`` is allowed to grant ``role`` to a user.
+
+    Admins may assign any existing persona (built-in or custom); others keep
+    their built-in subset. Raises 400 for an unknown persona, 403 for a role
+    outside the actor's assignable set."""
+    if actor.role == ADMIN:
+        from ..personasconfig import valid_role_keys
+        if role in valid_role_keys(db):
+            return
+        raise HTTPException(status_code=400, detail="Persona inconnu")
+    if not can_assign_role(actor, role):
+        raise HTTPException(status_code=403, detail=f"Rôle non autorisé (autorisés : {', '.join(assignable_roles(actor))})")
+
+
+@router.get("/users", response_model=list[UserOut])
+def list_users(db: Session = Depends(get_db), actor: User = Depends(get_current_user)):
+    """GET /api/admin/users: list users.
+
+    Admins and tribe leaders only. A tribe leader sees only users of their own
+    tribe (scope from ``users_scope_tribe``); an admin sees everyone."""
+    actor = acting_manager(db, actor, "users")
+    q = select(User).order_by(User.id)
+    scope = users_scope_tribe(actor)  # None for admin, own tribe for tribe leader
+    if scope is not None:
+        q = q.where(User.tribe_id == scope)
+    return list(db.scalars(q).all())
+
+
+@router.post("/users", response_model=UserOut, status_code=201)
+def create_user(payload: UserCreate, db: Session = Depends(get_db), actor: User = Depends(get_current_user)):
+    """POST /api/admin/users: create a user (201).
+
+    Admins and tribe leaders only. The actor must be allowed to assign the
+    requested role, and a tribe leader may only create users inside their own
+    tribe. Email must be unique. Writes a ``user.create`` audit entry."""
+    actor = acting_manager(db, actor, "users")
+    _assert_can_assign(db, actor, payload.role)
+    # Tribe leaders can only create users inside their own tribe.
+    tribe_id = payload.tribe_id if actor.role == "admin" else actor.tribe_id
+    if actor.role != "admin" and payload.tribe_id not in (None, actor.tribe_id):
+        raise HTTPException(status_code=403, detail="Vous ne pouvez créer des utilisateurs que dans votre tribe")
+    _check_tribe(db, tribe_id)
+    email = payload.email.lower().strip()
+    if db.scalar(select(User).where(User.email == email)):
+        raise HTTPException(status_code=409, detail="Email déjà utilisé")
+    user = User(
+        email=email,
+        display_name=payload.display_name,
+        role=payload.role,
+        tribe_id=tribe_id,
+        password_hash=hash_password(payload.password) if payload.password else None,
+    )
+    db.add(user)
+    db.flush()
+    link_members_to(db, user)  # members already added with this email
+    record_audit(db, actor.id, "user.create", entity="user", entity_id=user.id,
+                 detail={"email": email, "role": user.role})
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+@router.put("/users/{user_id}", response_model=UserOut)
+def update_user(user_id: int, payload: UserUpdate, db: Session = Depends(get_db),
+                actor: User = Depends(get_current_user)):
+    """PUT /api/admin/users/{user_id}: update a user.
+
+    Admins and tribe leaders only, and the target must be inside the actor's
+    scope (``can_manage_user``). Enforces several rules: role changes stay within
+    what the actor may assign; the break-glass account must remain admin; only an
+    admin may move a user to a different tribe. Writes a ``user.update`` audit."""
+    actor = acting_manager(db, actor, "users")
+    user = db.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+    # Scope check: tribe leaders can only touch users in their own tribe.
+    if not can_manage_user(actor, user):
+        raise HTTPException(status_code=403, detail="Cet utilisateur n'est pas dans votre périmètre")
+    data = update_data(payload, User)
+    if "password" in data:
+        pw = data.pop("password")
+        if pw:
+            user.password_hash = hash_password(pw)
+    # Role changes must stay within what the actor may assign.
+    if "role" in data and data["role"] is not None:
+        if user.is_break_glass and data["role"] != "admin":
+            raise HTTPException(status_code=400, detail="Le compte de secours doit rester administrateur")
+        _assert_can_assign(db, actor, data["role"])
+    # Only an admin may move a user to another tribe.
+    if "tribe_id" in data and actor.role != "admin" and data["tribe_id"] != actor.tribe_id:
+        raise HTTPException(status_code=403, detail="Vous ne pouvez pas déplacer un utilisateur hors de votre tribe")
+    if "tribe_id" in data:
+        _check_tribe(db, data["tribe_id"])
+    for k, v in data.items():
+        setattr(user, k, v)
+    # Back to member: the squads they contributed to or co-led let them go, or
+    # they would still be listed there and still write the reporting.
+    if data.get("role") == "member":
+        user.contributed_squads = []
+        user.co_led_squads = []
+        for sq in db.scalars(select(Squad).where(Squad.leader_user_id == user.id)).all():
+            sq.leader_user_id = None
+    if "tribe_id" in data:
+        db.flush()
+        link_members_to(db, user)  # its team lines follow the tribe
+    record_audit(db, actor.id, "user.update", entity="user", entity_id=user.id, detail=data)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+@router.delete("/users/{user_id}", status_code=204)
+def delete_user(user_id: int, db: Session = Depends(get_db), actor: User = Depends(get_current_user)):
+    """DELETE /api/admin/users/{user_id}: delete a user (204).
+
+    Admins and tribe leaders only, target must be in the actor's scope. The
+    break-glass account cannot be deleted, and nobody may delete their own
+    account. Writes a ``user.delete`` audit entry.
+
+    The references are settled first (``userpurge``): the person's own records go
+    with them, everything else is detached so somebody else's work and the audit
+    trail survive. Without that step this returned 500 for any account that had
+    ever logged in, since nineteen columns point at ``users.id`` with NO ACTION
+    and the first audit row was enough to block the delete."""
+    actor = acting_manager(db, actor, "users")
+    user = db.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+    if user.is_break_glass:
+        raise HTTPException(status_code=400, detail="Le compte de secours ne peut pas être supprimé")
+    if user.id == actor.id:
+        raise HTTPException(status_code=400, detail="Vous ne pouvez pas supprimer votre propre compte")
+    if not can_manage_user(actor, user):
+        raise HTTPException(status_code=403, detail="Cet utilisateur n'est pas dans votre périmètre")
+    record_audit(db, actor.id, "user.delete", entity="user", entity_id=user.id, detail={"email": user.email})
+    purge_user_references(db, user.id)   # logs what it removed and detached
+    db.delete(user)
+    db.commit()
+
+
+@router.get("/settings")
+def get_settings_endpoint(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    """GET /api/admin/settings: read general application settings. Admin only."""
+    return get_general(db)
+
+
+@router.put("/settings")
+def update_settings_endpoint(payload: dict = Body(...), db: Session = Depends(get_db),
+                             admin: User = Depends(require_admin)):
+    """PUT /api/admin/settings: update general settings. Admin only; audited."""
+    cfg = set_general(db, payload)
+    record_audit(db, admin.id, "settings.update", entity="settings", detail=payload)
+    db.commit()
+    return cfg
+
+
+@router.get("/auth-config")
+def read_auth_config(request: Request, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    """GET /api/admin/auth-config: read the OIDC/SAML auth config. Admin only.
+
+    ``request`` lets the SSO URLs be derived from the URL the admin is actually
+    browsing when no public base URL is configured (see authconfig)."""
+    return get_auth_config(db, request)
+
+
+@router.put("/auth-config")
+def update_auth_config(request: Request, payload: dict = Body(...), db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    """PUT /api/admin/auth-config: update the OIDC/SAML auth config. Admin only;
+    audits which providers are enabled."""
+    cfg = set_auth_config(db, payload, request)
+    record_audit(db, admin.id, "auth_config.update", entity="auth_config",
+                 detail={"oidc_enabled": cfg["oidc_enabled"], "saml_enabled": cfg["saml_enabled"]})
+    db.commit()
+    return cfg
+
+
+@router.post("/auth-config/test")
+def test_auth_config(request: Request, payload: dict = Body(...), db: Session = Depends(get_db),
+                     admin: User = Depends(require_admin)):
+    """POST /api/admin/auth-config/test: probe the configured IdP. Admin only.
+
+    Tests what is currently on screen, not only what is saved: any field sent in
+    the body is layered over the stored config, so an administrator can check a
+    change before committing it. Read-only; nothing is persisted.
+    """
+    from ..ssotest import test_oidc, test_saml
+
+    provider = (payload.get("provider") or "").lower()
+    cfg = get_auth_config(db, request)
+    # Draft values from the form win, but only for keys we actually manage.
+    for key, value in (payload.get("config") or {}).items():
+        if key in cfg:
+            cfg[key] = value
+    # A blank SSO URL in the draft still means "derive it", so re-resolve.
+    from ..authconfig import derive_sso_urls
+    for key, derived in derive_sso_urls(cfg.get("base_url_effective") or "").items():
+        if not (cfg.get(key) or "").strip():
+            cfg[key] = derived
+
+    if provider == "oidc":
+        return test_oidc(cfg)
+    if provider == "saml":
+        return test_saml(cfg)
+    raise HTTPException(status_code=400, detail="Fournisseur inconnu (attendu : oidc ou saml)")
+
+
+@router.get("/smtp-config")
+def read_smtp_config(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    """GET /api/admin/smtp-config: read outbound email (SMTP) config. Admin only."""
+    from ..smtpconfig import get_smtp
+    return get_smtp(db)
+
+
+@router.put("/smtp-config")
+def update_smtp_config(payload: dict = Body(...), db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    """PUT /api/admin/smtp-config: update the SMTP config. Admin only; audited."""
+    from ..smtpconfig import set_smtp
+    cfg = set_smtp(db, payload)
+    record_audit(db, admin.id, "smtp_config.update", entity="smtp", detail={"enabled": cfg["enabled"], "host": cfg["host"]})
+    db.commit()
+    return cfg
+
+
+@router.post("/smtp-config/test")
+def test_smtp(payload: dict = Body(...), db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    """POST /api/admin/smtp-config/test: send a test email to check SMTP.
+
+    Admin only. Sends to ``payload.to`` or, by default, the admin's own address.
+    Fails with 400 if SMTP is disabled."""
+    from ..smtpconfig import get_smtp
+    from ..mail import last_error, send_email
+    from ..mailbody import app_link, instance_lang, simple_mail
+    to = (payload or {}).get("to") or admin.email
+    cfg = get_smtp(db)
+    if not cfg.get("enabled"):
+        raise HTTPException(status_code=400, detail="SMTP désactivé")
+    lang = instance_lang(db)
+    name = cfg.get("from_name") or "TeamFollowUP"
+    if lang == "en":
+        subject, line = f"[{name}] SMTP test", "If you read this, the mail settings work."
+    else:
+        subject, line = f"[{name}] Test SMTP", "Si vous lisez ceci, la configuration des mails fonctionne."
+    body = simple_mail(subject, [line], lang=lang, why="test", link=app_link(db, "/"))
+    ok = send_email(cfg, to, subject, body, html=True, lang=lang)
+    return {"ok": ok, "to": to, "error": None if ok else last_error()}
+
+
+@router.get("/personas")
+def read_personas(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    """GET /api/admin/personas: list personas (roles) and the full capability
+    catalogue the UI can toggle. Admin only."""
+    from ..personasconfig import get_personas, CAPABILITIES, ADMIN_TAB_OPTIONS
+    return {"capabilities": CAPABILITIES, "admin_tab_options": ADMIN_TAB_OPTIONS, "personas": get_personas(db)}
+
+
+@router.put("/personas")
+def update_personas(payload: dict = Body(...), db: Session = Depends(get_db),
+                    admin: User = Depends(require_admin)):
+    """PUT /api/admin/personas: replace the persona definitions. Admin only.
+
+    Side effect: any user whose persona no longer exists is downgraded to
+    ``member`` (the break-glass account is left untouched) so nobody is stranded
+    with an invalid role. Audited."""
+    from ..personasconfig import set_personas, valid_role_keys, CAPABILITIES
+    personas = set_personas(db, payload.get("personas", []))
+    # Reassign users whose persona was removed, so nobody is left without access.
+    valid = valid_role_keys(db)
+    for u in db.scalars(select(User)).all():
+        if u.role not in valid and not u.is_break_glass:
+            u.role = "member"
+    record_audit(db, admin.id, "personas.update", entity="personas",
+                 detail={"keys": [p["key"] for p in personas]})
+    db.commit()
+    from ..personasconfig import ADMIN_TAB_OPTIONS
+    return {"capabilities": CAPABILITIES, "admin_tab_options": ADMIN_TAB_OPTIONS, "personas": personas}
+
+
+@router.get("/modules-config")
+def read_modules_config(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    """GET /api/admin/modules-config: read feature-module enablement. Admin only."""
+    from ..modulesconfig import get_modules
+    return get_modules(db)
+
+
+@router.put("/modules-config")
+def update_modules_config(payload: dict = Body(...), db: Session = Depends(get_db),
+                          admin: User = Depends(require_admin)):
+    """PUT /api/admin/modules-config: enable/disable feature modules. Admin only;
+    audits which modules ended up enabled."""
+    from ..modulesconfig import set_modules
+    cfg = set_modules(db, payload)
+    record_audit(db, admin.id, "modules_config.update", entity="modules",
+                 detail={m: v.get("enabled") for m, v in cfg.items()})
+    db.commit()
+    return cfg
+
+
+def _report_tribe(db: Session, user: User, tribe_id: int | None) -> int | None:
+    """Which schedule a caller works on: an admin picks (None = the all-tribes
+    one, or a tribe's); a tribe leader always gets their own tribe's, and only if
+    the "report" tab is theirs (Admin > Personas)."""
+    if user.role == ADMIN:
+        if tribe_id is not None and db.get(Tribe, tribe_id) is None:
+            raise HTTPException(status_code=404, detail="Tribe introuvable")
+        return tribe_id
+    return acting_manager(db, user, "report").tribe_id
+
+
+@router.get("/report-config")
+def read_report_config(tribe_id: int | None = Query(default=None), db: Session = Depends(get_db),
+                       user: User = Depends(get_current_user)):
+    """GET /api/admin/report-config: the scheduled report of a scope.
+
+    Admin: the all-tribes schedule, or a tribe's with ``?tribe_id=``. Tribe
+    leader: their own tribe's (tab "report" required). ``_tribe_id`` in the
+    answer says which one it is."""
+    from ..reportconfig import get_report
+    tid = _report_tribe(db, user, tribe_id)
+    return {**get_report(db, tid), "_tribe_id": tid}
+
+
+@router.put("/report-config")
+def update_report_config(payload: dict = Body(...), tribe_id: int | None = Query(default=None),
+                         db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """PUT /api/admin/report-config: update a scheduled report (same scopes as the
+    GET). Audited. ``last_sent_day`` / ``last_sent_week`` are scheduler bookkeeping
+    and are stripped from the payload so the UI can never overwrite them."""
+    from ..reportconfig import set_report
+    tid = _report_tribe(db, user, tribe_id)
+    # Bookkeeping owned by the scheduler. The screen sends back the whole object it
+    # loaded: a page opened before the send and saved after it reset the day and
+    # the report went out a second time.
+    payload = {k: v for k, v in (payload or {}).items()
+               if k not in ("last_sent_day", "last_sent_week") and not k.startswith("_")}
+    if tid is not None:
+        # A tribe's schedule only covers that tribe's squads.
+        own = set(db.scalars(select(Squad.id).where(Squad.tribe_id == tid)).all())
+        payload["squad_ids"] = [i for i in (payload.get("squad_ids") or []) if int(i) in own]
+    cfg = set_report(db, payload, tid)
+    record_audit(db, user.id, "report_config.update", entity="weekly_report",
+                 detail={"tribe_id": tid, "enabled": cfg["enabled"], "weekdays": cfg["weekdays"],
+                         "hour": cfg["hour"], "recipients": len(cfg["recipients"])})
+    db.commit()
+    return {**cfg, "_tribe_id": tid}
+
+
+@router.post("/report-config/send-squad-leaders")
+def send_to_squad_leaders(payload: dict = Body(default=None), tribe_id: int | None = Query(default=None),
+                          db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """POST /api/admin/report-config/send-squad-leaders: now, each squad's own
+    document to its leader and co-leaders, one mail per squad.
+
+    Body ``{"squad_ids": [...]}`` (empty = every squad of the scope). A tribe
+    leader only reaches their tribe's squads. 400 when SMTP is off. Audited."""
+    from ..report import send_squad_docs_to_leaders
+    tid = _report_tribe(db, user, tribe_id)
+    q = select(Squad).order_by(Squad.display_order, Squad.id)
+    if tid is not None:
+        q = q.where(Squad.tribe_id == tid)
+    ids = [int(i) for i in ((payload or {}).get("squad_ids") or [])]
+    if ids:
+        q = q.where(Squad.id.in_(ids))
+    squads = db.scalars(q).all()
+    res = send_squad_docs_to_leaders(db, squads)
+    if not res["smtp"]:
+        raise HTTPException(status_code=400, detail="SMTP désactivé")
+    record_audit(db, user.id, "report.send_squad_leaders", entity="weekly_report",
+                 detail={"tribe_id": tid, "squads": [q.id for q in squads], "sent": res["sent"]})
+    db.commit()
+    return res
+
+
+@router.post("/report-config/test")
+def test_report_config(payload: dict = Body(default=None), tribe_id: int | None = Query(default=None),
+                       db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """POST /api/admin/report-config/test: send the scope's report now to the
+    caller (or a chosen address) as a check. Same scopes as the config.
+
+    Builds the current-year report, renders the HTML body and (if python-pptx is
+    available) attaches the PPTX. Fails with 400 if SMTP is disabled. Audited."""
+    from ..smtpconfig import get_smtp
+    from ..mail import last_error
+    from ..mailbody import instance_lang
+    from ..report import _file_base, build_report_data, local_now, render_pptx, report_mail
+
+    tid = _report_tribe(db, user, tribe_id)
+    to = (payload or {}).get("to") or user.email
+    cfg = get_smtp(db)
+    if not cfg.get("enabled"):
+        raise HTTPException(status_code=400, detail="SMTP désactivé")
+    year = reference_year(db)
+    lang = instance_lang(db)
+    data = build_report_data(db, tid, year, 7, lang=lang)
+    pptx_bytes = b""
+    try:
+        pptxtpl.use(pptxtpl.get(db))
+        pptx_bytes = render_pptx(data) or b""
+    except Exception:
+        pass
+    local = local_now(utcnow())
+    week = local.isocalendar()[1]
+    from ..reportcommon import rt
+    subject = rt(lang, "subject", scope=data["scope_name"], w=week) + (" (test)")
+    ok = report_mail(db, cfg, to, subject, data, why="test", week=week, pptx=pptx_bytes,
+                     file_base=_file_base(lang, data["scope_name"], local.date().isoformat()))
+    record_audit(db, user.id, "report_config.test", entity="weekly_report", detail={"ok": ok, "to": to})
+    db.commit()
+    return {"ok": ok, "to": to, "pptx": bool(pptx_bytes), "error": None if ok else last_error()}
+
+
+# ---------- Change-notification emails (on modification) ----------
+@router.get("/change-notify-config")
+def read_change_notify_config(db: Session = Depends(get_db), admin: User = Depends(require_strict_admin)):
+    """GET /api/admin/change-notify-config: read the on-modification email config.
+    Admin only. Also returns the full ``_all_events`` catalogue so the UI can
+    render every available trigger condition."""
+    from ..changeconfig import get_change_notify, ALL_EVENTS
+    cfg = get_change_notify(db)
+    cfg["_all_events"] = ALL_EVENTS  # let the UI render every available condition
+    return cfg
+
+
+@router.put("/change-notify-config")
+def update_change_notify_config(payload: dict = Body(...), db: Session = Depends(get_db),
+                                admin: User = Depends(require_strict_admin)):
+    """PUT /api/admin/change-notify-config: update the on-modification email
+    config. Admin only; audited. Keys prefixed with ``_`` are UI-only helpers
+    (e.g. ``_all_events``) and are stripped before saving."""
+    from ..changeconfig import set_change_notify
+    payload = {k: v for k, v in (payload or {}).items() if not k.startswith("_")}
+    cfg = set_change_notify(db, payload)
+    record_audit(db, admin.id, "change_notify_config.update", entity="change_notify",
+                 detail={"enabled": cfg["enabled"], "events": cfg["events"],
+                         "recipients": len(cfg["recipients"]),
+                         "min_interval_minutes": cfg["min_interval_minutes"]})
+    db.commit()
+    return cfg
+
+
+@router.post("/change-notify-config/test")
+def test_change_notify_config(payload: dict = Body(default=None), db: Session = Depends(get_db),
+                              admin: User = Depends(require_strict_admin)):
+    """POST /api/admin/change-notify-config/test: send a sample change
+    notification (a real squad's export) to verify setup. Admin only.
+
+    Uses ``payload.squad_id`` or the first squad by display order. Fails with 400
+    if SMTP is disabled or no squad exists. Audited."""
+    from ..smtpconfig import get_smtp
+    from ..mail import last_error
+    from ..models import Squad
+    from ..changenotify import _notice, _EVENT_LABEL
+    from ..mailbody import instance_lang
+    from ..report import _file_base, build_report_data, local_now, render_pptx, report_mail
+
+    to = (payload or {}).get("to") or admin.email
+    squad_id = (payload or {}).get("squad_id")
+    cfg = get_smtp(db)
+    if not cfg.get("enabled"):
+        raise HTTPException(status_code=400, detail="SMTP désactivé")
+    squad = db.get(Squad, squad_id) if squad_id else db.scalars(select(Squad).order_by(Squad.display_order, Squad.id)).first()
+    if squad is None:
+        raise HTTPException(status_code=400, detail="Aucune squad disponible pour le test")
+    year = reference_year(db)
+    lang = instance_lang(db)
+    data = build_report_data(db, None, year, 7, squad_id=squad.id, lang=lang, viewer=None)
+    pptx_bytes = b""
+    try:
+        pptxtpl.use(pptxtpl.get(db))
+        pptx_bytes = render_pptx(data) or b""
+    except Exception:
+        pass
+    now = utcnow()
+    notice = _notice(lang, [admin.display_name], [_EVENT_LABEL[lang]["roadmap"]], squad.name, now)
+    subject = (f"[Reporting] {squad.name}: roadmap updated (test)" if lang == "en"
+               else f"[Reporting] {squad.name} : mise à jour (roadmap) (test)")
+    ok = report_mail(db, cfg, to, subject, data, why="test", pptx=pptx_bytes, notice_html=notice,
+                     file_base=_file_base(lang, squad.name, local_now(now).date().isoformat()))
+    record_audit(db, admin.id, "change_notify_config.test", entity="change_notify",
+                 detail={"ok": ok, "to": to, "squad": squad.name})
+    db.commit()
+    return {"ok": ok, "to": to, "squad": squad.name, "error": None if ok else last_error()}
+
+
+@router.get("/log-export-config")
+def read_log_export_config(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    """GET /api/admin/log-export-config: read the audit-log export config (e.g.
+    SIEM destination). Admin only; secrets stay masked."""
+    from ..logexportconfig import get_log_export
+    return get_log_export(db)
+
+
+@router.put("/log-export-config")
+def update_log_export_config(payload: dict = Body(...), db: Session = Depends(get_db),
+                             admin: User = Depends(require_admin)):
+    """PUT /api/admin/log-export-config: update the log-export config. Admin
+    only; audited."""
+    from ..logexportconfig import set_log_export
+    cfg = set_log_export(db, payload)
+    record_audit(db, admin.id, "log_export_config.update", entity="log_export",
+                 detail={"enabled": cfg["enabled"], "destination": cfg["destination"]})
+    db.commit()
+    return cfg
+
+
+@router.post("/log-export-config/test")
+def test_log_export(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    """POST /api/admin/log-export-config/test: push a single synthetic entry to
+    the configured destination to check connectivity. Admin only.
+
+    Reads the config with secrets revealed (needed to actually connect). Fails
+    with 400 if export is disabled. Audited."""
+    from ..logexportconfig import get_log_export
+    from ..logexport import export_entries, sample_entry
+    cfg = get_log_export(db, reveal_secrets=True)
+    if not cfg.get("enabled"):
+        raise HTTPException(status_code=400, detail="Export des logs désactivé")
+    ok, message = export_entries(cfg, [sample_entry()])
+    record_audit(db, admin.id, "log_export.test", entity="log_export",
+                 detail={"destination": cfg["destination"], "ok": ok})
+    db.commit()
+    return {"ok": ok, "message": message, "destination": cfg["destination"]}
+
+
+@router.post("/log-export-config/flush")
+def flush_log_export(payload: dict = Body(default=None), db: Session = Depends(get_db),
+                     admin: User = Depends(require_admin)):
+    """POST /api/admin/log-export-config/flush: export the most recent audit
+    entries on demand. Admin only.
+
+    ``payload.limit`` (default 200) is clamped to 1..1000. Fails with 400 if
+    export is disabled. Audited."""
+    from ..logexportconfig import get_log_export
+    from ..logexport import export_entries, serialize_entries
+    cfg = get_log_export(db, reveal_secrets=True)
+    if not cfg.get("enabled"):
+        raise HTTPException(status_code=400, detail="Export des logs désactivé")
+    limit = int((payload or {}).get("limit") or 200)
+    limit = max(1, min(limit, 1000))
+    entries = serialize_entries(db, limit=limit)
+    ok, message = export_entries(cfg, entries)
+    record_audit(db, admin.id, "log_export.flush", entity="log_export",
+                 detail={"destination": cfg["destination"], "count": len(entries), "ok": ok})
+    db.commit()
+    return {"ok": ok, "message": message, "count": len(entries), "destination": cfg["destination"]}
+
+
+# =============================================================================
+# Trusted certificate authorities (outbound TLS)
+# =============================================================================
+
+@router.get("/trust-store")
+def read_trust_store(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    """GET /api/admin/trust-store: list the trusted authorities, roots and
+    intermediates. Admin only."""
+    from ..trustconfig import status
+    return status(db)
+
+
+@router.post("/trust-store/ca")
+async def trust_add_ca(
+    ca: UploadFile | None = File(default=None),
+    ca_pem: str | None = Form(default=None),
+    name: str | None = Form(default=None),
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    """POST /api/admin/trust-store/ca: add a trusted CA certificate, uploaded or
+    pasted, with an optional friendly ``name``. Admin only.
+
+    The authority is trusted for the app's outbound calls (IdP, SMTP, log export)
+    as soon as this returns, with no restart. Empty/invalid input yields 400.
+    Audited."""
+    from ..trustconfig import add_ca
+    pem = (await ca.read()).decode("utf-8", errors="replace") if ca is not None else (ca_pem or "")
+    if not pem.strip():
+        raise HTTPException(status_code=400, detail="Certificat d'autorité requis (fichier ou texte).")
+    try:
+        cfg = add_ca(db, pem, (name or "").strip() or None)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Ajout d'autorité impossible : {exc}")
+    record_audit(db, admin.id, "trust_store.add_ca", entity="trust", detail={"name": name})
+    db.commit()
+    return cfg
+
+
+@router.delete("/trust-store/ca/{ca_id}")
+def trust_remove_ca(ca_id: str, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    """DELETE /api/admin/trust-store/ca/{ca_id}: remove a trusted CA, withdrawing
+    the trust immediately. Admin only. Unknown id yields 404. Audited."""
+    from ..trustconfig import remove_ca
+    try:
+        cfg = remove_ca(db, ca_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    record_audit(db, admin.id, "trust_store.remove_ca", entity="trust", detail={"ca_id": ca_id})
+    db.commit()
+    return cfg
+
+
+@router.get("/trust-store/ca/{ca_id}/download")
+def trust_download_ca(ca_id: str, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    """GET /api/admin/trust-store/ca/{ca_id}/download: download a trusted CA as a
+    PEM attachment. Admin only. Unknown id yields 404."""
+    from ..trustconfig import export_ca_pem
+    try:
+        pem = export_ca_pem(db, ca_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return PlainTextResponse(pem, headers={"Content-Disposition": f'attachment; filename="ca-{ca_id}.pem"'})
+
+
+# ----- Ops / Maintenance (Admin -> Ops) --------------------------------------
+# Runtime diagnostics + a self-restart button. Environment configuration is read
+# at boot, so applying a change needs a restart; rather than shell in, an admin
+# can trigger it here. See app/ops.py.
+
+@router.get("/runtime")
+def read_runtime(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    """GET /api/admin/runtime : read-only runtime diagnostics (version, host, uptime,
+    serving mode, whether a restart is pending). Admin only."""
+    from ..ops import runtime_status
+    return runtime_status()
+
+
+@router.post("/restart")
+def restart_app(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    """POST /api/admin/restart : gracefully restart the application.
+
+    Schedules a SIGTERM on our own process right after this response; uvicorn drains
+    in-flight requests and exits, and the orchestrator (Docker/Kubernetes) restarts
+    the container with the current configuration applied. Admin only. Audited.
+    Returns whether the restart was scheduled and whether a supervisor will bring the
+    process back (``auto_restart``)."""
+    from ..ops import request_restart
+    record_audit(db, admin.id, "ops.restart", entity="ops", detail={})
+    db.commit()
+    return request_restart()
+
+
+@router.get("/logs")
+def read_logs(limit: int = 500, level: str | None = None,
+              db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    """GET /api/admin/logs?limit=&level= : recent application log records from the
+    in-memory ring buffer (oldest first), plus the current level and buffer stats.
+    ``level`` filters to that severity and above. Admin only."""
+    from .. import logbuffer
+    st = logbuffer.stats()
+    return {
+        "level": logbuffer.current_level(),
+        "levels": logbuffer.LEVELS,
+        "count": st["count"],
+        "capacity": st["capacity"],
+        "records": logbuffer.records(limit=limit, min_level=level),
+    }
+
+
+@router.get("/logs/download")
+def download_logs(fmt: str = "txt", level: str | None = None,
+                  db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    """GET /api/admin/logs/download?fmt=txt|json&level= : download the buffered logs
+    as a text or NDJSON attachment. Admin only. Audited."""
+    from .. import logbuffer
+    items = logbuffer.records(limit=logbuffer.CAPACITY, min_level=level)
+    record_audit(db, admin.id, "ops.logs_download", entity="ops", detail={"fmt": fmt, "n": len(items)})
+    db.commit()
+    if fmt == "json":
+        body, media, ext = logbuffer.as_ndjson(items), "application/x-ndjson", "ndjson"
+    else:
+        body, media, ext = logbuffer.as_text(items), "text/plain; charset=utf-8", "log"
+    return PlainTextResponse(body, media_type=media,
+                             headers={"Content-Disposition": f'attachment; filename="app-logs.{ext}"'})
+
+
+@router.post("/log-level")
+def set_log_level(payload: dict = Body(...), db: Session = Depends(get_db),
+                  admin: User = Depends(require_admin)):
+    """POST /api/admin/log-level : set the live log level (root + uvicorn loggers).
+
+    Body: ``{"level": "DEBUG"|..., "persist": bool}``. When ``persist`` is true the
+    level is stored and re-applied on the next restart. Admin only. Audited."""
+    from .. import logbuffer
+    level = str((payload or {}).get("level", "")).upper()
+    persist = bool((payload or {}).get("persist"))
+    try:
+        applied = logbuffer.set_live_level(level)
+        if persist:
+            logbuffer.persist_level(db, level)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    record_audit(db, admin.id, "ops.set_log_level", entity="ops", detail={"level": applied, "persist": persist})
+    db.commit()
+    return {"level": applied, "persisted": persist}
+
+
+@router.post("/logs/clear")
+def clear_logs(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    """POST /api/admin/logs/clear : empty the in-memory log buffer. Admin only. Audited."""
+    from .. import logbuffer
+    logbuffer.clear()
+    record_audit(db, admin.id, "ops.logs_clear", entity="ops", detail={})
+    db.commit()
+    return {"ok": True}
+
+
+# ----- API keys (Admin -> API) ------------------------------------------------
+# A key is a service credential: created here, shown ONCE, then only ever
+# identified by its prefix. See app/apikeys.py for the model and the scopes.
+
+@router.get("/api-keys")
+def list_api_keys(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    """GET /api/admin/api-keys: list API keys (public view: prefix only, never
+    the secret) plus the catalogue of assignable scopes. Admin only."""
+    from ..apikeys import SCOPES, public
+    from ..models import ApiKey
+    keys = db.scalars(select(ApiKey).order_by(ApiKey.created_at.desc())).all()
+    return {"scopes": SCOPES, "keys": [public(k) for k in keys]}
+
+
+@router.post("/api-keys", status_code=201)
+def create_api_key(payload: dict = Body(...), db: Session = Depends(get_db),
+                   admin: User = Depends(require_admin)):
+    """POST /api/admin/api-keys: mint a service API key (201). Admin only.
+
+    The plaintext secret is returned HERE AND NOWHERE ELSE (only its hash is
+    stored). Requires a name and at least one valid scope; an optional
+    ``expires_in_days`` (>= 1) sets expiry, and ``tribe_id`` scopes the key to a
+    tribe. Invalid input yields 400. Audited."""
+    from datetime import timedelta
+
+    from ..apikeys import generate_key, hash_key, normalize_scopes, public, split_key
+    from ..models import ApiKey, utcnow
+
+    name = (payload.get("name") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Nom requis")
+    scopes = normalize_scopes(payload.get("scopes"))
+    if not scopes:
+        raise HTTPException(status_code=400, detail="Au moins un scope est requis")
+
+    expires_at = None
+    days = payload.get("expires_in_days")
+    if days not in (None, "", 0):
+        try:
+            days = int(days)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="Durée de validité invalide")
+        if days < 1:
+            raise HTTPException(status_code=400, detail="Durée de validité invalide")
+        expires_at = utcnow() + timedelta(days=days)
+
+    _check_tribe(db, payload.get("tribe_id"))
+    secret, prefix = generate_key()
+    key = ApiKey(
+        name=name,
+        prefix=prefix,
+        key_hash=hash_key(split_key(secret)[1]),
+        scopes=scopes,
+        tribe_id=payload.get("tribe_id"),
+        created_by_user_id=admin.id,
+        expires_at=expires_at,
+    )
+    db.add(key)
+    db.flush()
+    record_audit(db, admin.id, "api_key.create", entity="api_key", entity_id=key.id,
+                 detail={"name": name, "prefix": prefix, "scopes": scopes,
+                         "tribe_id": key.tribe_id})
+    db.commit()
+    # `secret` is the only time the caller will ever see it.
+    return {**public(key), "secret": secret}
+
+
+@router.post("/api-keys/{key_id}/revoke")
+def revoke_api_key(key_id: int, db: Session = Depends(get_db),
+                   admin: User = Depends(require_admin)):
+    """POST /api/admin/api-keys/{key_id}/revoke: revoke a key. Admin only.
+
+    Revoking is immediate and irreversible; the row is kept (not deleted) for the
+    audit trail. Idempotent: re-revoking an already-revoked key is a no-op.
+    Unknown id yields 404. Audited on the first revoke."""
+    from ..apikeys import public
+    from ..models import ApiKey, utcnow
+    key = db.get(ApiKey, key_id)
+    if key is None:
+        raise HTTPException(status_code=404, detail="Clé introuvable")
+    if key.revoked_at is None:
+        key.revoked_at = utcnow()
+        record_audit(db, admin.id, "api_key.revoke", entity="api_key", entity_id=key.id,
+                     detail={"name": key.name, "prefix": key.prefix})
+        db.commit()
+    return public(key)
+
+
+@router.delete("/api-keys/{key_id}", status_code=204)
+def delete_api_key(key_id: int, db: Session = Depends(get_db),
+                   admin: User = Depends(require_admin)):
+    """DELETE /api/admin/api-keys/{key_id}: permanently delete a key (204). Admin
+    only. Unlike revoke, this removes the row entirely. Unknown id yields 404.
+    Audited."""
+    from ..models import ApiKey
+    key = db.get(ApiKey, key_id)
+    if key is None:
+        raise HTTPException(status_code=404, detail="Clé introuvable")
+    record_audit(db, admin.id, "api_key.delete", entity="api_key", entity_id=key.id,
+                 detail={"name": key.name, "prefix": key.prefix})
+    db.delete(key)
+    db.commit()
+
+
+# ----- Organisation import (Admin -> Organisation) ----------------------------
+# Populate a fresh environment (local or sovereign cloud) from a filled Excel file, uploaded
+# through the running app. No image rebuild is needed: the file is parsed in
+# memory and imported idempotently (see app/import_org.py).
+
+_XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+_PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+
+
+@router.get("/import-org/template")
+def download_org_template(admin: User = Depends(require_admin)):
+    """GET /api/admin/import-org/template: download the blank Excel template
+    (4 sheets: Tribu / Squads / Initiatives / OTD) to fill in. Admin only."""
+    from ..import_org import template_bytes
+    return Response(
+        content=template_bytes(),
+        media_type=_XLSX_MIME,
+        headers={"Content-Disposition": 'attachment; filename="org.template.xlsx"'},
+    )
+
+
+@router.post("/import-org")
+async def import_org_upload(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    """POST /api/admin/import-org: upload a filled Excel (.xlsx) or YAML file and
+    import the organisation (tribe, squads + leaders, initiatives, OTD). Admin
+    only. Idempotent: re-running updates existing rows instead of duplicating.
+
+    Returns a summary of what was processed. 400 if the file is the wrong format
+    or has no tribe. Audited."""
+    from ..import_org import import_org, read_upload
+
+    content = await file.read()
+    try:
+        data = read_upload(file.filename or "", content)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    if not data or not (data.get("tribe") or {}).get("name"):
+        raise HTTPException(status_code=400, detail="Le fichier doit définir une tribe (onglet 'Tribe' rempli).")
+    try:
+        summary = import_org(db, data)
+    except Exception as exc:  # bad references, malformed cells, etc.
+        db.rollback()
+        raise HTTPException(status_code=400, detail=f"Import impossible : {exc}")
+    record_audit(db, admin.id, "org.import", entity="tribe", detail=summary)
+    db.commit()
+    return summary
+
+
+# ----- Apparence (Admin -> Personnalisation) -----------------------------------
+
+@router.get("/branding")
+def read_branding(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    """GET /api/admin/branding : le theme complet, tel qu'il est stocke. Admin.
+
+    La configuration publique n'en publie que ce que la page applique; cet
+    endpoint rend tout, parce que l'ecran de personnalisation doit pouvoir
+    reafficher ce qui a ete choisi."""
+    from ..branding import get_branding
+    return get_branding(db)
+
+
+@router.put("/branding")
+def update_branding(payload: dict = Body(...), db: Session = Depends(get_db),
+                    admin: User = Depends(require_admin)):
+    """PUT /api/admin/branding : change l'apparence. Admin uniquement. Audite.
+
+    Modification partielle; ``{"reset": true}`` revient au theme livre, ce qui est
+    la seule sortie sure d'une combinaison devenue illisible. Les valeurs sont
+    validees par forme cote serveur (voir app/branding.py): elles finissent dans
+    une feuille de style."""
+    from ..branding import set_branding
+    cfg = set_branding(db, payload)
+    # Le detail d'audit ne porte pas les images: une data URI de 400 ko dans le
+    # journal le rendrait illisible et le ferait grossir a chaque essai.
+    record_audit(db, admin.id, "branding.update", entity="settings",
+                 detail={k: v for k, v in cfg.items() if not str(v).startswith("data:")})
+    db.commit()
+    return cfg
+
+
+# ----- Steerco import (Admin -> Import) ---------------------------------------
+# Collect a squad's Steerco data (KPI/SLA/incidents/events, 12 months) in an Excel
+# file and upload it here; parsed in memory and written to SteercoEntry rows.
+
+@router.get("/import-steerco/template")
+def download_steerco_template(platform_id: int | None = None, db: Session = Depends(get_db),
+                              admin: User = Depends(require_admin_tab("platforms"))):
+    """GET /api/admin/import-steerco/template?platform_id= : download the Steerco Excel
+    template (Infos / KPIs / SLA / Incidents / Evenements) to fill in. Admin only.
+
+    With ``platform_id`` the workbook is built *for that platform*: its name is
+    pre-filled and the KPI / SLA rows come from its slide template, so the file asks
+    for exactly what will be rendered. Without it, the standard structure."""
+    from ..models import Platform
+    from ..steerco_import import structure_for_platform, template_bytes
+    kpis = services = None
+    name = ""
+    if platform_id is not None:
+        platform = db.get(Platform, platform_id)
+        if platform is None or (admin.role != ADMIN and platform.tribe_id != admin.tribe_id):
+            raise HTTPException(status_code=404, detail="Plateforme introuvable")
+        kpis, services = structure_for_platform(db, platform_id)
+        name = platform.name
+    slug = "".join(c if c.isalnum() else "-" for c in name).strip("-").lower() or "template"
+    return Response(
+        content=template_bytes(None, kpis, services, name),
+        media_type=_XLSX_MIME,
+        headers={"Content-Disposition": f'attachment; filename="steerco.{slug}.xlsx"'},
+    )
+
+
+@router.post("/import-steerco")
+async def import_steerco_upload(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin_tab("platforms")),
+):
+    """POST /api/admin/import-steerco : upload a filled Steerco Excel and write the
+    platform's monthly snapshots (12-month history + full current month). Admin only.
+    Idempotent per (platform, period). 400 on wrong format / unknown platform. Audited."""
+    from ..steerco_import import import_steerco
+
+    content = await file.read()
+    try:
+        # Held by the "Platforms and Steerco" tab: a tribe leader imports into the
+        # platforms of their own tribe only.
+        summary = import_steerco(db, content, user_id=admin.id,
+                                 tribe_id=None if admin.role == ADMIN else admin.tribe_id)
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:  # malformed cells, etc.
+        db.rollback()
+        raise HTTPException(status_code=400, detail=f"Import impossible : {exc}")
+    record_audit(db, admin.id, "steerco.import", entity="platform",
+                 entity_id=summary.get("platform_id"), detail=summary)
+    db.commit()
+    return summary
+
+
+# ----- PPTX export template (Admin -> Settings) -------------------------------
+# Upload a .pptx once; every PPTX export (reports, roadmap, dependencies, org,
+# initiatives, steerco) is then built on it, so decks carry the org's branding.
+# See app/pptxtpl.py. Off by default -> plain white deck.
+
+@router.get("/pptx-template")
+def pptx_template_status(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    """GET /api/admin/pptx-template : is a template configured, and its light metadata
+    (filename, size, when, by whom). Never returns the file bytes. Admin only."""
+    return pptxtpl.meta(db)
+
+
+@router.post("/pptx-template")
+async def pptx_template_upload(file: UploadFile = File(...), db: Session = Depends(get_db),
+                              admin: User = Depends(require_admin)):
+    """POST /api/admin/pptx-template : upload the .pptx used as the base for every PPTX
+    export. Replaces any previous one. 400 if the file is not a usable .pptx. Admin only."""
+    content = await file.read()
+    try:
+        info = pptxtpl.save(db, file.filename or "template.pptx", content, uploaded_by=admin.email)
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc))
+    record_audit(db, admin.id, "pptx_template.set", entity="settings",
+                 detail={"filename": info["filename"], "size": info["size"]})
+    db.commit()
+    return {"present": True, **info}
+
+
+@router.get("/pptx-template/download")
+def pptx_template_download(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    """GET /api/admin/pptx-template/download : download the current template. 404 if none."""
+    data = pptxtpl.get(db)
+    if data is None:
+        raise HTTPException(status_code=404, detail="Aucun template PPTX configuré.")
+    name = (pptxtpl.meta(db).get("filename") or "template.pptx")
+    return Response(content=data, media_type=_PPTX_MIME,
+                    headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
+@router.delete("/pptx-template")
+def pptx_template_delete(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    """DELETE /api/admin/pptx-template : remove the template; exports fall back to the
+    default deck. Admin only. Audited."""
+    pptxtpl.clear(db)
+    record_audit(db, admin.id, "pptx_template.clear", entity="settings", detail={})
+    db.commit()
+    return {"present": False}

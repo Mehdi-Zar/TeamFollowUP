@@ -1,0 +1,69 @@
+# 11 - Roadmap & Enterprise Readiness
+
+## Enterprise readiness assessment
+
+| Dimension | Maturity | Notes |
+|-----------|----------|-------|
+| Product completeness | 🟢 High | Coherent, covers the tribe-steering job end to end |
+| UX/UI | 🟢 High | Modern, responsive, accessible (AA-leaning), i18n FR/EN |
+| Code quality | 🟢 High | Layered, typed, tested (backend), low dead code |
+| Architecture | 🟡 Medium | Clean monolith; single-replica assumptions; no HA |
+| Security | 🟢 High | RBAC + **env-driven cookie hardening + login throttle + default-secret guard** |
+| Testing | 🟢 High | Backend 344 (76% covered, gated) + frontend Vitest 11 + **Playwright 12 against the real stack** + K8s/SSO bench (18 checks) |
+| DevOps/CI-CD | 🟢 High | Reproducible build + **CI (tests/typecheck/build/i18n/audit)** + Dependabot; no CD/envs yet |
+| Observability | 🟢 High | Structured logs + audit + **Prometheus metrics, 7 alert rules, ready-to-run Grafana stack**; external uptime probe still to add |
+| Data/BCP | 🟢 High | Backup sidecar with **verified dumps**, a **tested** restore procedure and a drill protocol ([19](19-plan-de-reprise.md)); off-host copies, encryption and PITR still to arrange |
+| Compliance/Governance | 🟢 High | Audit log + access control + **enforced retention** + a documented GDPR posture ([20](20-donnees-personnelles-et-retention.md)); DPAs and retention durations are the organisation's call |
+| Multi-tenancy/SaaS | 🔴 Low | Tribe scoping only; not isolated for external tenants |
+| FinOps | 🔴 Low | Single small footprint; no cost controls/metrics |
+
+**Verdict:** ready for **internal production** after the P0 hardening (secrets/TLS + backups);
+needs the P1 track before scale or external/SaaS use.
+
+## Roadmap
+
+### Quick wins (days)
+- [x] CI pipeline (backend tests + FE typecheck/test/build + i18n parity + image build) - `.github/workflows/ci.yml`
+- [x] `.env.example` documenting all config/secrets
+- [x] Startup guard: loud warning when default `SECRET_KEY`/Postgres password are in use (`main.py`)
+- [x] `https_only` / `SameSite` session cookie now **env-driven** (`COOKIE_SECURE`, `COOKIE_SAMESITE`)
+- [x] Scheduled `pg_dump` backup sidecar with rotation (`docker compose --profile backup up -d`)
+- [x] `pip-audit` + `npm audit` (non-blocking CI job) + Dependabot (`.github/dependabot.yml`)
+- [x] Commit `openapi.json` snapshot **+ CI staleness check** (`backend/scripts/dump_openapi.py --check`)
+
+### High impact (weeks)
+- [x] Observability: structured logs (`LOG_FORMAT=json`) + **Prometheus metrics + alert rules + Grafana stack** (`ops/`, [17](17-observabilite.md)); external uptime probe still to add
+- [x] Login rate-limiting (per-IP throttle, env-configurable) - `auth.py`
+- [x] Frontend tests (Vitest, 11) wired into CI; **E2E (Playwright, 12 tests against the real Docker stack)** - `e2e/`, [18](18-tests-e2e.md)
+- [x] Externalize the scheduler via **Postgres advisory lock** (multi-replica safe) - `main.py`
+- [x] Performance: **eager-loading** on dashboard/report (N+1 removed) + **route code-splitting**
+      (initial bundle 384→246 KB); **audit log paginated + filterable** (action, entity, user, date range)
+- [x] Data retention: opt-in purge of old audit/auto-progress records (`maintenance.py`)
+
+### Strategic investments (quarter)
+- [ ] Environment promotion (dev → staging → prod) + CD with migrations gating - **deliberately not started**: a deploy pipeline is only verified by deploying, and shipping one that has never run is worse than the manual procedure that is written down and has been followed ([13](13-maintenance-and-updates.md)). See DECISIONS.md
+- [x] Backups → **DR runbook with stated RPO/RTO and a restore procedure that was actually executed** ([19](19-plan-de-reprise.md)); off-host copies and alerting on failed backups still open
+- [x] Split large components (`AdminPage.tsx` 3085 → 152, `report.py` 2440 → 1400); design tokens deferred by decision (DECISIONS.md)
+- [x] Data retention **enforced** (audit log + feed) and the GDPR posture written down: what is stored, for how long, who sees it, and how to answer an access or erasure request ([20](20-donnees-personnelles-et-retention.md)). The organisation-level decisions it lists (retention durations, the free-text leave reason, DPAs) are deliberately left open
+
+### Long-term evolution
+- [ ] True multi-tenancy / SaaS (per-tenant isolation, billing, FinOps dashboards)
+- [ ] External integrations (Jira/Azure DevOps roadmap & status sync)
+- [ ] Real-time collaboration (websockets) on reporting/feed
+- [ ] Analytics & trends (objective/roadmap velocity, predictive risk)
+
+## Architecture roadmap (target for scale)
+
+```mermaid
+flowchart LR
+  LB[Reverse proxy / TLS] --> APP1[app replica 1]
+  LB --> APP2[app replica 2]
+  APP1 --> PG[(Postgres primary)]
+  APP2 --> PG
+  PG --> PGR[(read replica)]
+  SCHED[Scheduler worker\nleader-elected] --> PG
+  APP1 --> OBS[(Metrics/Logs/Alerts)]
+  APP2 --> OBS
+  BK[Backup job] --> PG
+```
+</content>

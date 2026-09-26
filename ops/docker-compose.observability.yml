@@ -1,0 +1,53 @@
+# A local observability stack: Prometheus scrapes the app, Grafana graphs it.
+#
+# Deliberately separate from the project's docker-compose.yml: monitoring is not
+# part of the product, and nobody should have to run Prometheus to run the app.
+#
+#   docker compose -f ops/docker-compose.observability.yml up -d
+#   Prometheus  http://localhost:9090
+#   Grafana     http://localhost:3000   (admin / admin)
+#
+# Full walkthrough, including what to graph and what each alert means: docs/17.
+
+services:
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      # Two days is plenty to learn the tool and to investigate an incident that
+      # just happened. Raise it if you keep this stack around.
+      - --storage.tsdb.retention.time=2d
+      # Needed for Grafana to be able to query while Prometheus is still writing.
+      - --web.enable-lifecycle
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus:/etc/prometheus:ro
+      - prometheus_data:/prometheus
+    extra_hosts:
+      # Lets the scrape config reach the app running on the host (Linux needs this
+      # explicitly; Docker Desktop provides it already).
+      - "host.docker.internal:host-gateway"
+
+  grafana:
+    image: grafana/grafana:11.5.1
+    restart: unless-stopped
+    depends_on: [prometheus]
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      # This stack is local and throwaway. Do not copy these two lines anywhere
+      # that is reachable by anyone else.
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana_data:/var/lib/grafana
+
+volumes:
+  prometheus_data:
+  grafana_data:

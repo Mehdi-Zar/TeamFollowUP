@@ -1,0 +1,1012 @@
+/**
+ * SquadDetailPage - the read-oriented detail view of a single squad for a year.
+ *
+ * Assembles the full squad picture: header (progress, freshness, products), the
+ * assigned initiatives, dated commitments (OTD), the per-quarter roadmap, key
+ * messages + budget, incoming dependencies, KPIs, committees, the team org chart
+ * and the reporting history. Each section is gated by its module flag and, where
+ * data is sensitive (OTD, KPIs, budget), by role: see the `privileged`,
+ * `canToggleBudget` and `leadsThisSquad` checks in the main component. Editing of
+ * key messages / budget / committees happens inline via small panels here; the
+ * heavy roadmap/objective editing lives on the reporting (EntryPage) instead.
+ */
+import { useEffect, useState } from "react";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { api, errorText } from "../api";
+import { useI18n } from "../i18n";
+import { useModule } from "../config";
+import { Budget, Committee, CommitteeFrequency, DependentItem, Initiative, Member, RoadmapItem, SnapshotMeta, SquadDetail, Weekday } from "../types";
+import { Dot, FreshnessBadge, ProgressBar, Spinner, ErrorBanner, Collapsible } from "../components/ui";
+import { InitiativesCard } from "../components/InitiativesCard";
+import { OtdPanel } from "../components/OtdPanel";
+import KeyMessagesPanel from "../components/KeyMessagesPanel";
+import TeamMood from "../components/TeamMood";
+import { useAuth } from "../auth";
+import ExportMenu from "../components/ExportMenu";
+import { useSetPageChrome } from "../components/pageChrome";
+import { roadmapRag, trendRag } from "../labels";
+import { contributesTo, leadsSquad } from "../perms";
+import { ReportingButton } from "../components/ReportingModal";
+
+/**
+ * Squad detail root. Reads the squad id from the route and the year from the
+ * `?year=` query param; loads the squad, its snapshots, incoming dependents and
+ * initiatives, then computes the viewer's edit rights before rendering sections.
+ */
+export default function SquadDetailPage() {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const squadId = Number(id);
+  const { t, roadmap, trend, formatNumber } = useI18n();
+  const [params, setParams] = useSearchParams();
+  const yearParam = params.get("year");
+  const [squad, setSquad] = useState<SquadDetail | null>(null);
+  const [snapshots, setSnapshots] = useState<SnapshotMeta[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [openJalon, setOpenJalon] = useState<RoadmapItem | null>(null);
+  const [dependents, setDependents] = useState<DependentItem[]>([]);
+  const [initiatives, setInitiatives] = useState<Initiative[]>([]);
+  const [sendMsg, setSendMsg] = useState<string | null>(null);
+  const moduleOn = useModule();
+  const roadmapOn = moduleOn("squad_content", "roadmap");
+  const kpisOn = moduleOn("squad_content", "kpis");
+  const committeesOn = moduleOn("committees");
+  const { user, effectiveRole, adminTabs, can } = useAuth();
+
+  // Re-fetch the squad in place (no spinner flash) after a budget / key-message edit.
+  const reload = () => {
+    const q = yearParam ? `?year=${yearParam}` : "";
+    api.get<SquadDetail>(`/api/squads/${squadId}${q}`).then(setSquad).catch((e) => setError(e.message));
+  };
+
+  useEffect(() => {
+    const q = yearParam ? `?year=${yearParam}` : "";
+    // The page stays on screen while the other year loads (it used to blank out
+    // and flicker); a new squad starts from the spinner.
+    setSquad((cur) => (cur && cur.id === squadId ? cur : null));
+    setError(null);
+    let alive = true;
+    api.get<SquadDetail>(`/api/squads/${squadId}${q}`)
+      .then((d) => { if (alive) setSquad(d); })
+      .catch((e) => { if (alive) setError(errorText(e)); });
+    // The history of the year on screen (by default the instance's year).
+    api.get<SnapshotMeta[]>(`/api/squads/${squadId}/snapshots${yearParam ? `?year=${yearParam}` : ""}`)
+      .then((d) => { if (alive) setSnapshots(d); }).catch(() => {});
+    return () => { alive = false; };
+  }, [squadId, yearParam]);
+
+  // Once the squad (and thus its year) is known, load the year-scoped extras.
+  useEffect(() => {
+    if (!squad) return;
+    api.get<DependentItem[]>(`/api/squads/${squadId}/dependents?year=${squad.year}`).then(setDependents).catch(() => {});
+    api.get<Initiative[]>(`/api/initiatives?year=${squad.year}&squad_id=${squadId}`).then(setInitiatives).catch(() => {});
+  }, [squadId, squad?.year]);
+
+  // "Send to the squad leader": this squad's document only, to its leader and
+  // co-leaders. For the admin and the squad's tribe leader (the server also
+  // wants the tribe leader to hold the "report" tab).
+  const chromeRole = effectiveRole ?? "member";
+  const canSendToLeader = !!squad && adminTabs.includes("report") && (chromeRole === "admin" ||
+    user?.tribe_id === squad.tribe_id);
+  // Whoever leads the squad updates it in the reporting: say where, from here.
+  // Its leadership and its contributors: both fill it in, in the reporting.
+  const leadsIt = !!squad && (leadsSquad(chromeRole, user?.id, squad) || contributesTo(user?.id, squad));
+  async function sendToLeader() {
+    setSendMsg(null);
+    try {
+      const r = await api.post<{ sent: number }>("/api/admin/report-config/send-squad-leaders", { squad_ids: [squadId] });
+      setSendMsg(r.sent ? t("squad.send_leader_done") : t("squad.send_leader_none"));
+    } catch (e) { setSendMsg(errorText(e)); }
+  }
+
+  useSetPageChrome(
+    squad
+      ? {
+          title: squad.name,
+          actions: (
+            <>
+              <div className="seg">
+                {[squad.year - 1, squad.year, squad.year + 1].map((y) => (
+                  <button key={y} className={y === squad.year ? "active" : ""} aria-pressed={y === squad.year} onClick={() => setParams({ year: String(y) })}>{y}</button>
+                ))}
+              </div>
+              {leadsIt && (
+                <Link to={`/saisie?squad=${squadId}&year=${squad.year}`} className="btn btn-sm">{t("squad.update_in_reporting")}</Link>
+              )}
+              <ReportingButton squadId={squadId} />
+              <ExportMenu year={squad.year} squadId={squadId} />
+              {canSendToLeader && (
+                <button className="btn-secondary btn-sm" onClick={sendToLeader}>{t("squad.send_leader")}</button>
+              )}
+            </>
+          ),
+        }
+      : {},
+    [squad?.name, squad?.year, squadId, canSendToLeader, leadsIt]
+  );
+
+  if (error) return <ErrorBanner message={error} />;
+  if (!squad) return <Spinner />;
+
+  // The budget shows to whoever leads the squad, its tribe leader and admins (server: is_squad_privileged).
+  const role = effectiveRole ?? "member";
+  // Diriger cette squad, c'est en etre le leader nomme ou l'un de ses co-leaders:
+  // `leadsSquad` porte la regle une fois pour toutes, du meme cote que le serveur.
+  // Les deux tests etaient ecrits a la main ici, sur le seul `leader_user_id`: un
+  // co-leader ne voyait donc ni les objectifs, ni les messages cles, ni les
+  // engagements de sa propre squad, alors que l'API les lui ouvrait.
+  const leadsThisSquad = leadsSquad(role, user?.id, squad);
+  const privileged =
+    leadsThisSquad || (role === "tribe_leader" && user?.tribe_id === squad.tribe_id);
+  // Managing the squad's set-up (the tribe leader of its tribe, or an admin).
+  const canToggleBudget = role === "admin" || (role === "tribe_leader" && user?.tribe_id === squad.tribe_id);
+  // Where each read-only section is edited, for whoever may edit it. The weekly
+  // content in the reporting (the squad's leadership), the management's content
+  // in My squads (tribe leader, admin); the link opens this squad, on this year.
+  const saisieTo = leadsIt ? `/saisie?squad=${squad.id}&year=${squad.year}` : undefined;
+  // Everything that sets the squad up (team, budget, committees, the management's
+  // OTD) is managed in My squads, by its tribe leader or by its own leader.
+  const manageTo = (step: string) =>
+    (canToggleBudget || leadsThisSquad) && can("mysquads") ? `/mes-squads?squad=${squad.id}&step=${step}&year=${squad.year}` : undefined;
+  const mySquadsTo = canToggleBudget ? manageTo("otd") : undefined;
+
+  return (
+    <div className="stack" style={{ gap: 18 }}>
+      {sendMsg && <div className="banner small">{sendMsg}</div>}
+      <div className="between">
+        <div>
+          {/* Back where one came from (roadmap, org chart, palette...), else the dashboard on this year. */}
+          <Link to={`/?year=${squad.year}`} className="small muted"
+                onClick={(e) => { if (window.history.state?.idx > 0) { e.preventDefault(); navigate(-1); } }}>
+            {t("common.back")}
+          </Link>
+          <div className="inline" style={{ gap: 12, marginTop: 6 }}>
+            <span className="badge badge-navy">{t("dash.annual")} {squad.annual_progress}%</span>
+            {squad.counts.roadmap_blocked > 0 && <span className="badge badge-red">{t("card.blocked_n", { n: squad.counts.roadmap_blocked })}</span>}
+            {squad.counts.roadmap_at_risk > 0 && <span className="badge badge-orange">{t("card.atrisk_n", { n: squad.counts.roadmap_at_risk })}</span>}
+          </div>
+          <div className="inline" style={{ marginTop: 4 }}>
+            <span className="muted small">{t("squad.squad_leader")}{t("common.colon")}<span className="strong">{squad.leader?.display_name || "-"}</span></span>
+            {!!squad.co_leaders?.length && (
+              <span className="muted small">
+                {t("squad.co_leaders")}{t("common.colon")}<span className="strong">{squad.co_leaders.map((c) => c.display_name).join(", ")}</span>
+              </span>
+            )}
+            {!!squad.contributors?.length && (
+              <span className="muted small">
+                {t("squad.contributors")}{t("common.colon")}<span className="strong">{squad.contributors.map((c) => c.display_name).join(", ")}</span>
+              </span>
+            )}
+            <FreshnessBadge freshness={squad.freshness} />
+          </div>
+          {(squad.products?.length ?? 0) > 0 && (
+            <div className="inline" style={{ marginTop: 6, gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+              <span className="muted small">{t("squad.products")} :</span>
+              {squad.products!.map((p) => <span key={p} className="badge badge-navy">{p}</span>)}
+            </div>
+          )}
+          {(squad.hardware?.length ?? 0) > 0 && (
+            <div className="inline" style={{ marginTop: 4, gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+              <span className="muted small">{t("squad.hardware")} :</span>
+              {squad.hardware!.map((h) => <span key={h} className="badge badge-grey">{h}</span>)}
+            </div>
+          )}
+        </div>
+        {/* Le moral de l'equipe, en haut a droite: la seule donnee de cette page
+            qu'aucun calcul ne produit, et celle que les exports reprennent. */}
+        <TeamMood squadId={squad.id} mood={squad.mood as any} moodAt={squad.mood_at}
+                  comment={squad.mood_comment} canEdit={false} onChange={reload} />
+      </div>
+
+      {squad.description && <div className="muted small">{squad.description}</div>}
+
+      {/* Initiatives assignées à la squad (définies par le tribe leader). */}
+      <InitiativesCard initiatives={initiatives}
+                       editTo={canToggleBudget ? `/initiatives?year=${squad.year}` : undefined}
+                       editLabel={t("squad.manage_initiatives")} />
+
+      {/* Les engagements OTD de cette squad: dates, avec leur statut. Ils vivent au
+          niveau de la tribu, d'ou un panneau qui va les chercher lui-meme. C'est ce
+          que les exports montrent, et ce que cette page taisait. */}
+      {/* Commitments: read by the whole tribe here; edited where they are decided,
+          the squad's own in the reporting, the management's in My squads. */}
+      <OtdPanel squad={squad} canManage={false} canOwn={false} onChange={reload}
+                editTo={saisieTo ?? mySquadsTo}
+                editLabel={saisieTo ? t("squad.update_in_reporting") : t("squad.manage_in_mysquads")} />
+
+      {/* Roadmap par quarter */}
+      {roadmapOn && (
+      <Collapsible title={t("squad.roadmap", { year: squad.year })} defaultOpen
+                   subtitle={t("squad.roadmap_collapsed_hint", { n: squad.roadmap_items.length })}
+                   right={saisieTo ? <Link to={saisieTo} className="small">{t("squad.update_in_reporting")}</Link> : undefined}>
+        <div className="small muted" style={{ marginBottom: 10 }}>{t("jalon.view_hint")}</div>
+        <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}>
+          {[1, 2, 3, 4].map((q) => {
+            const cell = squad.quarter_progress[String(q)];
+            const items = squad.roadmap_items.filter((r) => r.quarter === q);
+            return (
+              <div key={q} className="quarter-block">
+                <div className="between">
+                  <h4>Q{q}</h4>
+                  <span className="small muted">{cell?.progress_pct ?? 0}%</span>
+                </div>
+                <ProgressBar pct={cell?.progress_pct ?? 0} />
+                {cell?.comment && <div className="small muted" style={{ marginTop: 6 }}>{cell.comment}</div>}
+                <div style={{ marginTop: 8 }}>
+                  {items.length === 0 && <div className="small muted">{t("squad.no_jalon")}</div>}
+                  {items.map((r) => (
+                    <div key={r.id} className="item-row clickable-row" role="button" onClick={() => setOpenJalon(r)} tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpenJalon(r); } }} title={t("jalon.details")}>
+                      <Dot status={roadmapRag(r.status)} />
+                      <span className="grow small">{r.title}</span>
+                      <span className="badge badge-navy" style={{ fontSize: 10 }}>{r.release_stage}</span>
+                      <span className="small muted">{roadmap(r.status)}</span>
+                      <span className="chevron">›</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </Collapsible>
+      )}
+
+      {/* Messages clés + Budget, directement sous la roadmap */}
+      <div className="grid" style={{ gridTemplateColumns: privileged ? "repeat(auto-fit, minmax(320px, 1fr))" : "1fr", gap: 18, alignItems: "start" }}>
+        <KeyMessagesPanel squad={squad} canEdit={false} onChange={reload}
+                          editTo={saisieTo}
+                          editLabel={t("squad.update_in_reporting")} />
+        {privileged && <BudgetPanel squad={squad} canEdit={false} canToggle={false} onChange={reload} manageTo={manageTo("budget")} />}
+      </div>
+
+      {/* What other squads are waiting on from this squad (incoming dependencies). */}
+      {roadmapOn && dependents.length > 0 && (
+        <Collapsible title={t("dep.incoming_title")} defaultOpen
+                     subtitle={t("dep.incoming_collapsed_hint", { n: dependents.length })}>
+          <div className="small muted" style={{ marginBottom: 10 }}>{t("dep.incoming_hint")}</div>
+          {dependents.map((d, i) => (
+            <div key={i} className="item-row">
+              <Dot status={roadmapRag(d.status)} />
+              <Link to={`/squads/${d.squad_id}${squad.year ? `?year=${squad.year}` : ""}`} className="grow">
+                <span className="strong small">{d.squad_name}</span>
+                <span className="small muted">, Q{d.quarter}, {d.title}</span>
+              </Link>
+              <span className="badge badge-grey">{d.via === "tribe" ? t("dep.via_tribe") : t("dep.via_squad")}</span>
+            </div>
+          ))}
+        </Collapsible>
+      )}
+
+      {openJalon && <JalonView jalon={openJalon} onClose={() => setOpenJalon(null)} t={t} roadmap={roadmap} />}
+
+      {/* KPIs (optionnels) - visibles par le squad leader / tribe leader / admin */}
+      {squad.kpis_enabled && kpisOn && (
+        <Collapsible title={t("squad.kpis")} defaultOpen
+                     subtitle={t("squad.kpis_collapsed_hint", { n: squad.kpis.length })}
+                     right={saisieTo ? <Link to={saisieTo} className="small">{t("squad.update_in_reporting")}</Link> : undefined}>
+          {/* KPI values are current ones, not per year: say it, the year selector above does not move them. */}
+          <div className="small muted" style={{ marginBottom: 6 }}>{t("kpi.no_year_hint")}</div>
+          {squad.kpis.length === 0 && <div className="small muted">{t("squad.no_kpi")}</div>}
+          {squad.kpis.map((k) => (
+            <div key={k.id} className="item-row">
+              <Dot status={trendRag(k.trend_status)} />
+              <div className="grow">
+                <div>{k.name}</div>
+                {k.comment && <div className="small muted">{k.comment}</div>}
+              </div>
+              <span className="small muted" style={{ textAlign: "right" }}>
+                <div>{trend(k.trend_status)}</div>
+                {(k.current_value ?? null) !== null || (k.target_value ?? null) !== null ? (
+                  <div>
+                    {formatNumber(k.current_value)}
+                    {k.target_value != null ? ` / ${formatNumber(k.target_value)}` : ""}
+                    {k.unit ? ` ${k.unit}` : ""}
+                  </div>
+                ) : null}
+              </span>
+            </div>
+          ))}
+        </Collapsible>
+      )}
+
+      {/* Comitologie (optionnelle) - déclarée par le squad leader, visible par le tribe leader */}
+      {committeesOn && (
+        <CommitteesPanel squad={squad} canEdit={false} onChange={reload} manageTo={manageTo("committees")} />
+      )}
+
+      {/* Équipe / organigramme de la squad - carte dépliable */}
+      <Collapsible title={t("squad.team")} subtitle={t("squad.team_collapsed_hint", { n: squad.members.length })}
+        right={manageTo("team") ? <Link to={manageTo("team")!} className="small">{t("squad.manage_in_mysquads")}</Link> : undefined}>
+        <SquadOrg squad={squad} emptyLabel={t("squad.no_members")} />
+      </Collapsible>
+
+      <History squadId={squadId} snapshots={snapshots} />
+    </div>
+  );
+}
+
+const FREQUENCIES: CommitteeFrequency[] = ["daily", "weekly", "biweekly", "per_sprint", "monthly", "quarterly", "yearly", "on_demand", "other"];
+const WEEKDAYS: Weekday[] = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+const FREQ_BADGE: Record<CommitteeFrequency, string> = {
+  daily: "badge-navy", weekly: "badge-navy", biweekly: "badge-navy", per_sprint: "badge-navy",
+  monthly: "badge-green", quarterly: "badge-orange", yearly: "badge-grey", on_demand: "badge-grey",
+  other: "badge-grey",
+};
+
+// Label for the frequency badge - the custom text when "other".
+function freqLabel(c: Committee, t: (k: string, v?: any) => string): string {
+  if (c.frequency === "other") return c.frequency_other?.trim() || t("committee.freq.other");
+  return t(`committee.freq.${c.frequency}`);
+}
+
+/** Blank committee used to seed the "new committee" form. */
+const emptyCommittee = (order: number): Partial<Committee> => ({
+  name: "", objective: "", frequency: "monthly", frequency_other: "", day_of_week: null,
+  time_of_day: "", duration_minutes: null, participants: "",
+  is_active: true, display_order: order,
+});
+
+// "Mardi, 09:30, 60 min" - day / time / duration combined into one column.
+function whenDurationLabel(c: Committee, t: (k: string, v?: any) => string): string {
+  const parts: string[] = [];
+  if (c.day_of_week) parts.push(t(`committee.day.${c.day_of_week}`));
+  if (c.time_of_day) parts.push(c.time_of_day);
+  if (c.duration_minutes != null) parts.push(t("committee.duration_val", { n: c.duration_minutes }));
+  return parts.join(", ") || "-";
+}
+
+/** Time picker constrained to 30-minute steps, with ± buttons for hour and
+ *  minute. Emits "HH:00" / "HH:30" (or null when cleared). Minutes are snapped
+ *  to 0 or 30 on parse, and stepping minutes rolls the hour over. */
+function HalfHourTime({ value, onChange }: { value?: string | null; onChange: (v: string | null) => void }) {
+  const parse = (v?: string | null): [number, number] | null => {
+    if (!v) return null;
+    const [h, m] = v.split(":").map(Number);
+    if (Number.isNaN(h)) return null;
+    return [((h % 24) + 24) % 24, m >= 30 ? 30 : 0];
+  };
+  const cur = parse(value);
+  const base = cur ?? [9, 0];
+  const commit = (h: number, m: number) => onChange(`${String(((h % 24) + 24) % 24).padStart(2, "0")}:${m === 30 ? "30" : "00"}`);
+  const stepH = (d: number) => commit(base[0] + d, base[1]);
+  const stepM = (d: number) => {
+    let [h, m] = base;
+    if (d > 0) { if (m === 0) m = 30; else { m = 0; h += 1; } }
+    else { if (m === 30) m = 0; else { m = 30; h -= 1; } }
+    commit(h, m);
+  };
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return (
+    <div className="time-stepper">
+      <div className="ts-group">
+        <button type="button" onClick={() => stepH(-1)} aria-label="-1h">−</button>
+        <span className="ts-val">{cur ? pad(cur[0]) : "--"}</span>
+        <button type="button" onClick={() => stepH(1)} aria-label="+1h">+</button>
+      </div>
+      <span className="ts-colon">:</span>
+      <div className="ts-group">
+        <button type="button" onClick={() => stepM(-1)} aria-label="-30min">−</button>
+        <span className="ts-val">{cur ? (cur[1] === 30 ? "30" : "00") : "--"}</span>
+        <button type="button" onClick={() => stepM(1)} aria-label="+30min">+</button>
+      </div>
+      {cur && <button type="button" className="ts-clear" onClick={() => onChange(null)} aria-label="clear">✕</button>}
+    </div>
+  );
+}
+
+/**
+ * Create/edit dialog for a committee (comitologie). The day-of-week field only
+ * shows for recurring frequencies, and a free-text "other" field shows when the
+ * frequency is "other". Save is disabled until a name is entered.
+ */
+function CommitteeModal({ initial, isNew, onSave, onClose, error }:
+  { initial: Partial<Committee>; isNew: boolean; onSave: (c: Partial<Committee>) => void; onClose: () => void;
+    error?: string | null }) {
+  const { t } = useI18n();
+  const [c, setC] = useState<Partial<Committee>>(initial);
+  const set = (k: keyof Committee, v: any) => setC((prev) => ({ ...prev, [k]: v }));
+  // A weekday only makes sense for recurring cadences.
+  const recurring = c.frequency === "daily" || c.frequency === "weekly" || c.frequency === "biweekly";
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{ maxWidth: 560, maxHeight: "88vh", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
+        <h3 style={{ marginTop: 0 }}>{isNew ? t("committee.new") : t("committee.edit")}</h3>
+        <div className="stack" style={{ gap: 12, marginTop: 12 }}>
+          {error && <ErrorBanner message={error} />}
+          <div>
+            <label className="field-label">{t("committee.name")} *</label>
+            <input autoFocus placeholder={t("committee.name_ph")} value={c.name ?? ""} onChange={(e) => set("name", e.target.value)} />
+          </div>
+          <div>
+            <label className="field-label">{t("committee.objective")}</label>
+            <textarea rows={2} placeholder={t("committee.objective_ph")} value={c.objective ?? ""} onChange={(e) => set("objective", e.target.value)} />
+          </div>
+          <div className="row" style={{ gap: 12, flexWrap: "wrap" }}>
+            <div style={{ flex: "1 1 180px" }}>
+              <label className="field-label">{t("committee.frequency")}</label>
+              <select className="select-nice" value={c.frequency} onChange={(e) => set("frequency", e.target.value as CommitteeFrequency)}>
+                {FREQUENCIES.map((f) => <option key={f} value={f}>{t(`committee.freq.${f}`)}</option>)}
+              </select>
+            </div>
+            {recurring && (
+              <div style={{ flex: "1 1 150px" }}>
+                <label className="field-label">{t("committee.day")}</label>
+                <select className="select-nice" value={c.day_of_week ?? ""} onChange={(e) => set("day_of_week", (e.target.value || null) as Weekday | null)}>
+                  <option value="">-</option>
+                  {WEEKDAYS.map((d) => <option key={d} value={d}>{t(`committee.day.${d}`)}</option>)}
+                </select>
+              </div>
+            )}
+            {c.frequency === "other" && (
+              <div style={{ flex: "1 1 220px" }}>
+                <label className="field-label">{t("committee.freq_other")}</label>
+                <input placeholder={t("committee.freq_other_ph")} value={c.frequency_other ?? ""}
+                       onChange={(e) => set("frequency_other", e.target.value)} />
+              </div>
+            )}
+          </div>
+          <div className="row" style={{ gap: 12, flexWrap: "wrap" }}>
+            <div style={{ flex: "1 1 130px" }}>
+              <label className="field-label">{t("committee.time")}</label>
+              <HalfHourTime value={c.time_of_day} onChange={(v) => set("time_of_day", v)} />
+            </div>
+            <div style={{ flex: "1 1 130px" }}>
+              <label className="field-label">{t("committee.duration")}</label>
+              <input type="number" min={0} step={15} placeholder="60" value={c.duration_minutes ?? ""}
+                     onChange={(e) => set("duration_minutes", e.target.value === "" ? null : Number(e.target.value))} />
+            </div>
+          </div>
+          <div>
+            <label className="field-label">{t("committee.participants")}</label>
+            <textarea rows={2} placeholder={t("committee.participants_ph")} value={c.participants ?? ""} onChange={(e) => set("participants", e.target.value)} />
+          </div>
+          <label className="switch">
+            <input type="checkbox" checked={c.is_active !== false} onChange={(e) => set("is_active", e.target.checked)} />
+            <span className="track"><span className="knob" /></span>
+            <span className="small">{t("committee.active")}</span>
+          </label>
+        </div>
+        <div className="inline" style={{ justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
+          <button className="btn-secondary" onClick={onClose}>{t("action.cancel")}</button>
+          <button onClick={() => onSave({ ...c, name: (c.name ?? "").trim() })} disabled={!c.name?.trim()}>
+            {t("action.save")}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Committees table for the squad (declared by the squad leader, visible to the
+ * tribe leader). Read-only unless `canEdit` (privileged), in which case rows can
+ * be added/edited/removed through CommitteeModal.
+ */
+export function CommitteesPanel({ squad, canEdit, onChange, manageTo }:
+  { squad: SquadDetail; canEdit: boolean; onChange: () => void; manageTo?: string }) {
+  const { t } = useI18n();
+  // null = closed; {} via "new"; an object = editing that committee
+  const [editing, setEditing] = useState<Partial<Committee> | null>(null);
+  const [isNew, setIsNew] = useState(false);
+  const committees = squad.committees ?? [];
+
+  const openNew = () => { setEditing(emptyCommittee(committees.length)); setIsNew(true); };
+  const openEdit = (c: Committee) => { setEditing(c); setIsNew(false); };
+
+  // A refused write (422 on a malformed time, 403) is said, in the window or above
+  // the table; it used to be swallowed and the window just stayed open.
+  const [err, setErr] = useState<string | null>(null);
+  const fail = (e: unknown) => setErr(errorText(e));
+  const save = (c: Partial<Committee>) => {
+    if (!c.name?.trim()) return;
+    setErr(null);
+    const done = () => { setEditing(null); onChange(); };
+    if (isNew) {
+      api.post(`/api/committees`, { ...c, squad_id: squad.id }).then(done).catch(fail);
+    } else {
+      api.put(`/api/committees/${(c as Committee).id}`, c).then(done).catch(fail);
+    }
+  };
+  const remove = (id: number) => { setErr(null); api.del(`/api/committees/${id}`).then(onChange).catch(fail); };
+
+  return (
+    <Collapsible title={t("committee.title")} defaultOpen
+                 subtitle={t("committee.collapsed_hint", { n: committees.length })}
+                 right={canEdit ? <button className="btn-secondary btn-sm" onClick={openNew}>+ {t("committee.add")}</button>
+                   : manageTo ? <Link to={manageTo} className="small">{t("squad.manage_in_mysquads")}</Link> : undefined}>
+      <div className="small muted">{t("committee.hint")}</div>
+      {err && !editing && <ErrorBanner message={err} />}
+
+      {committees.length === 0 ? (
+        <div className="small muted" style={{ marginTop: 12 }}>{t("committee.none")}</div>
+      ) : (
+        <div style={{ overflowX: "auto", marginTop: 12 }}>
+          <table className="committee-tbl">
+            <thead>
+              <tr>
+                <th>{t("committee.col_name")}</th>
+                <th>{t("committee.objective")}</th>
+                <th>{t("committee.frequency")}</th>
+                <th>{t("committee.when")}</th>
+                <th>{t("committee.participants")}</th>
+                {canEdit && <th style={{ width: 1 }} />}
+              </tr>
+            </thead>
+            <tbody>
+              {committees.map((c) => (
+                <tr key={c.id} className={c.is_active ? "" : "inactive"}>
+                  <td>
+                    <div className="inline" style={{ gap: 8, alignItems: "center" }}>
+                      <span className="strong">{c.name}</span>
+                      {!c.is_active && <span className="badge badge-grey">{t("committee.inactive")}</span>}
+                    </div>
+                  </td>
+                  <td className="small muted" style={{ maxWidth: 280 }}>{c.objective || "-"}</td>
+                  <td><span className={`badge ${FREQ_BADGE[c.frequency]}`}>{freqLabel(c, t)}</span></td>
+                  <td className="small" style={{ whiteSpace: "nowrap" }}>{whenDurationLabel(c, t)}</td>
+                  <td className="small muted" style={{ maxWidth: 220 }}>{c.participants || "-"}</td>
+                  {canEdit && (
+                    <td>
+                      <span className="inline" style={{ gap: 6, justifyContent: "flex-end" }}>
+                        <button className="btn-secondary btn-sm" onClick={() => openEdit(c)} aria-label={t("action.edit")}>✎</button>
+                        <button className="btn-danger btn-sm" onClick={() => remove(c.id)} aria-label={t("action.delete")}>✕</button>
+                      </span>
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {editing && (
+        <CommitteeModal initial={editing} isNew={isNew} onSave={save} error={err}
+                        onClose={() => { setEditing(null); setErr(null); }} />
+      )}
+    </Collapsible>
+  );
+}
+
+const BUDGET_STATUS_BADGE: Record<string, string> = {
+  on_track: "badge-green", at_risk: "badge-orange", over: "badge-red",
+};
+
+/** Coloured status badge for a budget; when "over", appends the overrun amount/%. */
+function BudgetStatusBadge({ b, t }: { b: Budget; t: any }) {
+  const { formatMoney } = useI18n();
+  const cls = BUDGET_STATUS_BADGE[b.status] ?? "badge-grey";
+  const label = t(`budget.status.${b.status}`);
+  return (
+    <span className={`badge ${cls}`}>
+      {label}
+      {b.status === "over" && ` ${t("budget.overrun_val", { amount: formatMoney(b.overrun ?? 0), pct: b.overrun_pct })}`}
+    </span>
+  );
+}
+
+/**
+ * Budget panel. Two permission levels:
+ *  - `canToggle` (tribe leader / admin): owns the envelope - can enable/disable
+ *    tracking and set the total.
+ *  - `canEdit` (any privileged viewer): edits spent / forecast / comment; the
+ *    total is shown locked. `total` is ignored server-side for a squad leader.
+ * Renders a consumed/forecast gauge and a remaining figure (red if negative).
+ */
+export function BudgetPanel({ squad, canEdit, canToggle, onChange, manageTo }:
+  { squad: SquadDetail; canEdit: boolean; canToggle: boolean; onChange: () => void; manageTo?: string }) {
+  const { t, formatDate, formatMoney } = useI18n();
+  const b = squad.budget;
+  const [editing, setEditing] = useState(false);
+  const [total, setTotal] = useState("");
+  const [spent, setSpent] = useState("");
+  const [forecast, setForecast] = useState("");
+  const [comment, setComment] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+  const fail = (e: unknown) => setErr(e instanceof Error && e.message ? e.message : t("common.error"));
+
+  const fmt = formatMoney;
+
+  if (!squad.budget_enabled) {
+    return (
+      <div className="card">
+        <h2>{t("budget.title")}</h2>
+        <div className="small muted">{t("budget.disabled")}</div>
+        {canToggle && (
+          <button className="btn-secondary btn-sm" style={{ marginTop: 10 }}
+            onClick={() => api.put(`/api/squads/${squad.id}`, { budget_enabled: true })
+              .then(() => { setErr(null); setEditing(true); onChange(); }).catch(fail)}>
+            {t("budget.enable_cta")}
+          </button>
+        )}
+        {err && <div className="error-text small" style={{ marginTop: 6 }}>{err}</div>}
+      </div>
+    );
+  }
+
+  const openEdit = () => {
+    setTotal(b?.total != null ? String(b.total) : "");
+    setSpent(b?.spent != null ? String(b.spent) : "");
+    setForecast(b?.forecast != null ? String(b.forecast) : "");
+    setComment(b?.comment ?? "");
+    setEditing(true);
+  };
+  const save = () => {
+    api.put(`/api/squads/${squad.id}/budget?year=${squad.year}`, {
+      total: total === "" ? null : Number(total),       // ignored server-side for a squad leader
+      spent: spent === "" ? null : Number(spent),
+      forecast: forecast === "" ? null : Number(forecast),
+      comment: comment.trim() || null,
+    }).then(() => { setErr(null); setEditing(false); onChange(); }).catch(fail);
+  };
+
+  // Landing point = forecast if given, else spent; "remaining" is total minus that.
+  const reference = b?.forecast ?? b?.spent ?? null;            // where the squad will land
+  const remaining = b?.total != null && reference != null ? b.total - reference : null;
+  const hasFigures = b != null && (b.total != null || b.spent != null || b.forecast != null);
+  const barPct = Math.min(100, (b?.forecast_pct ?? b?.spent_pct) ?? 0);
+  const barColor = b?.status === "over" ? "var(--red)" : b?.status === "at_risk" ? "var(--orange)" : "var(--green)";
+
+  return (
+    <Collapsible title={t("budget.title")} defaultOpen
+                 subtitle={hasFigures && b ? fmt(b.total) : t("budget.collapsed_none")}
+                 right={hasFigures && b ? <BudgetStatusBadge b={b} t={t} /> : undefined}>
+      <div className="small muted" style={{ margin: "0 0 10px" }}>{t("budget.hint")}</div>
+      {err && <div className="error-text small" style={{ marginBottom: 8 }}>{err}</div>}
+
+      {editing ? (
+        <div className="stack" style={{ gap: 8 }}>
+          {canToggle ? (
+            <label>{t("budget.total")}
+              <input type="number" value={total} onChange={(e) => setTotal(e.target.value)} />
+            </label>
+          ) : (
+            <div className="between"><span className="small muted">{t("budget.total")}</span>
+              <span className="strong">{fmt(b?.total)} <span className="small muted">, {t("budget.total_locked")}</span></span>
+            </div>
+          )}
+          <label>{t("budget.spent")} <span className="small muted">({t("budget.spent_hint")})</span>
+            <input type="number" value={spent} onChange={(e) => setSpent(e.target.value)} />
+          </label>
+          <label>{t("budget.forecast")} <span className="small muted">({t("budget.forecast_hint")})</span>
+            <input type="number" value={forecast} onChange={(e) => setForecast(e.target.value)} />
+          </label>
+          <label>{t("budget.comment")}
+            <textarea rows={2} value={comment} onChange={(e) => setComment(e.target.value)} />
+          </label>
+          <div className="inline" style={{ gap: 8 }}>
+            <button className="btn-sm" onClick={save}>{t("action.save")}</button>
+            <button className="btn-secondary btn-sm" onClick={() => setEditing(false)}>{t("action.cancel")}</button>
+          </div>
+        </div>
+      ) : (
+        <>
+          {!hasFigures ? (
+            <div className="small muted">{t("budget.not_set")}</div>
+          ) : (
+            <div className="stack" style={{ gap: 6 }}>
+              <div className="budget-figures">
+                <span className="small muted">{t("budget.total")}</span>
+                <span className="small muted bf-pct" />
+                <span className="strong bf-amt">{fmt(b?.total)}</span>
+
+                <span className="small muted">{t("budget.spent")}</span>
+                <span className="small muted bf-pct">{b?.spent_pct != null ? `${b.spent_pct}%` : ""}</span>
+                <span className="strong bf-amt">{fmt(b?.spent)}</span>
+
+                <span className="small muted">{t("budget.forecast")}</span>
+                <span className="small muted bf-pct">{b?.forecast_pct != null ? `${b.forecast_pct}%` : ""}</span>
+                <span className="strong bf-amt">{fmt(b?.forecast)}</span>
+
+                {/* consumed/forecast gauge against the envelope */}
+                <div className="bf-gauge">
+                  <div style={{ width: `${barPct}%`, height: "100%", background: barColor }} />
+                </div>
+
+                <span className="small muted">{t("budget.remaining")}</span>
+                <span className="small muted bf-pct" />
+                <span className="strong bf-amt" style={remaining != null && remaining < 0 ? { color: "var(--red)" } : undefined}>{fmt(remaining)}</span>
+              </div>
+              {b?.comment && <div className="small muted" style={{ marginTop: 4 }}>{b.comment}</div>}
+              {b?.updated_at && <div className="small muted">{t("budget.updated", { date: formatDate(b.updated_at) })}</div>}
+            </div>
+          )}
+          <div className="inline" style={{ gap: 8, marginTop: 10 }}>
+            {canEdit && <button className="btn-secondary btn-sm" onClick={openEdit}>{t("budget.edit")}</button>}
+            {!canEdit && manageTo && <Link to={manageTo} className="small">{t("squad.manage_in_mysquads")}</Link>}
+            {canToggle && (
+              <button className="btn-danger btn-sm"
+                onClick={() => api.put(`/api/squads/${squad.id}`, { budget_enabled: false }).then(() => { setErr(null); onChange(); }).catch(fail)}>
+                {t("budget.disable_cta")}
+              </button>
+            )}
+          </div>
+        </>
+      )}
+    </Collapsible>
+  );
+}
+
+/**
+ * Read-only milestone (jalon) detail modal: quarter/theme/stage/status badges,
+ * owner, and the non-empty text fields (description, success criteria, benefit,
+ * dependencies, risks). Opened by clicking a roadmap row.
+ */
+function JalonView({ jalon, onClose, t, roadmap }: { jalon: RoadmapItem; onClose: () => void; t: any; roadmap: any }) {
+  const fields: Array<[string, string | null | undefined]> = [
+    [t("jalon.desc"), jalon.description],
+    [t("jalon.success"), jalon.success_criteria],
+    [t("jalon.benefit"), jalon.user_benefit],
+    [t("jalon.deps"), jalon.dependency_label ?? jalon.dependencies],
+    [t("jalon.risks"), jalon.risks],
+  ];
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{ maxWidth: 560, maxHeight: "85vh", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
+        <div className="between">
+          <h3 style={{ margin: 0 }}>{jalon.title}</h3>
+          <button className="btn-ghost btn-sm" onClick={onClose} aria-label={t("action.close")}>✕</button>
+        </div>
+        <div className="inline" style={{ gap: 8, margin: "8px 0 4px", flexWrap: "wrap" }}>
+          <span className="badge badge-navy">Q{jalon.quarter}</span>
+          {jalon.theme && <span className="badge">{jalon.theme}</span>}
+          <span className="badge">{jalon.release_stage}</span>
+          <span className="small muted">{t("jalon.status")}{t("common.colon")}<span className="strong">{roadmap(jalon.status)}</span></span>
+        </div>
+        {jalon.owner && (
+          <div className="jalon-field">
+            <div className="jl">{t("jalon.owner")}</div>
+            <div className="jv">{jalon.owner}</div>
+          </div>
+        )}
+        {fields.map(([label, val]) =>
+          val ? (
+            <div key={label} className="jalon-field">
+              <div className="jl">{label}</div>
+              <div className="jv">{val}</div>
+            </div>
+          ) : null
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Squad org chart: builds the reporting tree from the flat member list by
+ * grouping on manager_id (members with no manager are roots) and rendering each
+ * node with its children recursively.
+ */
+function SquadOrg({ squad, emptyLabel }: { squad: SquadDetail; emptyLabel: string }) {
+  if (squad.members.length === 0) return <div className="small muted">{emptyLabel}</div>;
+  // Group members by their manager id; "root" holds the top-level members.
+  const byManager: Record<string, Member[]> = {};
+  for (const m of squad.members) {
+    const key = m.manager_id == null ? "root" : String(m.manager_id);
+    (byManager[key] ||= []).push(m);
+  }
+  const roots = byManager["root"] || [];
+
+  const renderNode = (m: Member) => {
+    const children = byManager[String(m.id)] || [];
+    return (
+      <div key={m.id} className="org-subtree">
+        <div className="org-box">
+          <div className="strong small">{m.full_name}</div>
+          <div className="small muted">{m.role_title || "-"}</div>
+        </div>
+        {children.length > 0 && (
+          <>
+            <div className="org-connector" />
+            <div className="org-children">{children.map(renderNode)}</div>
+          </>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div className="row" style={{ justifyContent: "center", alignItems: "flex-start", gap: 20 }}>
+      {roots.map(renderNode)}
+    </div>
+  );
+}
+
+/**
+ * Reporting history (collapsible): lists past snapshots; opening one fetches a
+ * diff against the previous snapshot and renders it via <Compare>.
+ */
+function History({ squadId, snapshots }: { squadId: number; snapshots: SnapshotMeta[] }) {
+  const { t, formatDateTime } = useI18n();
+  const [selected, setSelected] = useState<number | null>(null);
+  const [compare, setCompare] = useState<any | null>(null);
+
+  const [frozen, setFrozen] = useState<any | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const fail = (e: unknown) => setErr(e instanceof Error && e.message ? e.message : t("common.error"));
+
+  function open(snapId: number) {
+    setSelected(snapId);
+    setCompare(null); setFrozen(null); setErr(null);
+    api.get<any>(`/api/squads/${squadId}/snapshots/${snapId}/compare`).then(setCompare).catch(fail);
+  }
+
+  // The comparison says what MOVED between two submissions; it cannot say what was
+  // submitted. The frozen payload could only be read through the API until now.
+  function openFrozen(snapId: number) {
+    setSelected(snapId);
+    setCompare(null); setFrozen(null); setErr(null);
+    api.get<any>(`/api/squads/${squadId}/snapshots/${snapId}`).then(setFrozen).catch(fail);
+  }
+
+  return (
+    <div id="history">
+    {/* Opened by default when reached from "see what changed" (#history). */}
+    <Collapsible title={t("squad.history")} subtitle={t("squad.history_collapsed_hint", { n: snapshots.length })}
+                 defaultOpen={typeof window !== "undefined" && window.location.hash === "#history"}>
+      {snapshots.length === 0 && <div className="small muted">{t("squad.no_history")}</div>}
+      <div className="stack">
+        {snapshots.map((s) => (
+          <div key={s.id} style={{ borderBottom: "1px solid var(--line)", paddingBottom: 8 }}>
+            <div className="between">
+              <div>
+                <div className="strong">{s.cycle_label}</div>
+                <div className="small muted">
+                  {formatDateTime(s.submitted_at)}
+                  {s.submitted_by_name ? `, ${t("hist.by", { name: s.submitted_by_name })}` : ""}
+                </div>
+              </div>
+              <div className="inline" style={{ gap: 6 }}>
+                <button className="btn-secondary btn-sm" onClick={() => open(s.id)}>
+                  {t("squad.compare")}
+                </button>
+                <button className="btn-secondary btn-sm" onClick={() => openFrozen(s.id)}>
+                  {t("squad.view_frozen")}
+                </button>
+              </div>
+            </div>
+            {selected === s.id && err && <ErrorBanner message={err} />}
+            {selected === s.id && compare && <Compare compare={compare} />}
+            {selected === s.id && frozen && <FrozenReport snapshot={frozen} />}
+          </div>
+        ))}
+      </div>
+    </Collapsible>
+    </div>
+  );
+}
+
+/**
+ * One submission against the previous one of the same year: milestones and KPIs
+ * added, removed or changed, in words (field names and codes used to show raw).
+ */
+function Compare({ compare }: { compare: any | null }) {
+  const { t, formatDateTime, formatDate, roadmap, trend } = useI18n();
+  const kpisOn = useModule()("squad_content", "kpis");
+  const progressOn = useModule()("squad_content", "quarter_progress");
+  if (!compare) return <div className="small muted" style={{ marginTop: 8 }}>{t("common.loading")}</div>;
+  if (!compare.previous) return <div className="small muted" style={{ marginTop: 8 }}>{t("hist.first_submission")}</div>;
+
+  // The six sections a submission carries, as the reporting counts them "changed".
+  const sections: Array<[string, string]> = [
+    ["roadmap_items", t("hist.section.jalons")],
+    ["otds", t("hist.section.otds")],
+    ["key_messages", t("hist.section.messages")],
+    ["mood", t("hist.section.mood")],
+    ...(progressOn ? [["progress", t("hist.section.progress")] as [string, string]] : []),
+    ...(kpisOn ? [["kpis", t("hist.section.kpis")] as [string, string]] : []),
+  ];
+  const itemLabel = (c: any) =>
+    c.item?.title || c.item?.name
+    || (c.item?.text ? `${t(`km.kind.${c.item.kind}`)}, ${c.item.text}` : "")
+    || (c.id === "mood" ? t("hist.section.mood") : String(c.id).startsWith("Q") ? String(c.id) : `#${c.id}`);
+  // How a changed field reads: its name in words, its values as the screens show them.
+  const LINKS = new Set(["otd_id", "squad_otd_id", "initiative_id"]);
+  const HIDDEN = new Set(["id"]);
+  const value = (f: string, v: any) => {
+    if (v === null || v === undefined || v === "") return t("hist.empty");
+    if (f === "status") return roadmap(v);
+    if (f === "trend_status") return trend(v);
+    if (f === "quarter") return `Q${v}`;
+    if (f === "mood") return t(`mood.${v}`);
+    if (f === "scope") return t(`otd.scope_${v}`);
+    if (f === "date") return formatDate(v);
+    return String(v);
+  };
+  const change = (f: string, v: any) => {
+    if (LINKS.has(f)) return v.to == null ? t("hist.unlinked") : v.from == null ? t("hist.linked") : t("hist.relinked");
+    return `${value(f, v.from)} → ${value(f, v.to)}`;
+  };
+  const total = sections.reduce((n, [key]) => n + (compare.diff?.[key]?.length || 0), 0);
+
+  return (
+    <div className="banner" style={{ marginTop: 8, background: "var(--ice-soft)" }}>
+      <div className="small muted" style={{ marginBottom: 6 }}>
+        {t("hist.against", { label: compare.previous.cycle_label, date: formatDateTime(compare.previous.submitted_at) })}
+      </div>
+      {total === 0 && <div className="small">{t("hist.no_change")}</div>}
+      {sections.map(([key, label]) => {
+        const changes = (compare.diff?.[key] || []) as any[];
+        if (!changes.length) return null;
+        return (
+          <div key={key} style={{ marginBottom: 6 }}>
+            <div className="strong small">{label}</div>
+            <ul style={{ margin: "2px 0 0", paddingLeft: 18 }} className="small">
+              {changes.map((c, i) => (
+                <li key={i}>
+                  {c.type === "added" && <span style={{ color: "var(--green)" }}>{t("hist.added")}{t("common.colon")}{itemLabel(c)}</span>}
+                  {c.type === "removed" && <span style={{ color: "var(--red)" }}>{t("hist.removed")}{t("common.colon")}{itemLabel(c)}</span>}
+                  {c.type === "changed" && (
+                    <span>
+                      {itemLabel(c)} :{" "}
+                      {Object.entries(c.fields || {}).filter(([f]) => !HIDDEN.has(f)).map(([f, v]: any, n) => (
+                        <span key={f}>{n > 0 ? ", " : ""}{t(`hist.f.${f}`)} {change(f, v)}</span>
+                      ))}
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+
+/**
+ * The frozen report of one submission, as it was sent: every section the
+ * submission holds, in words.
+ */
+function FrozenReport({ snapshot }: { snapshot: any }) {
+  const { t, roadmap, trend, formatDate, lang } = useI18n();
+  const data = snapshot?.payload ?? snapshot?.data ?? snapshot;
+  // The same submission as documents: the export replayed at its own instant.
+  const docUrl = (fmt: "html" | "pptx") =>
+    snapshot?.squad_id && snapshot?.submitted_at
+      ? `/api/reports/weekly.${fmt}?squad_id=${snapshot.squad_id}&lang=${lang}` +
+        `${data?.year ? `&year=${data.year}` : ""}&as_of=${encodeURIComponent(snapshot.submitted_at)}`
+      : null;
+  const jalons = data?.roadmap_items ?? data?.jalons ?? [];
+  const otds = data?.otds ?? [];
+  const kpis = data?.kpis ?? [];
+  const messages = data?.key_messages ?? [];
+  const mood = data?.squad?.mood;
+  return (
+    <div className="stack small" style={{ gap: 6, marginTop: 8 }}>
+      <div className="between" style={{ alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <div className="strong">{t("squad.frozen_title")}{data?.year ? `, ${data.year}` : ""}</div>
+        {docUrl("html") && (
+          <div className="inline" style={{ gap: 6 }}>
+            <a className="btn-secondary btn-sm" href={docUrl("html")!} target="_blank" rel="noopener">
+              {t("squad.frozen_html")}
+            </a>
+            <a className="btn-secondary btn-sm" href={docUrl("pptx")!} download>
+              {t("squad.frozen_pptx")}
+            </a>
+          </div>
+        )}
+      </div>
+      {otds.length > 0 && <div className="strong">{t("hist.section.otds")}</div>}
+      {otds.map((o: any, i: number) => (
+        <div key={`o${i}`}>{o.title}{o.date ? `, ${formatDate(o.date)}` : ""}</div>
+      ))}
+      {jalons.length > 0 && <div className="strong">{t("hist.section.jalons")}</div>}
+      {jalons.map((j: any, i: number) => (
+        <div key={`j${i}`} className="muted">Q{j.quarter} : {j.title} ({roadmap(j.status)})</div>
+      ))}
+      {kpis.length > 0 && <div className="strong">{t("hist.section.kpis")}</div>}
+      {kpis.map((k: any, i: number) => (
+        <div key={`k${i}`} className="muted">
+          {k.name} : {k.current_value ?? "-"}{k.unit ? ` ${k.unit}` : ""}{k.trend_status ? `, ${trend(k.trend_status)}` : ""}
+        </div>
+      ))}
+      {messages.length > 0 && <div className="strong">{t("hist.section.messages")}</div>}
+      {messages.map((m: any, i: number) => (
+        <div key={`m${i}`} className="muted">{t(`km.kind.${m.kind}`)}{t("common.colon")}{m.text}</div>
+      ))}
+      {mood && <div><span className="strong">{t("hist.section.mood")}</span> : {t(`mood.${mood}`)}</div>}
+    </div>
+  );
+}
