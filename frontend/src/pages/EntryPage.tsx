@@ -18,7 +18,7 @@
  * derriere son drapeau de module comme avant.
  */
 import { Fragment, ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api, errorText, reportSaveError } from "../api";
 import { useAuth } from "../auth";
 import { useI18n } from "../i18n";
@@ -58,16 +58,15 @@ export default function EntryPage() {
   const [tribes, setTribes] = useState<Tribe[]>([]);
   const [squadId, setSquadId] = useState<number | null>(null);
   const [params] = useSearchParams();
+  const navigate = useNavigate();
   // A link that names the year (?year=, from the squad page) wins over the default.
   const askedYear = Number(params.get("year")) || null;
   const [year, setYear] = useState<number>(askedYear ?? default_year);
   const [yearTouched, setYearTouched] = useState(askedYear !== null);
   useEffect(() => { if (!yearTouched) setYear(default_year); }, [default_year]);
   const [squad, setSquad] = useState<SquadDetail | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [recapError, setRecapError] = useState<string | null>(null);
-  const [justSubmitted, setJustSubmitted] = useState(false);
   // The Steerco step's state, told by its section once it has read the platforms.
   const [steercoDone, setSteercoDone] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -136,19 +135,15 @@ export default function EntryPage() {
     return () => { alive = false; };
   }, [squadId, year, squad]);
 
-  function flash(m: string) {
-    setMessage(m);
-    setTimeout(() => setMessage(null), 3000);
-  }
   async function confirmSubmit() {
     if (squadId === null) return;
     setRecapError(null);
     try {
       await api.post(`/api/squads/${squadId}/snapshots`, { year });
       setRecap(false);
-      setJustSubmitted(true);
-      flash(t("entry.submit_ok"));
-      reload();
+      // Leave the form: staying on it looked as if nothing had happened. The squad
+      // page says it was received and holds the new snapshot in its history.
+      navigate(`/squads/${squadId}?year=${year}`, { state: { submitted: true } });
     } catch (e) {
       // Said in the recap window, which stays open to retry.
       setRecapError(errorText(e));
@@ -299,15 +294,6 @@ export default function EntryPage() {
       {squad && <ReportingHeader squad={squad} t={t} formatDate={formatDate} freshness={freshness} />}
 
       {actionError && <ErrorBanner message={actionError} />}
-      {message && (
-        <div className="banner banner-green">
-          {message}
-          {/* Right after a submission: where to see what changed. */}
-          {justSubmitted && squad && (
-            <> <Link to={`/squads/${squad.id}?year=${year}#history`}>{t("entry.see_history")}</Link></>
-          )}
-        </div>
-      )}
 
       {!squad ? (
         <Spinner />

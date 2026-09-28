@@ -11,7 +11,7 @@
  * heavy roadmap/objective editing lives on the reporting (EntryPage) instead.
  */
 import { useEffect, useState } from "react";
-import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api, errorText } from "../api";
 import { useI18n } from "../i18n";
 import { useModule } from "../config";
@@ -36,6 +36,9 @@ import { ReportingButton } from "../components/ReportingModal";
 export default function SquadDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  // Reached right after sending the reporting (EntryPage): say it was received.
+  const [justSubmitted, setJustSubmitted] = useState(!!(location.state as any)?.submitted);
   const squadId = Number(id);
   const { t, roadmap, trend, formatNumber } = useI18n();
   const [params, setParams] = useSearchParams();
@@ -152,6 +155,17 @@ export default function SquadDetailPage() {
 
   return (
     <div className="stack" style={{ gap: 18 }}>
+      {justSubmitted && (
+        <div className="banner banner-green between" role="status" style={{ alignItems: "center" }}>
+          <span>
+            <strong>{t("entry.submitted_title")}</strong> {t("entry.submitted_body")}{" "}
+            <a href="#history" onClick={(e) => { e.preventDefault(); document.getElementById("history")?.scrollIntoView({ behavior: "smooth" }); }}>
+              {t("entry.see_history")}
+            </a>
+          </span>
+          <button className="btn-ghost btn-sm" onClick={() => setJustSubmitted(false)} aria-label={t("action.close")}>✕</button>
+        </div>
+      )}
       {sendMsg && <div className="banner small">{sendMsg}</div>}
       <div className="between">
         <div>

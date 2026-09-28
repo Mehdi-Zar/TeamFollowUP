@@ -10,6 +10,13 @@ servent.
 
 ## 1. « Tribus » et « Organigramme » n'etaient qu'un ecran
 
+> **Mise a jour.** L'organigramme ne montre que l'organisation : plus de lien « voir la
+> squad ». Une squad s'y deplie pour montrer ses membres (clic sur son nom dans la liste,
+> menu « ⋯ » dans l'arbre), et « Modifier l'equipe » reste a cote. La page d'une squad
+> s'ouvre depuis le tableau de bord ou la roadmap. Dans le menu, la Roadmap a une icone de
+> calendrier, les Conges un parasol et les Acces une cle (l'engrenage reste a
+> l'Administration).
+
 La page Tribus listait les tribus avec leur nombre de squads et ne savait faire
 qu'une chose : ouvrir l'organigramme sur celle qu'on cliquait. L'organigramme
 offrait deja le meme choix, dans une liste deroulante de son entete. Deux entrees

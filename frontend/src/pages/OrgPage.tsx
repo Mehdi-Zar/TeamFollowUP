@@ -8,8 +8,8 @@
  * admins may edit any tribe they select (`editable`). Other tribes are read-only.
  * An export button produces the chart as HTML/PPTX with a branch picker.
  */
-import { MouseEvent as ReactMouseEvent, ReactNode, WheelEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Fragment, MouseEvent as ReactMouseEvent, ReactNode, WheelEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { useI18n } from "../i18n";
@@ -120,6 +120,13 @@ export default function OrgPage() {
   // the embedded team charts (SquadTeam) fetch again.
   const [team, setTeam] = useState<{ id: number; name: string } | null>(null);
   const [teamVersion, setTeamVersion] = useState(0);
+  // List view: the squads unfolded to show their members.
+  const [openTeams, setOpenTeams] = useState<Set<number>>(new Set());
+  const toggleTeam = (id: number) => setOpenTeams((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
 
   // editing only allowed on one's OWN tribe (admin: any tribe they select)
   const isOwnTribe = tribeId !== null && tribeId === user?.tribe_id;
@@ -363,16 +370,23 @@ export default function OrgPage() {
 
       {tree.length > 0 && view === "list" && (
         <div className="card stack" style={{ gap: 0 }}>
-          {flattenNodes(tree).map(({ node, depth }) => (
-            <div key={node.id} className="item-row">
+          {flattenNodes(tree).map(({ node, depth }) => {
+            const unfoldable = !!node.squad_id && (isAdmin || isOwnTribe);
+            const unfolded = unfoldable && openTeams.has(node.squad_id!);
+            return (
+            <Fragment key={node.id}>
+            <div className="item-row">
               <div className="grow" style={{ paddingLeft: depth * 22 }}>
-                <span className="strong small">{node.title}</span>
-                {node.person_name && <span className="small muted"> ({node.person_name})</span>}
-                {node.squad_id && (isAdmin || isOwnTribe) && (
-                  <Link className="small" to={`/squads/${node.squad_id}`} style={{ marginLeft: 8 }}>
-                    {t("org.see_squad")}
-                  </Link>
+                {unfoldable ? (
+                  <button className="btn-ghost btn-sm strong" aria-expanded={unfolded}
+                          title={unfolded ? t("org.hide_team") : t("org.see_team")}
+                          onClick={() => toggleTeam(node.squad_id!)}>
+                    {unfolded ? "▾" : "▸"} {node.title}
+                  </button>
+                ) : (
+                  <span className="strong small">{node.title}</span>
                 )}
+                {node.person_name && <span className="small muted"> ({node.person_name})</span>}
                 {canEditTeam(node.squad_id) && (
                   <button className="btn-ghost btn-sm" style={{ marginLeft: 8 }} onClick={() => openTeam(node)}>
                     ✎ {t("org.edit_team")}
@@ -387,7 +401,10 @@ export default function OrgPage() {
                 </div>
               )}
             </div>
-          ))}
+            {unfolded && <SquadMemberList key={teamVersion} squadId={node.squad_id!} indent={depth * 22 + 28} />}
+            </Fragment>
+            );
+          })}
         </div>
       )}
 
@@ -447,13 +464,9 @@ function NodeView({
   return (
     <div className="org-subtree">
       <div className={`org-box org-node${isSquad ? " org-node--squad" : ""}`}>
-        {isSquad && linkSquads ? (
-          <Link to={`/squads/${node.squad_id}`} className="strong small org-squad-link" title={t("org.see_squad")}>
-            {statusDot}{node.title}
-          </Link>
-        ) : (
-          <div className="strong small">{statusDot}{node.title}</div>
-        )}
+        {/* The chart shows the organisation only: a squad unfolds its members here,
+            its page is reached from the dashboard or the roadmap. */}
+        <div className="strong small">{statusDot}{node.title}</div>
         {node.person_name && <div className="small muted">{node.person_name}</div>}
         {(() => {
           const teamLinks = !!node.squad_id && linkSquads && !forceShowTeam;
@@ -506,6 +519,30 @@ function NodeView({
         );
       })()}
     </div>
+  );
+}
+
+/** The members of a squad unfolded in the list view: name and role, one per line. */
+function SquadMemberList({ squadId, indent }: { squadId: number; indent: number }) {
+  const { t } = useI18n();
+  const [data, setData] = useState<SquadDetail | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    api.get<SquadDetail>(`/api/squads/${squadId}`).then(setData).catch(() => setFailed(true));
+  }, [squadId]);
+  const pad = { paddingLeft: indent, paddingTop: 4, paddingBottom: 8 };
+  if (failed) return <div className="small muted" style={pad}>{t("org.team_hidden")}</div>;
+  if (!data) return <div className="small muted" style={pad}>…</div>;
+  if (data.members.length === 0) return <div className="small muted" style={pad}>{t("squad.no_members")}</div>;
+  return (
+    <ul className="small" style={{ ...pad, margin: 0, listStyle: "none" }}>
+      {data.members.map((m) => (
+        <li key={m.id}>
+          <span className="strong">{m.full_name}</span>
+          {m.role_title && <span className="muted"> ({m.role_title})</span>}
+        </li>
+      ))}
+    </ul>
   );
 }
 

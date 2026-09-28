@@ -179,6 +179,10 @@ se verifie pas.
   confirmation, c'est a dire au moment ou il est trop tard pour y faire quelque
   chose. Elle est montree aussi sur la derniere etape, ou l'on peut encore revenir
   en arriere.
+- **Apres l'envoi, on quitte la saisie.** Rester sur le formulaire avec un bandeau
+  vert de trois secondes donnait l'impression que rien ne s'etait passe. La
+  confirmation ouvre maintenant la page de la squad, avec un bandeau « Reporting
+  envoye » et un lien vers l'historique, ou figure le nouvel instantane.
 
 ## 2. Quatre ecrans de liste, une seule facon de les piloter
 

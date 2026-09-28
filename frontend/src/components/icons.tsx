@@ -33,16 +33,6 @@ export function IconDashboard(p: IconProps) {
   );
 }
 
-export function IconCalendar(p: IconProps) {
-  return (
-    <Svg {...p}>
-      <rect x="3" y="4" width="18" height="17" rx="2" />
-      <path d="M3 9h18" />
-      <path d="M8 2v4M16 2v4" />
-    </Svg>
-  );
-}
-
 export function IconOrg(p: IconProps) {
   return (
     <Svg {...p}>
@@ -64,12 +54,34 @@ export function IconTribes(p: IconProps) {
   );
 }
 
-/** A timeline: three quarters of bars, for the roadmap. */
+/** A calendar with planned bars, for the roadmap: dated work over the year. */
 export function IconRoadmap(p: IconProps) {
   return (
     <Svg {...p}>
-      <path d="M3 4v16h18" />
-      <path d="M7 8h6M10 12h7M13 16h6" />
+      <rect x="3" y="4" width="18" height="17" rx="2" />
+      <path d="M3 9h18" />
+      <path d="M8 2v4M16 2v4" />
+      <path d="M7 13h6M11 17h6" />
+    </Svg>
+  );
+}
+
+/** A beach umbrella, for the leaves: the plain calendar was too close to the roadmap. */
+export function IconLeave(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path d="M3 12a9 9 0 0 1 18 0Z" />
+      <path d="M12 12v7a2 2 0 0 0 4 0" />
+    </Svg>
+  );
+}
+
+/** A key, for the access requests: the gear belongs to the administration. */
+export function IconAccess(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <circle cx="8" cy="15" r="4" />
+      <path d="M10.8 12.2 20 3M16 7l3 3M14 9l2 2" />
     </Svg>
   );
 }

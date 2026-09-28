@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Ergonomie
+- Envoi du reporting : on arrive sur la page de la squad avec une confirmation claire.
+- Organigramme : plus de lien vers la page de la squad, une squad se deplie pour voir ses
+  membres, « Modifier l'equipe » reste disponible.
+- Menu : icones distinctes pour Roadmap (calendrier), Conges (parasol) et Acces (cle).
+- Le bandeau rouge SECRET_KEY n'est plus affiche dans l'interface (journal et ecran Ops
+  le signalent toujours).
+
 ### Security (pentest du 26/09/2026)
 - **Critique corrigee** : lecture de fichiers arbitraires sans authentification par le
   repli de la SPA (`//etc/passwd`, `..%2f`). Faire tourner SECRET_KEY et les mots de passe.

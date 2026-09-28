@@ -28,7 +28,6 @@ interface AuthState {
   capabilities: Record<string, boolean> | null;
   /** The Administration tabs this user holds (Admin > Personas); none = no admin. */
   adminTabs: string[];
-  securityAlerts: string[];
   /** May the user open the SSO access-request queue, and how many are pending. */
   canReviewAccess: boolean;
   pendingAccessCount: number;
@@ -55,8 +54,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [impersonatorName, setImpersonatorName] = useState<string | null>(null);
   const [capabilities, setCapabilities] = useState<Record<string, boolean> | null>(null);
   const [adminTabs, setAdminTabs] = useState<string[]>([]);
-  // Security problems of the instance, for administrators ("secret_key").
-  const [securityAlerts, setSecurityAlerts] = useState<string[]>([]);
   const [canReviewAccess, setCanReviewAccess] = useState(false);
   const [pendingAccessCount, setPendingAccessCount] = useState(0);
 
@@ -73,7 +70,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setCapabilities(p.capabilities ?? null);
       setCustomRoleLabels(p.persona_labels);
       setAdminTabs(p.admin_tabs ?? []);
-      setSecurityAlerts(p.security_alerts ?? []);
       setCanReviewAccess(!!p.can_review_access);
       setPendingAccessCount(p.pending_access_count ?? 0);
     } catch {
@@ -81,7 +77,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setImpersonatorName(null);
       setCapabilities(null);
       setAdminTabs([]);
-      setSecurityAlerts([]);
       setCanReviewAccess(false);
       setPendingAccessCount(0);
     }
@@ -218,7 +213,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         impersonatorName,
         capabilities,
         adminTabs,
-        securityAlerts,
         canReviewAccess,
         pendingAccessCount,
         can,

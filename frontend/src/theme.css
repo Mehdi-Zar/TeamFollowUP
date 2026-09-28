@@ -499,8 +499,6 @@ tr:last-child td { border-bottom: none; }
 /* Clickable squad node */
 .org-node--squad { cursor: pointer; transition: box-shadow .12s, border-color .12s; }
 .org-node--squad:hover { border-color: var(--navy); }
-.org-squad-link { color: var(--accent); text-decoration: none; }
-.org-squad-link:hover { text-decoration: underline; }
 
 /* Notifications */
 .notif-badge { position: absolute; top: -6px; right: -6px; background: var(--red); color: #fff; border-radius: 999px; font-size: 11px; font-weight: 700; min-width: 18px; height: 18px; display: flex; align-items: center; justify-content: center; padding: 0 4px; }

@@ -18,7 +18,7 @@ import { isGlobalAdmin } from "../perms";
 import { useSetPageChrome } from "../components/pageChrome";
 import { EmptyState } from "../components/ui";
 import {
-  IconAdmin, IconCalendar, IconDashboard, IconEntry, IconFeed, IconOrg, IconRoadmap, IconTribes,
+  IconAdmin, IconDashboard, IconEntry, IconFeed, IconLeave, IconOrg, IconRoadmap, IconTribes,
 } from "../components/icons";
 
 /** Identifiers for each step that can appear in the guide. */
@@ -28,7 +28,7 @@ type CardKey =
 /** Step -> icon component (includes the two admin-only keys). */
 const ICON: Record<CardKey | "admin" | "tribes", (p: { size?: number }) => JSX.Element> = {
   dashboard: IconDashboard, reporting: IconEntry, roadmap: IconRoadmap,
-  mysquads: IconTribes, feed: IconFeed, org: IconOrg, leaves: IconCalendar,
+  mysquads: IconTribes, feed: IconFeed, org: IconOrg, leaves: IconLeave,
   admin: IconAdmin, tribes: IconTribes,
 };
 

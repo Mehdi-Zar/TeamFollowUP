@@ -23,14 +23,15 @@ import CommandPalette from "./CommandPalette";
 import { Modal } from "./ui";
 import { usePageChrome } from "./pageChrome";
 import {
+  IconAccess,
   IconAdmin,
-  IconCalendar,
   IconCollapse,
   IconDashboard,
   IconEntry,
   IconExpand,
   IconFeed,
   IconHelp,
+  IconLeave,
   IconOrg,
   IconRoadmap,
   IconTribes,
@@ -59,9 +60,9 @@ const NAV: NavItem[] = [
   { to: "/organigramme", labelKey: "nav.org", titleKey: "nav.org", Icon: IconOrg, visible: () => true, module: "org", cap: "org" },
   { to: "/saisie", labelKey: "nav.entry", titleKey: "nav.entry", Icon: IconEntry, visible: () => true, module: "reporting", cap: "reporting" },
   { to: "/fil", labelKey: "nav.feed", titleKey: "nav.feed", Icon: IconFeed, visible: () => true, module: "feed", cap: "feed" },
-  { to: "/conges", labelKey: "nav.leaves", titleKey: "nav.leaves", Icon: IconCalendar, visible: () => true, module: "leaves", cap: "leaves" },
+  { to: "/conges", labelKey: "nav.leaves", titleKey: "nav.leaves", Icon: IconLeave, visible: () => true, module: "leaves", cap: "leaves" },
   { to: "/mes-squads", labelKey: "nav.mysquads", titleKey: "mysquads.title", Icon: IconTribes, visible: () => true, cap: "mysquads" },
-  { to: "/acces", labelKey: "nav.access", titleKey: "access.title", Icon: IconAdmin, visible: () => true },
+  { to: "/acces", labelKey: "nav.access", titleKey: "access.title", Icon: IconAccess, visible: () => true },
   { to: "/admin", labelKey: "nav.admin", titleKey: "nav.admin", Icon: IconAdmin, visible: canSeeAdmin },
 ];
 
@@ -72,7 +73,7 @@ const COLLAPSE_KEY = "sidebar.collapsed";
  *  hosts the current page through <Outlet/>. Owns cross-page UI state (sidebar
  *  collapse, mobile drawer, admin impersonation picker, first-login welcome). */
 export default function Layout() {
-  const { user, logout, effectiveRole, isPreview, impersonate, stopImpersonation, can, pendingAccessCount, adminTabs, canReviewAccess, securityAlerts } = useAuth();
+  const { user, logout, effectiveRole, isPreview, impersonate, stopImpersonation, can, pendingAccessCount, adminTabs, canReviewAccess } = useAuth();
   const { t, role: roleLabel, lang, setLang } = useI18n();
   // A save that failed after its field was left (see api.reportSaveError).
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -292,17 +293,6 @@ export default function Layout() {
           )}
         </header>
 
-        {securityAlerts.includes("secret_key") && (
-          <div className="no-print banner banner-red stack" role="alert" style={{ margin: "8px 16px", gap: 6 }}>
-            <strong>{t("sec.secret_key.title")}</strong>
-            <span className="small">{t("sec.secret_key.why")}</span>
-            <ol className="small" style={{ margin: 0, paddingLeft: 20 }}>
-              <li>{t("sec.secret_key.step1")} <code>python -c "import secrets; print(secrets.token_urlsafe(48))"</code></li>
-              <li>{t("sec.secret_key.step2")}</li>
-              <li>{t("sec.secret_key.step3")}</li>
-            </ol>
-          </div>
-        )}
         {saveError && (
           <div className="no-print banner banner-red between" role="alert" style={{ margin: "8px 16px", alignItems: "center" }}>
             <span className="small">{t("common.save_failed", { msg: saveError })}</span>
