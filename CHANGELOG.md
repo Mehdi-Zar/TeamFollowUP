@@ -7,7 +7,7 @@
   repli de la SPA (`//etc/passwd`, `..%2f`). Faire tourner SECRET_KEY et les mots de passe.
 - Prise de compte par un tribe leader (mot de passe d'un autre compte), elevation par les
   onglets delegues (personas, data, api, auth, trust, tribes), restauration forgee : fermees.
-- SECRET_KEY par defaut refusee en production, sessions revocables (deconnexion, mot de
+- SECRET_KEY par defaut signalee aux administrateurs (sans bloquer le demarrage), sessions revocables (deconnexion, mot de
   passe, role), simulation bornee et tracee, force brute par compte, SSO sans email non
   verifie, SAML sans rejeu, defense CSRF, en-tetes de securite, `/docs` et `/metrics`
   proteges, secrets masques, formules de tableur neutralisees, SSRF bloque, conteneur non

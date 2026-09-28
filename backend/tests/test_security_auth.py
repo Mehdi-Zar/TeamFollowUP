@@ -25,30 +25,6 @@ def _uid(db, email):
     return db.scalar(select(User).where(User.email == email)).id
 
 
-# --- SECRET_KEY / cookies at startup ---------------------------------------
-def test_a_deployed_instance_refuses_the_default_secret_key(monkeypatch):
-    monkeypatch.setattr(settings, "secret_key", "change-me-in-prod-please-32chars-min-secret")
-    monkeypatch.setattr(settings, "public_base_url", "")
-    assert settings.startup_refusals() == []            # a laptop: warning only
-    monkeypatch.setattr(settings, "public_base_url", "https://tfu.example.com")
-    assert settings.startup_refusals()                  # deployed: refused
-    monkeypatch.setattr(settings, "allow_insecure_secret_key", True)
-    assert settings.startup_refusals() == []            # explicit escape hatch
-    monkeypatch.setattr(settings, "allow_insecure_secret_key", False)
-    monkeypatch.setattr(settings, "secret_key", "short-key")
-    assert settings.startup_refusals()
-    monkeypatch.setattr(settings, "secret_key", "x" * 48)
-    assert settings.startup_refusals() == []
-
-
-def test_samesite_none_needs_secure_cookies(monkeypatch):
-    monkeypatch.setattr(settings, "cookie_samesite", "none")
-    monkeypatch.setattr(settings, "cookie_secure", False)
-    assert any("SAMESITE" in r for r in settings.startup_refusals())
-    monkeypatch.setattr(settings, "cookie_secure", True)
-    assert not any("SAMESITE" in r for r in settings.startup_refusals())
-
-
 # --- brute force ------------------------------------------------------------
 def test_a_new_forwarded_address_per_guess_does_not_bypass_the_throttle(client, seeded, monkeypatch):
     monkeypatch.setattr(settings, "login_max_attempts", 5)

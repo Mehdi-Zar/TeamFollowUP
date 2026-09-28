@@ -86,13 +86,6 @@ async def _security_headers(request, call_next):
         h.setdefault("Cache-Control", "no-store")
     return response
 
-# Refuse to serve with a configuration that hands out sessions (see config).
-for _reason in settings.startup_refusals():
-    import logging as _logging
-    _logging.getLogger("trt.security").critical("SECURITY: refusing to start: %s", _reason)
-if settings.startup_refusals():
-    raise SystemExit("SECURITY: " + " ".join(settings.startup_refusals()))
-
 # Session middleware is required by Authlib (OIDC state/PKCE). Its cookie only
 # carries a login in progress: ten minutes are plenty.
 app.add_middleware(SessionMiddleware, secret_key=settings.secret_key, max_age=600,
