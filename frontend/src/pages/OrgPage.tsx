@@ -19,6 +19,8 @@ import { HtmlPreviewButton } from "../components/HtmlPreview";
 import { useSetPageChrome } from "../components/pageChrome";
 import { canEditOrg, canEditSquadInScope } from "../perms";
 import { TeamModal } from "../components/TeamModal";
+import PickOrType from "../components/PickOrType";
+import { usePeople } from "../components/usePeople";
 
 type OrgView = "tree" | "list";
 
@@ -30,6 +32,8 @@ interface FormState {
   parent_id: number | null;
   title: string;
   squad_id: string;
+  /** The person holding the box, typed or picked (empty: nobody named). */
+  person_name: string;
 }
 
 interface Flat {
@@ -169,7 +173,7 @@ export default function OrgPage() {
   }, []);
 
   function openCreate(parent_id: number | null) {
-    setForm({ mode: "create", kind: "entity", parent_id, title: "", squad_id: "" });
+    setForm({ mode: "create", kind: "entity", parent_id, title: "", squad_id: "", person_name: "" });
   }
   function openEdit(n: OrgNode) {
     setForm({
@@ -179,6 +183,7 @@ export default function OrgPage() {
       parent_id: n.parent_id ?? null,
       title: n.title,
       squad_id: n.squad_id ? String(n.squad_id) : "",
+      person_name: n.person_name ?? "",
     });
   }
 
@@ -191,10 +196,9 @@ export default function OrgPage() {
       squad_id = Number(form.squad_id);
       title = squads.find((s) => s.id === squad_id)?.name || form.title;
     }
-    const body: any = { title, squad_id, parent_id: form.parent_id };
-    // The form does not edit the person's name: sending null on an update erased
-    // the one an import had set.
-    if (form.mode === "create") body.person_name = null;
+    // The form now carries the person's name, loaded from the node on edit: sending
+    // it back keeps the one an import had set.
+    const body: any = { title, squad_id, parent_id: form.parent_id, person_name: form.person_name.trim() || null };
     if (isAdmin && form.mode === "create") body.tribe_id = tribeId;
     setActionError(null);
     try {
@@ -602,8 +606,8 @@ function SquadTeam({ squadId }: { squadId: number }) {
 }
 
 /**
- * Create/edit form for an org node: kind (entity vs squad), the entity title or
- * a squad picker, and the parent to attach under. Save is disabled until the
+ * Create/edit form for an org node: a squad picked from the list or an entity
+ * typed freely, the person holding it, and the parent to attach under. Save is disabled until the
  * required field for the chosen kind is filled.
  */
 function NodeForm({
@@ -622,37 +626,34 @@ function NodeForm({
   onCancel: () => void;
 }) {
   const { t } = useI18n();
+  const people = usePeople();
   const valid = form.kind === "squad" ? !!form.squad_id : !!form.title.trim();
   return (
     <div className="card">
       <h3>{form.mode === "create" ? t("org.new") : t("org.edit")}</h3>
       <div className="row" style={{ alignItems: "flex-end" }}>
-        <div style={{ width: 220 }}>
-          <label>{t("org.kind")}</label>
-          <select value={form.kind} onChange={(e) => onChange({ ...form, kind: e.target.value as Kind })}>
-            <option value="entity">{t("org.kind.entity")}</option>
-            <option value="squad">{t("org.kind.squad")}</option>
-          </select>
+        {/* One list: the squads that exist, or "other" to name an entity or a
+            grouping (a domain, a department) that is not a squad. */}
+        <div style={{ width: 260 }}>
+          <label htmlFor="org-node-what">{t("org.kind")}</label>
+          <PickOrType id="org-node-what" textPlaceholder={t("org.entity_label")} placeholder={t("org.pick_squad")}
+            groups={[{ label: t("org.kind.squad"), options: squads.map((s) => ({ value: String(s.id), label: s.name })) }]}
+            picked={form.kind === "squad" && form.squad_id ? form.squad_id : null}
+            text={form.kind === "entity" ? form.title : ""}
+            onPick={(v) => onChange(v ? { ...form, kind: "squad", squad_id: v } : { ...form, kind: "entity", squad_id: "", title: "" })}
+            onText={(txt) => onChange({ ...form, kind: "entity", squad_id: "", title: txt })} />
         </div>
 
-        {form.kind === "squad" ? (
-          <div style={{ width: 240 }}>
-            <label>{t("org.pick_squad")}</label>
-            <select value={form.squad_id} onChange={(e) => onChange({ ...form, squad_id: e.target.value })}>
-              <option value="">-</option>
-              {squads.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
-          </div>
-        ) : (
-          <div style={{ width: 240 }}>
-            <label>{t("org.entity_label")}</label>
-            <input value={form.title} onChange={(e) => onChange({ ...form, title: e.target.value })} />
-          </div>
-        )}
+        {/* The person who holds the box (a head of domain...): an account, or a name. */}
+        <div style={{ width: 240 }}>
+          <label htmlFor="org-node-person">{t("org.person")}</label>
+          <PickOrType id="org-node-person" maxLength={255} placeholder={t("org.person_none")}
+            groups={[{ options: people.map((p) => ({ value: p.name, label: p.name })) }]}
+            picked={people.some((p) => p.name === form.person_name) ? form.person_name : null}
+            text={people.some((p) => p.name === form.person_name) ? "" : form.person_name}
+            onPick={(v) => onChange({ ...form, person_name: v ?? "" })}
+            onText={(txt) => onChange({ ...form, person_name: txt })} />
+        </div>
 
         <div style={{ width: 240 }}>
           <label>{t("org.attach")}</label>

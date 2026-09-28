@@ -8,6 +8,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../../api";
 import { useI18n } from "../../i18n";
+import { usePeople } from "../../components/usePeople";
 import { useReloadConfig } from "../../config";
 import { useAuth } from "../../auth";
 import { LeaveConfig, LeaveType, ModuleKey, Permissions, Squad, Tribe } from "../../types";
@@ -309,7 +310,7 @@ export function ReportingAdmin() {
   }
   async function testWeekly() {
     setTestMsg(null);
-    try { const r = await api.post<any>("/api/admin/report-config/test", {}); setTestMsg(r.ok ? t("report.test_ok", { to: r.to }) : t("report.test_fail") + (r.error ? ` (${r.error})` : "")); }
+    try { const r = await api.post<any>("/api/admin/report-config/test", {}); setTestMsg(r.ok ? t("report.test_ok", { to: r.to, n: r.count ?? 1 }) : t("report.test_fail") + (r.error ? ` (${r.error})` : "")); }
     catch (e: any) { setTestMsg(e.message); }
   }
   // Now, each squad's own document to its leaders (the chosen squads, else all).
@@ -527,6 +528,8 @@ function RecipientList({ label, list, onChange, autos = [], onAuto, t }: {
 }) {
   const [draft, setDraft] = useState("");
   const [bad, setBad] = useState(false);
+  const people = usePeople();
+  const listed = new Set(list.map((x) => x.toLowerCase()));
   const add = () => {
     const parts = draft.split(/[\s,;]+/).map((x) => x.trim()).filter(Boolean);
     if (!parts.length) return;
@@ -563,6 +566,14 @@ function RecipientList({ label, list, onChange, autos = [], onAuto, t }: {
                // Typed then left: kept, as the old text box did (it was lost on Save).
                onBlur={() => { if (draft.trim()) add(); }} />
         <button type="button" className="btn-secondary btn-sm" onClick={add} disabled={!draft.trim()}>{t("admin.add")}</button>
+        {/* Or pick an account that exists, instead of typing its address. */}
+        <select className="w-auto" aria-label={t("pick.add_person")} value=""
+                onChange={(e) => { const v = e.target.value; if (v && !listed.has(v.toLowerCase())) onChange([...list, v]); }}>
+          <option value="">{t("pick.add_person")}</option>
+          {people.filter((p) => p.email && !listed.has(p.email.toLowerCase())).map((p) => (
+            <option key={p.id} value={p.email}>{p.name} ({p.email})</option>
+          ))}
+        </select>
         {autos.filter((a) => !a.on).map((a) => (
           <button key={a.key} type="button" className="btn-secondary btn-sm" onClick={() => onAuto?.(a.key, true)}>
             + {a.label}

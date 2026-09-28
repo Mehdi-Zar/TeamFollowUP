@@ -45,6 +45,7 @@ from .routers import (
 )
 
 from .logconfig import configure_logging
+from .ops import APP_VERSION
 
 # Text lines locally, GCP Cloud Logging JSON when LOG_FORMAT=json (see logconfig).
 configure_logging(settings.log_format, settings.log_level)
@@ -52,7 +53,7 @@ configure_logging(settings.log_format, settings.log_level)
 app = FastAPI(
     title=settings.app_name,
     description="Outil de pilotage de tribe : consolidation, drill-down, saisie, organigramme, exports.",
-    version="2.1.0",
+    version=APP_VERSION,
     # The API documentation is served below, to administrators only: public, it
     # handed the whole map of the API to anyone who could reach the app.
     docs_url=None, redoc_url=None, openapi_url=None,

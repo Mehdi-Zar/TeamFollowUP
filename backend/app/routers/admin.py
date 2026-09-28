@@ -515,14 +515,16 @@ def send_to_squad_leaders(payload: dict = Body(default=None), tribe_id: int | No
 @router.post("/report-config/test")
 def test_report_config(payload: dict = Body(default=None), tribe_id: int | None = Query(default=None),
                        db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """POST /api/admin/report-config/test: send the scope's report now to the
-    caller (or a chosen address) as a check. Same scopes as the config.
-
-    Builds the current-year report, renders the HTML body and (if python-pptx is
-    available) attaches the PPTX. Fails with 400 if SMTP is disabled. Audited."""
+    """POST /api/admin/report-config/test: send now to the caller (or a chosen
+    address) what the schedule would send to its fixed recipients: the whole
+    document if it is on, and one mail per squad if "one mail per squad" (or the
+    squad leaders' mail) is on. It used to send the whole document only, so the
+    per-squad option looked broken. Fails with 400 if SMTP is disabled. Audited."""
     from ..smtpconfig import get_smtp
     from ..mail import last_error
     from ..mailbody import instance_lang
+    from ..reportconfig import get_report
+    from ..reportcommon import rt
     from ..report import _file_base, build_report_data, local_now, render_pptx, report_mail
 
     tid = _report_tribe(db, user, tribe_id)
@@ -532,24 +534,44 @@ def test_report_config(payload: dict = Body(default=None), tribe_id: int | None 
     cfg = get_smtp(db)
     if not cfg.get("enabled"):
         raise HTTPException(status_code=400, detail="SMTP désactivé")
+    rep = get_report(db, tid)
     year = reference_year(db)
     lang = instance_lang(db)
-    data = build_report_data(db, tid, year, 7, lang=lang)
-    pptx_bytes = b""
     try:
         pptxtpl.use(pptxtpl.get(db))
-        pptx_bytes = render_pptx(data) or b""
     except Exception:
         pass
     local = local_now(utcnow())
     week = local.isocalendar()[1]
-    from ..reportcommon import rt
-    subject = rt(lang, "subject", scope=data["scope_name"], w=week) + (" (test)")
-    ok = report_mail(db, cfg, to, subject, data, why="test", week=week, pptx=pptx_bytes,
-                     file_base=_file_base(lang, data["scope_name"], local.date().isoformat()))
-    record_audit(db, user.id, "report_config.test", entity="weekly_report", detail={"ok": ok, "to": to})
+    day = local.date().isoformat()
+
+    def send(data: dict, scope: str) -> bool:
+        try:
+            pptx_bytes = render_pptx(data) or b""
+        except Exception:
+            pptx_bytes = b""
+        subject = rt(lang, "subject", scope=scope, w=week) + " (test)"
+        return report_mail(db, cfg, to, subject, data, why="test", week=week, pptx=pptx_bytes,
+                           file_base=_file_base(lang, scope, day))
+
+    results: list[bool] = []
+    per_squad = bool(rep.get("per_squad") or rep.get("squad_leaders"))
+    if rep.get("global_doc", True) or not per_squad:
+        data = build_report_data(db, tid, year, 7, lang=lang)
+        results.append(send(data, data["scope_name"]))
+    if per_squad:
+        q = select(Squad).order_by(Squad.display_order, Squad.id)
+        if tid is not None:
+            q = q.where(Squad.tribe_id == tid)
+        if rep.get("squad_ids"):
+            q = q.where(Squad.id.in_(rep["squad_ids"]))
+        for squad in db.scalars(q).all():
+            results.append(send(build_report_data(db, None, year, 7, lang=lang, squad_id=squad.id), squad.name))
+    ok = bool(results) and all(results)
+    record_audit(db, user.id, "report_config.test", entity="weekly_report",
+                 detail={"ok": ok, "to": to, "count": len(results)})
     db.commit()
-    return {"ok": ok, "to": to, "pptx": bool(pptx_bytes), "error": None if ok else last_error()}
+    return {"ok": ok, "to": to, "count": sum(results), "error": None if ok else last_error()}
 
 
 # ---------- Change-notification emails (on modification) ----------

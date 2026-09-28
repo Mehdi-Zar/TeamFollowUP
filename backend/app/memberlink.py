@@ -83,3 +83,28 @@ def link_members_to(db: Session, user: User) -> int:
     for m in rows:
         m.user_id = user.id
     return len(rows)
+
+
+def enrol_in_squad(db: Session, user: User, squad: Squad) -> Member:
+    """Make the account a member of this squad's team, once.
+
+    Validating an access with a "home squad" chose the squad and wrote nothing
+    in its team: the person never showed in the org chart. Reuses the line that
+    already carries the account or its email (added by the leader while the
+    account waited), and otherwise adds one. Same tribe only. Does not commit.
+    """
+    email = (user.email or "").lower() or None
+    line = db.scalar(select(Member).where(Member.squad_id == squad.id, Member.user_id == user.id))
+    if line is None and email:
+        line = db.scalar(select(Member).where(Member.squad_id == squad.id,
+                                              func.lower(Member.email) == email))
+    if line is None:
+        last = db.scalar(select(func.max(Member.display_order)).where(Member.squad_id == squad.id))
+        line = Member(squad_id=squad.id, full_name=(user.display_name or name_from_email(email or ""))[:255],
+                      email=email, display_order=(last or 0) + 1)
+        db.add(line)
+    line.user_id = user.id
+    if email and not line.email:
+        line.email = email
+    db.flush()
+    return line

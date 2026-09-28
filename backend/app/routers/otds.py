@@ -176,27 +176,28 @@ def _validate_owner(db: Session, tribe_id: int, owner_user_id: int | None) -> No
                             detail="Le porteur doit diriger une squad de cette tribe")
 
 
-# At most this many commitments fall due in the same month, per tribe for the
-# management ones and per squad for a squad's own. More in one month is a plan
-# nobody can hold, and the timeline shows two per month.
+# At most this many commitments fall due in the same month for one squad, whoever
+# set them (its own and the management's aimed at it): more in one month is a plan
+# nobody can hold, and the timeline shows two per month. The cap is per squad, not
+# per tribe: a tribe of eleven squads was held to two commitments a month in all.
+# A management commitment aimed at no squad has no cap.
 MAX_OTD_PER_MONTH = 2
 
 
-def _check_month_quota(db: Session, scope: str, tribe_id: int, squad_id: int | None,
-                       committed, exclude_id: int | None = None) -> None:
-    """409 when the month of ``committed`` already holds MAX_OTD_PER_MONTH."""
-    if committed is None:
+def _check_month_quota(db: Session, squad_id: int | None, committed,
+                       exclude_id: int | None = None) -> None:
+    """409 when this squad's month of ``committed`` already holds MAX_OTD_PER_MONTH."""
+    if committed is None or squad_id is None:
         return
-    q = select(Otd).where(Otd.scope == scope)
-    q = q.where(Otd.squad_id == squad_id) if scope == SQUAD_SCOPE else q.where(Otd.tribe_id == tribe_id)
+    q = select(Otd).where(Otd.squad_id == squad_id, Otd.committed_date.isnot(None))
     if exclude_id is not None:
         q = q.where(Otd.id != exclude_id)
-    same = [o for o in db.scalars(q.where(Otd.committed_date.isnot(None))).all()
+    same = [o for o in db.scalars(q).all()
             if (o.committed_date.year, o.committed_date.month) == (committed.year, committed.month)]
     if len(same) >= MAX_OTD_PER_MONTH:
         raise HTTPException(status_code=409, detail=(
-            f"{MAX_OTD_PER_MONTH} engagements au plus par mois : "
-            f"{committed.month:02d}/{committed.year} en compte déjà {len(same)}"))
+            f"{MAX_OTD_PER_MONTH} engagements au plus par mois pour une squad : "
+            f"{committed.month:02d}/{committed.year} en compte déjà {len(same)} pour celle-ci"))
 
 
 def _notify(otd_squad_id: int | None, user: User) -> None:
@@ -256,7 +257,7 @@ def create_otd(payload: OtdCreate, db: Session = Depends(get_db),
             raise HTTPException(status_code=400, detail="Squad hors de cette tribe")
         data["squad_id"] = target.id if target else None
 
-    _check_month_quota(db, data["scope"], data["tribe_id"], data.get("squad_id"), data.get("committed_date"))
+    _check_month_quota(db, data.get("squad_id"), data.get("committed_date"))
     otd = Otd(**data)
     db.add(otd)
     db.flush()
@@ -287,8 +288,7 @@ def update_otd(otd_id: int, payload: OtdUpdate, db: Session = Depends(get_db),
         else:
             _validate_owner(db, otd.tribe_id, data["owner_user_id"])
     if data.get("committed_date") is not None:
-        _check_month_quota(db, otd.scope or "management", otd.tribe_id, otd.squad_id,
-                           data["committed_date"], exclude_id=otd.id)
+        _check_month_quota(db, otd.squad_id, data["committed_date"], exclude_id=otd.id)
     for k, v in data.items():
         setattr(otd, k, v)
     record_audit(db, user.id, "otd.update", entity="otd", entity_id=otd.id, detail=list(data.keys()))

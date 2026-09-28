@@ -117,7 +117,10 @@ def public_config(db: Session) -> dict:
     from .branding import css_variables, get_branding
     cfg = get_general(db)
     theme = get_branding(db)
+    from .ops import APP_VERSION
     return {
+        # The release, shown on the login page and in the sidebar.
+        "version": APP_VERSION,
         "app_name": cfg["app_name"],
         "app_subtitle": cfg["app_subtitle"],
         "default_lang": cfg["default_lang"],

@@ -14,6 +14,7 @@ import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api, errorText } from "../api";
 import { useI18n } from "../i18n";
+import { usePeople } from "../components/usePeople";
 import { useModule } from "../config";
 import { Budget, Committee, CommitteeFrequency, DependentItem, Initiative, Member, RoadmapItem, SnapshotMeta, SquadDetail, Weekday } from "../types";
 import { Dot, FreshnessBadge, ProgressBar, Spinner, ErrorBanner, Collapsible } from "../components/ui";
@@ -418,6 +419,7 @@ function CommitteeModal({ initial, isNew, onSave, onClose, error }:
     error?: string | null }) {
   const { t } = useI18n();
   const [c, setC] = useState<Partial<Committee>>(initial);
+  const people = usePeople();
   const set = (k: keyof Committee, v: any) => setC((prev) => ({ ...prev, [k]: v }));
   // A weekday only makes sense for recurring cadences.
   const recurring = c.frequency === "daily" || c.frequency === "weekly" || c.frequency === "biweekly";
@@ -472,6 +474,17 @@ function CommitteeModal({ initial, isNew, onSave, onClose, error }:
           </div>
           <div>
             <label className="field-label">{t("committee.participants")}</label>
+            {/* Pick the people who exist, and still type anyone else (an outside guest, a role). */}
+            <select aria-label={t("pick.add_person")} value="" style={{ marginBottom: 6 }}
+                    onChange={(e) => {
+                      const name = e.target.value;
+                      if (!name) return;
+                      const cur = (c.participants ?? "").split(",").map((x) => x.trim()).filter(Boolean);
+                      if (!cur.includes(name)) set("participants", [...cur, name].join(", "));
+                    }}>
+              <option value="">{t("pick.add_person")}</option>
+              {people.map((p) => <option key={p.id} value={p.name}>{p.name}</option>)}
+            </select>
             <textarea rows={2} placeholder={t("committee.participants_ph")} value={c.participants ?? ""} onChange={(e) => set("participants", e.target.value)} />
           </div>
           <label className="switch">

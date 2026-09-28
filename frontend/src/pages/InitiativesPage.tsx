@@ -6,6 +6,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { useI18n } from "../i18n";
+import PickOrType from "../components/PickOrType";
+import { usePeople } from "../components/usePeople";
 import { useAuth } from "../auth";
 import { useConfig, useModule } from "../config";
 import { Initiative, Squad, Tribe } from "../types";
@@ -232,6 +234,7 @@ function InitiativeEditor({ init, squads, tribeId, onClose, onSaved, t }: any) {
   const [f, setF] = useState<Partial<Initiative>>(init);
   const [err, setErr] = useState<string | null>(null);
   const set = (k: string, v: any) => setF((p: any) => ({ ...p, [k]: v }));
+  const people = usePeople();
   // Moving an initiative to another squad detaches the milestones it had in the
   // old one (they belong to that squad): say so before saving, not after.
   const leaving = f.id && init.squad_id != null && (f.squad_id ?? null) !== init.squad_id
@@ -281,7 +284,11 @@ function InitiativeEditor({ init, squads, tribeId, onClose, onSaved, t }: any) {
         </div>
         <div className="stack" style={{ gap: 4 }}>
           <label className="field-label">{t("init.h_owner")}</label>
-          <input value={f.owner ?? ""} placeholder={t("init.owner_ph")} onChange={(e) => set("owner", e.target.value)} />
+          <PickOrType maxLength={255} textPlaceholder={t("init.owner_ph")}
+            groups={[{ options: people.map((p) => ({ value: p.name, label: p.name })) }]}
+            picked={people.some((p) => p.name === f.owner) ? f.owner : null}
+            text={people.some((p) => p.name === f.owner) ? "" : f.owner}
+            onPick={(v) => set("owner", v ?? "")} onText={(txt) => set("owner", txt)} />
         </div>
       </div>
     </Modal>

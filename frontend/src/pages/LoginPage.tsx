@@ -32,7 +32,7 @@ const SSO_HREF: Record<string, string> = {
 export default function LoginPage() {
   const { user, loading, config, login } = useAuth();
   const { t } = useI18n();
-  const { app_name, branding } = useConfig();
+  const { app_name, branding, version } = useConfig();
   const [params] = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -146,6 +146,7 @@ export default function LoginPage() {
         {params.get("k") && mode === "secret" && (
           <div className="small muted" style={{ marginTop: 12 }}>{t("login.secret_refused")}</div>
         )}
+        {version && <div className="small muted" style={{ marginTop: 16, textAlign: "center" }}>{t("app.version", { v: version })}</div>}
       </div>
     </div>
   );

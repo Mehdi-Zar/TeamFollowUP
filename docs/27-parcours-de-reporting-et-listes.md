@@ -184,6 +184,23 @@ se verifie pas.
   confirmation ouvre maintenant la page de la squad, avec un bandeau « Reporting
   envoye » et un lien vers l'historique, ou figure le nouvel instantane.
 
+### Choisir ce qui existe, ou l'ecrire
+
+Partout ou l'on designe une squad, une tribe ou une personne, le champ est une liste
+deroulante de ce qui existe, terminee par « Autre (saisie libre) » quand le champ admet
+un texte (composant `PickOrType`). La dependance d'un jalon n'oblige plus a choisir
+d'abord un type : squads et tribes sont dans la meme liste. Sont concernes le porteur et
+le theme d'un jalon, sa dependance, le porteur d'une initiative, la case et la personne
+d'une case de l'organigramme, le destinataire d'un export par mail. Les participants d'un
+comite et les destinataires des rapports gardent leur saisie libre, avec une liste pour
+ajouter une personne existante. Les personnes proposees viennent de `GET
+/api/tribes/people` (sa tribe, tout le monde pour un admin).
+
+Les champs qui designent un compte ou une squad par son identifiant (leader, co-leaders,
+contributeurs, tribe d'un compte, squad d'accueil, personne en conge, squads d'une
+plateforme) restent des listes sans saisie libre : un leader doit etre un compte, un
+texte ne pourrait rien y rattacher.
+
 ## 2. Quatre ecrans de liste, une seule facon de les piloter
 
 L'apercu avait une recherche, un tri visible et une vue liste. Le steerco, les

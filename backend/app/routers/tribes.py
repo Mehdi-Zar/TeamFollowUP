@@ -42,6 +42,23 @@ def list_tribes(db: Session = Depends(get_db), user: User = Depends(get_current_
     return out
 
 
+@router.get("/people")
+def tribe_people(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """GET /api/tribes/people: the active accounts one may name in a field (owner,
+    participant, recipient, person of the org chart), to offer them in a list.
+
+    Same bounds as the report recipients: everyone for an admin, one's own tribe
+    for anyone else (and oneself). Names and emails only."""
+    q = select(User).where(User.status == "active", User.is_break_glass.is_(False))
+    if user.role != "admin":
+        if user.tribe_id is None:
+            q = q.where(User.id == user.id)
+        else:
+            q = q.where(User.tribe_id == user.tribe_id)
+    rows = db.scalars(q.order_by(User.display_name)).all()
+    return [{"id": u.id, "name": u.display_name, "email": u.email, "tribe_id": u.tribe_id} for u in rows]
+
+
 @router.get("/org-overview", response_model=list[TribeOrg])
 def org_overview(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     """GET /api/tribes/org-overview: read-only org charts of ALL tribes (one per

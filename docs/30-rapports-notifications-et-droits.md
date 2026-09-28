@@ -78,9 +78,11 @@ Le menu Administration apparait des qu'un persona a au moins un onglet.
 
 ## 5. Deux regles de saisie liees
 
-- **Deux engagements OTD au plus par mois** : par tribe pour ceux du management,
-  par squad pour ceux d'une squad (`otds.MAX_OTD_PER_MONTH`). Un troisieme, ou un
-  engagement deplace vers un mois plein, est refuse (409).
+- **Deux engagements OTD au plus par mois pour une meme squad**, qu'elle les prenne ou
+  que le management les lui assigne (`otds.MAX_OTD_PER_MONTH`). Un troisieme, ou un
+  engagement deplace vers un mois plein, est refuse (409). Le plafond etait par tribe
+  pour le management, ce qui limitait toute une tribe a deux engagements par mois. Un
+  engagement du management qui ne vise aucune squad n'est pas plafonne.
 - **Un squad leader arrive sur sa squad** dans la saisie ; le selecteur n'apparait
   que s'il en dirige plusieurs.
 

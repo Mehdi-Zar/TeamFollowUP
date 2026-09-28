@@ -100,3 +100,13 @@ def test_logs_api_read_set_level_and_download(client, seeded):
     login(client, seeded["member"])
     assert client.get("/api/admin/logs").status_code == 403
     assert client.post("/api/admin/log-level", json={"level": "DEBUG"}).status_code == 403
+
+
+def test_the_version_is_public_and_comes_from_the_version_file(client):
+    """La page de connexion l'affiche : il faut la lire sans etre connecte."""
+    import os
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    with open(os.path.join(root, "VERSION"), encoding="utf-8") as f:
+        expected = f.read().strip()
+    if not os.environ.get("APP_VERSION"):
+        assert client.get("/api/config").json()["version"] == expected

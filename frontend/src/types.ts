@@ -527,6 +527,8 @@ export interface LeaveOverlapDay {
 /** Public (unauthenticated-safe) app configuration: branding, defaults, feed
  *  rules and the module map. Fetched into the config context. */
 export interface PublicConfig {
+  /** The release number (backend/VERSION), shown on the login page and in the sidebar. */
+  version?: string;
   app_name: string;
   app_subtitle: string;
   default_lang: "fr" | "en";

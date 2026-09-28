@@ -189,8 +189,11 @@ def approve(db: Session, actor: User, target: User, *, role: str,
     target.status = "active"
     target.role = role
     target.tribe_id = scope_tribe
-    from .memberlink import link_members_to
+    from .memberlink import enrol_in_squad, link_members_to
     link_members_to(db, target)  # members added with this email while it waited
+    if squad_id is not None:
+        # The home squad is where the person works: they appear in its team.
+        enrol_in_squad(db, target, db.get(Squad, squad_id))
     record_audit(db, actor.id, "access.approve", entity="user", entity_id=target.id,
                  detail={"email": target.email, "role": role, "tribe_id": scope_tribe,
                          "squad_id": squad_id, "from": was})

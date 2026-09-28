@@ -56,7 +56,11 @@ assignable roles, **capabilities**, impersonation); OIDC: `GET /oidc/login`,`GET
 SAML: `GET /saml/metadata`,`GET /saml/login`,`POST /saml/acs`; `POST /impersonate`; `POST /stop-impersonation`
 
 ### tribes (`/api/tribes`)
-`GET ""`; `GET /org-overview`; `POST ""` (admin); `PUT /{id}`; `DELETE /{id}` (admin)
+`GET ""`; `GET /org-overview`; `GET /people`; `POST ""` (admin); `PUT /{id}`; `DELETE /{id}` (admin)
+
+`GET /people` lists the active accounts one may name in a field (owner, participant,
+recipient, person of the org chart): everyone for an admin, one's own tribe for anyone
+else. Names and emails only. It feeds the pick-or-type fields.
 
 ### squads (`/api/squads`)
 `GET ""`; `GET /{id}` (detail); `GET /{id}/dependents`; `GET /{id}/roadmap.pptx`; `GET /{id}/roadmap.html`;

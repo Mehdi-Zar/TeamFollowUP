@@ -7,6 +7,8 @@
 import { useEffect, useRef, useState } from "react";
 import { api, errorText } from "../api";
 import { useI18n } from "../i18n";
+import PickOrType from "./PickOrType";
+import { usePeople } from "./usePeople";
 import { useConfig, useModule } from "../config";
 import { useAuth } from "../auth";
 import { Squad, Tribe } from "../types";
@@ -88,6 +90,7 @@ export default function ExportMenu({ year, squadId, sinceDays = 7, docs, steerco
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<View>("menu");
   const [to, setTo] = useState(user?.email || "");
+  const people = usePeople();
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   // HTML exports open in this in-app window rather than a new browser tab.
@@ -227,7 +230,11 @@ export default function ExportMenu({ year, squadId, sinceDays = 7, docs, steerco
               <button className="export-back" onClick={() => setView("menu")}>← {t("export.send_report")}</button>
               <div>
                 <label className="field-label">{t("export.to")}</label>
-                <input value={to} onChange={(e) => setTo(e.target.value)} placeholder="nom@exemple.com" />
+                <PickOrType textPlaceholder="nom@exemple.com"
+                  groups={[{ options: people.map((p) => ({ value: p.email, label: `${p.name} (${p.email})` })) }]}
+                  picked={people.some((p) => p.email === to) ? to : null}
+                  text={people.some((p) => p.email === to) ? "" : to}
+                  onPick={(v) => setTo(v ?? "")} onText={setTo} />
               </div>
               <div className="inline" style={{ justifyContent: "flex-end", gap: 8 }}>
                 <button className="btn-ghost btn-sm" onClick={() => setView("menu")}>{t("action.cancel")}</button>

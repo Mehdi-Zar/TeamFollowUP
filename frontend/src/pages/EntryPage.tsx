@@ -28,6 +28,7 @@ import { Dot, Spinner, ErrorBanner, EmptyState, Modal, SectionCard as Card } fro
 import { QuarterProgressEditor } from "../components/EntryExtras";
 import TeamMood, { moodAge, WEEKLY_STALE_DAYS } from "../components/TeamMood";
 import KeyMessagesPanel from "../components/KeyMessagesPanel";
+import PickOrType from "../components/PickOrType";
 import { OtdPanel } from "../components/OtdPanel";
 import { canEditSquad, contributesTo, leadsSquad } from "../perms";
 import { useSetPageChrome } from "../components/pageChrome";
@@ -628,8 +629,6 @@ function JalonModal({ jalon, members, onSave, onCancel, onDelete, error, t, road
   useEffect(() => { api.get<string[]>("/api/roadmap-items/themes").then(setThemes).catch(() => {}); }, []);
   // A dependency can be: free text, another squad, or a tribe.
   const depKind: "text" | "squad" | "tribe" = (f.dependency_kind as any) || "text";
-  const setDepKind = (k: "text" | "squad" | "tribe") =>
-    setF((p) => ({ ...p, dependency_kind: k, dependency_squad_id: null, dependency_tribe_id: null, dependencies: k === "text" ? (p.dependencies ?? "") : null }));
   const field = (label: string, key: string, area = false) => (
     <div>
       <label htmlFor={`jf-${key}`}>{label}</label>
@@ -661,12 +660,13 @@ function JalonModal({ jalon, members, onSave, onCancel, onDelete, error, t, road
           </div>
           {field(t("jalon.title") + " *", "title")}
           <div>
-            <label>{t("jalon.theme") + " *"}</label>
-            <input list="jalon-themes" placeholder={t("jalon.theme_ph")} maxLength={120} value={f.theme ?? ""}
-                   onChange={(e) => set("theme", e.target.value)} />
-            <datalist id="jalon-themes">
-              {themes.map((th) => <option key={th} value={th} />)}
-            </datalist>
+            <label htmlFor="jalon-theme">{t("jalon.theme") + " *"}</label>
+            {/* The themes already used, or a new one typed. */}
+            <PickOrType id="jalon-theme" maxLength={120} textPlaceholder={t("jalon.theme_ph")}
+              groups={[{ options: themes.map((th) => ({ value: th, label: th })) }]}
+              picked={themes.includes(f.theme ?? "") ? f.theme : null}
+              text={themes.includes(f.theme ?? "") ? "" : f.theme}
+              onPick={(v) => set("theme", v ?? "")} onText={(txt) => set("theme", txt)} />
           </div>
           <div className="row">
             <div className="col">
@@ -687,44 +687,38 @@ function JalonModal({ jalon, members, onSave, onCancel, onDelete, error, t, road
           </div>
           <div className="row">
             <div className="col">
-              <label>{t("jalon.owner")}</label>
-              <input list="jalon-owners" placeholder={t("jalon.owner_ph")} maxLength={255} value={f.owner ?? ""} onChange={(e) => set("owner", e.target.value)} />
-              <datalist id="jalon-owners">
-                {members.map((m: Member) => <option key={m.id} value={m.full_name} />)}
-              </datalist>
+              <label htmlFor="jalon-owner">{t("jalon.owner")}</label>
+              {/* The squad's members, else a name typed freely (someone outside the team). */}
+              <PickOrType id="jalon-owner" maxLength={255} textPlaceholder={t("jalon.owner_ph")}
+                groups={[{ options: members.map((m: Member) => ({ value: m.full_name, label: m.role_title ? `${m.full_name} (${m.role_title})` : m.full_name })) }]}
+                picked={members.some((m: Member) => m.full_name === f.owner) ? f.owner : null}
+                text={members.some((m: Member) => m.full_name === f.owner) ? "" : f.owner}
+                onPick={(v) => set("owner", v ?? "")} onText={(txt) => set("owner", txt)} />
             </div>
           </div>
           {field(t("jalon.desc"), "description", true)}
           {field(t("jalon.success"), "success_criteria", true)}
           {field(t("jalon.benefit"), "user_benefit", true)}
           <div>
-            <label>{t("jalon.deps")}</label>
-            <div className="row" style={{ gap: 8 }}>
-              <select className="w-auto" value={depKind} onChange={(e) => setDepKind(e.target.value as any)}>
-                <option value="squad">{t("jalon.dep_squad")}</option>
-                <option value="tribe">{t("jalon.dep_tribe")}</option>
-                <option value="text">{t("jalon.dep_text")}</option>
-              </select>
-              {depKind === "text" && (
-                <input className="grow" value={f.dependencies ?? ""} onChange={(e) => set("dependencies", e.target.value)} />
-              )}
-              {depKind === "squad" && (
-                <select className="grow" value={f.dependency_squad_id ?? ""} onChange={(e) => set("dependency_squad_id", e.target.value ? Number(e.target.value) : null)}>
-                  <option value="">-</option>
-                  {squads.filter((s: Squad) => s.id !== currentSquadId).map((s: Squad) => (
-                    <option key={s.id} value={s.id}>{s.name}</option>
-                  ))}
-                </select>
-              )}
-              {depKind === "tribe" && (
-                <select className="grow" value={f.dependency_tribe_id ?? ""} onChange={(e) => set("dependency_tribe_id", e.target.value ? Number(e.target.value) : null)}>
-                  <option value="">-</option>
-                  {tribes.map((tr: Tribe) => (
-                    <option key={tr.id} value={tr.id}>{tr.name}</option>
-                  ))}
-                </select>
-              )}
-            </div>
+            <label htmlFor="jalon-dep">{t("jalon.deps")}</label>
+            {/* One list: the squads and tribes that exist, then "other" to type
+                something outside the app (a vendor, a team not in the tool). */}
+            <PickOrType id="jalon-dep"
+              groups={[
+                { label: t("jalon.dep_squad"), options: squads.filter((s: Squad) => s.id !== currentSquadId)
+                    .map((s: Squad) => ({ value: `s:${s.id}`, label: s.name })) },
+                { label: t("jalon.dep_tribe"), options: tribes.map((tr: Tribe) => ({ value: `t:${tr.id}`, label: tr.name })) },
+              ]}
+              picked={depKind === "squad" && f.dependency_squad_id ? `s:${f.dependency_squad_id}`
+                : depKind === "tribe" && f.dependency_tribe_id ? `t:${f.dependency_tribe_id}` : null}
+              text={depKind === "text" ? f.dependencies : ""}
+              placeholder={t("jalon.dep_none")}
+              onPick={(v) => setF((p) => v?.startsWith("s:")
+                ? { ...p, dependency_kind: "squad", dependency_squad_id: Number(v.slice(2)), dependency_tribe_id: null, dependencies: null }
+                : v?.startsWith("t:")
+                ? { ...p, dependency_kind: "tribe", dependency_tribe_id: Number(v.slice(2)), dependency_squad_id: null, dependencies: null }
+                : { ...p, dependency_kind: null, dependency_squad_id: null, dependency_tribe_id: null, dependencies: "" })}
+              onText={(txt) => setF((p) => ({ ...p, dependency_kind: "text", dependency_squad_id: null, dependency_tribe_id: null, dependencies: txt }))} />
           </div>
           {field(t("jalon.risks"), "risks", true)}
         </div>

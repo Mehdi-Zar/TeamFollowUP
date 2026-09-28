@@ -100,3 +100,32 @@ def test_deny_disables_and_blocks_login(client, seeded, db):
     u2 = _pending(db, email="n2@test")
     login(client, seeded["sl_a"])
     assert client.post(f"/api/access-requests/{u2.id}/deny").status_code == 403
+
+
+def test_approving_into_a_home_squad_puts_the_person_in_its_team(client, seeded, db):
+    """Choisir la squad d'accueil sans rien ecrire dans son equipe laissait la
+    personne absente de l'organigramme."""
+    from app.models import Member
+    u = _pending(db, email="oidc.user@test")
+    login(client, seeded["admin"])
+    ok = client.post(f"/api/access-requests/{u.id}/approve",
+                     json={"role": "member", "squad_id": seeded["squad_a"]})
+    assert ok.status_code == 200
+    team = client.get(f"/api/squads/{seeded['squad_a']}").json()["members"]
+    mine = [m for m in team if m["full_name"] == "Newbie"]
+    assert len(mine) == 1
+    line = db.get(Member, mine[0]["id"])
+    assert line.user_id == u.id and line.email == "oidc.user@test"
+
+
+def test_a_line_added_by_email_beforehand_is_reused_not_doubled(client, seeded, db):
+    from app.models import Member
+    u = _pending(db, email="early@test")
+    db.add(Member(squad_id=seeded["squad_a"], full_name="Early Bird", email="early@test"))
+    db.commit()
+    login(client, seeded["admin"])
+    assert client.post(f"/api/access-requests/{u.id}/approve",
+                       json={"role": "member", "squad_id": seeded["squad_a"]}).status_code == 200
+    lines = db.query(Member).filter(Member.squad_id == seeded["squad_a"],
+                                    Member.email == "early@test").all()
+    assert len(lines) == 1 and lines[0].user_id == u.id and lines[0].full_name == "Early Bird"

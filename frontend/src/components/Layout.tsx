@@ -82,7 +82,7 @@ export default function Layout() {
     window.addEventListener("app:save-error", on);
     return () => window.removeEventListener("app:save-error", on);
   }, []);
-  const { app_name, modules, branding, lang_switch } = useConfig();
+  const { app_name, modules, branding, lang_switch, version } = useConfig();
   const [people, setPeople] = useState<{ id: number; display_name: string; role: string }[]>([]);
   // Only a real admin (not already impersonating) may pick someone to view as.
   const canImpersonate = user?.role === "admin" && !isPreview;
@@ -216,6 +216,12 @@ export default function Layout() {
           {collapsed ? <IconExpand size={18} /> : <IconCollapse size={18} />}
           {!collapsed && <span>{t("nav.collapse")}</span>}
         </button>
+        {version && (
+          <div className="small" title={t("app.version", { v: version })}
+               style={{ opacity: 0.6, textAlign: "center", padding: "0 8px 10px", fontSize: 11 }}>
+            {collapsed ? version : t("app.version", { v: version })}
+          </div>
+        )}
       </aside>
 
       <div className="app-main">

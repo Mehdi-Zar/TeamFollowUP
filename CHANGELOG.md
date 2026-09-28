@@ -3,6 +3,18 @@
 ## Unreleased
 
 ### Ergonomie
+- Champs a choisir : liste deroulante de ce qui existe (squads, tribes, personnes, themes)
+  plus « Autre (saisie libre) ». Dependance d'un jalon en une seule liste, personne d'une
+  case de l'organigramme, porteur d'initiative, destinataires. Nouvelle route
+  `GET /api/tribes/people`.
+- OTD : le plafond de deux engagements par mois s'applique a chaque squad (les siens et
+  ceux que le management lui assigne), et non plus a toute la tribe.
+- Version 2.2.0. Le numero de version (fichier `backend/VERSION`) s'affiche sur la page de
+  connexion et en bas du menu.
+- Rapport hebdomadaire : le bouton Tester envoie ce que la planification enverrait, donc un
+  mail par squad quand l'option est cochee (il n'envoyait que le document complet).
+- Validation d'un acces avec une squad d'accueil : la personne apparait dans l'equipe de la
+  squad (organigramme), en reprenant la ligne ajoutee par email si elle existait.
 - Envoi du reporting : on arrive sur la page de la squad avec une confirmation claire.
 - Organigramme : plus de lien vers la page de la squad, une squad se deplie pour voir ses
   membres, « Modifier l'equipe » reste disponible.

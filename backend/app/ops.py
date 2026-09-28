@@ -25,8 +25,22 @@ import time
 # Process start time, captured at import (module load ~= process start) for uptime.
 _START = time.time()
 
-# Surfaced in the Ops panel. Override via env at build/deploy time.
-APP_VERSION = os.environ.get("APP_VERSION", "2.1.0")
+def _read_version() -> str:
+    """The release number, from backend/VERSION: the one file bumped at each
+    release. APP_VERSION in the environment overrides it (a build pipeline)."""
+    env = (os.environ.get("APP_VERSION") or "").strip()
+    if env:
+        return env
+    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "VERSION")
+    try:
+        with open(path, encoding="utf-8") as f:
+            return f.read().strip() or "0.0.0"
+    except OSError:
+        return "0.0.0"
+
+
+# Shown on the login page, in the sidebar and in the Ops panel.
+APP_VERSION = _read_version()
 
 
 def detect_orchestrator() -> str:

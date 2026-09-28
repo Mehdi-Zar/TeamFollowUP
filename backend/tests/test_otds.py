@@ -269,20 +269,32 @@ def test_deleting_a_squad_takes_its_commitments_with_it(client, db, seeded):
     assert db.get(Otd, otd_id) is None
 
 
-def test_at_most_two_commitments_fall_due_in_a_month(client, seeded):
-    """Management ones per tribe, a squad's own per squad; moving one into a full
-    month is refused too."""
+def test_at_most_two_commitments_fall_due_in_a_month_per_squad(client, seeded):
+    """Deux engagements au plus par mois POUR UNE MEME SQUAD, qu'elle les prenne ou
+    que le management les lui assigne. Le plafond etait par tribe : une tribe de onze
+    squads etait tenue a deux engagements par mois en tout."""
     login(client, seeded["tribe"])
     base = {"tribe_id": seeded["t1"], "year": YEAR}
     june = f"{YEAR}-06-15T00:00:00Z"
-    for i in (1, 2):
-        assert client.post("/api/otds", json={**base, "title": f"J{i}", "committed_date": june}).status_code == 201
-    third = client.post("/api/otds", json={**base, "title": "J3", "committed_date": f"{YEAR}-06-30T00:00:00Z"})
-    assert third.status_code == 409, third.text
-    july = client.post("/api/otds", json={**base, "title": "Jul", "committed_date": f"{YEAR}-07-01T00:00:00Z"})
+    # Management commitments aimed at no squad: no cap.
+    for i in (1, 2, 3):
+        assert client.post("/api/otds", json={**base, "title": f"T{i}", "committed_date": june}).status_code == 201
+    # Aimed at squad A: two, then the month is full for A...
+    on_a = {**base, "squad_id": seeded["squad_a"]}
+    assert client.post("/api/otds", json={**on_a, "title": "A1", "committed_date": june}).status_code == 201
+    july = client.post("/api/otds", json={**on_a, "title": "A-jul", "committed_date": f"{YEAR}-07-01T00:00:00Z"})
     assert july.status_code == 201
-    assert client.put(f"/api/otds/{july.json()['id']}", json={"committed_date": june}).status_code == 409
 
     login(client, seeded["sl_a"])
     own = {**base, "scope": "squad", "squad_id": seeded["squad_a"], "committed_date": june}
-    assert client.post("/api/otds", json={**own, "title": "S1"}).status_code == 201   # its own quota
+    assert client.post("/api/otds", json={**own, "title": "S1"}).status_code == 201
+    # ...A now holds two in June (one from the management, one its own).
+    third = client.post("/api/otds", json={**own, "title": "S2", "committed_date": f"{YEAR}-06-30T00:00:00Z"})
+    assert third.status_code == 409, third.text
+    login(client, seeded["tribe"])
+    assert client.put(f"/api/otds/{july.json()['id']}", json={"committed_date": june}).status_code == 409
+    # ...while squad B still has its own two.
+    on_b = {**base, "squad_id": seeded["squad_b"], "committed_date": june}
+    for i in (1, 2):
+        assert client.post("/api/otds", json={**on_b, "title": f"B{i}"}).status_code == 201
+    assert client.post("/api/otds", json={**on_b, "title": "B3"}).status_code == 409
