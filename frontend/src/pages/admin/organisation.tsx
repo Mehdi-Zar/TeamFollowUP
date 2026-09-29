@@ -5,6 +5,7 @@
  * Several render editable rows inside tables, where the column header is the
  * visible label and the control carries it as `aria-label`.
  */
+import { invalidatePeople } from "../../components/usePeople";
 import { Fragment, useEffect, useState } from "react";
 import { api } from "../../api";
 import { useI18n } from "../../i18n";
@@ -119,12 +120,12 @@ export function SquadsAdmin({ perms }: { perms: Permissions }) {
                   </select>
                 </td>
                 <td>
-                  <PeopleCell label={t("squad.co_leaders")} people={ofTribe(s).filter((u) => u.id !== s.leader_user_id)}
+                  <PeopleCell label={t("squad.co_leaders")} all={users} people={ofTribe(s).filter((u) => u.id !== s.leader_user_id)}
                               value={s.co_leader_user_ids ?? []}
                               onChange={(v) => update(s, { co_leader_user_ids: v })} />
                 </td>
                 <td>
-                  <PeopleCell label={t("squad.contributors")}
+                  <PeopleCell label={t("squad.contributors")} all={users}
                               people={ofTribe(s).filter((u) => u.id !== s.leader_user_id && !(s.co_leader_user_ids ?? []).includes(u.id))}
                               value={s.contributor_user_ids ?? []}
                               onChange={(v) => update(s, { contributor_user_ids: v })} />
@@ -160,7 +161,14 @@ export function SquadsAdmin({ perms }: { perms: Permissions }) {
           {isAdmin && (
             <div style={{ width: 200 }}>
               <label htmlFor="new-squad-tribe">{t("admin.tribe")}</label>
-              <select id="new-squad-tribe" value={form.tribe_id} onChange={(e) => setForm({ ...form, tribe_id: e.target.value })}>
+              <select id="new-squad-tribe" value={form.tribe_id} onChange={(e) => {
+                const tid = e.target.value;
+                // A leader of another tribe is no longer offered: keep them only if still in the list,
+                // otherwise the squad was created with a leader the screen showed as "-".
+                const stays = leaders.some((u) => String(u.id) === String(form.leader_user_id)
+                  && (u.tribe_id == null || !tid || String(u.tribe_id) === tid));
+                setForm({ ...form, tribe_id: tid, leader_user_id: stays ? form.leader_user_id : "" });
+              }}>
                 <option value="">-</option>
                 {tribes.map((tr) => (<option key={tr.id} value={tr.id}>{tr.name}</option>))}
               </select>
@@ -183,11 +191,14 @@ export function SquadsAdmin({ perms }: { perms: Permissions }) {
 }
 
 /** People in a table cell: who is there (with a remove cross) and a list to add one. */
-function PeopleCell({ label, people, value, onChange }: {
+function PeopleCell({ label, people, all, value, onChange }: {
   label: string; people: User[]; value: number[]; onChange: (v: number[]) => void;
+  /** Every account, to name someone already chosen who is no longer offered
+   *  (moved to another tribe, disabled): they showed as "#42". */
+  all?: User[];
 }) {
   const { t } = useI18n();
-  const name = (id: number) => people.find((u) => u.id === id)?.display_name ?? `#${id}`;
+  const name = (id: number) => (people.find((u) => u.id === id) ?? all?.find((u) => u.id === id))?.display_name ?? `#${id}`;
   const left = people.filter((u) => !value.includes(u.id));
   return (
     <div className="stack" style={{ gap: 4, minWidth: 180 }}>
@@ -260,6 +271,7 @@ export function UsersAdmin({ perms }: { perms: Permissions }) {
         tribe_id: form.tribe_id ? Number(form.tribe_id) : (isAdmin ? null : perms.tribe_id),
         password: form.password || null,
       });
+      invalidatePeople();   // the new account is offered in the pickers at once
       setForm({ email: "", display_name: "", role: roleOptions[roleOptions.length - 1] as Role, password: "", tribe_id: isAdmin ? "" : String(perms.tribe_id ?? "") });
       await load();
     });
@@ -267,12 +279,14 @@ export function UsersAdmin({ perms }: { perms: Permissions }) {
   async function update(u: User, patch: any) {
     await wrap(async () => {
       await api.put(`/api/admin/users/${u.id}`, patch);
+      invalidatePeople();
       await load();
     });
   }
   async function remove(u: User) {
     await wrap(async () => {
       await api.del(`/api/admin/users/${u.id}`);
+      invalidatePeople();
       setDeletingUser(null);
       await load();
     });

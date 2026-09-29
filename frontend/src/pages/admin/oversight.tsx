@@ -82,7 +82,7 @@ export function LogExportAdmin() {
   const loadCfg = () => { api.get<any>("/api/admin/log-export-config").then(setCfg).catch(ls.fail); };
   useEffect(loadCfg, []);
   if (!cfg) return ls.waiting(loadCfg);
-  const set = (k: string, v: any) => setCfg({ ...cfg, [k]: v });
+  const set = (k: string, v: any) => setCfg((p: any) => ({ ...p, [k]: v }));
   const dest = cfg.destination as string;
 
   const fld = (label: string, key: string, type = "text", placeholder = "") => (

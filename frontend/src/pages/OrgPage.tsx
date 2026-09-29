@@ -329,7 +329,12 @@ export default function OrgPage() {
           {tribes.map((tr) => (
             <button key={tr.id}
                     className={`tribe-chip${tr.id === tribeId ? " on" : ""}`}
-                    onClick={() => { setTribeId(tr.id); load(tr.id); }}>
+                    onClick={() => {
+                      // An open form belongs to the tribe it was opened in: its parent
+                      // box would otherwise attach the new box into the other tribe.
+                      if (tr.id !== tribeId) { setForm(null); setOpenTeams(new Set()); }
+                      setTribeId(tr.id); load(tr.id);
+                    }}>
               <span className="strong">{tr.name}</span>
               {counts[tr.id] !== undefined && (
                 <span className="small muted">{t("tribes.squads_n", { n: counts[tr.id] })}</span>
@@ -629,7 +634,7 @@ function NodeForm({
   onCancel: () => void;
 }) {
   const { t } = useI18n();
-  const people = usePeople();
+  const people = usePeople("all");
   const valid = form.kind === "squad" ? !!form.squad_id : !!form.title.trim();
   return (
     <div className="card">

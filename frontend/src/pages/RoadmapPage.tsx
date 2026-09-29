@@ -88,6 +88,9 @@ export default function RoadmapPage() {
       .then((d) => { if (alive) setData(d); }).catch((e) => { if (alive) setError(e.message); });
     return () => { alive = false; };
   }, [tribeId, year]);
+  // The squads picked belong to the tribe they were picked in: kept across a
+  // tribe change, the button said "3 squads" over an empty matrix.
+  useEffect(() => { setPicked(new Set()); }, [tribeId]);
   // Tribe list only needed to populate the admin-only tribe filter.
   useEffect(() => {
     if (isAdmin) api.get<Tribe[]>("/api/tribes").then(setTribes).catch(() => {});

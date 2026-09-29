@@ -31,13 +31,25 @@ export default function PickOrType({ id, groups, picked, text, onPick, onText, a
   ariaLabel?: string;
 }) {
   const { t } = useI18n();
-  const known = new Set(groups.flatMap((g) => g.options.map((o) => o.value)));
+  // Each value once, in the first group that has it: two options with the same
+  // value (two people with the same name) made the pick ambiguous.
+  const seen = new Set<string>();
+  const shownGroups = groups.map((g) => ({
+    ...g, options: g.options.filter((o) => (seen.has(o.value) ? false : (seen.add(o.value), true))),
+  }));
+  const known = seen;
   const hasText = !!(text ?? "").trim();
-  // "Other" stays open while one types, even while the field is still empty.
+  // "Other" stays open while one types, even while the field is still empty, and
+  // even once the text matches an item of the list: typing "Securite" on the way
+  // to "Securite reseau" must not close the field under the cursor. Only the
+  // dropdown itself closes it.
   const [typing, setTyping] = useState<boolean>(allowText && !picked && hasText);
-  useEffect(() => { if (picked) setTyping(false); else if (hasText) setTyping(true); }, [picked, hasText]);
+  useEffect(() => { if (!picked && hasText) setTyping(true); }, [picked, hasText]);
 
-  const value = picked && known.has(picked) ? picked : typing ? OTHER : "";
+  const value = typing ? OTHER : picked && known.has(picked) ? picked : "";
+  // While typing, a caller that recognises its text as an item passes it as
+  // `picked` and an empty `text`: the field keeps showing what was typed.
+  const typed = text || (typing ? picked : "") || "";
   return (
     <div className="stack" style={{ gap: 6 }}>
       <select id={id} aria-label={ariaLabel} value={value}
@@ -45,11 +57,13 @@ export default function PickOrType({ id, groups, picked, text, onPick, onText, a
                 const v = e.target.value;
                 if (v === OTHER) { setTyping(true); onPick(null); return; }
                 setTyping(false);
+                // The caller clears its own text when an item is picked. Emptying
+                // it from here as well undid the pick: in the milestone form, "text"
+                // means "the dependency is free text".
                 onPick(v || null);
-                if (v && onText) onText("");
               }}>
         <option value="">{placeholder ?? t("pick.none")}</option>
-        {groups.filter((g) => g.options.length > 0).map((g, i) => g.label ? (
+        {shownGroups.filter((g) => g.options.length > 0).map((g, i) => g.label ? (
           <optgroup key={i} label={g.label}>
             {g.options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
           </optgroup>
@@ -59,7 +73,7 @@ export default function PickOrType({ id, groups, picked, text, onPick, onText, a
       {allowText && typing && (
         <input autoFocus aria-label={ariaLabel ? `${ariaLabel} (${t("pick.other_short")})` : t("pick.other_short")}
                placeholder={textPlaceholder ?? t("pick.type_here")} maxLength={maxLength}
-               value={text ?? ""} onChange={(e) => onText?.(e.target.value)} />
+               value={typed} onChange={(e) => onText?.(e.target.value)} />
       )}
     </div>
   );

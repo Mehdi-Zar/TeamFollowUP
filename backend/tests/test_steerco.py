@@ -46,8 +46,17 @@ def test_month_keys():
 def test_svg_handles_gaps_and_empty():
     svg = _svg_line_chart({"labels": ["a", "b", "c"], "y_max": 100,
                            "series": [{"name": "x", "color": "#000", "data": [None, 40, 50]}]}, "no data")
-    assert svg.startswith("<svg") and "<path" in svg and "<circle" not in svg   # line only, no markers
+    # A line, and one dot only: the latest month (a single month drew nothing).
+    assert svg.startswith("<svg") and "<path" in svg and svg.count("<circle") == 1
     assert "no data" in _svg_line_chart({"series": []}, "no data")
+
+
+def test_a_single_month_is_still_drawn():
+    """Le premier steerco d'une plateforme n'a qu'un mois: sans point, la courbe
+    n'avait rien a tracer et le graphique restait vide."""
+    svg = _svg_line_chart({"labels": ["a", "b", "c"], "y_max": 100,
+                           "series": [{"name": "x", "color": "#000", "data": [None, 40, None]}]}, "no data")
+    assert "<circle" in svg
 
 
 # ---- aggregation ---------------------------------------------------------------

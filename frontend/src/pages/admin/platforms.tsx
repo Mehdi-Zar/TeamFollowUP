@@ -159,15 +159,22 @@ function TribeModelEditor() {
     if (!isAdmin) return;
     api.get<Tribe[]>("/api/tribes").then((ts) => { setTribes(ts); if (ts.length) setTribeId(ts[0].id); }).catch(() => {});
   }, [isAdmin]);
+  // The tribe whose model is on screen. Until the chosen tribe's model has
+  // arrived, nothing may be saved: the previous tribe's items would be written
+  // into it, and a late answer for the previous tribe is ignored.
+  const [loadedFor, setLoadedFor] = useState<number | null>(null);
   useEffect(() => {
     if (tribeId === null) return;
-    setErr(null); setMsg(null);
+    setErr(null); setMsg(null); setLoadedFor(null); setKpis([]); setSla([]);
+    let alive = true;
     api.get<any>(`/api/steerco/model?tribe_id=${tribeId}`)
-      .then((m) => { setKpis(m.kpis ?? []); setSla(m.sla ?? []); })
-      .catch((e) => setErr(errorText(e)));
+      .then((m) => { if (!alive) return; setKpis(m.kpis ?? []); setSla(m.sla ?? []); setLoadedFor(tribeId); })
+      .catch((e) => { if (alive) setErr(errorText(e)); });
+    return () => { alive = false; };
   }, [tribeId]);
 
   async function save() {
+    if (loadedFor === null || loadedFor !== tribeId) return;
     setErr(null); setMsg(null);
     try {
       const m = await api.put<any>(`/api/steerco/model?tribe_id=${tribeId}`, {
@@ -225,7 +232,7 @@ function TribeModelEditor() {
         </div>
       </div>
       <div className="inline" style={{ gap: 10 }}>
-        <button className="btn-sm" disabled={tribeId === null} onClick={save}>{t("action.save")}</button>
+        <button className="btn-sm" disabled={tribeId === null || loadedFor !== tribeId} onClick={save}>{t("action.save")}</button>
         {msg && <span className="small" style={{ color: "var(--green)" }}>{msg}</span>}
       </div>
     </div>

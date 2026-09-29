@@ -99,7 +99,7 @@ export function BrandingAdmin() {
   if (err && !cfg) return <ErrorBanner message={err} />;
   if (!cfg || !general) return <Spinner />;
 
-  const set = (k: string, v: any) => setCfg({ ...cfg, [k]: v });
+  const set = (k: string, v: any) => setCfg((p: any) => ({ ...p, [k]: v }));
 
   const onImage = (key: string, file?: File) => {
     if (!file) return;

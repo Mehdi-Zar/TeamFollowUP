@@ -234,7 +234,7 @@ function InitiativeEditor({ init, squads, tribeId, onClose, onSaved, t }: any) {
   const [f, setF] = useState<Partial<Initiative>>(init);
   const [err, setErr] = useState<string | null>(null);
   const set = (k: string, v: any) => setF((p: any) => ({ ...p, [k]: v }));
-  const people = usePeople();
+  const people = usePeople("all");
   // Moving an initiative to another squad detaches the milestones it had in the
   // old one (they belong to that squad): say so before saving, not after.
   const leaving = f.id && init.squad_id != null && (f.squad_id ?? null) !== init.squad_id
@@ -273,7 +273,11 @@ function InitiativeEditor({ init, squads, tribeId, onClose, onSaved, t }: any) {
             <label className="field-label">{t("init.h_squad")}</label>
             <select value={f.squad_id ?? ""} onChange={(e) => set("squad_id", e.target.value ? Number(e.target.value) : null)}>
               <option value="">{t("init.no_squad")}</option>
-              {squads.map((s: Squad) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              {/* The initiative's own tribe only (its current squad is kept if elsewhere):
+                  under "all tribes", a new initiative took the first tribe but listed
+                  every tribe's squads. */}
+              {squads.filter((s: Squad) => s.id === f.squad_id || s.tribe_id === (f.tribe_id ?? tribeId))
+                .map((s: Squad) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
             {leaving !== null && <div className="small" style={{ color: "var(--orange)" }}>{t("init.move_warning", { squad: leaving })}</div>}
           </div>

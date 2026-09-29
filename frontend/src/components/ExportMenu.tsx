@@ -231,7 +231,7 @@ export default function ExportMenu({ year, squadId, sinceDays = 7, docs, steerco
               <div>
                 <label className="field-label">{t("export.to")}</label>
                 <PickOrType textPlaceholder="nom@exemple.com"
-                  groups={[{ options: people.map((p) => ({ value: p.email, label: `${p.name} (${p.email})` })) }]}
+                  groups={[{ options: people.filter((p) => p.email).map((p) => ({ value: p.email!, label: `${p.name} (${p.email})` })) }]}
                   picked={people.some((p) => p.email === to) ? to : null}
                   text={people.some((p) => p.email === to) ? "" : to}
                   onPick={(v) => setTo(v ?? "")} onText={setTo} />

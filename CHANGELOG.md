@@ -2,6 +2,44 @@
 
 ## Unreleased
 
+## 2.3.1 (2026-09-29)
+
+### Reporting, exports et mails : verification de bout en bout
+- Nouveau test de bout en bout, de la saisie au mail recu (vraie connexion SMTP), sur
+  tous les exports et tous les mails.
+- Steerco : le premier mois d'une plateforme dessinait des graphiques vides (une
+  courbe a un seul point) ; le dernier mois est marque d'un point. Une colonne SLA non
+  remplie affiche « - ».
+- Les KPI de squad, saisis dans le reporting, n'apparaissaient dans aucun document : ils
+  sont dans le rapport (HTML), sur la diapositive de la squad et dans le mail.
+- Le mail d'une squad cite ses engagements en retard et ses KPI hors cible.
+- Roadmap d'une squad : « Squad A » et non « Squad Squad A ». Mail : plus de « il y a
+  -1 j ».
+
+### Correctifs : listes deroulantes et selecteurs (revue complete)
+- Un choix fait dans une liste avec saisie libre etait aussitot annule (dependance d'un
+  jalon vers une squad ou une tribe, porteur, theme...). Le texte tape qui correspond a un
+  element existant ne referme plus le champ en cours de frappe. Chaque valeur n'est
+  proposee qu'une fois.
+- Porteur d'un jalon, d'une initiative, personne de l'organigramme, participants d'un
+  comite : toutes les personnes de l'application (`/api/tribes/people?scope=all`, emails
+  hors de sa tribe masques). Dependance : toutes les squads, de toutes les tribes
+  (`/api/tribes/squad-names`). Les listes de personnes se rafraichissent apres la creation
+  ou la validation d'un compte.
+- Changer de tribe ne peut plus enregistrer les reglages de conges ou le modele Steerco
+  d'une tribe dans une autre, ni rattacher une case d'organigramme a l'autre tribe, ni
+  garder un leader cache a la creation d'une squad, ni la selection de squads de la
+  roadmap.
+- Demandes d'acces : le role propose par defaut est celui demande ; les squads suivent la
+  tribe choisie.
+- Co-leaders et contributeurs deja choisis restent visibles et retirables meme s'ils ne
+  sont plus proposes. Initiative : les squads de sa tribe seulement.
+- Conges : un type retire depuis reste affiche ; le type par defaut arrive avec la liste.
+- OTD et initiatives : des jalons non charges ne sont plus enregistres comme « aucun »
+  (ce qui detachait tous les jalons lies).
+- Mises a jour d'etat fonctionnelles dans les formulaires d'administration et l'assistant
+  Steerco (une modification pouvait en effacer une autre).
+
 ## 2.3.0 (2026-09-29)
 
 ### Ergonomie

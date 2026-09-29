@@ -29,6 +29,7 @@ import { QuarterProgressEditor } from "../components/EntryExtras";
 import TeamMood, { moodAge, WEEKLY_STALE_DAYS } from "../components/TeamMood";
 import KeyMessagesPanel from "../components/KeyMessagesPanel";
 import PickOrType from "../components/PickOrType";
+import { usePeople } from "../components/usePeople";
 import { OtdPanel } from "../components/OtdPanel";
 import { canEditSquad, contributesTo, leadsSquad } from "../perms";
 import { useSetPageChrome } from "../components/pageChrome";
@@ -625,8 +626,23 @@ function JalonModal({ jalon, members, onSave, onCancel, onDelete, error, t, road
   const [confirmDel, setConfirmDel] = useState(false);
   const [themes, setThemes] = useState<string[]>([]);
   const set = (k: string, v: any) => setF((p) => ({ ...p, [k]: v }));
+  // The owner: the squad's members first, then anyone with an account in the app.
+  const people = usePeople("all");
+  const memberNames: string[] = members.map((m: Member) => m.full_name);
+  const ownerNames = [...memberNames, ...people.map((p) => p.name).filter((n) => !memberNames.includes(n))];
   // Existing themes for reuse: pick one from the list or type a new one.
   useEffect(() => { api.get<string[]>("/api/roadmap-items/themes").then(setThemes).catch(() => {}); }, []);
+  // A milestone may depend on any squad, of any tribe: /api/squads only lists
+  // one's own scope, so a dependency on another tribe's squad showed "none".
+  type SquadName = { id: number; name: string; tribe_id: number; tribe_name: string };
+  const [allSquads, setAllSquads] = useState<SquadName[] | null>(null);
+  useEffect(() => { api.get<SquadName[]>("/api/tribes/squad-names").then(setAllSquads).catch(() => setAllSquads(null)); }, []);
+  const ownTribe = squads.find((s: Squad) => s.id === currentSquadId)?.tribe_id;
+  const depSquads: { id: number; label: string }[] = (allSquads
+    ? [...allSquads].sort((a, b) => Number(b.tribe_id === ownTribe) - Number(a.tribe_id === ownTribe))
+        .map((s) => ({ id: s.id, label: s.tribe_id === ownTribe ? s.name : `${s.name} (${s.tribe_name})` }))
+    : squads.map((s: Squad) => ({ id: s.id, label: s.name })))
+    .filter((s: { id: number }) => s.id !== currentSquadId);
   // A dependency can be: free text, another squad, or a tribe.
   const depKind: "text" | "squad" | "tribe" = (f.dependency_kind as any) || "text";
   const field = (label: string, key: string, area = false) => (
@@ -690,9 +706,12 @@ function JalonModal({ jalon, members, onSave, onCancel, onDelete, error, t, road
               <label htmlFor="jalon-owner">{t("jalon.owner")}</label>
               {/* The squad's members, else a name typed freely (someone outside the team). */}
               <PickOrType id="jalon-owner" maxLength={255} textPlaceholder={t("jalon.owner_ph")}
-                groups={[{ options: members.map((m: Member) => ({ value: m.full_name, label: m.role_title ? `${m.full_name} (${m.role_title})` : m.full_name })) }]}
-                picked={members.some((m: Member) => m.full_name === f.owner) ? f.owner : null}
-                text={members.some((m: Member) => m.full_name === f.owner) ? "" : f.owner}
+                groups={[
+                  { label: t("pick.group_team"), options: members.map((m: Member) => ({ value: m.full_name, label: m.role_title ? `${m.full_name} (${m.role_title})` : m.full_name })) },
+                  { label: t("pick.group_others"), options: ownerNames.slice(memberNames.length).map((n) => ({ value: n, label: n })) },
+                ]}
+                picked={ownerNames.includes(f.owner ?? "") ? f.owner : null}
+                text={ownerNames.includes(f.owner ?? "") ? "" : f.owner}
                 onPick={(v) => set("owner", v ?? "")} onText={(txt) => set("owner", txt)} />
             </div>
           </div>
@@ -705,8 +724,7 @@ function JalonModal({ jalon, members, onSave, onCancel, onDelete, error, t, road
                 something outside the app (a vendor, a team not in the tool). */}
             <PickOrType id="jalon-dep"
               groups={[
-                { label: t("jalon.dep_squad"), options: squads.filter((s: Squad) => s.id !== currentSquadId)
-                    .map((s: Squad) => ({ value: `s:${s.id}`, label: s.name })) },
+                { label: t("jalon.dep_squad"), options: depSquads.map((s) => ({ value: `s:${s.id}`, label: s.label })) },
                 { label: t("jalon.dep_tribe"), options: tribes.map((tr: Tribe) => ({ value: `t:${tr.id}`, label: tr.name })) },
               ]}
               picked={depKind === "squad" && f.dependency_squad_id ? `s:${f.dependency_squad_id}`

@@ -18,7 +18,7 @@ import html as _html
 import re
 from datetime import datetime
 
-from .reportcommon import _lang, _sep, _status_label, fmt_datetime, rt
+from .reportcommon import _lang, _sep, _status_label, fmt_date, fmt_datetime, rt
 
 NAVY = "#1F2A6B"
 GREY = "#556274"
@@ -37,6 +37,8 @@ _T = {
         "days": "il y a {n} j", "today": "aujourd'hui", "never": "jamais",
         "more": "+{n} autres squads dans le document joint",
         "km": "Messages clés", "watch": "Jalons à surveiller", "leader": "Squad leader",
+        "otd_late_list": "Engagements en retard", "otd_due": "promis le {d}",
+        "kpi_watch": "KPI à surveiller",
         "week": "semaine {w}", "generated": "données du {d}",
         "no_squad": "Aucune squad dans ce périmètre.",
         "version": "version du {d}", "not_reported": "Non renseigné",
@@ -54,6 +56,8 @@ _T = {
         "days": "{n}d ago", "today": "today", "never": "never",
         "more": "+{n} more squads in the attached document",
         "km": "Key messages", "watch": "Milestones to watch", "leader": "Squad leader",
+        "otd_late_list": "Late commitments", "otd_due": "due {d}",
+        "kpi_watch": "KPIs to watch",
         "week": "week {w}", "generated": "data as of {d}",
         "no_squad": "No squad in this scope.",
         "version": "version of {d}", "not_reported": "Not reported",
@@ -88,7 +92,8 @@ def _age(row: dict, lang: str) -> tuple[str, bool]:
     n = row.get("age_days")
     if n is None:
         return _t(lang, "never"), True
-    return (_t(lang, "today") if n == 0 else _t(lang, "days", n=n)), bool(row.get("is_stale"))
+    # A clock slightly behind the one that stamped the submission gave "-1 days ago".
+    return (_t(lang, "today") if n <= 0 else _t(lang, "days", n=n)), bool(row.get("is_stale"))
 
 
 def button(url: str, label: str) -> str:
@@ -190,6 +195,26 @@ def _squad_focus(r: dict, lang: str) -> str:
             out.append(f'<li style="margin:2px 0"><span style="color:{_RAG[rag.get(m.get("kind"), "grey")]};'
                        f'font-weight:bold">{_e(rt(lang, "km_" + (m.get("kind") or "")))}</span>'
                        f'{_e(_sep(lang))}{_e(m.get("text"))}</li>')
+        out.append("</ul>")
+    # The two signals a reader must get without opening the attachment, and the
+    # summary left out: a commitment past its date, a KPI off target.
+    late = [o for o in det.get("otds") or [] if o.get("status") == "late"]
+    if late:
+        out.append(f'<p style="margin:12px 0 4px;font-weight:bold">{_e(_t(lang, "otd_late_list"))}</p><ul style="margin:0;padding-left:18px">')
+        for o in late[:6]:
+            due = f' <span style="color:{GREY}">({_e(_t(lang, "otd_due", d=fmt_date(o["date"], lang)))})</span>' if o.get("date") else ""
+            out.append(f'<li style="margin:2px 0"><span style="color:{_RAG["red"]};font-weight:bold">'
+                       f'{_e(o.get("title"))}</span>{due}</li>')
+        out.append("</ul>")
+    off = [k for k in det.get("kpis") or [] if k.get("trend") in ("under_pressure", "missed")]
+    if off:
+        from .report import _kpi_value
+        out.append(f'<p style="margin:12px 0 4px;font-weight:bold">{_e(_t(lang, "kpi_watch"))}</p><ul style="margin:0;padding-left:18px">')
+        for k in sorted(off, key=lambda k: k.get("trend") != "missed")[:6]:
+            col = _RAG["red" if k.get("trend") == "missed" else "amber"]
+            out.append(f'<li style="margin:2px 0"><span style="color:{col};font-weight:bold">{_e(k.get("name"))}</span>'
+                       f'{_e(_sep(lang))}{_e(_kpi_value(k, lang))} '
+                       f'<span style="color:{GREY}">({_e(rt(lang, "kpi_" + k["trend"]))})</span></li>')
         out.append("</ul>")
     watch = [it for q in det.get("quarters") or [] for it in q.get("items") or []
              if it.get("status") in ("blocked", "at_risk")]

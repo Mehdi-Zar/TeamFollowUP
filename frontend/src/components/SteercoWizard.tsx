@@ -136,18 +136,23 @@ export default function SteercoWizard({ platformId, platformName, initialPeriod,
 
   // ---- data mutators ----
   const kpis = data.kpis ?? [];
-  const setKpis = (k: SteercoKpi[]) => setData({ ...data, kpis: k });
-  const updKpi = (i: number, patch: Partial<SteercoKpi>) => setKpis(kpis.map((k, j) => (j === i ? { ...k, ...patch } : k)));
+  // Every mutator starts from the latest data (functional update), not from the
+  // copy captured at render: two edits in a row kept only the last one.
+  const setKpis = (fn: (k: SteercoKpi[]) => SteercoKpi[]) => setData((d) => ({ ...d, kpis: fn(d.kpis ?? []) }));
+  const updKpi = (i: number, patch: Partial<SteercoKpi>) => setKpis((ks) => ks.map((k, j) => (j === i ? { ...k, ...patch } : k)));
   const updKpiSub = (i: number, si: number, v: string) =>
-    setKpis(kpis.map((k, j) => (j === i ? { ...k, sub: (k.sub ?? []).map((s, sj) => (sj === si ? { ...s, value: v } : s)) } : k)));
+    setKpis((ks) => ks.map((k, j) => (j === i ? { ...k, sub: (k.sub ?? []).map((s, sj) => (sj === si ? { ...s, value: v } : s)) } : k)));
 
   const sla = data.sla ?? { services: [], cells: [] };
   const blank: SlaCell = { v: "", s: null };
-  const updCell = (i: number, patch: Partial<SlaCell>) =>
-    setData({ ...data, sla: { services: sla.services, cells: sla.services.map((_, j) => (j === i ? { ...(sla.cells[j] ?? blank), ...patch } : (sla.cells[j] ?? blank))) } });
+  const updCell = (i: number, patch: Partial<SlaCell>) => setData((d) => {
+    const cur = d.sla ?? { services: [], cells: [] };
+    return { ...d, sla: { services: cur.services,
+      cells: cur.services.map((_, j) => (j === i ? { ...(cur.cells[j] ?? blank), ...patch } : (cur.cells[j] ?? blank))) } };
+  });
 
   const evList = (which: "last_events" | "next_events") => data[which] ?? [];
-  const setEv = (which: "last_events" | "next_events", list: SteercoEvent[]) => setData({ ...data, [which]: list });
+  const setEv = (which: "last_events" | "next_events", list: SteercoEvent[]) => setData((d) => ({ ...d, [which]: list }));
 
   // ---- history lookups (read-only context) ----
   const kpiHist = (label: string, m: string) =>

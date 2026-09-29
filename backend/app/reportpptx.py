@@ -1230,7 +1230,35 @@ def render_pptx(data: dict) -> bytes:
             klines.append((_cut(f'{rt(lang, "km_" + m["kind"])}{_sep(lang)}{m["text"]}', km_cpl),
                            rgb(_RAG_BRAND[rag]), False))
         more = _pt(lang, "km_more", n=len(kms) - 2) if len(kms) > 2 else None
-        list_card(Inches(0.4), Inches(6.10), Inches(8.02), Inches(0.96),
+        # The squad's KPIs take a card of their own, cut from the key messages'
+        # width: two KPIs, the rest counted, like the messages.
+        kpis = det.get("kpis") or []
+        km_w = 8.02
+        if kpis:
+            km_w = 4.6
+            kx, kw = 0.4 + km_w + 0.19, 8.02 - km_w - 0.19
+            # Bold text is wider: measured on the bold width. The value is never
+            # cut ("Clusters en production : 9..." lost the figure), the name is.
+            k_cpl = int((kw - 0.34) / (0.0068 * _fs(10)))
+            kpi_rag = {"on_target": "green", "under_pressure": "amber", "missed": "red"}
+            from .report import _kpi_value
+
+            def kline(k):
+                val = _kpi_value(k, lang)
+                sep = _sep(lang)
+                name = _cut(k["name"], max(4, k_cpl - len(val) - len(sep)))
+                return (f"{name}{sep}{val}", rgb(_RAG_BRAND[kpi_rag.get(k["trend"], "grey")]), True)
+            k_lines = [kline(k) for k in kpis[:2]]
+            list_card(Inches(kx), Inches(6.10), Inches(kw), Inches(0.96), rt(lang, "h_kpis"), k_lines, "",
+                      extra=(f"+{len(kpis) - 2}" if len(kpis) > 2 else None))
+            km_cpl = int((km_w - 0.34) / (0.0078 * _fs(10)))
+            # A single message may take two of the card's three lines: narrower
+            # beside the KPIs, it was cut where the full width held it.
+            per = km_cpl * 2 if len(kms) == 1 else km_cpl
+            klines = [(_cut(f'{rt(lang, "km_" + m["kind"])}{_sep(lang)}{m["text"]}', per),
+                       rgb(_RAG_BRAND[{"success": "green", "alert": "amber", "risk": "red"}.get(m["kind"], "grey")]),
+                       False) for m in kms[:2]]
+        list_card(Inches(0.4), Inches(6.10), Inches(km_w), Inches(0.96),
                   rt(lang, "h_key_messages"), klines, rt(lang, "no_key_message"), extra=more)
 
         bsh = rrect(s, Inches(8.61), Inches(6.10), Inches(4.32), Inches(0.96),

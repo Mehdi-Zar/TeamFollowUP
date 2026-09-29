@@ -2,6 +2,7 @@
 // accounts. An approver assigns a role and the appropriate tribe/squad, or denies
 // the request. The set of grantable roles/tribes/squads and whether denial is
 // allowed all come from the backend, which enforces the same scope server-side.
+import { invalidatePeople } from "../components/usePeople";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, errorText } from "../api";
@@ -64,7 +65,8 @@ export default function AccessRequestsPage() {
   // refresh() re-pulls auth because approving may alter the approver's own scope.
   async function act(fn: () => Promise<unknown>, okKey: string) {
     setMsg(null);
-    try { await fn(); setMsg(t(okKey)); await load(); await refresh(); }
+    // An approved account is someone the pickers must now offer.
+    try { await fn(); invalidatePeople(); setMsg(t(okKey)); await load(); await refresh(); }
     catch (e) { setMsg(errorText(e)); }
   }
 
@@ -209,9 +211,15 @@ function RequestRow({ req, opts, roleLabel, t, onApprove, onDeny, submitLabel }:
   onDeny?: () => void;
   submitLabel?: string;
 }) {
-  const [role, setRole] = useState<Role>(opts.roles[0]);
+  // The role asked for, shown in the badge above, is the one offered first: the
+  // one-click approval granted the first role of the list instead.
+  const [role, setRole] = useState<Role>(opts.roles.includes(req.role) ? req.role : opts.roles[0]);
   const [tribeId, setTribeId] = useState<number | "">(opts.tribes[0]?.id ?? "");
   const [squadId, setSquadId] = useState<number | "">("");
+  // Only the squads of the chosen tribe: a person approved into one tribe with a
+  // squad of another was possible.
+  const squads = opts.tribe_locked || tribeId === "" ? opts.squads
+    : opts.squads.filter((s) => s.tribe_id === tribeId);
   // A squad leader must place the person into one of their squads.
   const squadRequired = !opts.can_deny && opts.tribe_locked && opts.squads.length > 0;
 
@@ -235,17 +243,17 @@ function RequestRow({ req, opts, roleLabel, t, onApprove, onDeny, submitLabel }:
         {!opts.tribe_locked && opts.tribes.length > 0 && (
           <div>
             <label>{t("access.tribe")}</label>
-            <select value={tribeId} onChange={(e) => setTribeId(e.target.value ? Number(e.target.value) : "")}>
+            <select value={tribeId} onChange={(e) => { setTribeId(e.target.value ? Number(e.target.value) : ""); setSquadId(""); }}>
               {opts.tribes.map((tr) => <option key={tr.id} value={tr.id}>{tr.name}</option>)}
             </select>
           </div>
         )}
-        {opts.squads.length > 0 && (
+        {squads.length > 0 && (
           <div>
             <label>{t("access.squad")}{squadRequired ? " *" : ""}</label>
             <select value={squadId} onChange={(e) => setSquadId(e.target.value ? Number(e.target.value) : "")}>
               <option value="">{squadRequired ? t("access.choose_squad") : "-"}</option>
-              {opts.squads.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              {squads.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </div>
         )}

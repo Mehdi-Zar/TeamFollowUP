@@ -222,6 +222,7 @@ function OtdDetailModal({ otd, squad, onClose, onSaved, t }: any) {
   // engager, ce qui est justement ce que le double lien evite.
   const linkOf = (r: CandidateJalon) => (scope === "squad" ? r.squad_otd_id : r.otd_id);
 
+  const [candsFailed, setCandsFailed] = useState(false);
   // Les jalons de cette squad, avec ceux deja dans CET engagement coches.
   useEffect(() => {
     // Named by squad: its milestones, whoever reports for it and from whatever tribe.
@@ -230,8 +231,9 @@ function OtdDetailModal({ otd, squad, onClose, onSaved, t }: any) {
         const own = rows.filter((r) => r.squad_id === squad.id);
         setCands(own);
         if (otd.id) setSel(new Set(own.filter((r) => linkOf(r) === otd.id).map((r) => r.id)));
+        setCandsFailed(false);
       })
-      .catch(() => setCands([]));
+      .catch(() => { setCands([]); setCandsFailed(true); });
   }, [otd.id, squad.id, squad.tribe_id, squad.year]);
 
   const toggle = (id: number) => setSel((prev) => {
@@ -262,7 +264,9 @@ function OtdDetailModal({ otd, squad, onClose, onSaved, t }: any) {
         // a second one.
         set("id", id);
       }
-      await api.put(`/api/otds/${id}/jalons`, { jalon_ids: Array.from(sel) });
+      // Milestones that could not be loaded are not "none": saving an empty list
+      // then detached every milestone already linked, silently.
+      if (!candsFailed) await api.put(`/api/otds/${id}/jalons`, { jalon_ids: Array.from(sel) });
       onSaved();
     } catch (e) {
       setErr(errorText(e));
@@ -307,6 +311,7 @@ function OtdDetailModal({ otd, squad, onClose, onSaved, t }: any) {
 
         <div className="stack" style={{ gap: 6 }}>
           <label className="field-label">{t("otd.jalons_section")}</label>
+          {candsFailed && <div className="small" style={{ color: "var(--orange)" }}>{t("otd.jalons_load_failed")}</div>}
           {cands === null ? (
             <div className="small muted">{t("common.loading")}</div>
           ) : cands.length === 0 ? (

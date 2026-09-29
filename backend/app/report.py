@@ -213,6 +213,8 @@ def build_report_data(db: Session, scope_tribe: int | None, year: int | None = N
         from .deps import led_squad_ids
         led = set(db.scalars(led_squad_ids(db, led_by)).all())
     squads = []
+    from .modulesconfig import get_modules, is_active
+    kpis_on = is_active(get_modules(db), "squad_content", "kpis")
     for s in db.scalars(q).all():
         if squad_id is not None:
             if s.id == squad_id:
@@ -280,6 +282,14 @@ def build_report_data(db: Session, scope_tribe: int | None, year: int | None = N
                  ]}
                 for q in (1, 2, 3, 4)
             ],
+            # The squad's KPIs, typed in the reporting's KPI step. They reached no
+            # document: loaded, then never shown. Only when the module is on.
+            "kpis": ([{"name": k.name, "unit": k.unit or "",
+                       "current": None if k.current_value is None else float(k.current_value),
+                       "target": None if k.target_value is None else float(k.target_value),
+                       "trend": k.trend_status}
+                      for k in sorted(s.kpis, key=lambda x: (getattr(x, "display_order", 0) or 0, x.id))]
+                     if kpis_on else []),
             # Hand-curated key messages (success / alert / risk) for this squad/year.
             "key_messages": [
                 {"kind": m.kind, "text": m.text,
@@ -373,7 +383,9 @@ def build_report_data(db: Session, scope_tribe: int | None, year: int | None = N
     avg = round(totals["progress_sum"] / totals["planned"]) if totals.get("planned") else 0
     if squad_id is not None:
         sq = db.get(Squad, squad_id)
-        scope_name = rt(lang, "squad_scope", name=sq.name) if sq else rt(lang, "h_squad")
+        # "Squad Castle", but "Squad A" and not "Squad Squad A".
+        scope_name = ((sq.name if sq.name.lower().startswith("squad") else rt(lang, "squad_scope", name=sq.name))
+                      if sq else rt(lang, "h_squad"))
     elif scope_tribe in tribes:
         scope_name = tribes[scope_tribe].name
     else:
@@ -469,6 +481,32 @@ def _delta_html(delta: int) -> str:
     return '<span style="color:#6b7280">→ 0</span>'
 
 
+def _kpi_value(k: dict, lang: str) -> str:
+    """ "9 / 12 clusters": the current value against its target, as typed."""
+    def num(v):
+        if v is None:
+            return "-"
+        return (str(int(v)) if float(v).is_integer() else f"{v:.1f}").replace(".", "," if lang != "en" else ".")
+    unit = f" {k['unit']}" if k.get("unit") else ""
+    target = f" / {num(k['target'])}" if k.get("target") is not None else ""
+    return f"{num(k.get('current'))}{target}{unit}"
+
+
+_KPI_RAG = {"on_target": "green", "under_pressure": "amber", "missed": "red"}
+
+
+def _kpis_html(det: dict, lang: str, e) -> str:
+    kpis = det.get("kpis") or []
+    if not kpis:
+        return ""
+    rows = "".join(
+        f'<li><span class="dot" style="background:{RAG_COLOR[_KPI_RAG.get(k["trend"], "grey")]}"></span>'
+        f'<strong>{e(k["name"])}</strong>{_sep(lang)}{e(_kpi_value(k, lang))}'
+        f' <span class="muted">({e(rt(lang, "kpi_" + k["trend"]))})</span></li>'
+        for k in kpis)
+    return f'<div class="d-sub">{e(rt(lang, "h_kpis"))}</div><ul class="d-obj">{rows}</ul>'
+
+
 def _squad_detail_parts(r: dict, lang: str, e, *, with_title: bool = True) -> list[str]:
     """One squad's detail block, in the order of the squad page: the annual
     timeline (quarters, OTD commitments, initiatives and their milestones), then
@@ -486,6 +524,8 @@ def _squad_detail_parts(r: dict, lang: str, e, *, with_title: bool = True) -> li
     # ligne par initiative avec les jalons qui la servent. Un seul bloc la ou il y
     # en avait trois, parce qu'ils repondaient tous a la meme question.
     parts.append(_timeline_html(det, lang, e, det.get("year") or 0))
+
+    parts.append(_kpis_html(det, lang, e))
 
     # Key messages
     kms = det.get("key_messages") or []
@@ -560,6 +600,10 @@ def _squad_app_cards(det: dict, lang: str, e, year: int) -> list[str]:
 
     # La frise annuelle, dans sa propre carte: le meme bloc unique que la page.
     C.append(f'<div class="card">{_timeline_html(det, lang, e, year)}</div>')
+
+    # The squad's KPIs, when it has some.
+    if det.get("kpis"):
+        C.append(f'<div class="card">{_kpis_html(det, lang, e)}</div>')
 
     # Key messages
     C.append(f'<div class="card"><h2>{e(rt(lang, "h_key_messages"))}</h2>')

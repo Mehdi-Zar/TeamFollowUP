@@ -408,6 +408,9 @@ function LeaveForm({ leave, types, people, requireApproval, selfId, onClose, onS
   const { t, lang } = useI18n();
   const today = iso(new Date());
   const [typeId, setTypeId] = useState<number>(leave?.type_id ?? types[0]?.id ?? 0);
+  // The form may open before the types have arrived: the first type is chosen
+  // once they are there, instead of a type shown selected and Save left disabled.
+  useEffect(() => { if (!typeId && types[0]) setTypeId(types[0].id); }, [types, typeId]);
   const [userId, setUserId] = useState<number>(leave?.user_id ?? selfId ?? 0);
   const [start, setStart] = useState(leave?.start_date ?? today);
   const [end, setEnd] = useState(leave?.end_date ?? today);
@@ -453,6 +456,11 @@ function LeaveForm({ leave, types, people, requireApproval, selfId, onClose, onS
         )}
         <div><label className="field-label">{t("leaves.type")}</label>
           <select value={typeId} onChange={(e) => setTypeId(Number(e.target.value))}>
+            {/* A leave of a type retired since keeps showing its type: the list only
+                has the active ones, and the first of them looked chosen. */}
+            {leave && leave.type_id && !types.some((tp) => tp.id === leave.type_id) && (
+              <option value={leave.type_id}>{leaveTypeLabel(leave.type_label, lang)}</option>
+            )}
             {types.map((tp) => <option key={tp.id} value={tp.id}>{leaveTypeLabel(tp.label, lang)}</option>)}
           </select></div>
         {needsDetail && (

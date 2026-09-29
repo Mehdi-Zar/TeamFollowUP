@@ -785,9 +785,12 @@ def _aggregate(db: Session, platform_id: int, period: str, override: dict | None
     sla_cur = cur.get("sla") or {}
     services = sla_cur.get("services") or (ref_sla.get("sla") or {}).get("services") or []
     # SLA colour: computed from each value (see _sla_status), never chosen by hand.
-    cur_cells = [{**(c or {}), "v": _clamp_pct((c or {}).get("v")),
+    # An SLA column not filled this month reads "-", as in the average row below it
+    # (it was an empty cell over a "-").
+    cur_cells = [{**(c or {}), "v": _clamp_pct((c or {}).get("v")) or "-",
                   "s": _sla_status(_clamp_pct((c or {}).get("v")))}
                  for c in (sla_cur.get("cells") or [])]
+    cur_cells += [{"v": "-", "s": None} for _ in range(len(services) - len(cur_cells))]
     avg_cells = []
     for i in range(len(services)):
         vals = []
@@ -1020,6 +1023,10 @@ def _svg_line_chart(chart: dict, empty: str) -> str:
             # Line only (no point markers).
             d = " ".join(("M" if j == 0 else "L") + f"{x(i):.1f} {y(v, right):.1f}" for j, (i, v) in enumerate(pts))
             out.append(f'<path d="{d}" fill="none" stroke="{color}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>')
+            # The latest month is marked: a single month (a platform's first steerco)
+            # drew nothing at all, a line needs two points.
+            li, lv = pts[-1]
+            out.append(f'<circle cx="{x(li):.1f}" cy="{y(lv, right):.1f}" r="3.2" fill="{color}"/>')
     return f'<svg viewBox="0 0 {W} {H}" preserveAspectRatio="none" width="100%">{"".join(out)}</svg>'
 
 
@@ -1627,6 +1634,20 @@ def _render_pptx(squads: list[dict], period: str, L: dict) -> bytes:
                 tbl.cell(i + 1, j + 1).text = v
                 set_cell(tbl.cell(i + 1, j + 1), fills.get(s, "#FFFFFF"), texts.get(s, "#6B7C90"), bold=True)
 
+    def mark_last(ps, s):
+        """A dot on the latest month of a curve: with a single month (a platform's
+        first steerco) the line chart drew nothing, a line needs two points."""
+        from pptx.enum.chart import XL_MARKER_STYLE
+        idx = [i for i, v in enumerate(s.get("data") or []) if v is not None]
+        if not idx:
+            return
+        pt = ps.points[idx[-1]]
+        pt.marker.style = XL_MARKER_STYLE.CIRCLE
+        pt.marker.size = 6
+        pt.marker.format.fill.solid()
+        pt.marker.format.fill.fore_color.rgb = rgb(s.get("color") or NAVY)
+        pt.marker.format.line.color.rgb = rgb(s.get("color") or NAVY)
+
     def legend(slide, x, bottom, w, series, two, box_h) -> int:
         """A compact legend at the bottom of the chart box: a coloured dash and the
         name of each curve, grouped under "left axis" / "right axis" when the chart
@@ -1700,6 +1721,7 @@ def _render_pptx(squads: list[dict], period: str, L: dict) -> bytes:
         for i, ps in enumerate(ch.series):
             ps.format.line.color.rgb = rgb(series[i].get("color") or NAVY)
             ps.format.line.width = Pt(2)
+            mark_last(ps, series[i])
         try:
             # The primary scale only has to hold the series that stayed on the left.
             ch.value_axis.maximum_scale = float(chart.get("y_max") or 100)
@@ -1769,6 +1791,7 @@ def _render_pptx(squads: list[dict], period: str, L: dict) -> bytes:
             ps.format.line.color.rgb = rgb(s.get("color") or NAVY)
             ps.format.line.width = Pt(1.75)
             ps.smooth = False
+            mark_last(ps, s)
 
     def kpi_table(slide, x, y, w, h, chart, series):
         """The KPIs month by month, native tables: one row per KPI, as many tables

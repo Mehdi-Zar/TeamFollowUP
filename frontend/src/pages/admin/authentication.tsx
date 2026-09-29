@@ -7,7 +7,7 @@
  * `deriveSsoUrls` here mirrors the server's derivation so the screen can show
  * what the IdP must be given before anything is saved.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { api } from "../../api";
 import { useI18n } from "../../i18n";
 import { Tribe } from "../../types";
@@ -28,7 +28,7 @@ export function SmtpAdmin() {
   const loadCfg = () => { api.get<any>("/api/admin/smtp-config").then(setCfg).catch(ls.fail); };
   useEffect(loadCfg, []);
   if (!cfg) return ls.waiting(loadCfg);
-  const set = (k: string, v: any) => setCfg({ ...cfg, [k]: v });
+  const set = (k: string, v: any) => setCfg((p: any) => ({ ...p, [k]: v }));
   // Small helper to render a labelled config input bound to cfg[key].
   const fld = (label: string, key: string, type = "text") => (
     <div style={{ flex: 1, minWidth: 200 }}>
@@ -237,7 +237,7 @@ export function AuthAdmin() {
   }, []);
   if (!cfg) return <div className="spinner">{t("common.loading")}</div>;
 
-  const set = (k: string, v: any) => setCfg({ ...cfg, [k]: v });
+  const set = (k: string, v: any) => setCfg((p: any) => ({ ...p, [k]: v }));
   const fld = (label: string, key: string, type = "text") => (
     <div style={{ flex: 1, minWidth: 220 }}>
       <label>{label}</label>
@@ -745,8 +745,12 @@ function LoginScreenPanel({ cfg, set, t, copy, copied }: {
   // decide plus rien pour lui.
   const pwdRuledByMode = (key: string) => key === "password" && mode === "secret";
 
+  // Read at call time, not at render: a logo read by a FileReader lands after
+  // other edits, and the list captured when the upload started would erase them.
+  const latest = useRef(methods);
+  latest.current = methods;
   const update = (key: string, patch: any) =>
-    set("login_methods", methods.map((m) => (m.key === key ? { ...m, ...patch } : m)));
+    set("login_methods", latest.current.map((m) => (m.key === key ? { ...m, ...patch } : m)));
 
   const move = (i: number, delta: number) => {
     const next = [...methods];

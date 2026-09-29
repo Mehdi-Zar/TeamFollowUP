@@ -58,9 +58,13 @@ SAML: `GET /saml/metadata`,`GET /saml/login`,`POST /saml/acs`; `POST /impersonat
 ### tribes (`/api/tribes`)
 `GET ""`; `GET /org-overview`; `GET /people`; `POST ""` (admin); `PUT /{id}`; `DELETE /{id}` (admin)
 
-`GET /people` lists the active accounts one may name in a field (owner, participant,
-recipient, person of the org chart): everyone for an admin, one's own tribe for anyone
-else. Names and emails only. It feeds the pick-or-type fields.
+`GET /people` lists the active accounts one may name in a field. `scope=tribe` (default,
+mail recipients): everyone for an admin, one's own tribe for anyone else. `scope=all`
+(owners, committee participants, people of the org chart): every active account; the
+email of someone outside one's tribe is left out unless the caller is an admin.
+`GET /squad-names` lists every squad of the application (id, name, tribe), for the
+pickers that may name any squad (a milestone's dependency). Both feed the pick-or-type
+fields.
 
 ### squads (`/api/squads`)
 `GET ""`; `GET /{id}` (detail); `GET /{id}/dependents`; `GET /{id}/roadmap.pptx`; `GET /{id}/roadmap.html`;

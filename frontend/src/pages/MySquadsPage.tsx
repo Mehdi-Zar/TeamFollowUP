@@ -367,7 +367,7 @@ function EditSquadModal({ detail, year, initialStep, leaders, tribes, isAdmin, m
               <label>{t("squad.co_leaders")}</label>
               <div className="small muted" style={{ marginBottom: 4 }}>{t("squad.co_leaders_hint")}</div>
               <PeoplePicker options={tribePeople.filter((u) => u.id !== d.leader_user_id)}
-                            value={d.co_leader_user_ids ?? []}
+                            value={d.co_leader_user_ids ?? []} known={d.co_leaders}
                             onChange={(v) => patch({ co_leader_user_ids: v })} />
             </div>
           ) : (d.co_leaders?.length ?? 0) > 0 && (
@@ -380,7 +380,7 @@ function EditSquadModal({ detail, year, initialStep, leaders, tribes, isAdmin, m
             <label>{t("squad.contributors")}</label>
             <div className="small muted" style={{ marginBottom: 4 }}>{t("squad.contributors_hint")}</div>
             <PeoplePicker options={candidates.filter((u) => !leadership.has(u.id))}
-                          value={d.contributor_user_ids ?? []}
+                          value={d.contributor_user_ids ?? []} known={d.contributors}
                           addLabel={t("squad.contributors_add")} noneLabel={t("squad.contributors_none")}
                           onChange={(v) => patch({ contributor_user_ids: v })} />
           </div>
@@ -585,6 +585,7 @@ function InitiativeJalonsModal({ initiative, squad, onClose, onSaved }: {
 }) {
   const { t } = useI18n();
   const [rows, setRows] = useState<CandidateInitiativeJalon[] | null>(null);
+  const [loadErr, setLoadErr] = useState<string | null>(null);
   const [sel, setSel] = useState<Set<number>>(new Set());
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -596,7 +597,8 @@ function InitiativeJalonsModal({ initiative, squad, onClose, onSaved }: {
         setRows(all);
         setSel(new Set(all.filter((r) => r.initiative_id === initiative.id).map((r) => r.id)));
       })
-      .catch(() => setRows([]));
+      // Not loaded is not "none": saving would detach every milestone already linked.
+      .catch((e) => { setRows([]); setLoadErr(errorText(e)); });
   }, [initiative.id, squad.id, squad.year]);
 
   const toggle = (id: number) => setSel((prev) => {
@@ -604,7 +606,7 @@ function InitiativeJalonsModal({ initiative, squad, onClose, onSaved }: {
   });
 
   async function save() {
-    if (busy) return;
+    if (busy || loadErr) return;
     setBusy(true);
     try {
       await api.put(`/api/initiatives/${initiative.id}/jalons`, { jalon_ids: Array.from(sel) });
@@ -618,11 +620,12 @@ function InitiativeJalonsModal({ initiative, squad, onClose, onSaved }: {
     <Modal width={560} title={initiative.title} onClose={onClose}
       footer={<>
         <button className="btn-secondary" onClick={onClose}>{t("action.cancel")}</button>
-        <button onClick={save} disabled={busy}>{busy ? t("common.saving") : t("action.save")}</button>
+        <button onClick={save} disabled={busy || !!loadErr}>{busy ? t("common.saving") : t("action.save")}</button>
       </>}>
       <div className="stack" style={{ gap: 12 }}>
         <div className="banner small">{t("mysquads.init_pick_intro")}</div>
         {err && <ErrorBanner message={err} />}
+        {loadErr && <ErrorBanner message={loadErr} />}
         {rows === null ? (
           <div className="small muted">{t("common.loading")}</div>
         ) : rows.length === 0 ? (
@@ -789,15 +792,24 @@ function SquadLeaderSquads() {
  *  libre: les choix restent affiches au-dessus, la liste ne propose que ce qui
  *  n'a pas encore ete pris. Choisir dans une liste est deja un geste explicite,
  *  il n'y a donc pas de bouton « ajouter » a valider derriere. */
-function PeoplePicker({ options, value, onChange, addLabel, noneLabel }: {
+function PeoplePicker({ options, value, onChange, addLabel, noneLabel, known }: {
   options: { id: number; display_name: string }[];
   value: number[];
   onChange: (v: number[]) => void;
   /** The list's first line: what picking does, and what shows when nobody is left. */
   addLabel?: string; noneLabel?: string;
+  /** Names of the people already chosen, as the squad reports them. */
+  known?: { id?: number | null; display_name?: string | null }[];
 }) {
   const { t } = useI18n();
-  const chosen = options.filter((o) => value.includes(o.id));
+  // Built from the value, not from the options: someone chosen who is no longer
+  // offered (moved to another tribe, disabled) vanished from the chips while
+  // staying saved, and could not be removed.
+  const chosen = value.map((id) => ({
+    id,
+    display_name: options.find((o) => o.id === id)?.display_name
+      ?? known?.find((k) => k.id === id)?.display_name ?? `#${id}`,
+  }));
   const left = options.filter((o) => !value.includes(o.id));
   return (
     <div className="stack" style={{ gap: 6 }}>

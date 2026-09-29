@@ -419,7 +419,7 @@ function CommitteeModal({ initial, isNew, onSave, onClose, error }:
     error?: string | null }) {
   const { t } = useI18n();
   const [c, setC] = useState<Partial<Committee>>(initial);
-  const people = usePeople();
+  const people = usePeople("all");
   const set = (k: keyof Committee, v: any) => setC((prev) => ({ ...prev, [k]: v }));
   // A weekday only makes sense for recurring cadences.
   const recurring = c.frequency === "daily" || c.frequency === "weekly" || c.frequency === "biweekly";

@@ -194,7 +194,15 @@ le theme d'un jalon, sa dependance, le porteur d'une initiative, la case et la p
 d'une case de l'organigramme, le destinataire d'un export par mail. Les participants d'un
 comite et les destinataires des rapports gardent leur saisie libre, avec une liste pour
 ajouter une personne existante. Les personnes proposees viennent de `GET
-/api/tribes/people` (sa tribe, tout le monde pour un admin).
+/api/tribes/people` : toutes celles de l'application pour nommer quelqu'un (porteur,
+participant, personne de l'organigramme), sa tribe seulement pour un destinataire de
+mail. La dependance d'un jalon propose toutes les squads, de toutes les tribes
+(`/api/tribes/squad-names`) : un jalon peut dependre d'une squad d'une autre tribe.
+
+Un choix fait dans la liste reste choisi : le composant ne vide plus le texte apres un
+choix (dans le formulaire du jalon, « texte » voulait dire « dependance en texte libre »
+et annulait la squad ou la tribe choisie). Des tests le fixent
+(`frontend/src/components/PickOrType.test.tsx`).
 
 Les champs qui designent un compte ou une squad par son identifiant (leader, co-leaders,
 contributeurs, tribe d'un compte, squad d'accueil, personne en conge, squads d'une

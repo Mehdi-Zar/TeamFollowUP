@@ -43,20 +43,41 @@ def list_tribes(db: Session = Depends(get_db), user: User = Depends(get_current_
 
 
 @router.get("/people")
-def tribe_people(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """GET /api/tribes/people: the active accounts one may name in a field (owner,
-    participant, recipient, person of the org chart), to offer them in a list.
+def tribe_people(scope: str = "tribe", db: Session = Depends(get_db),
+                 user: User = Depends(get_current_user)):
+    """GET /api/tribes/people: the active accounts one may name in a field, to
+    offer them in a list.
 
-    Same bounds as the report recipients: everyone for an admin, one's own tribe
-    for anyone else (and oneself). Names and emails only."""
+    ``scope=tribe`` (default, for recipients): same bounds as the report
+    recipients, everyone for an admin, one's own tribe for anyone else.
+    ``scope=all`` (for owners and people named in the org chart): every active
+    account of the application, since an owner may belong to another tribe. The
+    email of someone outside one's tribe is left out (an admin sees them all):
+    naming a person does not need it."""
     q = select(User).where(User.status == "active", User.is_break_glass.is_(False))
-    if user.role != "admin":
+    if scope != "all" and user.role != "admin":
         if user.tribe_id is None:
             q = q.where(User.id == user.id)
         else:
             q = q.where(User.tribe_id == user.tribe_id)
     rows = db.scalars(q.order_by(User.display_name)).all()
-    return [{"id": u.id, "name": u.display_name, "email": u.email, "tribe_id": u.tribe_id} for u in rows]
+
+    def email(u: User):
+        same = user.role == "admin" or u.id == user.id or (u.tribe_id is not None and u.tribe_id == user.tribe_id)
+        return u.email if same else None
+    return [{"id": u.id, "name": u.display_name, "email": email(u), "tribe_id": u.tribe_id} for u in rows]
+
+
+@router.get("/squad-names")
+def squad_names(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """GET /api/tribes/squad-names: every squad of the application, name and tribe
+    only, for the pickers that may name any squad (a milestone may depend on a
+    squad of another tribe; /api/squads lists one's own scope only). Any signed-in
+    user: the org charts already show these names."""
+    tribes = {t.id: t.name for t in db.scalars(select(Tribe)).all()}
+    rows = db.scalars(select(Squad).order_by(Squad.display_order, Squad.name)).all()
+    return [{"id": s.id, "name": s.name, "tribe_id": s.tribe_id, "tribe_name": tribes.get(s.tribe_id, "")}
+            for s in rows]
 
 
 @router.get("/org-overview", response_model=list[TribeOrg])

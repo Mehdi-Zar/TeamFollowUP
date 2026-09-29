@@ -139,7 +139,14 @@ export function LeaveSettingsAdmin({ isAdmin }: { isAdmin: boolean }) {
     }
   }, [isAdmin]);
   useEffect(() => {
-    if (isAdmin && tribeId !== "") api.get<LeaveConfig>(`/api/leaves/config?tribe_id=${tribeId}`).then(setCfg).catch(() => setCfg(null));
+    if (!isAdmin || tribeId === "") return;
+    // The previous tribe's settings leave the screen at once, and a late answer
+    // for it is ignored: saving them into the newly chosen tribe was possible.
+    setCfg(null);
+    let alive = true;
+    api.get<LeaveConfig>(`/api/leaves/config?tribe_id=${tribeId}`)
+      .then((c) => { if (alive) setCfg(c); }).catch(() => { if (alive) setCfg(null); });
+    return () => { alive = false; };
   }, [isAdmin, tribeId]);
 
   async function save() {
@@ -284,8 +291,8 @@ export function ReportingAdmin() {
   if (loadErr && (!rep || !chg)) return <ErrorBanner message={loadErr} />;
   if (!rep || !chg) return <div className="spinner">{t("common.loading")}</div>;
 
-  const setR = (k: string, v: any) => setRep({ ...rep, [k]: v });
-  const setC = (k: string, v: any) => setChg({ ...chg, [k]: v });
+  const setR = (k: string, v: any) => setRep((p: any) => ({ ...p, [k]: v }));
+  const setC = (k: string, v: any) => setChg((p: any) => ({ ...p, [k]: v }));
   const weekdays: number[] = rep.weekdays ?? [rep.weekday ?? 0];
   const toggleWeekday = (i: number) => setR("weekdays", weekdays.includes(i) ? weekdays.filter((x) => x !== i) : [...weekdays, i].sort());
   const events: string[] = (chg._all_events ?? ["progress", "roadmap", "budget", "key_message"]);
@@ -571,7 +578,7 @@ function RecipientList({ label, list, onChange, autos = [], onAuto, t }: {
                 onChange={(e) => { const v = e.target.value; if (v && !listed.has(v.toLowerCase())) onChange([...list, v]); }}>
           <option value="">{t("pick.add_person")}</option>
           {people.filter((p) => p.email && !listed.has(p.email.toLowerCase())).map((p) => (
-            <option key={p.id} value={p.email}>{p.name} ({p.email})</option>
+            <option key={p.id} value={p.email!}>{p.name} ({p.email})</option>
           ))}
         </select>
         {autos.filter((a) => !a.on).map((a) => (
@@ -599,7 +606,7 @@ export function SettingsAdmin() {
   const loadCfg = () => { api.get<any>("/api/admin/settings").then(setCfg).catch(ls.fail); };
   useEffect(loadCfg, []);
   if (!cfg) return ls.waiting(loadCfg);
-  const set = (k: string, v: any) => setCfg({ ...cfg, [k]: v });
+  const set = (k: string, v: any) => setCfg((p: any) => ({ ...p, [k]: v }));
 
   async function save() {
     await wrap(async () => {

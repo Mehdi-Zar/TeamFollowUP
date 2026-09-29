@@ -17,7 +17,9 @@ affichent (tableaux, styles en ligne, 640 px de large, tenus aussi par Outlook) 
   saisie (en orange quand elle est perimee, en gris « Non renseigne » pour une
   squad qui n'a jamais rien soumis) ;
 - pour une seule squad : son statut, son leader, ses messages cles (risques
-  d'abord) et les jalons a surveiller ;
+  d'abord), **ses engagements en retard** (avec la date promise), **ses KPI hors
+  cible** (sous tension ou manques, valeur et cible) et les jalons a surveiller :
+  les deux signaux qu'un lecteur doit avoir sans ouvrir la piece jointe ;
 - l'encart « Nouveautes depuis votre dernier rapport » ;
 - un bouton **Ouvrir dans l'application**, quand l'adresse publique de
   l'application est reglee (Administration > Authentification) ;
@@ -31,6 +33,22 @@ souvent les pieces jointes .html en quarantaine. Les pieces jointes sont nommees
 La partie texte (celle que montrent les apercus et les messageries sans HTML)
 reprend ce resume. Les mails portent les en-tetes attendus d'un robot (Date avec
 fuseau, Message-ID, Auto-Submitted, qui evite les boucles de reponses d'absence).
+
+## Verifie de bout en bout
+
+`backend/tests/test_e2e_reporting_to_inbox.py` joue le parcours complet : un squad
+leader saisit sa semaine (jalons avec dependances vers une squad, une tribe et un
+texte libre, un engagement, un KPI, un message cle, le moral, le commentaire du
+trimestre) et l'envoie ; tous les exports sont produits (rapport hebdo, tableau de
+bord, roadmap, dependances, roadmap d'une squad, Steerco, initiatives,
+organigramme ; HTML et PPTX ; francais et anglais) ; puis chaque mail part par une
+**vraie connexion SMTP** vers un serveur local qui le garde (envoi manuel, rapport
+planifie, bouton Tester, envoi aux squad leaders, abonnement, avis de modification,
+acces valide, test SMTP). Chaque document et chaque mail est relu comme son lecteur
+le recoit (PPTX ouvert, HTML reduit a son texte visible, mail analyse comme par une
+messagerie, pieces jointes ouvertes) : ce qui a ete saisi doit y etre, aucune valeur
+parasite (None, undefined, NaN, « {x} »), ni tiret cadratin ni point median.
+`E2E_OUT=<dossier>` y ecrit tous les documents et mails pour les regarder.
 
 ## Quand partent les mails
 
