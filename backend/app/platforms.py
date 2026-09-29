@@ -46,6 +46,23 @@ def default_template(owner_squad_id: int | None = None) -> dict:
     }
 
 
+# How the KPI chart of the slide is drawn. "auto" draws curves up to
+# LINES_MAX_SERIES KPIs and one small chart per KPI beyond: a dozen curves on one
+# plot, or on two scales, cannot be told apart.
+CHART_MODES = ("auto", "lines", "small_multiples", "table")
+LINES_MAX_SERIES = 5
+
+
+def normalize_display(raw, labels) -> dict:
+    """The slide's rendering choices: the KPI chart mode, and which KPIs the chart
+    shows (empty: all of them). A KPI that left the template leaves the list."""
+    raw = raw if isinstance(raw, dict) else {}
+    mode = raw.get("kpi_chart") if raw.get("kpi_chart") in CHART_MODES else "auto"
+    known = set(labels)
+    picked = [str(x) for x in (raw.get("chart_kpis") or []) if str(x) in known]
+    return {"kpi_chart": mode, "chart_kpis": list(dict.fromkeys(picked))}
+
+
 def _owner(value, allowed: set[int] | None) -> int | None:
     """Coerce an owner id, dropping anyone who is not a contributor.
 
@@ -91,7 +108,8 @@ def normalize_template(raw: dict | None, contributor_ids=None) -> dict:
         sla.append({"label": label, "owner_squad_id": _owner(item.get("owner_squad_id"), allowed)})
     incidents = raw.get("incidents") if isinstance(raw.get("incidents"), dict) else {}
     tpl = {"kpis": kpis, "sla": sla,
-           "incidents": {"owner_squad_id": _owner(incidents.get("owner_squad_id"), allowed)}}
+           "incidents": {"owner_squad_id": _owner(incidents.get("owner_squad_id"), allowed)},
+           "display": normalize_display(raw.get("display"), [k["label"] for k in kpis])}
     if not tpl["kpis"] and not tpl["sla"]:
         only = next(iter(allowed)) if allowed and len(allowed) == 1 else None
         return default_template(only)
@@ -278,6 +296,8 @@ def template_from_model(model: dict, current: dict | None, contributor_ids) -> d
         "sla": [{"label": s["label"], "owner_squad_id": sla_owner.get(s["label"], only)}
                 for s in model.get("sla") or []],
         "incidents": {"owner_squad_id": (cur.get("incidents") or {}).get("owner_squad_id", only)},
+        # The model shapes the items, not how this platform's slide is drawn.
+        "display": cur.get("display"),
     }
     return normalize_template(raw, ids)
 

@@ -643,6 +643,19 @@ export function SettingsAdmin() {
       </div>
 
       <div className="card">
+        <h3>{t("set.section.org")}</h3>
+        <div style={{ width: 280 }}>
+          <label htmlFor="set-org-views">{t("set.org_views")}</label>
+          <select id="set-org-views" value={(cfg.org_views ?? ["tree", "list"]).join(",")}
+                  onChange={(e) => set("org_views", e.target.value.split(","))}>
+            <option value="tree,list">{t("set.org_views.tree_first")}</option>
+            <option value="list,tree">{t("set.org_views.list_first")}</option>
+          </select>
+          <div className="small muted">{t("set.org_views_hint")}</div>
+        </div>
+      </div>
+
+      <div className="card">
         <h3>{t("set.section.fresh")}</h3>
         <div className="small muted" style={{ marginBottom: 8 }}>{t("admin.threshold_hint")}</div>
         <div style={{ width: 160 }}>

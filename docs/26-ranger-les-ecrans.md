@@ -28,9 +28,10 @@ L'organigramme recupere ce que les cartes apportaient, sous la forme d'une range
 de tribus cliquables qui remplace la liste deroulante. La page Tribus et son
 entree de menu disparaissent.
 
-L'organigramme s'ouvre maintenant sur **la liste**, l'arbre en second : l'arbre
-est la belle vue, la liste est celle qui repond a « ou est ma squad » sans faire
-defiler.
+L'organigramme s'ouvre sur **l'arbre**, la liste en second. L'ordre des deux vues
+se regle dans **Administration > Parametres > Organigramme** (reglage general
+`org_views`, publie par `/api/config`) : la premiere est celle qui s'ouvre. Il
+s'ouvrait jusque la sur la liste, choix fige dans le code.
 
 ## 2. Le menu d'administration
 

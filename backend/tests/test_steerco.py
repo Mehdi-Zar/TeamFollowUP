@@ -758,3 +758,26 @@ def test_a_period_is_a_month(client, db, seeded):
     r = client.put(f"/api/steerco/platform/{pid}/history", json={"months": {"nope": {}}})
     assert r.status_code == 422, r.text
     assert client.get(f"/api/steerco/platform/{pid}/history?period=2026-07").status_code == 200
+
+
+def test_the_slide_legend_sits_under_the_chart_grouped_by_axis(db, seeded):
+    """La legende de PowerPoint se posait sur la courbe, et « (right axis) » repete
+    derriere chaque serie l'etalait sur trois lignes. Elle est dessinee sous le
+    graphe, groupee par echelle, et le graphe lui cede juste sa hauteur."""
+    from pptx import Presentation
+    import io as _io
+    pid = _platform(db, seeded)
+    db.add(SteercoEntry(platform_id=pid, period="2026-07", data={"kpis": [
+        {"label": "Software Factory", "value": "3800"}, {"label": "DBaaS", "value": "12"}]}))
+    db.commit()
+    rd = _aggregate(db, pid, "2026-07")
+    slide = Presentation(_io.BytesIO(_render_pptx([{"squad_name": "P", "data": rd}], "2026-07", I18N["en"]))).slides[0]
+    chart_shape = next(sh for sh in slide.shapes if sh.has_chart and "Software Factory" in sh.chart._chartSpace.xml)
+    assert not chart_shape.chart.has_legend
+    legend = next(sh for sh in slide.shapes if sh.has_text_frame and "RIGHT AXIS" in sh.text_frame.text)
+    text = legend.text_frame.text
+    assert "LEFT AXIS" in text and "DBaaS" in text and "Software Factory" in text
+    assert "(right axis)" not in text
+    # Right under the chart, inside the same box.
+    assert legend.top >= chart_shape.top + chart_shape.height - 10
+    assert legend.left == chart_shape.left and legend.width == chart_shape.width

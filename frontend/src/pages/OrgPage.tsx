@@ -13,6 +13,7 @@ import { useSearchParams } from "react-router-dom";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { useI18n } from "../i18n";
+import { useConfig } from "../config";
 import { Member, OrgNode, Squad, SquadDetail, Tribe, TribeOrg, Role } from "../types";
 import { Spinner, ErrorBanner, FitScale, Modal } from "../components/ui";
 import { HtmlPreviewButton } from "../components/HtmlPreview";
@@ -117,7 +118,10 @@ export default function OrgPage() {
   const [form, setForm] = useState<FormState | null>(null);
   // La liste d'abord: l'arbre est la belle vue, la liste est celle qui repond a
   // « ou est ma squad » sans faire defiler.
-  const [view, setView] = useState<OrgView>("list");
+  // The views in the order set in Admin > Settings; the first one opens.
+  const { org_views } = useConfig();
+  const views: OrgView[] = org_views?.length ? org_views : ["tree", "list"];
+  const [view, setView] = useState<OrgView>(views[0]);
   const [showAllMembers, setShowAllMembers] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   // The squad whose team is being edited, and a counter bumped after each edit so
@@ -264,8 +268,7 @@ export default function OrgPage() {
   useSetPageChrome(
     {
       tabs: [
-        { key: "list", label: t("org.view_list") },
-        { key: "tree", label: t("org.view_tree") },
+        ...views.map((v) => ({ key: v, label: t(v === "tree" ? "org.view_tree" : "org.view_list") })),
       ],
       activeTab: view,
       onTab: (k) => setView(k as OrgView),
@@ -291,7 +294,7 @@ export default function OrgPage() {
         </>
       ),
     },
-    [view, tribeId, editable, isOwnTribe, showAllMembers, t]
+    [view, views.join(","), tribeId, editable, isOwnTribe, showAllMembers, t]
   );
 
   if (error) return <ErrorBanner message={error} />;

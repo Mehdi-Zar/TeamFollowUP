@@ -284,12 +284,33 @@ def update_platform(platform_id: int, payload: dict = Body(...), db: Session = D
     # Re-normalized even when the template is not in the payload: dropping a
     # contributor must drop the items it owned back to unassigned, or they would be
     # editable by nobody.
-    new_tpl = plat.normalize_template(payload.get("template", p.template), ids)
+    raw_tpl = payload.get("template", p.template)
+    # The platform screen edits the items; the rendering is chosen on the
+    # consolidation screen. A template sent without it keeps the current one.
+    if isinstance(raw_tpl, dict) and "display" not in raw_tpl:
+        raw_tpl = {**raw_tpl, "display": (p.template or {}).get("display")}
+    new_tpl = plat.normalize_template(raw_tpl, ids)
     _relayout(p, new_tpl)
     db.flush()
     plat.sync_squad_flags(db, {s.id: s for s in (before + list(p.contributors))}.values())
     record_audit(db, user.id, "platform.update", entity="platform", entity_id=p.id,
                  detail={"name": p.name, "contributors": ids})
+    db.commit()
+    return _platform_out(db, user, p)
+
+
+@router.put("/platforms/{platform_id}/display")
+def update_platform_display(platform_id: int, payload: dict = Body(...), db: Session = Depends(get_db),
+                            user: User = Depends(require_admin_tab("platforms"))):
+    """PUT /api/steerco/platforms/{id}/display: how the slide's KPI chart is drawn
+    (``kpi_chart``: auto, lines, small_multiples, table) and which KPIs it shows
+    (``chart_kpis``, empty for all). Chosen from the live preview. Audited."""
+    p = _platform_in_scope(db, user, platform_id)
+    tpl = dict(plat.normalize_template(p.template, [s.id for s in p.contributors]))
+    tpl["display"] = plat.normalize_display(payload, [k["label"] for k in tpl["kpis"]])
+    p.template = tpl   # a new dict, so the JSON column is seen as changed
+    record_audit(db, user.id, "platform.display", entity="platform", entity_id=p.id,
+                 detail=tpl["display"])
     db.commit()
     return _platform_out(db, user, p)
 
@@ -717,14 +738,20 @@ def _kpi_value(snap: dict, label: str):
     return None
 
 
-def _aggregate(db: Session, platform_id: int, period: str, override: dict | None = None) -> dict:
+def _aggregate(db: Session, platform_id: int, period: str, override: dict | None = None,
+               display: dict | None = None) -> dict:
     """Assemble the one-pager render-data for a platform+month over the report's calendar
     year (January to December): KPI cards + events from the current month; SLA table
     (current row + year-average row); KPI and incident charts as the Jan-to-Dec series,
     so the charts always start in January.
 
     ``override`` (optional) replaces the current month's snapshot in memory only (never
-    persisted) so the wizard can preview unsaved edits before submitting."""
+    persisted) so the wizard can preview unsaved edits before submitting.
+
+    ``display`` (optional) replaces the platform's saved rendering choices, for the
+    live preview of a choice not saved yet."""
+    p = db.get(Platform, platform_id)
+    tpl = plat.normalize_template(p.template, [x.id for x in p.contributors]) if p is not None else None
     keys = year_months(period)
     # The vs-M-1 delta needs the month right before the report month, which for a
     # January report is December of the previous year (outside the calendar window).
@@ -795,11 +822,23 @@ def _aggregate(db: Session, platform_id: int, period: str, override: dict | None
         data = [_num(_kpi_value(by_period.get(key, {}), label or "")) if key <= period else None
                 for key in keys]
         kpi_series.append({"name": label, "color": SERIES_COLORS[idx % len(SERIES_COLORS)], "data": data})
+    # The rendering chosen for this platform (or tried in the preview): which KPIs
+    # the chart shows, and how. Colours were given above, over every KPI, so a curve
+    # keeps its colour whatever the selection.
+    shown = plat.normalize_display(display if display is not None else (tpl or {}).get("display"),
+                                   [s["name"] for s in kpi_series])
+    if shown["chart_kpis"]:
+        keep = set(shown["chart_kpis"])
+        kpi_series = [s for s in kpi_series if s["name"] in keep]
+    mode = shown["kpi_chart"]
+    if mode == "auto":
+        mode = "lines" if len(kpi_series) <= plat.LINES_MAX_SERIES else "small_multiples"
     # Two orders of magnitude on one axis flatten the small curves; the big ones get
-    # their own graduation on the right (see _split_axes).
-    _split_axes(kpi_series)
+    # their own graduation on the right (see _split_axes). Only the curves share a plot.
+    if mode == "lines":
+        _split_axes(kpi_series)
     right = [s for s in kpi_series if s.get("axis") == "right"]
-    kpi_chart = {"labels": labels, "y_min": 0, "series": kpi_series,
+    kpi_chart = {"labels": labels, "y_min": 0, "series": kpi_series, "mode": mode,
                  "y_max": _axis_max([s for s in kpi_series if s.get("axis") != "right"])}
     if right:
         kpi_chart["y2_min"], kpi_chart["y2_max"] = 0, _axis_max(right)
@@ -810,9 +849,7 @@ def _aggregate(db: Session, platform_id: int, period: str, override: dict | None
     # Qui doit encore sa part ce mois-ci: la slide d'un mois vide le dit, au lieu
     # de montrer des cadres blancs.
     missing: list[str] = []
-    p = db.get(Platform, platform_id)
     if p is not None:
-        tpl = plat.normalize_template(p.template, [x.id for x in p.contributors])
         names = {x.id: x.name for x in p.contributors}
         missing = [names[i] for i in _missing_owners(tpl, cur) if i in names]
 
@@ -886,6 +923,33 @@ td.b-ok,td.b-warn,td.b-ko{font-weight:700;}
 .chart{flex:1;min-height:0;display:flex;}
 .chart svg{width:100%;height:100%;display:block;}
 .legend{display:flex;flex-wrap:wrap;gap:12px;margin-top:8px;font-size:11px;color:var(--muted);}
+/* Many KPIs: an equal grid of compact cards. */
+.kpi-grid{display:grid;gap:8px;height:100%;}
+.kpi-grid .kpi{padding:7px 9px;}
+.kpi-grid .kpi .num{font-size:17px;}
+.kpi-grid .kpi .lbl{font-size:9px;}
+.kpi-grid .kpi .t{font-size:10px;padding-top:4px;}
+/* Small multiples: one small chart per KPI, each on its own scale. */
+.sm-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:8px;align-content:start;}
+.sm{border:1px solid var(--line);border-radius:8px;padding:6px 8px;}
+.sm-hd{display:flex;justify-content:space-between;align-items:baseline;gap:6px;font-size:10.5px;}
+.sm-name{color:var(--navy2);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.sm-hd b{color:var(--navy);font-size:12px;}
+.sm svg{width:100%;height:30px;display:block;margin-top:3px;}
+/* KPI table: months in columns. */
+.kt-wrap{overflow:auto;}
+table.kt{font-size:11px;height:auto;}
+.kt-split{display:grid;gap:10px;align-items:start;}
+/* Many KPIs: a compact list, name / value / change. */
+.kpi-list{display:grid;gap:4px 14px;align-content:start;}
+table.kl{font-size:11px;height:auto;}
+table.kl th,table.kl td{border:0;border-bottom:1px solid var(--line);padding:3px 4px;text-align:left;}
+table.kl th{background:none;color:var(--navy2);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px;}
+table.kl td.v{text-align:right;font-weight:800;color:var(--navy);white-space:nowrap;}
+table.kl td{white-space:nowrap;font-size:10px;font-weight:600;text-align:right;}
+table.kt th,table.kt td{padding:4px 6px;}
+table.kt tbody th{white-space:nowrap;}
+table.kt tbody th i{display:inline-block;width:10px;height:3px;border-radius:2px;margin-right:5px;vertical-align:middle;}
 .legend span{display:flex;align-items:center;gap:5px;}
 /* Le nom d'une echelle, en tete de son groupe de courbes. */
 .legend .legend-grp{font-weight:700;color:var(--navy2);margin-left:4px;}
@@ -992,6 +1056,80 @@ def _legend(series: list[dict], L: dict | None = None) -> str:
     return "".join(out)
 
 
+def _grid_cols(n: int) -> int:
+    """Columns for n equal tiles in a half-slide panel: at most 5 wide."""
+    return min(5, max(3, -(-n // 3)))
+
+
+def _sm_cols(n: int) -> int:
+    """Columns of the small multiples: 6 wide past 25 KPIs, so the rows keep a
+    readable height."""
+    if n <= 4:
+        return max(1, n)
+    return 6 if n > 25 else _grid_cols(n)
+
+
+def _list_cols(n: int) -> int:
+    """Columns of the compact KPI list (past CARDS_GRID_MAX KPIs)."""
+    return 2 if n <= 24 else 3
+
+
+# The body of a half-slide panel on the standard slide, in inches (see the grid of
+# _render_pptx). The HTML preview lays its tables out on the same geometry, so the
+# preview splits a table where the slide does.
+STD_BODY_W, STD_BODY_H = 5.83, 1.84
+# Width of one bold Calibri character per point of font size, in inches: names are
+# cut on it. Measured on PowerPoint's rendering (0.0062 let bold names wrap).
+BOLD_CHAR_IN = 0.0074
+TABLE_MIN_ROW_IN = 0.135
+MONTH_COL_IN = 0.46
+
+
+def _name_width_in(names, size) -> float:
+    longest = max((len(str(n or "")) for n in names), default=6)
+    return 0.12 + longest * BOLD_CHAR_IN * _fs(size)
+
+
+def _table_plan(names: list[str], months: list, w_in: float, h_in: float) -> dict:
+    """How the month-by-month table fits a panel: how many side-by-side tables
+    (as many as the KPIs need rows for), how wide the name column, and which
+    months (the most recent that fit). Nothing is ever drawn past the panel."""
+    rows_per = max(1, int(h_in / TABLE_MIN_ROW_IN) - 1)
+    ntab = max(1, -(-len(names) // rows_per))
+    size = 9 if ntab == 1 and len(names) <= 9 else (8 if len(names) <= 13 or ntab > 1 else 7)
+    gap = 0.12
+    tw = (w_in - gap * (ntab - 1)) / ntab
+    name_w = min(tw * 0.5, _name_width_in(names, size))
+    fit = max(1, int((tw - name_w) / MONTH_COL_IN))
+    per = -(-len(names) // ntab)
+    return {"ntab": ntab, "per": per, "size": size, "tw": tw, "gap": gap,
+            "name_w": name_w, "months": list(months)[-fit:]}
+
+
+def _compact_num(v, dec: str = ".") -> str:
+    """A value for a narrow cell: 1488889 reads 1.49 M, 20100 reads 20.1 k. Below
+    10 000 the value is written as is."""
+    if v is None:
+        return "-"
+    f = float(v)
+    a = abs(f)
+    if a >= 1_000_000:
+        txt, unit = f"{f / 1_000_000:.2f}", "M"
+    elif a >= 100_000:
+        txt, unit = f"{f / 1000:.0f}", "k"
+    elif a >= 10_000:
+        txt, unit = f"{f / 1000:.1f}", "k"
+    else:
+        return _fmt_num(f).replace(".", dec)
+    if "." in txt:
+        txt = txt.rstrip("0").rstrip(".")
+    return txt.replace(".", dec) + "\u00a0" + unit
+
+
+def _dec(L: dict) -> str:
+    return "," if L is I18N.get("fr") else "."
+
+
 def _kpi_card_html(k: dict, hero: bool = False) -> str:
     """3 lines: (1) the number, (2) the name on a single line, (3) the trend at the
     bottom-left. Software Factory additionally shows its sub-metrics small."""
@@ -1016,11 +1154,64 @@ def _kpi_card_html(k: dict, hero: bool = False) -> str:
             f"{sub_html}{trend_html}</div>")
 
 
+# Beyond this many KPIs, the cards drop the hero and shrink into a grid: every KPI
+# stays on the slide (the PPTX used to keep the first five and drop the rest).
+CARDS_HERO_MAX = 5
+# Beyond this many, compact cards would need a third row, too short for a number
+# and its change side by side: the KPIs become a list (name, value, change) in
+# two or three columns.
+CARDS_GRID_MAX = 10
+
+
+def _card_cols(n: int) -> int:
+    """Columns of the compact card grid: two rows at most."""
+    return min(5, -(-n // 2))
+
+
+def _compact_text(v, dec: str) -> str:
+    """A typed value or change written compact when it is a plain number
+    ("+54321" reads "+54,3 k"); anything else is kept as typed."""
+    txt = str(v or "").strip()
+    raw = txt.replace("\u00a0", "").replace(" ", "").replace(",", ".")
+    sign = raw[:1] if raw[:1] in "+-" else ""
+    try:
+        num = float(raw[1:] if sign else raw)
+    except ValueError:
+        return txt
+    return sign + _compact_num(num, dec)
+
+
 def _kpi_cards(kpis: list[dict], L: dict) -> str:
     """First KPI (Users) on its own, centred and wider at the top; the rest in a row
-    below (Landing Zone / K8aaS / DBaaS / Software Factory, the last with sub-metrics)."""
+    below (Landing Zone / K8aaS / DBaaS / Software Factory, the last with sub-metrics).
+    More than CARDS_HERO_MAX: a compact grid of equal cards, all of them."""
     if not kpis:
         return f"<div class='empty'>{escape(L['no_kpi'])}</div>"
+    if len(kpis) > CARDS_GRID_MAX:
+        cols = _list_cols(len(kpis))
+        per = -(-len(kpis) // cols)
+        # Three columns are narrow, as on the slide: numbers compact, and the change
+        # becomes a coloured arrow before the value.
+        narrow = cols > 2
+
+        def row(k):
+            trend = k.get("trend") or "flat"
+            cls = TREND_CLASS.get(trend, "flat")
+            if narrow:
+                arrow = f"<span class='{cls}'>{TREND_ARROW.get(trend, '')}</span> " if k.get("delta") else ""
+                return (f"<tr><th>{escape(str(k.get('label') or '-'))}</th>"
+                        f"<td class='v'>{arrow}{escape(_compact_text(k.get('value') or '-', _dec(L)))}</td></tr>")
+            delta = f"{TREND_ARROW.get(trend, '')} {escape(str(k.get('delta')))}" if k.get("delta") else ""
+            return (f"<tr><th>{escape(str(k.get('label') or '-'))}</th>"
+                    f"<td class='v'>{escape(str(k.get('value') or '-'))}</td>"
+                    f"<td class='{cls}'>{delta}</td></tr>")
+        blocks = "".join(f"<table class='kl'><tbody>{''.join(row(k) for k in kpis[c * per:(c + 1) * per])}</tbody></table>"
+                         for c in range(cols))
+        return f"<div class='kpi-list' style='grid-template-columns:repeat({cols},1fr)'>{blocks}</div>"
+    if len(kpis) > CARDS_HERO_MAX:
+        cols = _card_cols(len(kpis))
+        cards = "".join(_kpi_card_html({**k, "sub": []}) for k in kpis)
+        return f"<div class='kpi-grid' style='grid-template-columns:repeat({cols},1fr)'>{cards}</div>"
     hero = _kpi_card_html(kpis[0], hero=True)
     rest = "".join(_kpi_card_html(k) for k in kpis[1:])
     return (f"<div class='kpi-wrap'>"
@@ -1090,7 +1281,80 @@ def _panel(title: str, sub: str, body: str) -> str:
     return f'<div class="panel"><div class="hd">{title}{subhtml}</div><div class="bd">{body}</div></div>'
 
 
+def _fmt_num(v) -> str:
+    """A value as the cards show it: no trailing .0, thousands kept compact."""
+    if v is None:
+        return "-"
+    f = float(v)
+    return str(int(f)) if f.is_integer() else f"{f:.1f}"
+
+
+def _last(data: list):
+    return next((v for v in reversed(data or []) if v is not None), None)
+
+
+def _sparkline_svg(s: dict) -> str:
+    """One KPI's year as a small curve on its own scale (small multiples)."""
+    pts = [(i, v) for i, v in enumerate(s.get("data") or []) if v is not None]
+    n = max(len(s.get("data") or []), 2)
+    if not pts:
+        return ""
+    lo, hi = min(v for _, v in pts), max(v for _, v in pts)
+    span = (hi - lo) or 1
+    W, H = 100, 30
+    xy = [(W * i / (n - 1), H - 3 - (H - 6) * (v - lo) / span) for i, v in pts]
+    d = " ".join(("M" if j == 0 else "L") + f"{x:.1f} {y:.1f}" for j, (x, y) in enumerate(xy))
+    lx, ly = xy[-1]
+    color = escape(str(s.get("color") or NAVY))
+    return (f'<svg viewBox="0 0 {W} {H}" preserveAspectRatio="none">'
+            f'<path d="{d}" fill="none" stroke="{color}" stroke-width="2" vector-effect="non-scaling-stroke"/>'
+            f'<circle cx="{lx:.1f}" cy="{ly:.1f}" r="2.2" fill="{color}"/></svg>')
+
+
+def _small_multiples_html(chart: dict, L: dict) -> str:
+    series = [s for s in (chart.get("series") or []) if any(v is not None for v in (s.get("data") or []))]
+    if not series:
+        return f"<div class='empty'>{escape(L['no_data'])}</div>"
+    cells = "".join(
+        f"<div class='sm'><div class='sm-hd'><span class='sm-name'>{escape(str(s.get('name') or ''))}</span>"
+        f"<b>{escape(_compact_num(_last(s.get('data')), _dec(L)))}</b></div>{_sparkline_svg(s)}</div>"
+        for s in series)
+    # Same columns as the slide (small_multiples in _render_pptx): the preview is the export.
+    cols = _sm_cols(len(series))
+    return f"<div class='sm-grid' style='grid-template-columns:repeat({cols},minmax(0,1fr))'>{cells}</div>"
+
+
+def _chart_table_html(chart: dict, L: dict) -> str:
+    """The KPIs month by month: one row per KPI, the months that carry a value.
+    Split as the slide splits it (_table_plan on the standard panel)."""
+    series = [s for s in (chart.get("series") or []) if any(v is not None for v in (s.get("data") or []))]
+    if not series:
+        return f"<div class='empty'>{escape(L['no_data'])}</div>"
+    labels = chart.get("labels") or []
+    cols = [i for i in range(len(labels)) if any(i < len(s["data"]) and s["data"][i] is not None for s in series)]
+    plan = _table_plan([s.get("name") for s in series], cols, STD_BODY_W, STD_BODY_H)
+    dec = _dec(L)
+
+    def table(part, months):
+        head = "".join(f"<th>{escape(labels[i])}</th>" for i in months)
+        rows = "".join(
+            f"<tr><th><i style='background:{escape(str(s.get('color') or NAVY))}'></i>{escape(str(s.get('name') or ''))}</th>"
+            + "".join(f"<td>{escape(_compact_num(s['data'][i] if i < len(s['data']) else None, dec))}</td>" for i in months)
+            + "</tr>" for s in part)
+        return f"<table class='kt'><thead><tr><th></th>{head}</tr></thead><tbody>{rows}</tbody></table>"
+
+    per = plan["per"]
+    blocks = "".join(table(series[t * per:(t + 1) * per], plan["months"]) for t in range(plan["ntab"]))
+    return (f"<div class='kt-wrap kt-split' style='grid-template-columns:repeat({plan['ntab']},minmax(0,1fr))'>"
+            f"{blocks}</div>")
+
+
 def _chart_body(chart: dict, L: dict) -> str:
+    mode = chart.get("mode") or "lines"
+    if mode == "small_multiples":
+        return _small_multiples_html(chart, L)
+    if mode == "table":
+        return _chart_table_html(chart, L)
     # Deux echelles sans marque, et un lecteur n'a aucun moyen de savoir ce que
     # vaut une ligne: la legende dit donc quelle courbe se lit de quel cote.
     return (f'<div class="chart">{_svg_line_chart(chart, L["no_data"])}</div>'
@@ -1215,7 +1479,7 @@ def _render_pptx(squads: list[dict], period: str, L: dict) -> bytes:
     from .. import pptxtpl
     from pptx.chart.data import CategoryChartData
     from pptx.dml.color import RGBColor
-    from pptx.enum.chart import XL_CHART_TYPE, XL_LEGEND_POSITION
+    from pptx.enum.chart import XL_CHART_TYPE
     from pptx.enum.shapes import MSO_SHAPE
     from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
     from pptx.util import Emu, Inches, Pt
@@ -1256,14 +1520,14 @@ def _render_pptx(squads: list[dict], period: str, L: dict) -> bytes:
             rs.font.size = Pt(_fs(10)); rs.font.color.rgb = rgb("#6B7C90")
         return x + 0.14, y + 0.44, w - 0.28, h - 0.56
 
-    def kpi_card(slide, x, y, w, h, k, hero=False):
+    def kpi_card(slide, x, y, w, h, k, hero=False, compact=False):
         """3 lines: (1) number, (2) name on one line, (3) trend at the bottom-left.
         Software Factory also shows its sub-metrics small. x/y/w/h in EMU."""
         card = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, x, y, w, h)
         card.fill.solid(); card.fill.fore_color.rgb = rgb("#FFFFFF")
         card.line.color.rgb = rgb("#AFC0D6"); card.line.width = Pt(1.0); no_shadow(card)
-        num_sz = 24 if hero else 19
-        lbl_sz = 13 if hero else 9
+        num_sz = 24 if hero else (14 if compact else 19)
+        lbl_sz = 13 if hero else (8 if compact else 9)
         pad = Inches(0.1)
         iw = w - Inches(0.16)
         unit = str(k.get("unit")) if k.get("unit") else ""
@@ -1276,8 +1540,8 @@ def _render_pptx(squads: list[dict], period: str, L: dict) -> bytes:
             tf.margin_left = 0; tf.margin_right = 0; tf.margin_top = Emu(9000); tf.margin_bottom = Emu(9000)
             return tf
 
-        yy = y + Inches(0.07)
-        num_h = Inches(0.36 if hero else 0.28)
+        yy = y + Inches(0.05 if compact else 0.07)
+        num_h = Inches(0.36 if hero else (0.24 if compact else 0.28))
         nbox = box(yy, num_h)
         rn = nbox.paragraphs[0].add_run(); rn.text = f"{k.get('value') or '-'}{unit}"
         rn.font.size = Pt(_fs(num_sz)); rn.font.bold = True; rn.font.color.rgb = rgb(NAVY)
@@ -1285,7 +1549,10 @@ def _render_pptx(squads: list[dict], period: str, L: dict) -> bytes:
         # Name: dedicated box, no wrap -> always a single line.
         lbox = box(yy, Inches(0.2))
         # La casse saisie est gardee: en majuscules, « K8aaS » devenait « K8AAS ».
-        rl = lbox.paragraphs[0].add_run(); rl.text = str(k.get("label") or "-")
+        label = str(k.get("label") or "-")
+        if compact:
+            label = _cut(label, max(4, int((w / 914400 - 0.18) / (0.0064 * _fs(lbl_sz)))))
+        rl = lbox.paragraphs[0].add_run(); rl.text = label
         rl.font.size = Pt(_fs(lbl_sz)); rl.font.bold = True; rl.font.color.rgb = rgb("#141B47")
         yy += Inches(0.2)
         sub = k.get("sub") or []
@@ -1307,13 +1574,18 @@ def _render_pptx(squads: list[dict], period: str, L: dict) -> bytes:
         # number's line, at the right, instead of over « GitLab 325 ».
         if k.get("delta"):
             ty = yy if hero else (y + h - Inches(0.26))
-            if sub and not hero:
-                ty = y + Inches(0.1)
+            # A compact card keeps its trend on a line of its own when the card is
+            # tall enough, else on the number's line, at the right and smaller.
+            tight = compact and h < Inches(0.68)
+            if compact and not tight:
+                ty = y + h - Inches(0.22)
+            if (sub or tight) and not hero:
+                ty = y + Inches(0.07 if tight else 0.1)
             tbox = box(ty, Inches(0.22))
-            if sub and not hero:
+            if (sub or tight) and not hero:
                 tbox.paragraphs[0].alignment = PP_ALIGN.RIGHT
             rt = tbox.paragraphs[0].add_run(); rt.text = f"{TREND_ARROW.get(trend, '▬')} {k.get('delta')}".strip()
-            rt.font.size = Pt(_fs(10 if hero else 9)); rt.font.bold = True; rt.font.color.rgb = rgb(tcolor)
+            rt.font.size = Pt(_fs(10 if hero else (7 if tight else 9))); rt.font.bold = True; rt.font.color.rgb = rgb(tcolor)
 
     def set_cell(cell, fill, color, size=10, bold=False):
         cell.fill.solid(); cell.fill.fore_color.rgb = rgb(fill)
@@ -1355,6 +1627,55 @@ def _render_pptx(squads: list[dict], period: str, L: dict) -> bytes:
                 tbl.cell(i + 1, j + 1).text = v
                 set_cell(tbl.cell(i + 1, j + 1), fills.get(s, "#FFFFFF"), texts.get(s, "#6B7C90"), bold=True)
 
+    def legend(slide, x, bottom, w, series, two, box_h) -> int:
+        """A compact legend at the bottom of the chart box: a coloured dash and the
+        name of each curve, grouped under "left axis" / "right axis" when the chart
+        has two scales. Its real height is computed (it wraps), the font shrinks
+        until it takes at most 40 % of the box: it never runs off the panel.
+        Returns the height it takes (EMU), which the chart gives up."""
+        groups = [(None, series)]
+        if two:
+            groups = [(L[key], [s for s in series if (s.get("axis") == "right") is side])
+                      for key, side in (("axis_left", False), ("axis_right", True))]
+            groups = [g for g in groups if g[1]]
+
+        def need(size):
+            cpl = max(1, int((w / 914400 - 0.1) / (0.0068 * _fs(size))))
+            widths = [len(g[0] or "") + 3 + sum(len(str(s.get("name") or "")) + 5 for s in g[1]) for g in groups]
+            if sum(widths) + 6 * (len(widths) - 1) <= cpl:
+                lines = 1
+            else:
+                lines = sum(-(-wd // cpl) for wd in widths)
+            line_h = int(_fs(size) * 1.3 / 72 * 914400)
+            return lines, lines * line_h + int(0.04 * 914400)
+
+        size = 8
+        lines, h = need(size)
+        while h > box_h * 0.4 and size > 6:
+            size -= 1
+            lines, h = need(size)
+        tf = slide.shapes.add_textbox(x, bottom - h, w, h).text_frame
+        tf.word_wrap = True
+        tf.margin_top = tf.margin_bottom = Emu(0)
+        tf.margin_left = tf.margin_right = Inches(0.05)
+        para = tf.paragraphs[0]
+        para.alignment = PP_ALIGN.CENTER
+        for gi, (label, items) in enumerate(groups):
+            if gi and lines > 1:
+                para = tf.add_paragraph(); para.alignment = PP_ALIGN.CENTER
+            elif gi:
+                sp = para.add_run(); sp.text = "      "; sp.font.size = Pt(_fs(size))
+            if label:
+                rl = para.add_run(); rl.text = label.upper() + "  "
+                rl.font.size = Pt(_fs(max(6, size - 1))); rl.font.bold = True; rl.font.color.rgb = rgb("#6B7C90")
+            for i, s in enumerate(items):
+                rd = para.add_run(); rd.text = ("   " if i else "") + "\u2501 "
+                rd.font.size = Pt(_fs(size)); rd.font.bold = True
+                rd.font.color.rgb = rgb(s.get("color") or NAVY)
+                rn = para.add_run(); rn.text = str(s.get("name") or "")
+                rn.font.size = Pt(_fs(size)); rn.font.color.rgb = rgb("#3C4560")
+        return h
+
     def line_chart(slide, x, y, w, h, chart):
         series = [s for s in (chart.get("series") or []) if any(v is not None for v in (s.get("data") or []))]
         if not series:
@@ -1362,18 +1683,20 @@ def _render_pptx(squads: list[dict], period: str, L: dict) -> bytes:
             return
         on_right = [s.get("axis") == "right" for s in series]
         two = bool(chart.get("y2_max")) and any(on_right) and not all(on_right)
-        note = L["axis_right"] if two else ""
+        # The legend is drawn by us, under the chart, grouped by axis like the HTML
+        # one. PowerPoint's own legend sat over the plot (include_in_layout off), or
+        # took a third of it once laid out, with "(right axis)" repeated after every
+        # curve: three lines of legend for a chart of five.
+        legend_h = legend(slide, x, y + h, w, series, two, h)
         cd = CategoryChartData()
         cd.categories = chart.get("labels") or [str(i + 1) for i in range(max(len(s["data"]) for s in series))]
         for s in series:
-            cd.add_series(_series_name(s, note), [None if v is None else float(v) for v in s["data"]])
-        gf = slide.shapes.add_chart(XL_CHART_TYPE.LINE, x, y, w, h, cd)
+            cd.add_series(_series_name(s, L["axis_right"] if two else ""),
+                          [None if v is None else float(v) for v in s["data"]])
+        gf = slide.shapes.add_chart(XL_CHART_TYPE.LINE, x, y, w, h - legend_h, cd)
         ch = gf.chart
         ch.has_title = False
-        ch.has_legend = True
-        ch.legend.position = XL_LEGEND_POSITION.BOTTOM
-        ch.legend.include_in_layout = False
-        ch.legend.font.size = Pt(_fs(8))
+        ch.has_legend = False
         for i, ps in enumerate(ch.series):
             ps.format.line.color.rgb = rgb(series[i].get("color") or NAVY)
             ps.format.line.width = Pt(2)
@@ -1387,6 +1710,171 @@ def _render_pptx(squads: list[dict], period: str, L: dict) -> bytes:
             pass
         if two:
             _pptx_second_axis(ch, on_right, chart)
+
+    def kpi_chart(slide, x, y, w, h, chart):
+        """The KPI panel's chart, drawn the way the platform chose (x/y/w/h in EMU)."""
+        mode = chart.get("mode") or "lines"
+        series = [s for s in (chart.get("series") or []) if any(v is not None for v in (s.get("data") or []))]
+        if mode == "lines" or not series:
+            line_chart(slide, x, y, w, h, chart)
+        elif mode == "table":
+            kpi_table(slide, x, y, w, h, chart, series)
+        else:
+            small_multiples(slide, x, y, w, h, chart, series)
+
+    def small_multiples(slide, x, y, w, h, chart, series):
+        """One small native chart per KPI, each on its own scale, name and last
+        value above it. A dozen curves stay readable where one plot could not."""
+        n = len(series)
+        cols = _sm_cols(n)
+        rows = -(-n // cols)
+        gap = Inches(0.08)
+        cw = (w - gap * (cols - 1)) // cols
+        ch_h = (h - gap * (rows - 1)) // rows
+        head = min(Inches(0.22), ch_h // 3)
+        labels = chart.get("labels") or []
+        for i, s in enumerate(series):
+            cx = x + (i % cols) * (cw + gap)
+            cy = y + (i // cols) * (ch_h + gap)
+            cell = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, cx, cy, cw, ch_h)
+            cell.fill.background(); cell.line.color.rgb = rgb("#E1E7EF"); cell.line.width = Pt(0.5)
+            no_shadow(cell)
+            tf = slide.shapes.add_textbox(cx, cy, cw, head).text_frame
+            tf.word_wrap = False
+            tf.margin_left = tf.margin_right = Inches(0.05)
+            tf.margin_top = tf.margin_bottom = Emu(0)
+            p = tf.paragraphs[0]
+            val = _compact_num(_last(s.get("data")), _dec(L))
+            room = int((cw / 914400 - 0.1) / (0.0058 * _fs(8))) - len(val) - 2
+            rn = p.add_run(); rn.text = _cut(str(s.get("name") or ""), max(4, room))
+            rn.font.size = Pt(_fs(8)); rn.font.bold = True; rn.font.color.rgb = rgb("#141B47")
+            rv = p.add_run(); rv.text = "  " + val
+            rv.font.size = Pt(_fs(9)); rv.font.bold = True; rv.font.color.rgb = rgb(s.get("color") or NAVY)
+            cd = CategoryChartData()
+            cd.categories = labels or [str(k + 1) for k in range(len(s["data"]))]
+            cd.add_series(str(s.get("name") or ""), [None if v is None else float(v) for v in s["data"]])
+            gf = slide.shapes.add_chart(XL_CHART_TYPE.LINE, cx, cy + head, cw, ch_h - head, cd)
+            c = gf.chart
+            c.has_title = False; c.has_legend = False
+            c.value_axis.visible = False; c.category_axis.visible = False
+            c.value_axis.has_major_gridlines = False
+            # Each small chart on its own scale, fitted to its values: from zero,
+            # a KPI moving from 1200 to 1400 drew a flat line.
+            vals = [float(v) for v in s["data"] if v is not None]
+            lo, hi = min(vals), max(vals)
+            pad = (hi - lo) * 0.15 or max(abs(hi) * 0.1, 1)
+            c.value_axis.minimum_scale = lo - pad
+            c.value_axis.maximum_scale = hi + pad
+            ps = c.series[0]
+            ps.format.line.color.rgb = rgb(s.get("color") or NAVY)
+            ps.format.line.width = Pt(1.75)
+            ps.smooth = False
+
+    def kpi_table(slide, x, y, w, h, chart, series):
+        """The KPIs month by month, native tables: one row per KPI, as many tables
+        side by side as the rows need, each with the most recent months that fit
+        (_table_plan, shared with the HTML preview)."""
+        labels = chart.get("labels") or []
+        cols = [i for i in range(len(labels)) if any(i < len(s["data"]) and s["data"][i] is not None for s in series)]
+        plan = _table_plan([s.get("name") for s in series], cols, w / 914400, h / 914400)
+        per, tw, gap = plan["per"], Inches(plan["tw"]), Inches(plan["gap"])
+        for t in range(plan["ntab"]):
+            part = series[t * per:(t + 1) * per]
+            if part:
+                one_table(slide, x + t * (tw + gap), y, tw, h, part, plan["months"], labels,
+                          plan["size"], Inches(plan["name_w"]))
+
+    def one_table(slide, x, y, w, h, series, cols, labels, size, first_w):
+        nrows, ncols = len(series) + 1, len(cols) + 1
+        row_h = min(Inches(0.3), h // nrows)
+        shape = slide.shapes.add_table(nrows, ncols, x, y, w, row_h * nrows)
+        tbl = shape.table
+        tbl.columns[0].width = first_w
+        for j in range(1, ncols):
+            tbl.columns[j].width = (w - first_w) // max(1, ncols - 1)
+        for r in range(nrows):
+            tbl.rows[r].height = row_h
+        dec = _dec(L)
+        tbl.cell(0, 0).text = ""
+        set_cell(tbl.cell(0, 0), NAVY, "#FFFFFF", size=size, bold=True)
+        for j, i in enumerate(cols):
+            tbl.cell(0, j + 1).text = str(labels[i])
+            set_cell(tbl.cell(0, j + 1), NAVY, "#FFFFFF", size=size, bold=True)
+        for r, s in enumerate(series):
+            # The name is cut to its column: a wrapped name doubled its row.
+            room = max(4, int((first_w / 914400 - 0.08) / (BOLD_CHAR_IN * _fs(size))))
+            tbl.cell(r + 1, 0).text = _cut(str(s.get("name") or ""), room)
+            set_cell(tbl.cell(r + 1, 0), "#EEF4F8", NAVY, size=size, bold=True)
+            tbl.cell(r + 1, 0).text_frame.paragraphs[0].alignment = PP_ALIGN.LEFT
+            for j, i in enumerate(cols):
+                tbl.cell(r + 1, j + 1).text = _compact_num(s["data"][i] if i < len(s["data"]) else None, dec)
+                set_cell(tbl.cell(r + 1, j + 1), "#FFFFFF", "#3C4560", size=size)
+        # One line per cell: with the default margins, "01/26" broke in two in a
+        # narrow column, the header grew and pushed the last rows off the panel.
+        for r in range(nrows):
+            for j in range(ncols):
+                c = tbl.cell(r, j)
+                c.margin_left = c.margin_right = Inches(0.03)
+                c.margin_top = c.margin_bottom = Emu(0)
+                c.text_frame.word_wrap = False
+                # An empty cell keeps PowerPoint's 18 pt otherwise, and its row with it.
+                c.text_frame.paragraphs[0].font.size = Pt(_fs(size))
+
+    def kpi_list(slide, x, y, w, h, kpis):
+        """Many KPIs: name, value and change, one line each, in 2 or 3 columns of
+        native tables. Every KPI is on the slide, none is cut by a card edge. In
+        three columns there is no room for the change: a coloured arrow before the
+        value says which way it went, and numbers are written compact."""
+        cols = _list_cols(len(kpis))
+        per = -(-len(kpis) // cols)
+        narrow = cols > 2
+        dec = _dec(L)
+        gap = Inches(0.15)
+        tw = (w - gap * (cols - 1)) // cols
+        row_h = min(Inches(0.26), h // per)
+        size = 8 if per <= 12 else 7
+        for c in range(cols):
+            part = kpis[c * per:(c + 1) * per]
+            if not part:
+                continue
+            ncol = 2 if narrow else 3
+            tbl = slide.shapes.add_table(len(part), ncol, x + c * (tw + gap), y, tw, row_h * len(part)).table
+            widths = [0.36] if narrow else [0.28, 0.22]
+            val_ws = [int(tw * f) for f in widths]
+            tbl.columns[0].width = tw - sum(val_ws)
+            for j, vw in enumerate(val_ws):
+                tbl.columns[j + 1].width = vw
+            room = max(4, int(((tw - sum(val_ws)) / 914400 - 0.08) / (BOLD_CHAR_IN * _fs(size))))
+            for r, k in enumerate(part):
+                tbl.rows[r].height = row_h
+                trend = k.get("trend") if k.get("trend") in ("up", "down", "flat") else "flat"
+                tcolor = {"up": "#2E9E5B", "down": "#D24545", "flat": "#6B7C90"}[trend]
+                fill = "#FFFFFF" if r % 2 else "#F4F7FB"
+                cells = [(_cut(str(k.get("label") or "-"), room), NAVY, PP_ALIGN.LEFT)]
+                if narrow:
+                    cells.append((_compact_text(k.get("value") or "-", dec), NAVY, PP_ALIGN.RIGHT))
+                else:
+                    cells.append((str(k.get("value") or "-"), NAVY, PP_ALIGN.RIGHT))
+                    cells.append((f"{TREND_ARROW.get(trend, '')} {k.get('delta')}".strip() if k.get("delta") else "",
+                                  tcolor, PP_ALIGN.RIGHT))
+                for j, (txt, color, align) in enumerate(cells):
+                    cell = tbl.cell(r, j)
+                    cell.text = txt
+                    set_cell(cell, fill, color, size=size, bold=True)
+                    para = cell.text_frame.paragraphs[0]
+                    para.alignment = align
+                    if narrow and j == 1 and k.get("delta"):
+                        # The arrow, in the colour of the change, before the value.
+                        ra = para.runs[0]._r
+                        arrow = para.add_run()
+                        arrow.text = TREND_ARROW.get(trend, "") + " "
+                        arrow.font.size = Pt(_fs(size - 1)); arrow.font.bold = True
+                        arrow.font.color.rgb = rgb(tcolor)
+                        ra.addprevious(arrow._r)
+                    cell.margin_left = cell.margin_right = Inches(0.04)
+                    cell.margin_top = cell.margin_bottom = Emu(0)
+                    cell.text_frame.word_wrap = False
+                    para.font.size = Pt(_fs(size))
 
     def events(slide, x, y, w, h, evs):
         """One event per line, as many as the panel holds, the rest counted.
@@ -1489,7 +1977,19 @@ def _render_pptx(squads: list[dict], period: str, L: dict) -> bytes:
         kpis = d.get("kpis") or []
         if not kpis:
             not_filled(slide, bx, by, bw, d)
-        if kpis:
+        if len(kpis) > CARDS_GRID_MAX:
+            kpi_list(slide, Inches(bx), Inches(by), Inches(bw), Inches(bh), kpis)
+        elif len(kpis) > CARDS_HERO_MAX:
+            # Many KPIs: an equal grid, every one of them, no sub-metrics.
+            cg = 0.08
+            cols = _card_cols(len(kpis))
+            nrows = -(-len(kpis) // cols)
+            cw = (bw - cg * (cols - 1)) / cols
+            rh = (bh - cg * (nrows - 1)) / nrows
+            for i, k in enumerate(kpis):
+                kpi_card(slide, Inches(bx + (i % cols) * (cw + cg)), Inches(by + (i // cols) * (rh + cg)),
+                         Inches(cw), Inches(rh), {**k, "sub": []}, compact=True)
+        elif kpis:
             cg = 0.1
             hero_h = min(0.92, bh * 0.48)
             hero_w = bw * 0.46
@@ -1503,7 +2003,7 @@ def _render_pptx(squads: list[dict], period: str, L: dict) -> bytes:
                     kpi_card(slide, Inches(bx + i * (cw + cg)), Inches(ry), Inches(cw), Inches(rh), k)
         # Row 1 right: KPI chart.
         bx, by, bw, bh = titled_panel(slide, RX, r1y, COLW, row_h, L["kpi_chart"], kpi_sub)
-        line_chart(slide, Inches(bx), Inches(by), Inches(bw), Inches(bh), d.get("kpi_chart") or {})
+        kpi_chart(slide, Inches(bx), Inches(by), Inches(bw), Inches(bh), d.get("kpi_chart") or {})
 
         # Row 2 left: SLA table.
         bx, by, bw, bh = titled_panel(slide, LX, r2y, COLW, row_h, L["sla"])
@@ -1541,14 +2041,25 @@ def _enabled_platforms(db: Session, user: User) -> list[Platform]:
     return [p for p in _platforms_in_scope(db, user) if p.steerco_enabled]
 
 
+def _display_override(chart: str | None, chart_kpis: list[str] | None) -> dict | None:
+    """A rendering tried in the preview (``chart`` and repeated ``chart_kpis``), or
+    None to use the one saved on the platform."""
+    if chart is None and not chart_kpis:
+        return None
+    return {"kpi_chart": chart or "auto", "chart_kpis": [k for k in (chart_kpis or []) if k]}
+
+
 @router.get("/onepager.html", response_class=HTMLResponse)
 def onepager_html(platform_id: int = Query(...), period: str = PERIOD,
-                  lang: str | None = Query(None), db: Session = Depends(get_db),
+                  lang: str | None = Query(None), chart: str | None = Query(None),
+                  chart_kpis: list[str] | None = Query(None), db: Session = Depends(get_db),
                   user: User = Depends(get_current_user)):
-    """One platform's KPI one-pager (auto-built from the year's monthly snapshots)."""
+    """One platform's KPI one-pager (auto-built from the year's monthly snapshots).
+    ``chart`` / ``chart_kpis`` preview a rendering not saved yet."""
     p = _platform_in_scope(db, user, platform_id)
     L = I18N[_lang(lang)]
-    body = _onepager(p.name, period, _aggregate(db, platform_id, period), L)
+    body = _onepager(p.name, period, _aggregate(db, platform_id, period,
+                                                display=_display_override(chart, chart_kpis)), L)
     return HTMLResponse(_document(f"Steerco {p.name} {period}", body, _lang(lang)))
 
 
@@ -1588,13 +2099,16 @@ def _fname(name: str) -> str:
 
 @router.get("/document.pptx")
 def document_pptx(period: str = PERIOD, lang: str | None = Query(None),
-                  platform_id: int | None = Query(None), db: Session = Depends(get_db),
+                  platform_id: int | None = Query(None), chart: str | None = Query(None),
+                  chart_kpis: list[str] | None = Query(None), db: Session = Depends(get_db),
                   user: User = Depends(get_current_user)):
     """Consolidated steerco as PPTX, one slide per platform (or only the chosen
-    one, as the HTML one-pager). 501 without python-pptx."""
+    one, as the HTML one-pager). With ``platform_id``, ``chart`` / ``chart_kpis``
+    export the rendering being previewed. 501 without python-pptx."""
     from .. import pptxtpl
     L = I18N[_lang(lang)]
-    squads = [{"squad_name": p.name, "data": _aggregate(db, p.id, period)}
+    tried = _display_override(chart, chart_kpis) if platform_id is not None else None
+    squads = [{"squad_name": p.name, "data": _aggregate(db, p.id, period, display=tried)}
               for p in _enabled_platforms(db, user)
               if platform_id is None or p.id == platform_id]
     pptxtpl.use(pptxtpl.get(db))

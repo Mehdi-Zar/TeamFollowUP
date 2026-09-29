@@ -36,6 +36,7 @@ const DEFAULTS: PublicConfig = {
   lang_switch: true,
   default_year: new Date().getFullYear(),
   feed_post_scope: "leaders",
+  org_views: ["tree", "list"],
   smtp_enabled: false,
   modules: DEFAULT_MODULES,
 };

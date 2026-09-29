@@ -2,7 +2,20 @@
 
 ## Unreleased
 
+## 2.3.0 (2026-09-29)
+
 ### Ergonomie
+- Organigramme : s'ouvre sur l'arbre, puis la liste ; l'ordre des vues se regle dans
+  Administration > Parametres > Organigramme.
+- Steerco : rendu du graphique KPI au choix (automatique, courbes, un petit graphique par KPI,
+  tableau mois par mois) et choix des KPI affiches, avec apercu immediat dans l'onglet
+  Steerco et export PPTX du rendu a l'ecran. Au-dela de 5 KPI, les cartes passent en grille
+  compacte, puis en liste au-dela de 10, et tous les KPI figurent sur la diapositive (elle
+  n'en gardait que 5). Rien ne deborde d'un cadre jusqu'a 30 KPI (teste).
+- Correctif : la traduction anglaise du message « 2 engagements au plus par mois pour une
+  squad » manquait depuis la 2.2.0.
+- Steerco PPTX : la legende du graphe KPI ne recouvre plus la courbe. Elle est dessinee sous le
+  graphe, groupee par axe (gauche, droite), comme dans l'export HTML.
 - Champs a choisir : liste deroulante de ce qui existe (squads, tribes, personnes, themes)
   plus « Autre (saisie libre) ». Dependance d'un jalon en une seule liste, personne d'une
   case de l'organigramme, porteur d'initiative, destinataires. Nouvelle route

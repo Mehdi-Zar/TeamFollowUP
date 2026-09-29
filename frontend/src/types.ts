@@ -536,6 +536,8 @@ export interface PublicConfig {
   lang_switch?: boolean;
   default_year: number;
   feed_post_scope: "leaders" | "everyone";
+  /** The org chart's views in their order (Admin > Settings); the first opens by default. */
+  org_views?: ("tree" | "list")[];
   smtp_enabled: boolean;
   modules: ModulesConfig;
   /** Couleurs, logos, typographie et densite (voir app/branding.py). */

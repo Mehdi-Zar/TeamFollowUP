@@ -148,6 +148,48 @@ dernier contributeur a rempli sa part. Le menu d'export de la page propose le **
 et le **PPTX** (une diapositive 16:9 par plateforme). Les documents sont rendus dans la
 langue de l'interface (anglais par defaut).
 
+### Le rendu du graphique KPI, choisi sur l'apercu
+
+Une plateforme peut suivre 10, 15 KPI ou plus. Une seule courbe par KPI sur un meme
+graphique, parfois sur deux echelles, ne se lit plus au-dela de cinq. Au-dessus de
+l'apercu d'une plateforme, le bandeau **Rendu du graphique KPI** propose :
+
+| Rendu | Ce qu'il dessine | Quand |
+|---|---|---|
+| Automatique (defaut) | Courbes jusqu'a 5 KPI, un petit graphique par KPI au-dela | Le bon choix sans y penser |
+| Courbes | Toutes les courbes sur un graphique, second axe si les ordres de grandeur different | Peu de KPI comparables |
+| Un petit graphique par KPI | Une case par KPI : son nom, sa derniere valeur, sa courbe sur sa propre echelle | Beaucoup de KPI |
+| Tableau mois par mois | Les valeurs de chaque mois ; au-dela de 13 KPI, deux tableaux cote a cote sur les 4 derniers mois | Quand le chiffre compte plus que la tendance |
+
+On peut aussi **choisir les KPI du graphique** (tous par defaut). Une courbe garde sa
+couleur quelle que soit la selection. L'apercu suit chaque changement immediatement et
+montre la meme mise en page que la diapositive exportee.
+
+- **Telecharger ce rendu en PPTX** exporte ce qui est a l'ecran, enregistre ou non.
+- **Enregistrer ce rendu** (qui gere les plateformes) le garde pour tous les exports.
+  Il est stocke dans le gabarit de la plateforme (`template.display` :
+  `kpi_chart`, `chart_kpis`), via `PUT /api/steerco/platforms/{id}/display`. Modifier
+  les elements de la plateforme ne l'efface pas.
+- L'apercu et l'export acceptent un rendu essaye : `chart` et `chart_kpis` (repete)
+  sur `onepager.html` et `document.pptx?platform_id=`.
+
+**Les cartes KPI** s'adaptent aussi, et **tous les KPI y figurent** (avant, la
+diapositive gardait les 5 premiers et laissait tomber les autres) :
+
+| KPI | Cadre KPI |
+|---|---|
+| 1 a 5 | La carte vedette et la rangee |
+| 6 a 10 | Une grille de cartes compactes sur deux lignes |
+| 11 a 24 | Une liste « nom, valeur, evolution » sur deux colonnes |
+| 25 et plus | Une liste sur trois colonnes : nombres compacts (1,49 M), fleche coloree devant la valeur |
+
+Rien ne peut deborder d'un cadre : les noms sont coupes a la largeur (avec « … »),
+les grands nombres s'ecrivent en compact dans les cases etroites (tableau, petits
+graphiques), le tableau se decoupe en autant de blocs que les KPI l'exigent, et la
+legende des courbes reduit sa police jusqu'a tenir dans 40 % du cadre. Verifie de 5 a
+30 KPI dans les quatre rendus, et fixe par un test geometrique
+(`test_steerco_display.py`).
+
 ## 5. Import Excel (admin)
 
 Alternative a la saisie en ligne, pour collecter les donnees hors application :

@@ -12,6 +12,17 @@ from .models import AppSetting
 GENERAL_KEY = "general"
 
 
+ORG_VIEWS = ("tree", "list")
+
+
+def _org_views(value) -> list[str]:
+    """The org chart views in the chosen order: known ones, each once, and any
+    missing one after (a view is reordered, never lost)."""
+    picked = [v for v in (value if isinstance(value, list) else []) if v in ORG_VIEWS]
+    picked = list(dict.fromkeys(picked))
+    return picked + [v for v in ORG_VIEWS if v not in picked]
+
+
 def _defaults() -> dict:
     """The baseline general settings, used when nothing is stored yet.
 
@@ -29,6 +40,8 @@ def _defaults() -> dict:
         "staleness_threshold_days": settings.staleness_threshold_days,
         "feed_post_scope": "leaders",   # leaders | everyone
         "feed_retention_days": 0,        # 0 = keep all
+        # The org chart's views in their order: the first opens by default.
+        "org_views": list(ORG_VIEWS),
     }
 
 
@@ -95,6 +108,7 @@ def set_general(db: Session, patch: dict) -> dict:
         cfg["feed_retention_days"] = max(0, int(cfg["feed_retention_days"]))
     except (TypeError, ValueError):
         cfg["feed_retention_days"] = 0
+    cfg["org_views"] = _org_views(cfg.get("org_views"))
 
     row = db.get(AppSetting, GENERAL_KEY)
     payload = json.dumps(cfg)
@@ -127,6 +141,7 @@ def public_config(db: Session) -> dict:
         "lang_switch": bool(cfg.get("lang_switch", True)),
         "default_year": cfg["default_year"],
         "feed_post_scope": cfg["feed_post_scope"],
+        "org_views": _org_views(cfg.get("org_views")),
         "smtp_enabled": bool(get_smtp(db).get("enabled")),
         "modules": get_modules(db),
         # L'apparence voyage avec la configuration publique: la page de connexion

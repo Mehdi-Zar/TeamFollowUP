@@ -21,6 +21,114 @@ type Entry = {
   contributors: { id: number; name: string }[]; missing: string[]; unassigned: number;
 };
 
+type ChartMode = "auto" | "lines" | "small_multiples" | "table";
+type Display = { kpi_chart: ChartMode; chart_kpis: string[] };
+type PlatformInfo = { id: number; can_manage: boolean; template: { kpis: { label: string }[]; display?: Display } };
+
+// Past this many curves on one plot, they cannot be told apart (same rule as the server).
+const LINES_MAX = 5;
+
+/**
+ * One platform's slide, previewed as it will be exported, with how its KPI chart
+ * is drawn: curves, one small chart per KPI, or a month-by-month table, and which
+ * KPIs it shows. The preview follows every change at once; saving keeps the choice
+ * for every export, and the PPTX of what is on screen can be taken before saving.
+ */
+function OnePager({ entry, period, lang }: { entry: Entry; period: string; lang: string }) {
+  const { t } = useI18n();
+  const [info, setInfo] = useState<PlatformInfo | null>(null);
+  const [saved, setSaved] = useState<Display>({ kpi_chart: "auto", chart_kpis: [] });
+  const [mode, setMode] = useState<ChartMode>("auto");
+  const [picked, setPicked] = useState<string[]>([]);   // empty: every KPI
+  const [msg, setMsg] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    api.get<PlatformInfo[]>("/api/steerco/platforms").then((all) => {
+      const p = all.find((x) => x.id === entry.platform_id) ?? null;
+      setInfo(p);
+      const d: Display = p?.template?.display ?? { kpi_chart: "auto", chart_kpis: [] };
+      setSaved(d); setMode(d.kpi_chart); setPicked(d.chart_kpis);
+    }).catch(() => {});
+  }, [entry.platform_id]);
+
+  const labels = (info?.template?.kpis ?? []).map((k) => k.label);
+  const shown = picked.length ? picked : labels;
+  const dirty = mode !== saved.kpi_chart || JSON.stringify(picked) !== JSON.stringify(saved.chart_kpis);
+  const q = new URLSearchParams({ platform_id: String(entry.platform_id), period, lang, chart: mode });
+  picked.forEach((k) => q.append("chart_kpis", k));
+  const toggleKpi = (k: string) => {
+    const base = picked.length ? picked : labels;
+    const next = base.includes(k) ? base.filter((x) => x !== k) : labels.filter((x) => x === k || base.includes(x));
+    // Every KPI ticked is "all": the list stays empty, and a KPI added later is in.
+    setPicked(next.length === labels.length ? [] : next);
+  };
+  async function save() {
+    setBusy(true); setMsg(null);
+    try {
+      await api.put(`/api/steerco/platforms/${entry.platform_id}/display`, { kpi_chart: mode, chart_kpis: picked });
+      setSaved({ kpi_chart: mode, chart_kpis: picked });
+      setMsg(t("steerco.render_saved"));
+    } catch (e) { setMsg(errorText(e)); }
+    finally { setBusy(false); }
+  }
+  const modes: ChartMode[] = ["auto", "lines", "small_multiples", "table"];
+  return (
+    <div className="stack" style={{ gap: 10 }}>
+      <div className="card stack" style={{ padding: 14, gap: 10 }}>
+        <div className="between" style={{ alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+          <div className="strong">{t("steerco.render_title")}</div>
+          <div className="inline" style={{ gap: 8, flexWrap: "wrap" }}>
+            {dirty && <span className="badge badge-grey">{t("steerco.render_unsaved")}</span>}
+            <a className="btn-secondary btn-sm" href={`/api/steerco/document.pptx?${q.toString()}`}>
+              {t("steerco.render_pptx")}
+            </a>
+            {info?.can_manage && (
+              <button className="btn-sm" disabled={!dirty || busy} onClick={save}>{t("steerco.render_save")}</button>
+            )}
+          </div>
+        </div>
+        <div role="radiogroup" aria-label={t("steerco.render_title")} className="inline" style={{ gap: 6, flexWrap: "wrap" }}>
+          {modes.map((m) => (
+            <button key={m} type="button" role="radio" aria-checked={mode === m}
+                    className={mode === m ? "btn-sm" : "btn-secondary btn-sm"} onClick={() => setMode(m)}>
+              {t(`steerco.render_${m}`)}
+            </button>
+          ))}
+        </div>
+        <div className="small muted">{t(`steerco.render_${mode}_hint`, { n: LINES_MAX })}</div>
+        {labels.length > 0 && (
+          <div className="stack" style={{ gap: 6 }}>
+            <div className="between small" style={{ alignItems: "center" }}>
+              <span className="muted">{t("steerco.render_kpis", { n: shown.length, total: labels.length })}</span>
+              {picked.length > 0 && (
+                <button type="button" className="btn-ghost btn-sm" onClick={() => setPicked([])}>{t("steerco.render_all")}</button>
+              )}
+            </div>
+            <div className="inline" style={{ gap: 12, flexWrap: "wrap" }}>
+              {labels.map((k) => (
+                <label key={k} className="inline small" style={{ gap: 4, cursor: "pointer" }}>
+                  <input type="checkbox" checked={shown.includes(k)} onChange={() => toggleKpi(k)} /> {k}
+                </label>
+              ))}
+            </div>
+            {mode === "lines" && shown.length > LINES_MAX && (
+              <div className="small" style={{ color: "var(--orange)" }}>{t("steerco.render_too_many", { n: shown.length })}</div>
+            )}
+          </div>
+        )}
+        {info && !info.can_manage && <div className="small muted">{t("steerco.render_readonly")}</div>}
+        {msg && <div className="small muted">{msg}</div>}
+      </div>
+      <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+        <iframe src={`/api/steerco/onepager.html?${q.toString()}`}
+                title={`${entry.platform_name} (${period})`}
+                style={{ width: "100%", height: 1180, border: 0, display: "block", background: "#F5F7FA" }} />
+      </div>
+    </div>
+  );
+}
+
 type Props = {
   period: string;
   setPeriod: (p: string) => void;
@@ -52,7 +160,6 @@ export default function SteercoConsolidation({ period, setPeriod, platformId, se
   }, [period]);
 
   const view = useListView("steerco", "name");
-  const pq = encodeURIComponent(period);
   const filledCount = entries?.filter((e) => e.filled).length ?? 0;
   const late = (entries ?? []).filter((e) => e.missing.length);
 
@@ -80,12 +187,7 @@ export default function SteercoConsolidation({ period, setPeriod, platformId, se
     setPlatformId(String(e.platform_id) === platformId ? "" : String(e.platform_id));
 
   const onepager = (e: Entry) => (
-    <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-      <iframe key={e.platform_id}
-              src={`/api/steerco/onepager.html?platform_id=${e.platform_id}&period=${pq}&lang=${lang}`}
-              title={`${e.platform_name} (${period})`}
-              style={{ width: "100%", height: 1180, border: 0, display: "block", background: "#F5F7FA" }} />
-    </div>
+    <OnePager key={e.platform_id} entry={e} period={period} lang={lang} />
   );
 
   // Who still owes a figure. A platform fed by a squad of the same name reads
