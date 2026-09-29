@@ -79,6 +79,8 @@ new one" and "the old one" become indistinguishable and rollback is guesswork.
 - **Bump the app version** in `backend/VERSION`, the one file that holds it (`2.2.0`
   → `2.3.0`). The login page, the sidebar, the Ops panel, `/api/config`, the OpenAPI
   schema and the metrics all read it. `APP_VERSION` in the environment overrides it.
+  The OpenAPI snapshot carries it too: after a bump, run
+  `python backend/scripts/dump_openapi.py` (CI checks it with `--check`).
   Use [SemVer](https://semver.org): patch for fixes, minor for features, major for
   breaking changes.
 - **Tag the git commit**: `git tag v1.1.0 && git push --tags` (in the dev world).

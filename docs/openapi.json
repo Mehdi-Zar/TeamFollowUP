@@ -3,7 +3,7 @@
   "info": {
     "title": "TeamFollowUP",
     "description": "Outil de pilotage de tribe : consolidation, drill-down, saisie, organigramme, exports.",
-    "version": "2.1.0"
+    "version": "2.3.2"
   },
   "paths": {
     "/api/auth/config": {
@@ -385,6 +385,68 @@
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
                 }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tribes/people": {
+      "get": {
+        "tags": [
+          "tribes"
+        ],
+        "summary": "Tribe People",
+        "description": "GET /api/tribes/people: the active accounts one may name in a field, to\noffer them in a list.\n\n``scope=tribe`` (default, for recipients): same bounds as the report\nrecipients, everyone for an admin, one's own tribe for anyone else.\n``scope=all`` (for owners and people named in the org chart): every active\naccount of the application, since an owner may belong to another tribe. The\nemail of someone outside one's tribe is left out (an admin sees them all):\nnaming a person does not need it.",
+        "operationId": "tribe_people_api_tribes_people_get",
+        "parameters": [
+          {
+            "name": "scope",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "tribe",
+              "title": "Scope"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tribes/squad-names": {
+      "get": {
+        "tags": [
+          "tribes"
+        ],
+        "summary": "Squad Names",
+        "description": "GET /api/tribes/squad-names: every squad of the application, name and tribe\nonly, for the pickers that may name any squad (a milestone may depend on a\nsquad of another tribe; /api/squads lists one's own scope only). Any signed-in\nuser: the org charts already show these names.",
+        "operationId": "squad_names_api_tribes_squad_names_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
               }
             }
           }
@@ -3768,7 +3830,7 @@
           "admin"
         ],
         "summary": "Test Report Config",
-        "description": "POST /api/admin/report-config/test: send the scope's report now to the\ncaller (or a chosen address) as a check. Same scopes as the config.\n\nBuilds the current-year report, renders the HTML body and (if python-pptx is\navailable) attaches the PPTX. Fails with 400 if SMTP is disabled. Audited.",
+        "description": "POST /api/admin/report-config/test: send now to the caller (or a chosen\naddress) what the schedule would send to its fixed recipients: the whole\ndocument if it is on, and one mail per squad if \"one mail per squad\" (or the\nsquad leaders' mail) is on. It used to send the whole document only, so the\nper-squad option looked broken. Fails with 400 if SMTP is disabled. Audited.",
         "operationId": "test_report_config_api_admin_report_config_test_post",
         "parameters": [
           {
@@ -8286,6 +8348,59 @@
         }
       }
     },
+    "/api/steerco/platforms/{platform_id}/display": {
+      "put": {
+        "tags": [
+          "steerco"
+        ],
+        "summary": "Update Platform Display",
+        "description": "PUT /api/steerco/platforms/{id}/display: how the slide's KPI chart is drawn\n(``kpi_chart``: auto, lines, small_multiples, table) and which KPIs it shows\n(``chart_kpis``, empty for all). Chosen from the live preview. Audited.",
+        "operationId": "update_platform_display_api_steerco_platforms__platform_id__display_put",
+        "parameters": [
+          {
+            "name": "platform_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Platform Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/steerco/model": {
       "get": {
         "tags": [
@@ -8692,7 +8807,7 @@
           "steerco"
         ],
         "summary": "Onepager Html",
-        "description": "One platform's KPI one-pager (auto-built from the year's monthly snapshots).",
+        "description": "One platform's KPI one-pager (auto-built from the year's monthly snapshots).\n``chart`` / ``chart_kpis`` preview a rendering not saved yet.",
         "operationId": "onepager_html_api_steerco_onepager_html_get",
         "parameters": [
           {
@@ -8728,6 +8843,41 @@
                 }
               ],
               "title": "Lang"
+            }
+          },
+          {
+            "name": "chart",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Chart"
+            }
+          },
+          {
+            "name": "chart_kpis",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Chart Kpis"
             }
           }
         ],
@@ -8902,7 +9052,7 @@
           "steerco"
         ],
         "summary": "Document Pptx",
-        "description": "Consolidated steerco as PPTX, one slide per platform (or only the chosen\none, as the HTML one-pager). 501 without python-pptx.",
+        "description": "Consolidated steerco as PPTX, one slide per platform (or only the chosen\none, as the HTML one-pager). With ``platform_id``, ``chart`` / ``chart_kpis``\nexport the rendering being previewed. 501 without python-pptx.",
         "operationId": "document_pptx_api_steerco_document_pptx_get",
         "parameters": [
           {
@@ -8945,6 +9095,41 @@
                 }
               ],
               "title": "Platform Id"
+            }
+          },
+          {
+            "name": "chart",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Chart"
+            }
+          },
+          {
+            "name": "chart_kpis",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Chart Kpis"
             }
           }
         ],

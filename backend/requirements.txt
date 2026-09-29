@@ -20,3 +20,5 @@ PyYAML==6.0.3
 openpyxl==3.1.5
 pytest==8.3.4
 pytest-cov==6.0.0
+# A real SMTP server for the end-to-end mail test (tests/test_e2e_reporting_to_inbox.py).
+aiosmtpd==1.4.6

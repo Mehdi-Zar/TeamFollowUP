@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 2.3.2 (2026-09-29)
+- CI : l'instantane `docs/openapi.json` n'etait plus a jour depuis la 2.2.0 (nouvelles
+  routes), la CI echouait ; `aiosmtpd`, utilise par le test de bout en bout des mails,
+  est declare dans `requirements.txt`.
+
 ## 2.3.1 (2026-09-29)
 
 ### Reporting, exports et mails : verification de bout en bout
