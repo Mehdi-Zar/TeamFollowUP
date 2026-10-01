@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+## 2.5.0 (2026-10-01)
+
+### Annuaire d'entreprise et provisioning SCIM
+- Recherche de personnes dans Microsoft Entra ID (Graph), LDAP / Active Directory et
+  Google Workspace, depuis l'ajout d'un membre et la creation d'un compte. Les sources
+  sont interrogees en parallele et fusionnees par email.
+- Serveur SCIM 2.0 (`/scim/v2`) pour Entra et Okta : creation, mise a jour et
+  desactivation automatique des comptes. Administration > Annuaire (doc 34),
+  migration `0042`.
+
+### Equipe, roles, trimestres, jalons
+- Mes squads : bouton « Equipe (n) » sur chaque squad, qui ouvre directement l'equipe.
+- Role des membres en liste (reglable dans Administration > Parametres) ou « Autre ».
+- Part de temps de chaque membre (100 = plein temps) ; la page de la squad montre
+  plein temps, temps partiel et capacite en ETP.
+- Trimestre sans jalon : case « Non concerne » dans la saisie, affiche N/A (et non
+  0 %) a l'ecran et « non concerne » dans les exports.
+- Jalon : phases « Hors produit » (comite, audit) et « Autre » (nommee), sans tag.
+- Migration `0041`.
+
 ## 2.4.0 (2026-10-01)
 
 ### Messages cles : 4 par reporting, chaque reporting repart de zero

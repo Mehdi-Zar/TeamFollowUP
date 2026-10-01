@@ -209,6 +209,26 @@ contributeurs, tribe d'un compte, squad d'accueil, personne en conge, squads d'u
 plateforme) restent des listes sans saisie libre : un leader doit etre un compte, un
 texte ne pourrait rien y rattacher.
 
+### L'equipe, les roles, les trimestres non concernes, les jalons hors produit
+
+- **Equipe.** Chaque squad de « Mes squads » porte un bouton « Equipe (n) » qui
+  ouvre directement l'etape equipe. Le role d'un membre se choisit dans une liste
+  (Tech lead, Architecte, DevOps... reglable dans Administration > Parametres, un
+  role par ligne) ou s'ecrit en « Autre ». Chaque membre a sa part de temps sur la
+  squad (100 = plein temps) : la page de la squad dit qui est a plein temps, qui
+  est a temps partiel, et la capacite en ETP. Quand un annuaire est configure
+  ([34](34-annuaire-et-scim.md)), la recherche remplit la ligne d'ajout ; le titre
+  de poste de l'annuaire n'est repris que s'il est un role de la liste.
+- **Trimestre non concerne.** Un trimestre sans jalon n'est pas « 0 % ». Dans la
+  saisie, sa colonne propose la case « Non concerne » (une squad qui a demarre en
+  Q3, par exemple) : il s'affiche N/A a l'ecran et « non concerne » dans les
+  exports. Le calcul annuel ignorait deja les trimestres sans jalon, il ne change
+  pas. La case n'existe pas sur un trimestre qui a des jalons (l'API refuse avec
+  un 409), et elle ne depend pas du module de commentaire des trimestres.
+- **Jalon hors produit.** Aux phases EA et GA s'ajoutent « Hors produit » (comite
+  securite, audit) et « Autre », a nommer. Ni l'une ni l'autre ne fait de tag,
+  a l'ecran comme dans les exports.
+
 ## 2. Quatre ecrans de liste, une seule facon de les piloter
 
 L'apercu avait une recherche, un tri visible et une vue liste. Le steerco, les

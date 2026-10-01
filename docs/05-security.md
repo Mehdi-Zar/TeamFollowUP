@@ -129,8 +129,19 @@ IdP login is necessary but not sufficient - identity ≠ access.
   gatekeepers (admin, tribe leader) see every decision, a squad leader sees the ones
   they took themselves.
 - Reviewers are notified (in-app + best-effort email) of new requests; the user is
-  notified on approval. *(SCIM auto-deprovisioning is a future enhancement; the
-  disable flow covers manual revocation.)*
+  notified on approval.
+- **SCIM 2.0 provisioning** (`/scim/v2`, [34](34-annuaire-et-scim.md)): the identity
+  provider creates, updates and deactivates accounts itself; a person who leaves is
+  disabled at once and their sessions end. The bearer token is generated in
+  Administration → Annuaire, shown once and stored as a SHA-256 hash only. SCIM never
+  sets a persona: created accounts get the persona and tribe chosen by the admin,
+  never `admin`; the break-glass account is invisible to it; a `DELETE` disables the
+  account instead of erasing its history. The tab is admin-only (`ADMIN_ONLY_TABS`):
+  a token creates accounts.
+- **Directory search** (Entra ID, LDAP / AD, Google Workspace) is read-only, open to
+  writers, verifies certificates against the admin trust store, refuses an LDAP bind
+  password over a clear connection, escapes LDAP filter input
+  (`escape_filter_chars`) and never returns the directory's secrets.
 
 ## Checking an IdP before rolling it out
 

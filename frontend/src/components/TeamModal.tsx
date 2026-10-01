@@ -19,8 +19,10 @@ import { useEffect, useState } from "react";
 import { api, errorText } from "../api";
 import { useI18n } from "../i18n";
 import { Member, SquadDetail } from "../types";
+import { useConfig } from "../config";
 import RolePicker, { fte } from "./RolePicker";
 import { ErrorBanner, Modal, Spinner } from "./ui";
+import DirectorySearch, { splitName } from "./DirectorySearch";
 
 /** An account of the squad's tribe that can be picked (GET /api/members/candidates). */
 interface Candidate { id: number; display_name: string; email: string; in_squad: boolean }
@@ -34,6 +36,7 @@ const pctOf = (v: string) => { const n = Math.round(Number(v)); return v.trim() 
  *  after every successful write so the caller can refresh its own view. */
 export function TeamEditor({ squadId, onChange }: { squadId: number; onChange?: () => void }) {
   const { t, lang } = useI18n();
+  const roles = useConfig().member_roles ?? [];
   const [members, setMembers] = useState<Member[] | null>(null);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [add, setAdd] = useState(EMPTY_ADD);
@@ -163,6 +166,14 @@ export function TeamEditor({ squadId, onChange }: { squadId: number; onChange?: 
             onSubmit={(e) => { e.preventDefault(); addMember(); }}>
         <label className="small strong">{t("mysquad.add_member")}</label>
         <div className="small muted">{t("team.add_hint")}</div>
+        {/* The corporate directory, when one is configured, fills the row below. */}
+        <DirectorySearch onPick={(p) => {
+          const { first, last } = splitName(p);
+          // The directory's job title only pre-fills a role of the list: free titles
+          // would undo the point of the list.
+          const listed = roles.find((r) => r.toLowerCase() === (p.title ?? "").trim().toLowerCase());
+          setAdd({ ...add, email: p.email, first_name: first, last_name: last, role_title: add.role_title || listed || "" });
+        }} />
         <div className="row" style={{ gap: 8, alignItems: "flex-end" }}>
           <div style={{ flex: 2, minWidth: 180, position: "relative" }}>
             <input type="text" inputMode="email" autoComplete="off" placeholder={t("team.email_ph")}

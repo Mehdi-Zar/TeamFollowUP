@@ -92,6 +92,9 @@ class User(Base):
     tribe_id: Mapped[int | None] = mapped_column(ForeignKey("tribes.id"), nullable=True, index=True)
     # Stable IdP subject identifier for SSO logins (indexed for callback lookup).
     auth_subject: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    # The identity provider's own id for the account when it provisions it over
+    # SCIM (Entra sends its objectId, Okta its user id): how it finds it again.
+    scim_external_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     # Emergency local admin created at first boot; protected from non-admin edits.
     is_break_glass: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     # Argon2 hash for local (non-SSO) login; NULL for accounts that only use SSO.

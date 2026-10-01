@@ -38,6 +38,21 @@ def check_outbound_url(url: str) -> None:
             raise BlockedURL(f"URL refusée (adresse réservée) : {url}")
 
 
+def check_outbound_host(host: str, port: int) -> None:
+    """The same rule for a bare host (an LDAP server): BlockedURL when it resolves
+    into the blocked ranges."""
+    if not host:
+        raise BlockedURL("Hôte manquant")
+    try:
+        addrs = {i[4][0] for i in socket.getaddrinfo(host, port)}
+    except socket.gaierror:
+        return
+    for a in addrs:
+        ip = ipaddress.ip_address(a.split("%", 1)[0])
+        if any(ip in net for net in _BLOCKED):
+            raise BlockedURL(f"Hôte refusé (adresse réservée) : {host}")
+
+
 def guarded_client(**kwargs):
     """An httpx.Client that checks every outgoing request, redirects included."""
     import httpx

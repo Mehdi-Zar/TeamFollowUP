@@ -73,7 +73,7 @@ def test_the_sso_and_trust_tabs_are_the_administrators_only(client, db, seeded):
     assert client.get("/api/admin/auth-config").status_code == 403
     assert client.get("/api/admin/trust-store").status_code == 403
     login(client, seeded["admin"])
-    assert set(client.get("/api/admin/personas").json()["admin_only_tabs"]) == {"auth", "trust"}
+    assert set(client.get("/api/admin/personas").json()["admin_only_tabs"]) == {"auth", "directory", "trust"}
 
 
 def test_a_data_delegate_keeps_copies_but_never_restores_nor_reads_hashes(client, db, seeded):

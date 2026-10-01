@@ -25,6 +25,7 @@ from .routers import (
     committees,
     dashboard,
     data,
+    directory,
     feed,
     initiatives,
     kpis,
@@ -38,6 +39,7 @@ from .routers import (
     reports,
     roadmap,
     roadmapview,
+    scim,
     snapshots,
     squads,
     steerco,
@@ -134,8 +136,10 @@ errors.install(app)
 
 for r in (auth, tribes, squads, dashboard, org, orgexport, roadmap, roadmapview, kpis,
           members, snapshots, feed, notifications, admin, audit, reports,
-          initiatives, otds, access, leaves, committees, steerco, data):
+          initiatives, otds, access, leaves, committees, steerco, data, directory, scim):
     app.include_router(r.router)
+# SCIM answers its errors in its own format (application/scim+json).
+scim.install(app)
 
 
 def custom_openapi():
