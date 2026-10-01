@@ -13,6 +13,13 @@ docker compose up -d --build      # http://localhost:8000 (single port, plain HT
 Demo data is seeded on first boot (`SEED_DEMO=true`). Break-glass admin: `admin@local` (password from
 `BREAKGLASS_PASSWORD`, or the random one printed in the app logs at first boot).
 
+> **Build fails at `npm install` or `pip install` with `unable to get local issuer
+> certificate`?** The network inspects HTTPS (Zscaler Internet Access, corporate
+> proxy) and the containers do not know its root authority. Export it as PEM into
+> `build-certs/<name>.crt` (PowerShell snippet in `build-certs/README.md`) and rebuild:
+> the Dockerfile adds it to the trust of npm and pip, certificate checks stay on. The
+> `.crt` files are gitignored; an empty folder (CI, production) changes nothing.
+
 Compose serves plain HTTP and leaves TLS to the infrastructure (`docs/06` §Topology).
 To exercise a real TLS-terminating front end locally, run the Envoy of the GKE
 simulation in front of it.

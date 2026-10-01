@@ -50,3 +50,7 @@ e2e/.playwright/
 
 # TypeScript incremental build state
 *.tsbuildinfo
+
+# Root CA of a local HTTPS-inspecting proxy, per workstation (see build-certs/README.md).
+build-certs/*.crt
+build-certs/*.pem

@@ -126,6 +126,7 @@ An empty list is the answer you want. Check it after every first deploy.
 | Database lost or corrupted | the last valid backup, then [19](19-plan-de-reprise.md) | take a dump of the broken state FIRST, verify the backup in a side database, then restore |
 | Everything is slow | `teamfollowup_db_pool_overflow` > 0? then the pool is exhausted; else the p95 per route ([17](17-observabilite.md) §4) | widen the pool, or fix the query holding connections |
 | Weekly reports not sent | `teamfollowup_scheduler_last_success_timestamp_seconds`; logs for `weekly scheduler error` | check the Postgres advisory lock is not held by a dead replica |
+| Image build fails at `npm install` / `pip install`, `unable to get local issuer certificate` | is the workstation behind Zscaler or an HTTPS-inspecting proxy? | put the proxy root CA (PEM) in `build-certs/*.crt`, rebuild ([07](07-developer-guide.md), `build-certs/README.md`) |
 | Migrations failed on boot | entrypoint logs (alembic) | fix migration, `docker compose up -d --build app`; if partial, `alembic current` + manual repair |
 | Login broken (all users) | check `SECRET_KEY` changed? (invalidates sessions) | if rotated intentionally, users re-login; else restore previous secret |
 | Locked out of admin | break-glass admin (`admin@local`) | reset its password via DB or `BREAKGLASS_PASSWORD` + restart |

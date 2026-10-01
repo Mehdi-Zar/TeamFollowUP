@@ -2,7 +2,10 @@
 FROM node:22-alpine AS frontend
 WORKDIR /frontend
 COPY frontend/package.json frontend/package-lock.json* ./
-RUN npm install
+# Extra root authorities for a network that inspects HTTPS (see build-certs/README.md).
+# Empty in CI and production: npm then trusts the public roots only, as before.
+COPY build-certs/ /tmp/build-certs/
+RUN if ls /tmp/build-certs/*.crt >/dev/null 2>&1; then         cat /tmp/build-certs/*.crt > /tmp/extra-ca.pem;         export NODE_EXTRA_CA_CERTS=/tmp/extra-ca.pem;     fi;     npm install
 COPY frontend/ ./
 RUN npm run build
 
@@ -23,8 +26,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
+# Extra root authorities for a network that inspects HTTPS (see build-certs/README.md),
+# added to the system store; pip is pointed at it. Empty in CI and production.
+COPY build-certs/ /usr/local/share/ca-certificates/build-certs/
+RUN update-ca-certificates
 COPY backend/requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+RUN PIP_CERT=/etc/ssl/certs/ca-certificates.crt pip install --no-cache-dir -r requirements.txt
 
 COPY backend/ ./
 
