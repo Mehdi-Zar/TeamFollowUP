@@ -43,6 +43,7 @@ understand, run, operate and extend the product **without further explanation**.
 | 31 | [Coherence de la saisie et du reporting](31-coherence-saisie-et-reporting.md) | Squad leaders / Tribe leaders |
 | 32 | [Mails et documents envoyes](32-mails-et-documents-envoyes.md) | Admins / Tribe leaders |
 | 33 | [Sécurité : pentest et durcissement](33-securite-et-pentest.md) | Admins / Ops |
+| 34 | [Annuaire d'entreprise et provisioning SCIM](34-annuaire-et-scim.md) | Admins |
 | - | [Guide des menus (captures, regenerable)](Guide-des-menus.html) | Tout le monde |
 | - | [Architecture Decision Records (ADR)](adr/README.md) | Engineers / Architects |
 

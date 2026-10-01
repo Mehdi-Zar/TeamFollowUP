@@ -14,6 +14,7 @@ export const TAB_LABEL: Record<string, string> = {
   modules: "admin.tab.modules",
   moderation: "admin.tab.moderation",
   auth: "admin.tab.auth",
+  directory: "admin.tab.directory",
   api: "admin.tab.api",
   smtp: "admin.tab.smtp",
   trust: "admin.tab.trust",
@@ -37,6 +38,6 @@ export const TAB_LABEL: Record<string, string> = {
 export const ADMIN_GROUPS: { titleKey: string; items: string[] }[] = [
   { titleKey: "admin.group.org", items: ["tribes", "tribe", "squads", "platforms", "users", "personas", "import"] },
   { titleKey: "admin.group.config", items: ["modules", "report", "leaves", "settings", "branding"] },
-  { titleKey: "admin.group.access", items: ["auth", "smtp", "api", "trust"] },
+  { titleKey: "admin.group.access", items: ["auth", "directory", "smtp", "api", "trust"] },
   { titleKey: "admin.group.oversight", items: ["audit", "moderation", "logs", "data", "ops"] },
 ];

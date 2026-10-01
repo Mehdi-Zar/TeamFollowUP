@@ -26,6 +26,7 @@ TRIBE = "tribe_leader"
 ROUTE_TABS: list[tuple[str, str]] = [
     ("/api/admin/settings", "settings"),
     ("/api/admin/smtp-config", "smtp"),
+    ("/api/admin/directory-config", "directory"),
     ("/api/admin/personas", "personas"),
     ("/api/admin/modules-config", "modules"),
     ("/api/admin/change-notify-config", "report"),

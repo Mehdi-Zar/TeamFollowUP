@@ -27,14 +27,15 @@ BUILTINS = ["admin", "tribe_leader", "squad_leader", "contributor", "member"]
 # "tribe" is "My tribe" (one's own tribe); "tribes" is the list of all tribes.
 ADMIN_TAB_OPTIONS = ["tribes", "tribe", "squads", "platforms", "users", "personas", "import",
                      "modules", "report", "leaves", "settings", "branding",
-                     "auth", "api", "smtp", "trust",
+                     "auth", "directory", "api", "smtp", "trust",
                      "audit", "moderation", "logs", "data", "ops"]
 _DEFAULT_TABS = {"tribe_leader": ["tribe", "platforms", "users", "leaves", "report"]}
 # Tabs that are, by nature, the whole administration: the SSO configuration
 # (point the login at another identity provider, map a group to the admin role)
-# and the trusted authorities (accept any certificate). Handing one out handed
+# the trusted authorities (accept any certificate) and the directory (its SCIM
+# token creates accounts). Handing one out handed
 # out admin; they stay the administrator's and cannot be ticked for a persona.
-ADMIN_ONLY_TABS = ["auth", "trust"]
+ADMIN_ONLY_TABS = ["auth", "directory", "trust"]
 
 
 def _clean_tabs(raw) -> list[str]:

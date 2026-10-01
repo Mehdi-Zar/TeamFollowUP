@@ -20,6 +20,7 @@ import { api, errorText } from "../api";
 import { useI18n } from "../i18n";
 import { Member, SquadDetail } from "../types";
 import { ErrorBanner, Modal, Spinner } from "./ui";
+import DirectorySearch, { splitName } from "./DirectorySearch";
 
 /** An account of the squad's tribe that can be picked (GET /api/members/candidates). */
 interface Candidate { id: number; display_name: string; email: string; in_squad: boolean }
@@ -150,6 +151,11 @@ export function TeamEditor({ squadId, onChange }: { squadId: number; onChange?: 
             onSubmit={(e) => { e.preventDefault(); addMember(); }}>
         <label className="small strong">{t("mysquad.add_member")}</label>
         <div className="small muted">{t("team.add_hint")}</div>
+        {/* The corporate directory, when one is configured, fills the row below. */}
+        <DirectorySearch onPick={(p) => {
+          const { first, last } = splitName(p);
+          setAdd({ ...add, email: p.email, first_name: first, last_name: last, role_title: add.role_title || p.title || "" });
+        }} />
         <div className="row" style={{ gap: 8, alignItems: "flex-end" }}>
           <div style={{ flex: 2, minWidth: 180, position: "relative" }}>
             <input type="text" inputMode="email" autoComplete="off" placeholder={t("team.email_ph")}

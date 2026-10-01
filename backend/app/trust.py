@@ -50,6 +50,12 @@ def _cafile() -> str:
     return BUNDLE_PATH if os.path.exists(BUNDLE_PATH) else BASE_CA_FILE
 
 
+def ca_file() -> str:
+    """The CA bundle path, for clients that take a file rather than a context
+    (ldap3): the same authorities as :func:`context`."""
+    return _cafile()
+
+
 def context() -> ssl.SSLContext:
     """Verification context for outbound TLS, cached until the store changes.
 

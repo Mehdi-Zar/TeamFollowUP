@@ -6,6 +6,7 @@
  * visible label and the control carries it as `aria-label`.
  */
 import { invalidatePeople } from "../../components/usePeople";
+import DirectorySearch from "../../components/DirectorySearch";
 import { Fragment, useEffect, useState } from "react";
 import { api } from "../../api";
 import { useI18n } from "../../i18n";
@@ -382,6 +383,10 @@ export function UsersAdmin({ perms }: { perms: Permissions }) {
 
       <div className="card">
         <h3>{t("admin.new_user")}</h3>
+        {/* The corporate directory, when one is configured, fills name and email. */}
+        <div style={{ maxWidth: 420, marginBottom: 8 }}>
+          <DirectorySearch onPick={(p) => setForm({ ...form, display_name: p.name, email: p.email })} />
+        </div>
         <div className="row" style={{ alignItems: "flex-end" }}>
           <div style={{ width: 180 }}>
             <label htmlFor="nu-name">{t("admin.name")}</label>

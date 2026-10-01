@@ -16,7 +16,7 @@ export const ALL_ROLES: Role[] = ["admin", "tribe_leader", "squad_leader", "cont
 export const ADMIN_TABS_BY_ROLE: Record<string, string[]> = {
   admin: ["tribes", "squads", "platforms", "users", "personas", "import",
           "modules", "report", "leaves", "settings", "branding",
-          "auth", "api", "smtp", "trust",
+          "auth", "directory", "api", "smtp", "trust",
           "audit", "moderation", "logs", "data", "ops"],
   tribe_leader: ["tribe", "platforms", "users", "leaves", "report"],  // default; Admin > Personas decides
   squad_leader: [],

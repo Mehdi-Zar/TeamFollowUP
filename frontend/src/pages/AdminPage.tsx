@@ -29,6 +29,7 @@ import { useSetPageChrome } from "../components/pageChrome";
 
 // Label key for each admin tab (server decides which a role may open).
 import { ApiAdmin, AuthAdmin, SmtpAdmin, TrustAdmin } from "./admin/authentication";
+import { DirectoryAdmin } from "./admin/directory";
 import { LeavesAdmin, ModulesAdmin, ReportingAdmin, SettingsAdmin } from "./admin/configuration";
 import { ImportOrgAdmin, PptxTemplateAdmin } from "./admin/imports";
 import { PersonasAdmin, SquadsAdmin, TribeSelfAdmin, TribesAdmin, UsersAdmin } from "./admin/organisation";
@@ -132,6 +133,7 @@ export default function AdminPage() {
         {tab === "leaves" && <LeavesAdmin perms={perms} />}
         {tab === "moderation" && <ModerationAdmin />}
         {tab === "auth" && <AuthAdmin />}
+        {tab === "directory" && <DirectoryAdmin />}
         {tab === "api" && <ApiAdmin />}
         {tab === "smtp" && <SmtpAdmin />}
         {tab === "trust" && <TrustAdmin />}

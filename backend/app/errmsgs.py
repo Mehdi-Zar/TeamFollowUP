@@ -32,7 +32,12 @@ EN: dict[str, str] = {
     # Not found
     "Absence introuvable": "Leave not found",
     "Ce message appartient à un reporting déjà soumis": "This message belongs to a reporting already submitted",
+    "Aucun annuaire n'est configuré": "No directory is configured",
     "Clé introuvable": "Key not found",
+    "Hôte manquant": "Missing host",
+    "Persona inconnu ou non autorisé pour le provisioning": "Unknown persona, or not allowed for provisioning",
+    "Source inconnue (attendu : entra, ldap ou google)": "Unknown source (expected: entra, ldap or google)",
+    "Tapez au moins 2 caractères": "Type at least 2 characters",
     "Comité introuvable": "Committee not found",
     "Compte administrateur introuvable": "Administrator account not found",
     "Compte introuvable dans cette tribe": "Account not found in this tribe",
