@@ -468,8 +468,7 @@ def set_mood(squad_id: int, payload: MoodIn, db: Session = Depends(get_db),
     return squad
 
 
-@router.put("/{squad_id}/quarter-progress", response_model=QuarterProgressOut,
-            dependencies=[Depends(require_module("squad_content", "quarter_progress"))])
+@router.put("/{squad_id}/quarter-progress", response_model=QuarterProgressOut)
 def set_quarter_progress(squad_id: int, payload: QuarterProgressIn, db: Session = Depends(get_db),
                          user: User = Depends(get_current_user)):
     """PUT /api/squads/{squad_id}/quarter-progress: record a quarter's comment.
@@ -478,12 +477,22 @@ def set_quarter_progress(squad_id: int, payload: QuarterProgressIn, db: Session 
     display; it is stored here so the row matches what was shown, and only an
     explicit ``progress_pct`` from an API caller overrides it.
 
+    ``not_applicable`` marks a quarter the squad is not concerned by (shown as
+    N/A, not 0 %); 409 on a quarter that has jalons.
+
     Squad-leader reporting: requires ``assert_can_edit_squad``. Audited, then
     emits ``notify_change(..., "progress", ...)``."""
     squad = db.get(Squad, squad_id)
     if squad is None:
         raise HTTPException(status_code=404, detail="Squad introuvable")
     assert_can_report(db, user, squad_id)
+    # The comment belongs to the quarter_progress section, which can be switched
+    # off; saying a quarter does not concern the squad is part of the roadmap and
+    # always available.
+    if payload.model_fields_set - {"year", "quarter", "not_applicable"}:
+        from ..modulesconfig import get_modules, is_active
+        if not is_active(get_modules(db), "squad_content", "quarter_progress"):
+            raise HTTPException(status_code=404, detail="Service désactivé")
     row = db.scalar(
         select(QuarterProgress).where(
             QuarterProgress.squad_id == squad_id,
@@ -494,15 +503,25 @@ def set_quarter_progress(squad_id: int, payload: QuarterProgressIn, db: Session 
     pct = payload.progress_pct
     if pct is None:
         pct = st.year_progress(squad, payload.year).get(payload.quarter, 0)
+    if payload.not_applicable and any(r.year == payload.year and r.quarter == payload.quarter
+                                      for r in squad.roadmap_items):
+        # A quarter with jalons concerns the squad: N/A would hide them.
+        raise HTTPException(status_code=409, detail="Ce trimestre a des jalons : il ne peut pas être « non concerné »")
     if row is None:
         row = QuarterProgress(squad_id=squad_id, year=payload.year, quarter=payload.quarter,
-                              progress_pct=pct, comment=payload.comment)
+                              progress_pct=pct, comment=payload.comment,
+                              not_applicable=bool(payload.not_applicable))
         db.add(row)
     else:
         row.progress_pct = pct
-        row.comment = payload.comment
+        # A call that only flips N/A leaves the comment alone.
+        if "comment" in payload.model_fields_set:
+            row.comment = payload.comment
+        if payload.not_applicable is not None:
+            row.not_applicable = payload.not_applicable
     record_audit(db, user.id, "quarter_progress.set", entity="squad", entity_id=squad_id,
-                 detail={"year": payload.year, "quarter": payload.quarter, "progress_pct": pct})
+                 detail={"year": payload.year, "quarter": payload.quarter, "progress_pct": pct,
+                         "not_applicable": row.not_applicable})
     db.commit()
     db.refresh(row)
     notify_change(squad_id, "progress", user, payload.year)

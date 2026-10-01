@@ -64,7 +64,11 @@ export type Trend = "on_target" | "under_pressure" | "missed";
 /** How a milestone dependency is expressed: free text, on a squad, or a tribe. */
 export type DependencyKind = "text" | "squad" | "tribe";
 /** Release stage of a milestone: Early Access or General Availability. */
-export type ReleaseStage = "EA" | "GA";
+/** EA / GA: a product release, drawn as a tag. NP: not a product release (a
+ *  security committee, an audit). OT: other, named in release_stage_other. */
+export type ReleaseStage = "EA" | "GA" | "NP" | "OT";
+/** The tag a stage draws: EA and GA only. */
+export const stageTag = (s?: string | null) => (s === "EA" || s === "GA" ? s : null);
 // "product" and "transverse" ship today; any custom key is allowed (extensible).
 export type SquadType = "product" | "transverse" | (string & {});
 /** Delivery status of an OTD commitment. */
@@ -253,6 +257,7 @@ export interface RoadmapItem {
   title: string;
   theme?: string | null;
   release_stage: ReleaseStage;
+  release_stage_other?: string | null;
   description?: string | null;
   success_criteria?: string | null;
   user_benefit?: string | null;
@@ -305,6 +310,8 @@ export interface Member {
   user_id?: number | null;
   manager_id?: number | null;
   display_order: number;
+  /** Share of the person's time on this squad (100 = full time). */
+  allocation_pct?: number;
 }
 
 /** A squad: the delivery unit within a tribe, with its leader and feature flags. */
@@ -390,6 +397,8 @@ export interface Budget {
 export interface QuarterCell {
   progress_pct: number;
   comment?: string | null;
+  /** The squad is not concerned by this quarter (no jalons): N/A, not 0 %. */
+  not_applicable?: boolean;
 }
 
 /** Full squad payload for the detail page: base squad plus all its nested
@@ -439,6 +448,8 @@ export interface SquadCard {
   risk_rank: number;
   focus_quarter?: number | null;
   quarter_progress: Record<string, number>;
+  /** Quarters the squad is not concerned by (shown N/A). */
+  quarter_na?: number[];
   quarter_breakdowns: Record<string, Breakdown>;
   blocked_count: number;
   at_risk_count: number;
@@ -540,6 +551,8 @@ export interface PublicConfig {
   feed_post_scope: "leaders" | "everyone";
   /** The org chart's views in their order (Admin > Settings); the first opens by default. */
   org_views?: ("tree" | "list")[];
+  /** The roles a squad member is given from (Admin > Settings), plus "other" typed in. */
+  member_roles?: string[];
   smtp_enabled: boolean;
   modules: ModulesConfig;
   /** Couleurs, logos, typographie et densite (voir app/branding.py). */

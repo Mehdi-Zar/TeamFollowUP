@@ -246,6 +246,8 @@ class Member(Base):
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     manager_id: Mapped[int | None] = mapped_column(ForeignKey("members.id"), nullable=True)
     display_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # Share of the person's time spent on this squad (100 = full time).
+    allocation_pct: Mapped[int] = mapped_column(Integer, default=100, server_default="100", nullable=False)
 
     squad: Mapped["Squad"] = relationship(back_populates="members")
     user: Mapped["User | None"] = relationship(foreign_keys=[user_id])
@@ -389,7 +391,10 @@ class RoadmapItem(Base):
     # milestones in the roadmap view and exports. Mandatory at the API layer; kept
     # nullable in the DB so pre-existing rows remain valid.
     theme: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
-    release_stage: Mapped[str] = mapped_column(String(2), nullable=False, default="EA")  # EA|GA
+    # EA|GA for a product release; NP (not a product release: a security
+    # committee, an audit) and OT (other, named below) are drawn without a tag.
+    release_stage: Mapped[str] = mapped_column(String(2), nullable=False, default="EA")
+    release_stage_other: Mapped[str | None] = mapped_column(String(80), nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     success_criteria: Mapped[str | None] = mapped_column(Text, nullable=True)
     user_benefit: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -456,6 +461,9 @@ class QuarterProgress(Base):
     quarter: Mapped[int] = mapped_column(Integer, nullable=False)
     progress_pct: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # The squad is not concerned by this quarter (it started later in the year):
+    # shown as N/A, never as 0 %. Only a quarter without jalons can say so.
+    not_applicable: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
 
     squad: Mapped["Squad"] = relationship(back_populates="quarter_progress")
 
@@ -484,6 +492,12 @@ class SquadBudget(Base):
 # A squad says at most this many key messages per reporting: what a reader takes
 # in at a glance, and what the export slide can hold.
 KEY_MESSAGES_MAX = 4
+
+
+def stage_tag(code: str | None) -> str | None:
+    """The tag a jalon's stage draws: EA or GA. A jalon outside a product release
+    (NP) or of another kind (OT) has none."""
+    return code if code in ("EA", "GA") else None
 
 
 class KeyMessage(Base):

@@ -17,7 +17,7 @@ const OTHER = "__other__";
  * accepts an existing one).
  */
 export default function PickOrType({ id, groups, picked, text, onPick, onText, allowText = true,
-                                    placeholder, textPlaceholder, maxLength, ariaLabel }: {
+                                    placeholder, textPlaceholder, maxLength, ariaLabel, onClear }: {
   id?: string;
   groups: PickGroup[];
   picked: string | null | undefined;
@@ -29,6 +29,8 @@ export default function PickOrType({ id, groups, picked, text, onPick, onText, a
   textPlaceholder?: string;
   maxLength?: number;
   ariaLabel?: string;
+  /** Called when the empty entry is chosen (onPick(null) alone does not tell it from "Other"). */
+  onClear?: () => void;
 }) {
   const { t } = useI18n();
   // Each value once, in the first group that has it: two options with the same
@@ -57,6 +59,7 @@ export default function PickOrType({ id, groups, picked, text, onPick, onText, a
                 const v = e.target.value;
                 if (v === OTHER) { setTyping(true); onPick(null); return; }
                 setTyping(false);
+                if (!v) onClear?.();
                 // The caller clears its own text when an item is picked. Emptying
                 // it from here as well undid the pick: in the milestone form, "text"
                 // means "the dependency is free text".

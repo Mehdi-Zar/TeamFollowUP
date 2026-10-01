@@ -96,6 +96,15 @@ def objective_status(obj, squad: Squad, now: datetime | None = None) -> str:
     return "green"
 
 
+def quarter_na(squad: Squad, year: int) -> set[int]:
+    """The quarters the squad says do not concern it (it started in Q3, say),
+    shown as N/A and never as 0 %. A quarter that has jalons is planned whatever
+    the flag says: the flag only speaks for an empty quarter."""
+    planned = {r.quarter for r in squad.roadmap_items if r.year == year}
+    return {qp.quarter for qp in squad.quarter_progress
+            if qp.year == year and qp.not_applicable and qp.quarter not in planned}
+
+
 def quarter_comments(squad: Squad, year: int) -> dict[int, str | None]:
     """The free-text comment recorded for each quarter of the year (None if unset)."""
     out = {q: None for q in (1, 2, 3, 4)}

@@ -24,7 +24,9 @@ Role = Literal["admin", "tribe_leader", "squad_leader", "member"]
 Rag = Literal["green", "amber", "red"]
 RoadmapStatus = Literal["on_track", "at_risk", "blocked", "done"]
 DependencyKind = Literal["text", "squad", "tribe"]
-ReleaseStage = Literal["EA", "GA"]  # Early Access | General Availability
+# Early Access | General Availability | Not a product release | Other (named in
+# release_stage_other). NP and OT are drawn without a tag.
+ReleaseStage = Literal["EA", "GA", "NP", "OT"]
 QuarterHealth = Literal["on_track", "at_risk", "blocked"]
 Trend = Literal["on_target", "under_pressure", "missed"]
 Quarter = Literal[1, 2, 3, 4]
@@ -167,6 +169,7 @@ class RoadmapItemCreate(BaseModel):
     title: str = Field(min_length=1)
     theme: str = Field(min_length=1, max_length=120)  # mandatory, reusable grouping
     release_stage: ReleaseStage = "EA"  # mandatory EA/GA stage
+    release_stage_other: Optional[str] = Field(default=None, max_length=80)
     description: Optional[str] = None
     success_criteria: Optional[str] = None
     user_benefit: Optional[str] = None
@@ -189,6 +192,7 @@ class RoadmapItemUpdate(BaseModel):
     title: Optional[str] = None
     theme: Optional[str] = Field(default=None, min_length=1, max_length=120)
     release_stage: Optional[ReleaseStage] = None
+    release_stage_other: Optional[str] = Field(default=None, max_length=80)
     description: Optional[str] = None
     success_criteria: Optional[str] = None
     user_benefit: Optional[str] = None
@@ -213,6 +217,7 @@ class RoadmapItemOut(ORMModel):
     title: str
     theme: Optional[str] = None
     release_stage: ReleaseStage
+    release_stage_other: Optional[str] = Field(default=None, max_length=80)
     description: Optional[str] = None
     success_criteria: Optional[str] = None
     user_benefit: Optional[str] = None
@@ -358,6 +363,8 @@ class QuarterProgressIn(BaseModel):
     quarter: Quarter
     progress_pct: Optional[int] = Field(default=None, ge=0, le=100)
     comment: Optional[str] = None
+    # None leaves it as it is; True is refused on a quarter that has jalons.
+    not_applicable: Optional[bool] = None
 
 
 class QuarterProgressOut(ORMModel):
@@ -368,6 +375,7 @@ class QuarterProgressOut(ORMModel):
     quarter: int
     progress_pct: int
     comment: Optional[str] = None
+    not_applicable: bool = False
 
 
 # ---------- KPI ----------
@@ -470,6 +478,7 @@ class MemberCreate(BaseModel):
     user_id: Optional[int] = None
     manager_id: Optional[int] = None
     display_order: int = 0
+    allocation_pct: int = Field(default=100, ge=0, le=100)
 
 
 class MemberUpdate(BaseModel):
@@ -480,6 +489,7 @@ class MemberUpdate(BaseModel):
     user_id: Optional[int] = None
     manager_id: Optional[int] = None
     display_order: Optional[int] = None
+    allocation_pct: Optional[int] = Field(default=None, ge=0, le=100)
 
 
 class MemberOut(ORMModel):
@@ -492,6 +502,7 @@ class MemberOut(ORMModel):
     user_id: Optional[int] = None
     manager_id: Optional[int] = None
     display_order: int
+    allocation_pct: int = 100
 
 
 # ---------- Squad ----------
@@ -675,6 +686,7 @@ class SquadCard(BaseModel):
     risk_rank: int                 # derived from blocked/at-risk counts (for sorting)
     focus_quarter: Optional[int] = None
     quarter_progress: dict         # {"1": pct, ...}
+    quarter_na: list[int] = []     # quarters the squad is not concerned by (N/A)
     quarter_breakdowns: dict       # {"1": {total,on_track,at_risk,blocked,done}, ...}
     blocked_count: int             # over the year
     at_risk_count: int             # over the year

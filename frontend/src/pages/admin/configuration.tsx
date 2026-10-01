@@ -660,6 +660,14 @@ export function SettingsAdmin() {
           </select>
           <div className="small muted">{t("set.org_views_hint")}</div>
         </div>
+        {/* One role per line: the list a squad member's role is picked from. */}
+        <div style={{ marginTop: 12 }}>
+          <label htmlFor="set-member-roles">{t("set.member_roles")}</label>
+          <textarea id="set-member-roles" rows={8} style={{ maxWidth: 320 }}
+                    value={Array.isArray(cfg.member_roles) ? cfg.member_roles.join("\n") : ""}
+                    onChange={(e) => set("member_roles", e.target.value.split("\n"))} />
+          <div className="small muted">{t("set.member_roles_hint")}</div>
+        </div>
       </div>
 
       <div className="card">

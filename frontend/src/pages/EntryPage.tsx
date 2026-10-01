@@ -23,7 +23,7 @@ import { api, errorText, reportSaveError } from "../api";
 import { useAuth } from "../auth";
 import { useI18n } from "../i18n";
 import { useConfig, useModule } from "../config";
-import { Kpi, Member, RoadmapItem, Squad, SquadDetail, Tribe, Trend, Role } from "../types";
+import { Kpi, Member, RoadmapItem, Squad, SquadDetail, Tribe, Trend, Role, stageTag } from "../types";
 import { Dot, Spinner, ErrorBanner, EmptyState, Modal, SectionCard as Card } from "../components/ui";
 import { QuarterProgressEditor } from "../components/EntryExtras";
 import TeamMood, { moodAge, WEEKLY_STALE_DAYS } from "../components/TeamMood";
@@ -566,22 +566,43 @@ function RoadmapEditor({ squad, year, onChange, readonly, t, roadmap, squads, tr
  * One quarter column: its milestones and an auto-computed progress bar. Rows are
  * clickable to edit unless read-only. Progress is derived, never entered.
  */
-function QuarterEditor({ squad, quarter, readonly, t, roadmap, onAdd, onEdit, onStatus }: any) {
+function QuarterEditor({ squad, year, quarter, readonly, t, roadmap, onAdd, onEdit, onStatus, onChange }: any) {
   const items = squad.roadmap_items.filter((r: RoadmapItem) => r.quarter === quarter);
   // Progress is auto-derived from milestone advancement (share done), never typed.
   const total = items.length;
   const done = items.filter((r: RoadmapItem) => r.status === "done").length;
   const pct = total ? Math.round((100 * done) / total) : 0;
+  // A quarter without jalons is not "0 % done": it is either nothing planned, or
+  // a quarter that does not concern the squad (it started in Q3), said N/A.
+  const na = !!squad.quarter_progress?.[String(quarter)]?.not_applicable;
+  const [naErr, setNaErr] = useState<string | null>(null);
+  async function setNa(v: boolean) {
+    setNaErr(null);
+    try {
+      await api.put(`/api/squads/${squad.id}/quarter-progress`, { year, quarter, not_applicable: v });
+      onChange();
+    } catch (e) { setNaErr(errorText(e)); }
+  }
 
   return (
     <div className="quarter-block">
       <div className="between">
         <h4>Q{quarter}</h4>
-        <span className="small muted" title={t("entry.progress_auto")}>{pct}%, {done}/{total}</span>
+        {total > 0
+          ? <span className="small muted" title={t("entry.progress_auto")}>{pct}%, {done}/{total}</span>
+          : <span className="small muted" title={t("entry.q_na_hint")}>{na ? t("entry.q_na_short") : t("entry.q_nothing")}</span>}
       </div>
-      <div style={{ height: 8, background: "var(--line)", borderRadius: 6, overflow: "hidden", marginBottom: 4 }} aria-label={`${pct}%`}>
-        <div style={{ width: `${pct}%`, height: "100%", background: "var(--navy)" }} />
-      </div>
+      {total > 0 ? (
+        <div style={{ height: 8, background: "var(--line)", borderRadius: 6, overflow: "hidden", marginBottom: 4 }} aria-label={`${pct}%`}>
+          <div style={{ width: `${pct}%`, height: "100%", background: "var(--navy)" }} />
+        </div>
+      ) : (
+        <label className="inline small" style={{ gap: 6 }} title={t("entry.q_na_hint")}>
+          <input type="checkbox" disabled={readonly} checked={na} onChange={(e) => setNa(e.target.checked)} />
+          {t("entry.q_na_box")}
+        </label>
+      )}
+      {naErr && <div className="small" style={{ color: "var(--red)" }}>{naErr}</div>}
       <div style={{ marginTop: 8 }}>
         {items.map((r: RoadmapItem) => (
           <div key={r.id} className="item-row">
@@ -592,7 +613,7 @@ function QuarterEditor({ squad, quarter, readonly, t, roadmap, onAdd, onEdit, on
               {r.theme ? <span className="strong" style={{ color: "var(--navy)" }}>{r.theme}, </span> : null}
               {r.title}
             </button>
-            <span className="badge badge-navy" style={{ fontSize: 10 }}>{r.release_stage}</span>
+            {stageTag(r.release_stage) && <span className="badge badge-navy" style={{ fontSize: 10 }}>{r.release_stage}</span>}
             {/* The weekly gesture, in one click: the status, changed where it shows. */}
             {!readonly && (
               <select className="w-auto small" aria-label={`${t("jalon.status")} ${r.title}`} value={r.status}
@@ -698,7 +719,17 @@ function JalonModal({ jalon, members, onSave, onCancel, onDelete, error, t, road
               <select value={f.release_stage ?? "EA"} onChange={(e) => set("release_stage", e.target.value)}>
                 <option value="EA">EA ({t("jalon.stage_ea")})</option>
                 <option value="GA">GA ({t("jalon.stage_ga")})</option>
+                <option value="NP">{t("jalon.stage_np")}</option>
+                <option value="OT">{t("jalon.stage_ot")}</option>
               </select>
+              {f.release_stage === "OT" && (
+                <input style={{ marginTop: 6 }} maxLength={80} required placeholder={t("jalon.stage_other_ph")}
+                       aria-label={t("jalon.stage_other_ph")} value={f.release_stage_other ?? ""}
+                       onChange={(e) => set("release_stage_other", e.target.value)} />
+              )}
+              {(f.release_stage === "NP" || f.release_stage === "OT") && (
+                <div className="small muted" style={{ marginTop: 4 }}>{t("jalon.stage_no_tag")}</div>
+              )}
             </div>
           </div>
           <div className="row">

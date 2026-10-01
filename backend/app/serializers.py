@@ -115,6 +115,7 @@ def squad_detail(squad: Squad, year: int, threshold: int, privileged: bool = Fal
     tracking is enabled for the squad - otherwise `budget` is None."""
     progress = st.year_progress(squad, year)
     comments = st.quarter_comments(squad, year)
+    na = st.quarter_na(squad, year)
     return SquadDetail(
         id=squad.id,
         tribe_id=squad.tribe_id,
@@ -144,7 +145,8 @@ def squad_detail(squad: Squad, year: int, threshold: int, privileged: bool = Fal
         # The squad's own commitments only: a management OTD placed on it does not
         # make "at least one commitment taken by the squad".
         otd_count=sum(1 for o in squad.otds if o.year == year and o.scope == "squad"),
-        quarter_progress={str(q): {"progress_pct": progress[q], "comment": comments[q]} for q in (1, 2, 3, 4)},
+        quarter_progress={str(q): {"progress_pct": progress[q], "comment": comments[q],
+                                   "not_applicable": q in na} for q in (1, 2, 3, 4)},
         roadmap_items=[roadmap_item_out(r) for r in
                        sorted(squad.roadmap_items, key=lambda x: (x.quarter, x.display_order, x.id)) if r.year == year],
         kpis=[KpiOut.model_validate(k) for k in sorted(squad.kpis, key=lambda x: x.id)],
@@ -181,6 +183,7 @@ def squad_card(squad: Squad, year: int, threshold: int) -> SquadCard:
         risk_rank=risk,
         focus_quarter=ref_quarter(year),
         quarter_progress={str(q): progress[q] for q in (1, 2, 3, 4)},
+        quarter_na=sorted(st.quarter_na(squad, year)),
         quarter_breakdowns={str(q): st.quarter_breakdown(squad, year, q) for q in (1, 2, 3, 4)},
         blocked_count=blocked,
         at_risk_count=at_risk,

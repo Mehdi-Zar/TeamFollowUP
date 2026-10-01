@@ -68,6 +68,16 @@ def _normalize_dependency(item: RoadmapItem) -> None:
             item.dependency_kind = None
 
 
+def _normalize_stage(item: RoadmapItem) -> None:
+    """« Autre » se nomme; les autres phases n'ont pas de libelle libre."""
+    if item.release_stage == "OT":
+        item.release_stage_other = (item.release_stage_other or "").strip() or None
+        if not item.release_stage_other:
+            raise HTTPException(status_code=422, detail="Précisez le type du jalon (phase « Autre »)")
+    else:
+        item.release_stage_other = None
+
+
 @router.post("", response_model=RoadmapItemOut, status_code=201)
 def create_item(payload: RoadmapItemCreate, db: Session = Depends(get_db),
                 user: User = Depends(require_writer)):
@@ -79,6 +89,7 @@ def create_item(payload: RoadmapItemCreate, db: Session = Depends(get_db),
         raise HTTPException(status_code=404, detail="Squad introuvable")
     assert_reports_for_squad(db, user, payload.squad_id)
     item = RoadmapItem(**payload.model_dump())
+    _normalize_stage(item)
     _normalize_dependency(item)
     _check_dependency_target(db, item)
     db.add(item)
@@ -105,6 +116,8 @@ def update_item(item_id: int, payload: RoadmapItemUpdate, db: Session = Depends(
     data = update_data(payload, RoadmapItem)
     for k, v in data.items():
         setattr(item, k, v)
+    if "release_stage" in data or "release_stage_other" in data:
+        _normalize_stage(item)
     if "dependency_kind" in data or "dependency_squad_id" in data or "dependency_tribe_id" in data:
         _normalize_dependency(item)
         _check_dependency_target(db, item)

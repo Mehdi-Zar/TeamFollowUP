@@ -42,6 +42,7 @@ def build_payload(db: Session, squad: Squad, year: int) -> dict:
     """
     progress = st.year_progress(squad, year)
     comments = st.quarter_comments(squad, year)
+    na = st.quarter_na(squad, year)
     # Les engagements de la squad, lus exactement comme le rapport les lit.
     from ..report import otd_rows_for_tribes, otds_of_squad
     from ..models import Initiative
@@ -54,7 +55,7 @@ def build_payload(db: Session, squad: Squad, year: int) -> dict:
         "year": year,
         "roadmap_items": [
             {"id": r.id, "title": r.title, "quarter": r.quarter, "status": r.status,
-             "release_stage": r.release_stage, "owner": r.owner, "theme": r.theme,
+             "release_stage": r.release_stage, "release_stage_other": r.release_stage_other, "owner": r.owner, "theme": r.theme,
              "initiative_id": r.initiative_id,
              # Les deux rattachements d'engagement: c'est ce qui pose un jalon sous
              # le mois de la promesse qu'il tient, sur la frise.
@@ -86,7 +87,8 @@ def build_payload(db: Session, squad: Squad, year: int) -> dict:
              "created_at": m.created_at.strftime("%Y-%m-%d %H:%M") if m.created_at else None}
             for m in current_key_messages(squad.key_messages, year)
         ],
-        "quarter_progress": {str(q): {"progress_pct": progress[q], "comment": comments[q]} for q in (1, 2, 3, 4)},
+        "quarter_progress": {str(q): {"progress_pct": progress[q], "comment": comments[q],
+                                      "not_applicable": q in na} for q in (1, 2, 3, 4)},
         "kpis": [
             {"id": k.id, "name": k.name, "unit": k.unit,
              "current_value": float(k.current_value) if k.current_value is not None else None,
@@ -181,7 +183,8 @@ def _slices(payload: dict) -> dict:
         "key_messages": [(m.get("kind"), m.get("text")) for m in payload.get("key_messages") or []],
         "mood": (squad.get("mood"), squad.get("mood_comment")),
         "kpis": payload.get("kpis") or [],
-        "progress": {q: (v or {}).get("comment") for q, v in (payload.get("quarter_progress") or {}).items()},
+        "progress": {q: ((v or {}).get("comment"), bool((v or {}).get("not_applicable")))
+                     for q, v in (payload.get("quarter_progress") or {}).items()},
     }
 
 

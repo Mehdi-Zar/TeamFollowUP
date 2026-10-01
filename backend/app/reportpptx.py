@@ -850,7 +850,8 @@ def render_pptx(data: dict) -> bytes:
             # boite posee a la date d'un engagement de ce trimestre peut porter des
             # jalons comptes dans un autre, et la mention la contredisait.
             occupied = any((o.get("month") or 0) // 3 == i for o in otds if o.get("month") is not None)                 or any(g["month"] // 3 == i for g in groups)
-            empty_lbl = "-" if occupied else rt(lang, "q_nothing")
+            empty_lbl = ("-" if occupied else
+                         rt(lang, "q_na") if qd.get("na") else rt(lang, "q_nothing"))
             place(qc, [(f'Q{q}    {_pct(pct, lang)}' if planned else f'Q{q}    {empty_lbl}',
                         Q_FS, B["navy"] if planned else B["muted"], True, PP_ALIGN.LEFT, 0)],
                   anchor=MSO_ANCHOR.TOP, ml=0.08, mt=Q_PAD, mr=0.08)

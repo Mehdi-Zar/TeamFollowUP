@@ -24,7 +24,7 @@ from ..database import get_db
 from ..generalconfig import reference_year
 from ..deps import (ADMIN, SQUAD, TRIBE, reports_for_squad, scoped_tribe_id, update_data, assert_can_manage_tribe_reporting,
                     get_current_user, led_squad_ids, contributed_squad_ids, record_audit)
-from ..models import Otd, RoadmapItem, Squad, Tribe, User
+from ..models import Otd, RoadmapItem, Squad, Tribe, User, stage_tag
 from ..changenotify import notify_change
 from ..schemas import OtdCreate, OtdMembers, OtdOut, OtdUpdate
 
@@ -67,7 +67,7 @@ def _assert_can_write(db: Session, user: User, otd: Otd) -> None:
 
 def _jalon_brief(j) -> dict:
     """Compact milestone view embedded in an OTD payload."""
-    return {"id": j.id, "title": j.title, "quarter": j.quarter, "stage": j.release_stage,
+    return {"id": j.id, "title": j.title, "quarter": j.quarter, "stage": stage_tag(j.release_stage),
             "status": j.status, "squad_id": j.squad_id, "squad_name": j.squad.name if j.squad else ""}
 
 

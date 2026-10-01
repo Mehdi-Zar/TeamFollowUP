@@ -32,7 +32,9 @@ EN: dict[str, str] = {
     # Not found
     "Absence introuvable": "Leave not found",
     "Ce message appartient à un reporting déjà soumis": "This message belongs to a reporting already submitted",
+    "Ce trimestre a des jalons : il ne peut pas être « non concerné »": "This quarter has milestones: it cannot be \"not concerned\"",
     "Clé introuvable": "Key not found",
+    "Précisez le type du jalon (phase « Autre »)": "Name the milestone's type (stage \"Other\")",
     "Comité introuvable": "Committee not found",
     "Compte administrateur introuvable": "Administrator account not found",
     "Compte introuvable dans cette tribe": "Account not found in this tribe",

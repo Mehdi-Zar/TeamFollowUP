@@ -32,7 +32,7 @@ from datetime import date, datetime, time, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .models import ReportSnapshot
+from .models import ReportSnapshot, stage_tag
 from .reportcommon import _status_rag
 
 
@@ -120,7 +120,7 @@ def _detail_from_payload(payload: dict, year: int, live_detail: dict) -> dict:
         q = it.get("quarter") or 1
         by_quarter.setdefault(q, []).append({
             "id": it.get("id"), "title": it.get("title"), "status": it.get("status"),
-            "owner": it.get("owner"), "stage": it.get("release_stage"),
+            "owner": it.get("owner"), "stage": stage_tag(it.get("release_stage")),
             "theme": it.get("theme"), "objective_id": it.get("objective_id"),
             "initiative_id": it.get("initiative_id"),
             "otd_id": it.get("otd_id"), "squad_otd_id": it.get("squad_otd_id"),
@@ -140,6 +140,7 @@ def _detail_from_payload(payload: dict, year: int, live_detail: dict) -> dict:
             {"q": q,
              "pct": int((progress.get(str(q)) or {}).get("progress_pct") or 0),
              "comment": (progress.get(str(q)) or {}).get("comment"),
+             "na": bool((progress.get(str(q)) or {}).get("not_applicable")),
              "items": by_quarter.get(q) or []}
             for q in (1, 2, 3, 4)
         ],

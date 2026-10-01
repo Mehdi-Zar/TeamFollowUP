@@ -16,7 +16,8 @@ import { api, errorText } from "../api";
 import { useI18n } from "../i18n";
 import { usePeople } from "../components/usePeople";
 import { useModule } from "../config";
-import { Budget, Committee, CommitteeFrequency, DependentItem, Initiative, Member, RoadmapItem, SnapshotMeta, SquadDetail, Weekday } from "../types";
+import { fte } from "../components/RolePicker";
+import { Budget, Committee, CommitteeFrequency, DependentItem, Initiative, Member, RoadmapItem, SnapshotMeta, SquadDetail, Weekday, stageTag } from "../types";
 import { Dot, FreshnessBadge, ProgressBar, Spinner, ErrorBanner, Collapsible } from "../components/ui";
 import { InitiativesCard } from "../components/InitiativesCard";
 import { OtdPanel } from "../components/OtdPanel";
@@ -243,9 +244,14 @@ export default function SquadDetailPage() {
               <div key={q} className="quarter-block">
                 <div className="between">
                   <h4>Q{q}</h4>
-                  <span className="small muted">{cell?.progress_pct ?? 0}%</span>
+                  {/* Nothing planned is not "0 % done", and a quarter the squad is
+                      not concerned by says so (N/A), as the exports do. */}
+                  <span className="small muted">
+                    {items.length > 0 ? `${cell?.progress_pct ?? 0}%`
+                      : cell?.not_applicable ? t("entry.q_na_short") : t("entry.q_nothing")}
+                  </span>
                 </div>
-                <ProgressBar pct={cell?.progress_pct ?? 0} />
+                {items.length > 0 && <ProgressBar pct={cell?.progress_pct ?? 0} />}
                 {cell?.comment && <div className="small muted" style={{ marginTop: 6 }}>{cell.comment}</div>}
                 <div style={{ marginTop: 8 }}>
                   {items.length === 0 && <div className="small muted">{t("squad.no_jalon")}</div>}
@@ -253,7 +259,7 @@ export default function SquadDetailPage() {
                     <div key={r.id} className="item-row clickable-row" role="button" onClick={() => setOpenJalon(r)} tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpenJalon(r); } }} title={t("jalon.details")}>
                       <Dot status={roadmapRag(r.status)} />
                       <span className="grow small">{r.title}</span>
-                      <span className="badge badge-navy" style={{ fontSize: 10 }}>{r.release_stage}</span>
+                      {stageTag(r.release_stage) && <span className="badge badge-navy" style={{ fontSize: 10 }}>{r.release_stage}</span>}
                       <span className="small muted">{roadmap(r.status)}</span>
                       <span className="chevron">›</span>
                     </div>
@@ -777,7 +783,8 @@ function JalonView({ jalon, onClose, t, roadmap }: { jalon: RoadmapItem; onClose
         <div className="inline" style={{ gap: 8, margin: "8px 0 4px", flexWrap: "wrap" }}>
           <span className="badge badge-navy">Q{jalon.quarter}</span>
           {jalon.theme && <span className="badge">{jalon.theme}</span>}
-          <span className="badge">{jalon.release_stage}</span>
+          {stageTag(jalon.release_stage) ? <span className="badge">{jalon.release_stage}</span>
+            : <span className="small muted">{jalon.release_stage === "OT" ? jalon.release_stage_other : t("jalon.stage_np")}</span>}
           <span className="small muted">{t("jalon.status")}{t("common.colon")}<span className="strong">{roadmap(jalon.status)}</span></span>
         </div>
         {jalon.owner && (
@@ -805,7 +812,10 @@ function JalonView({ jalon, onClose, t, roadmap }: { jalon: RoadmapItem; onClose
  * node with its children recursively.
  */
 function SquadOrg({ squad, emptyLabel }: { squad: SquadDetail; emptyLabel: string }) {
+  const { t, lang } = useI18n();
   if (squad.members.length === 0) return <div className="small muted">{emptyLabel}</div>;
+  // Who is full time, who shares their time: the team's real capacity.
+  const full = squad.members.filter((m) => (m.allocation_pct ?? 100) >= 100).length;
   // Group members by their manager id; "root" holds the top-level members.
   const byManager: Record<string, Member[]> = {};
   for (const m of squad.members) {
@@ -821,6 +831,11 @@ function SquadOrg({ squad, emptyLabel }: { squad: SquadDetail; emptyLabel: strin
         <div className="org-box">
           <div className="strong small">{m.full_name}</div>
           <div className="small muted">{m.role_title || "-"}</div>
+          <div className="small">
+            {(m.allocation_pct ?? 100) >= 100
+              ? <span className="badge badge-green">{t("team.full_time")}</span>
+              : <span className="badge badge-orange">{t("team.part_time", { n: m.allocation_pct ?? 0 })}</span>}
+          </div>
         </div>
         {children.length > 0 && (
           <>
@@ -833,8 +848,13 @@ function SquadOrg({ squad, emptyLabel }: { squad: SquadDetail; emptyLabel: strin
   };
 
   return (
-    <div className="row" style={{ justifyContent: "center", alignItems: "flex-start", gap: 20 }}>
-      {roots.map(renderNode)}
+    <div className="stack" style={{ gap: 10 }}>
+      <div className="small muted">
+        {t("team.capacity", { n: squad.members.length, fte: fte(squad.members, lang), full, part: squad.members.length - full })}
+      </div>
+      <div className="row" style={{ justifyContent: "center", alignItems: "flex-start", gap: 20 }}>
+        {roots.map(renderNode)}
+      </div>
     </div>
   );
 }

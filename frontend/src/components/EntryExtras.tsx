@@ -27,6 +27,9 @@ export function QuarterProgressEditor({ squad, year, readonly, onChange, t }: {
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState<number | null>(null);
   const current = (q: number) => squad.quarter_progress?.[String(q)] ?? { progress_pct: 0, comment: "" };
+  // Only a quarter without jalons can say it does not concern the squad.
+  const planned = (q: number) => squad.roadmap_items.some((r) => r.year === year && r.quarter === q);
+
   const [draft, setDraft] = useState<Record<number, string>>(
     Object.fromEntries(QUARTERS.map((q) => [q, current(q).comment ?? ""])),
   );
@@ -61,8 +64,11 @@ export function QuarterProgressEditor({ squad, year, readonly, onChange, t }: {
             <tr key={q}>
               <td className="strong">Q{q}</td>
               <td className="strong" title={t("entry.progress_derived_hint")}>
-                {current(q).progress_pct ?? 0}%
+                {planned(q) ? `${current(q).progress_pct ?? 0}%`
+                  : current(q).not_applicable ? t("entry.q_na_short")
+                    : <span className="muted">{t("entry.q_nothing")}</span>}
               </td>
+
               <td>
                 <input disabled={readonly || busy === q} placeholder={t("entry.progress_comment_ph")}
                        aria-label={t("entry.progress_comment") + ` Q${q}`}

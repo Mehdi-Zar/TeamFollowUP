@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session, selectinload
 from . import pptxtpl
 from . import status as st
 from .generalconfig import get_general, reference_year
-from .models import ReportSnapshot, Squad, Tribe, current_key_messages, utcnow
+from .models import ReportSnapshot, Squad, Tribe, current_key_messages, stage_tag, utcnow
 from .serializers import annual_progress, budget_out, dependency_label
 
 # Shared with the PPTX renderers; see reportcommon.
@@ -257,6 +257,7 @@ def build_report_data(db: Session, scope_tribe: int | None, year: int | None = N
         f = st.freshness(s, threshold, now)
         prog = st.year_progress(s, year)
         comments = st.quarter_comments(s, year)
+        na = st.quarter_na(s, year)
         ann = annual_progress(s, year)
         # Full per-squad content (OTD + roadmap by quarter + advancement), so the
         # report/PPTX can show everything, not just the dashboard summary.
@@ -265,10 +266,10 @@ def build_report_data(db: Session, scope_tribe: int | None, year: int | None = N
             "initiatives": init_by_squad.get(s.id, []),
             "otds": _otds_of(s),
             "quarters": [
-                {"q": q, "pct": prog[q], "comment": comments.get(q),
+                {"q": q, "pct": prog[q], "comment": comments.get(q), "na": q in na,
                  "items": [
                      {"id": r.id, "title": r.title, "status": r.status, "owner": r.owner,
-                      "stage": r.release_stage, "theme": r.theme,
+                      "stage": stage_tag(r.release_stage), "theme": r.theme,
                       "objective_id": r.objective_id,
                       "initiative_id": r.initiative_id,
                       # Les deux rattachements d'engagement, celui du management et
@@ -825,7 +826,8 @@ def _timeline_html(det: dict, lang: str, e, year: int) -> str:
         planned = bool(qd.get("items"))
         cm = f'<div class="xtl-qc">{e(qd["comment"])}</div>' if qd.get("comment") else ""
         # Nothing planned is not "0 % delivered": the annual figure ignores it too.
-        shown = f"{pct} %" if planned else e(rt(lang, "q_nothing"))
+        # A quarter the squad is not concerned by says so, rather than "nothing planned".
+        shown = f"{pct} %" if planned else e(rt(lang, "q_na" if qd.get("na") else "q_nothing"))
         P.append(f'<div style="grid-column:span 3"><div class="xtl-q">'
                  f'<div class="xtl-q-head"><b>Q{q}</b><span>{shown}</span></div>'
                  + (f'<div class="xtl-bar"><span style="width:{pct}%"></span></div>' if planned else "")
@@ -1913,7 +1915,7 @@ def build_dependencies_data(db: Session, scope_tribe: int | None, year: int | No
                 "jalon": r.title, "description": (r.description or "").strip(),
                 "squad_name": s.name, "tribe_name": src_tribe,
                 "quarter": r.quarter, "year": r.year,
-                "owner": r.owner or "", "status": r.status, "stage": r.release_stage or "",
+                "owner": r.owner or "", "status": r.status, "stage": stage_tag(r.release_stage) or "",
             })
             total += 1
 

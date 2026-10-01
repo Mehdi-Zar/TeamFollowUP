@@ -147,6 +147,9 @@ function SquadCard({ squadId, year, leaders, tribes, isAdmin, manager, autoOpen,
   const { t } = useI18n();
   const [d, setD] = useState<SquadDetail | null>(null);
   const [edit, setEdit] = useState(!!autoOpen);
+  // The step the window opens on: the link's, or the team when asked from the card.
+  const [startStep, setStartStep] = useState<SquadStep | undefined>(autoOpen ? initialStep : undefined);
+  const open = (s?: SquadStep) => { setStartStep(s); setEdit(true); };
 
   async function load() {
     try { setD(await api.get<SquadDetail>(`/api/squads/${squadId}?year=${year}`)); }
@@ -161,7 +164,13 @@ function SquadCard({ squadId, year, leaders, tribes, isAdmin, manager, autoOpen,
     <div className="card stack" style={{ gap: 10 }}>
       <div className="between" style={{ alignItems: "flex-start" }}>
         <div className="strong" style={{ fontSize: 16 }}>{d.name}</div>
-        <button className="btn-secondary btn-sm" onClick={() => setEdit(true)}>✎ {manager ? t("action.edit") : t("mysquads.manage")}</button>
+        <span className="inline" style={{ gap: 6 }}>
+          {/* The team is what a squad leader changes most: one click to it. */}
+          <button className="btn-secondary btn-sm" onClick={() => open("team")}>
+            {t("mysquads.manage_team_n", { n: d.members.length })}
+          </button>
+          <button className="btn-secondary btn-sm" onClick={() => open()}>✎ {manager ? t("action.edit") : t("mysquads.manage")}</button>
+        </span>
       </div>
 
       {d.leader ? (
@@ -169,7 +178,7 @@ function SquadCard({ squadId, year, leaders, tribes, isAdmin, manager, autoOpen,
       ) : (
         // Nobody leads it: nobody fills its reporting. Said, with the way to fix it.
         <button type="button" className="badge badge-orange" style={{ border: 0, cursor: "pointer", alignSelf: "flex-start" }}
-                onClick={() => setEdit(true)}>{t("card.no_leader")}</button>
+                onClick={() => open()}>{t("card.no_leader")}</button>
       )}
       {/* Co-leaders hold the same rights: the card names them too. */}
       {(d.co_leaders?.length ?? 0) > 0 && (
@@ -202,7 +211,7 @@ function SquadCard({ squadId, year, leaders, tribes, isAdmin, manager, autoOpen,
         <EditSquadModal
           detail={d}
           year={year}
-          initialStep={autoOpen ? initialStep : undefined}
+          initialStep={startStep}
           manager={manager}
           leaders={leaders}
           tribes={tribes}

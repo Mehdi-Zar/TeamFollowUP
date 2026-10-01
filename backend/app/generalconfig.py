@@ -23,6 +23,24 @@ def _org_views(value) -> list[str]:
     return picked + [v for v in ORG_VIEWS if v not in picked]
 
 
+# The roles offered for a squad member, in this order; "other" (free text) is
+# always offered on top. Editable in Administration.
+MEMBER_ROLES = ["Tech lead", "Architecte", "DevOps", "Développeur", "SRE",
+                "Product owner", "Scrum master", "QA"]
+
+
+def _member_roles(value) -> list[str]:
+    """A clean role list: trimmed, each once (case-insensitive), at most 50 of 80
+    characters. An empty or malformed list falls back to the defaults."""
+    out, seen = [], set()
+    for v in value if isinstance(value, list) else []:
+        name = str(v or "").strip()[:80]
+        if name and name.lower() not in seen:
+            seen.add(name.lower())
+            out.append(name)
+    return out[:50] or list(MEMBER_ROLES)
+
+
 def _defaults() -> dict:
     """The baseline general settings, used when nothing is stored yet.
 
@@ -42,6 +60,8 @@ def _defaults() -> dict:
         "feed_retention_days": 0,        # 0 = keep all
         # The org chart's views in their order: the first opens by default.
         "org_views": list(ORG_VIEWS),
+        # The roles a squad member is given from (plus "other", free text).
+        "member_roles": list(MEMBER_ROLES),
     }
 
 
@@ -109,6 +129,7 @@ def set_general(db: Session, patch: dict) -> dict:
     except (TypeError, ValueError):
         cfg["feed_retention_days"] = 0
     cfg["org_views"] = _org_views(cfg.get("org_views"))
+    cfg["member_roles"] = _member_roles(cfg.get("member_roles"))
 
     row = db.get(AppSetting, GENERAL_KEY)
     payload = json.dumps(cfg)
@@ -142,6 +163,7 @@ def public_config(db: Session) -> dict:
         "default_year": cfg["default_year"],
         "feed_post_scope": cfg["feed_post_scope"],
         "org_views": _org_views(cfg.get("org_views")),
+        "member_roles": _member_roles(cfg.get("member_roles")),
         "smtp_enabled": bool(get_smtp(db).get("enabled")),
         "modules": get_modules(db),
         # L'apparence voyage avec la configuration publique: la page de connexion

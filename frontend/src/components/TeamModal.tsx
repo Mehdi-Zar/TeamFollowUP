@@ -19,18 +19,21 @@ import { useEffect, useState } from "react";
 import { api, errorText } from "../api";
 import { useI18n } from "../i18n";
 import { Member, SquadDetail } from "../types";
+import RolePicker, { fte } from "./RolePicker";
 import { ErrorBanner, Modal, Spinner } from "./ui";
 
 /** An account of the squad's tribe that can be picked (GET /api/members/candidates). */
 interface Candidate { id: number; display_name: string; email: string; in_squad: boolean }
 
 const looksLikeEmail = (v: string) => /^[^@\s]+@[^@\s]+$/.test(v.trim());
-const EMPTY_ADD = { email: "", first_name: "", last_name: "", role_title: "" };
+const EMPTY_ADD = { email: "", first_name: "", last_name: "", role_title: "", allocation_pct: 100 };
+/** A share of time typed in: a whole percentage between 0 and 100, else null. */
+const pctOf = (v: string) => { const n = Math.round(Number(v)); return v.trim() !== "" && n >= 0 && n <= 100 ? n : null; };
 
 /** Member list with inline edit, "reports to" and an add row. Calls `onChange`
  *  after every successful write so the caller can refresh its own view. */
 export function TeamEditor({ squadId, onChange }: { squadId: number; onChange?: () => void }) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const [members, setMembers] = useState<Member[] | null>(null);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [add, setAdd] = useState(EMPTY_ADD);
@@ -69,6 +72,7 @@ export function TeamEditor({ squadId, onChange }: { squadId: number; onChange?: 
           last_name: add.last_name.trim() || null,
         }),
         role_title: add.role_title.trim() || null,
+        allocation_pct: add.allocation_pct,
       });
       setAdd(EMPTY_ADD);
     });
@@ -90,7 +94,9 @@ export function TeamEditor({ squadId, onChange }: { squadId: number; onChange?: 
   return (
     <div className="stack" style={{ gap: 8 }}>
       {error && <ErrorBanner message={error} />}
-      <div className="small muted">{t("admin.members")} ({members.length})</div>
+      <div className="small muted">
+        {t("admin.members")} ({members.length}){members.length > 0 && <>, {t("team.fte", { n: fte(members, lang) })}</>}
+      </div>
       {members.length === 0 && <div className="small muted">{t("squad.no_members")}</div>}
       {members.map((m) => {
         const link = linkState(m);
@@ -116,12 +122,19 @@ export function TeamEditor({ squadId, onChange }: { squadId: number; onChange?: 
                          saveField(input, m.email ?? "", () => api.put(`/api/members/${m.id}`, { email: v || null }));
                        }} />
               </div>
-              <div style={{ flex: 1, minWidth: 110 }}>
+              <div style={{ flex: 1, minWidth: 130 }}>
                 <label className="small muted">{t("admin.member_role")}</label>
-                <input defaultValue={m.role_title ?? ""}
+                <RolePicker value={m.role_title} ariaLabel={t("admin.member_role")}
+                            onCommit={(v) => run(() => api.put(`/api/members/${m.id}`, { role_title: v }))} />
+              </div>
+              <div style={{ width: 80 }}>
+                <label className="small muted" title={t("team.allocation_hint")}>{t("team.allocation")}</label>
+                <input type="number" min={0} max={100} step={5} defaultValue={m.allocation_pct ?? 100}
+                       aria-label={t("team.allocation")}
                        onBlur={(e) => {
-                         const input = e.target, v = input.value.trim();
-                         if (v !== (m.role_title ?? "")) saveField(input, m.role_title ?? "", () => api.put(`/api/members/${m.id}`, { role_title: v || null }));
+                         const input = e.target, saved = String(m.allocation_pct ?? 100), v = pctOf(input.value);
+                         if (v === null) { input.value = saved; return; }
+                         if (String(v) !== saved) saveField(input, saved, () => api.put(`/api/members/${m.id}`, { allocation_pct: v }));
                        }} />
               </div>
               <div style={{ width: 130 }}>
@@ -176,9 +189,14 @@ export function TeamEditor({ squadId, onChange }: { squadId: number; onChange?: 
             <input placeholder={t("team.last_name")} aria-label={t("team.last_name")} value={add.last_name}
                    onChange={(e) => setAdd({ ...add, last_name: e.target.value })} />
           </div>
-          <div style={{ flex: 1, minWidth: 110 }}>
-            <input placeholder={t("admin.member_role")} aria-label={t("admin.member_role")} value={add.role_title}
-                   onChange={(e) => setAdd({ ...add, role_title: e.target.value })} />
+          <div style={{ flex: 1, minWidth: 130 }}>
+            <RolePicker value={add.role_title} ariaLabel={t("admin.member_role")}
+                        onCommit={(v) => setAdd((a) => ({ ...a, role_title: v ?? "" }))} />
+          </div>
+          <div style={{ width: 80 }}>
+            <input type="number" min={0} max={100} step={5} value={add.allocation_pct}
+                   aria-label={t("team.allocation")} title={t("team.allocation_hint")}
+                   onChange={(e) => setAdd({ ...add, allocation_pct: pctOf(e.target.value) ?? 100 })} />
           </div>
           <button type="submit" className="btn-sm"
                   disabled={!(looksLikeEmail(add.email) || (!add.email.trim() && (add.first_name.trim() || add.last_name.trim())))}>

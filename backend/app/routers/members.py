@@ -120,7 +120,8 @@ def create_member(payload: MemberCreate, db: Session = Depends(get_db), user: Us
     _check_unique(db, squad.id, email, account.id if account else None)
     member = Member(squad_id=squad.id, full_name=full_name[:255], role_title=payload.role_title,
                     email=email, user_id=account.id if account else None,
-                    manager_id=payload.manager_id, display_order=payload.display_order)
+                    manager_id=payload.manager_id, display_order=payload.display_order,
+                    allocation_pct=payload.allocation_pct)
     db.add(member)
     db.flush()
     record_audit(db, user.id, "member.create", entity="member", entity_id=member.id,
