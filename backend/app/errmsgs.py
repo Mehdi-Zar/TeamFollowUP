@@ -31,6 +31,7 @@ EN: dict[str, str] = {
     "Vous ne pouvez supprimer que votre tribe": "You can only delete your own tribe",
     # Not found
     "Absence introuvable": "Leave not found",
+    "Ce message appartient à un reporting déjà soumis": "This message belongs to a reporting already submitted",
     "Clé introuvable": "Key not found",
     "Comité introuvable": "Committee not found",
     "Compte administrateur introuvable": "Administrator account not found",
@@ -273,6 +274,8 @@ PATTERNS: list[tuple[re.Pattern, str]] = [
     (re.compile(r"^Onglets manquants dans le fichier : (?P<tabs>.*)\.$"), "Tabs missing from the file: {tabs}."),
     (re.compile(r"^Mois du rapport invalide : « (?P<p>.*) »\. Format attendu : AAAA-MM\.$"),
      "Invalid report month: \"{p}\". Expected format: YYYY-MM."),
+    (re.compile(r"^(?P<n>\d+) messages clés au plus par reporting$"),
+     "{n} key messages at most per reporting"),
     (re.compile(r"^Plateforme introuvable : « (?P<name>.*) »\. Vérifiez le nom exact dans l'app\.$"),
      "Platform not found: \"{name}\". Check the exact name in the app."),
     (re.compile(r"^Plusieurs plateformes s'appellent « (?P<name>.*) »\. Renommez-en une pour lever l'ambiguïté\.$"),

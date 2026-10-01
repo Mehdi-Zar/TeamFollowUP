@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## 2.4.0 (2026-10-01)
+
+### Messages cles : 4 par reporting, chaque reporting repart de zero
+- Une squad saisit au plus 4 messages cles par reporting (l'API refuse le cinquieme
+  avec un 409, l'ecran de saisie masque alors le bouton d'ajout).
+- La soumission ferme les messages du reporting (migration `0040`, colonne
+  `key_messages.snapshot_id`) : le reporting suivant repart sans message. Entre les
+  deux, les documents montrent ceux du dernier reporting soumis, en lecture seule ;
+  les nouveaux les remplacent des le premier saisi.
+- La diapositive d'une squad affichait deux messages au plus : elle montre les quatre,
+  en corps reduit au-dela de deux pour tenir dans la carte.
+
 ## 2.3.2 (2026-09-29)
 - CI : l'instantane `docs/openapi.json` n'etait plus a jour depuis la 2.2.0 (nouvelles
   routes), la CI echouait ; `aiosmtpd`, utilise par le test de bout en bout des mails,

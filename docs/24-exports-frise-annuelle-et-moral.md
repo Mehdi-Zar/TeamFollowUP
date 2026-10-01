@@ -254,6 +254,19 @@ haut a droite, la grande carte de la frise, puis les messages cles et le budget
 en bas. Un export de plusieurs squads garde sa page de synthese en tete ; un
 export d'une seule squad est le meme deck sans elle.
 
+Les messages cles appartiennent a un reporting : **4 au plus par reporting**
+(l'API refuse le cinquieme avec un 409, l'ecran de saisie masque alors le
+bouton d'ajout). La soumission ferme les messages du reporting (colonne
+`key_messages.snapshot_id`) et le suivant repart sans message. Entre les deux,
+les documents montrent ceux du dernier reporting soumis, en lecture seule ; des
+que le nouveau reporting a ses propres messages, ils les remplacent partout. Les
+autres donnees de la saisie (jalons, engagements, KPI, avancement, moral) ne
+sont pas remises a zero : elles continuent d'un reporting a l'autre.
+
+La slide montre les messages un par ligne, les plus graves en tete (risque,
+alerte, succes) : en corps 10 jusqu'a deux messages, en corps 8 au-dela pour
+que les quatre tiennent dans la carte sans en changer la hauteur.
+
 ### Lisible depuis le fond de la salle
 
 Un deck se projette. Les corps de texte de la slide d'une squad sont donc donnes

@@ -481,6 +481,11 @@ class SquadBudget(Base):
     squad: Mapped["Squad"] = relationship(back_populates="budgets")
 
 
+# A squad says at most this many key messages per reporting: what a reader takes
+# in at a glance, and what the export slide can hold.
+KEY_MESSAGES_MAX = 4
+
+
 class KeyMessage(Base):
     """A hand-curated executive message for a squad/year: a success, an alert or a
     risk. Surfaced on the squad page below the roadmap to give a narrative readout."""
@@ -494,8 +499,25 @@ class KeyMessage(Base):
     display_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
     created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    # The submission that carried the message; NULL while its reporting is open.
+    # No foreign key: a data reset empties the snapshots before the messages.
+    snapshot_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
 
     squad: Mapped["Squad"] = relationship(back_populates="key_messages")
+
+
+def current_key_messages(messages, year: int) -> list["KeyMessage"]:
+    """The key messages a document shows for a squad and year.
+
+    Each reporting starts with no message: those of the reporting in progress
+    when it has some, otherwise those of the last submitted reporting, so that a
+    document read between two reportings still says something."""
+    mine = [m for m in messages if m.year == year]
+    picked = [m for m in mine if m.snapshot_id is None]
+    if not picked:
+        last = max((m.snapshot_id for m in mine), default=None)
+        picked = [m for m in mine if last is not None and m.snapshot_id == last]
+    return sorted(picked, key=lambda x: (x.display_order, x.id))
 
 
 class Committee(Base):

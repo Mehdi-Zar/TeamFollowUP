@@ -623,6 +623,8 @@ class KeyMessageOut(ORMModel):
     text: str
     display_order: int
     created_at: datetime
+    # The submission that carried it; None while its reporting is open.
+    snapshot_id: int | None = None
 
 
 class LeaderInfo(BaseModel):

@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session, selectinload
 from . import pptxtpl
 from . import status as st
 from .generalconfig import get_general, reference_year
-from .models import ReportSnapshot, Squad, Tribe, utcnow
+from .models import ReportSnapshot, Squad, Tribe, current_key_messages, utcnow
 from .serializers import annual_progress, budget_out, dependency_label
 
 # Shared with the PPTX renderers; see reportcommon.
@@ -294,8 +294,7 @@ def build_report_data(db: Session, scope_tribe: int | None, year: int | None = N
             "key_messages": [
                 {"kind": m.kind, "text": m.text,
                  "created_at": _aware(m.created_at).isoformat() if m.created_at else None}
-                for m in sorted(s.key_messages, key=lambda x: (x.display_order, x.id))
-                if m.year == year
+                for m in current_key_messages(s.key_messages, year)
             ],
             # Budget readout - only for a viewer allowed to see this squad's figures.
             "budget": _budget_for_report(s, year, viewer),

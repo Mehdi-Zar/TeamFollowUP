@@ -12,6 +12,9 @@ import { useI18n } from "../i18n";
 import { KeyMessageKind, SquadDetail } from "../types";
 import { Collapsible, ErrorBanner } from "./ui";
 
+/** At most this many messages per reporting (the API refuses a fifth). */
+export const KEY_MESSAGES_MAX = 4;
+
 /** Map a key-message kind to its badge colour class (success/risk/alert). */
 function kmKindClass(k: KeyMessageKind): string {
   return k === "success" ? "badge-green" : k === "risk" ? "badge-red" : "badge-orange";
@@ -41,11 +44,15 @@ export default function KeyMessagesPanel({ squad, canEdit, onChange, editTo, edi
   const [err, setErr] = useState<string | null>(null);
   const fail = (e: unknown) => setErr(errorText(e));
   const kinds: KeyMessageKind[] = ["success", "alert", "risk"];
+  // Each reporting starts with no message. Until it has some, the squad shows
+  // those of the last submitted reporting, read only: they stay as they were sent.
+  const open = squad.key_messages.filter((m) => m.snapshot_id == null);
+  const fromLast = open.length === 0 && squad.key_messages.length > 0;
   const add = () => {
     if (!text.trim()) return;
     setErr(null);
     api.post(`/api/squads/${squad.id}/key-messages?year=${squad.year}`,
-      { kind, text: text.trim(), display_order: squad.key_messages.length })
+      { kind, text: text.trim(), display_order: open.length })
       .then(() => { setText(""); setKind("success"); setAdding(false); onChange(); })
       .catch(fail);
   };
@@ -68,6 +75,7 @@ export default function KeyMessagesPanel({ squad, canEdit, onChange, editTo, edi
       <div className="small muted" style={{ marginBottom: 8 }}>{t("km.hint")}</div>
       {err && <ErrorBanner message={err} />}
       {squad.key_messages.length === 0 && <div className="small muted">{t("km.none")}</div>}
+      {fromLast && <div className="small muted" style={{ marginBottom: 6 }}>{t("km.from_last")}</div>}
       {squad.key_messages.map((m) => (
         <div key={m.id} className="item-row">
           {editId === m.id ? (
@@ -88,7 +96,7 @@ export default function KeyMessagesPanel({ squad, canEdit, onChange, editTo, edi
                 <div className="small">{m.text}</div>
                 <div className="small muted">{formatDateTime(m.created_at)}</div>
               </div>
-              {canEdit && (
+              {canEdit && m.snapshot_id == null && (
                 <span className="inline" style={{ gap: 6 }}>
                   <button className="btn-secondary btn-sm" onClick={() => startEdit(m)}>{t("action.edit")}</button>
                   {deleting === m.id ? (
@@ -105,7 +113,9 @@ export default function KeyMessagesPanel({ squad, canEdit, onChange, editTo, edi
           )}
         </div>
       ))}
-      {canEdit && (adding ? (
+      {canEdit && open.length >= KEY_MESSAGES_MAX && !adding ? (
+        <div className="small muted" style={{ marginTop: 10 }}>{t("km.max", { n: KEY_MESSAGES_MAX })}</div>
+      ) : canEdit && (adding ? (
         <div className="stack" style={{ gap: 6, marginTop: 10 }}>
           <select value={kind} onChange={(e) => setKind(e.target.value as KeyMessageKind)}>
             {kinds.map((k) => <option key={k} value={k}>{t(`km.kind.${k}`)}</option>)}

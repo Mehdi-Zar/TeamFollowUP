@@ -15,6 +15,7 @@ from datetime import datetime
 
 
 from . import pptxtpl
+from .models import KEY_MESSAGES_MAX as KM_MAX
 from .reportcommon import (_people_line, _sep, fmt_date, fmt_datetime, fmt_money, MOOD_CLOUD, MOOD_CLOUD_BOX, MOOD_CLOUD_EYES,
                            MOOD_CLOUD_STROKE, OTD_SCOPE_COLOR,
                            STAGE_COLOR, _DEP_T, _INIT_T, _MONTHS, _lang,
@@ -1199,11 +1200,11 @@ def render_pptx(data: dict) -> bytes:
         # c'est la hauteur qu'on leur donne. Elles etaient plus courtes que leur
         # contenu: la derniere ligne du budget, « Prevision », sortait par le bas
         # et se lisait a moitie. La hauteur vient de la frise, qui en a de reste.
-        def list_card(x, y2, w, h, title, lines, empty, extra=None):
+        def list_card(x, y2, w, h, title, lines, empty, extra=None, fs=10):
             sh = rrect(s, x, y2, w, h, B["white"], line=B["line"], radius=0.05)
             paras = [(title, 12, B["navy"], True, PP_ALIGN.LEFT, 2)]
             if lines:
-                paras += [(txt, 10, color, bold, PP_ALIGN.LEFT, 0) for (txt, color, bold) in lines]
+                paras += [(txt, fs, color, bold, PP_ALIGN.LEFT, 0) for (txt, color, bold) in lines]
             else:
                 paras.append((empty, 10, B["muted"], False, PP_ALIGN.LEFT, 0))
             place(sh, paras, anchor=MSO_ANCHOR.TOP, ml=0.16, mt=0.06, mr=0.16, mb=0.04)
@@ -1213,25 +1214,27 @@ def render_pptx(data: dict) -> bytes:
                 r_.text = f'   {extra}'
                 r_.font.size = Pt(_fs(10)); r_.font.color.rgb = B["muted"]
 
-        # Deux messages, pas trois: la carte fait deux centimetres de haut, et une
-        # troisieme ligne passait sur la legende de la frise au lieu de rester dans
-        # son encadre. Le reste est compte au bout de la deuxieme ligne, ou il ne
-        # coute pas une ligne de plus.
+        # Jusqu'a quatre messages (le maximum qu'une squad peut saisir), un par
+        # ligne. Au-dela de deux, la police descend pour que les quatre tiennent
+        # dans la carte, qui garde sa hauteur: une ligne de plus passait sur la
+        # legende de la frise au lieu de rester dans son encadre.
         kms = det.get("key_messages") or []
-        klines = []
-        # The most serious first (risk, alert, success): a risk entered third
-        # used to be cut off as "+1".
+        # The most serious first (risk, alert, success).
         kms = sorted(kms, key=lambda x: {"risk": 0, "alert": 1}.get(x.get("kind"), 2))
-        # Un message, une ligne: deux messages longs passaient chacun sur deux
-        # lignes et le dernier finissait sur la legende.
-        km_cpl = int((8.02 - 0.34) / (0.0078 * _fs(10)))
-        for m in kms[:2]:
-            rag = {"success": "green", "alert": "amber", "risk": "red"}.get(m["kind"], "grey")
-            klines.append((_cut(f'{rt(lang, "km_" + m["kind"])}{_sep(lang)}{m["text"]}', km_cpl),
-                           rgb(_RAG_BRAND[rag]), False))
-        more = _pt(lang, "km_more", n=len(kms) - 2) if len(kms) > 2 else None
+        shown = kms[:KM_MAX]
+        km_fs = 10 if len(shown) <= 2 else 8
+        more = _pt(lang, "km_more", n=len(kms) - KM_MAX) if len(kms) > KM_MAX else None
+        km_rag = {"success": "green", "alert": "amber", "risk": "red"}
+
+        def km_lines(width):
+            # Un message, une ligne; un message seul peut en prendre deux.
+            cpl = int((width - 0.34) / ((0.0078 if km_fs >= 10 else 0.0066) * _fs(km_fs)))
+            per = cpl * 2 if len(shown) == 1 else cpl
+            return [(_cut(f'{rt(lang, "km_" + m["kind"])}{_sep(lang)}{m["text"]}', per),
+                     rgb(_RAG_BRAND[km_rag.get(m["kind"], "grey")]), False) for m in shown]
+
         # The squad's KPIs take a card of their own, cut from the key messages'
-        # width: two KPIs, the rest counted, like the messages.
+        # width: two KPIs, the rest counted.
         kpis = det.get("kpis") or []
         km_w = 8.02
         if kpis:
@@ -1251,15 +1254,9 @@ def render_pptx(data: dict) -> bytes:
             k_lines = [kline(k) for k in kpis[:2]]
             list_card(Inches(kx), Inches(6.10), Inches(kw), Inches(0.96), rt(lang, "h_kpis"), k_lines, "",
                       extra=(f"+{len(kpis) - 2}" if len(kpis) > 2 else None))
-            km_cpl = int((km_w - 0.34) / (0.0078 * _fs(10)))
-            # A single message may take two of the card's three lines: narrower
-            # beside the KPIs, it was cut where the full width held it.
-            per = km_cpl * 2 if len(kms) == 1 else km_cpl
-            klines = [(_cut(f'{rt(lang, "km_" + m["kind"])}{_sep(lang)}{m["text"]}', per),
-                       rgb(_RAG_BRAND[{"success": "green", "alert": "amber", "risk": "red"}.get(m["kind"], "grey")]),
-                       False) for m in kms[:2]]
         list_card(Inches(0.4), Inches(6.10), Inches(km_w), Inches(0.96),
-                  rt(lang, "h_key_messages"), klines, rt(lang, "no_key_message"), extra=more)
+                  rt(lang, "h_key_messages"), km_lines(km_w), rt(lang, "no_key_message"),
+                  extra=more, fs=km_fs)
 
         bsh = rrect(s, Inches(8.61), Inches(6.10), Inches(4.32), Inches(0.96),
                     B["white"], line=B["line"], radius=0.05)

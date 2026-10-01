@@ -6,7 +6,7 @@ the `status` module rather than stored columns, so a serialized payload always
 reflects the computed health. Budget figures are visibility-gated: they are only
 attached for a privileged viewer (see squad_detail's `privileged` flag)."""
 from . import status as st
-from .models import OrgNode, Squad
+from .models import OrgNode, Squad, current_key_messages
 from .schemas import (
     CommitteeOut,
     KeyMessageOut,
@@ -149,8 +149,9 @@ def squad_detail(squad: Squad, year: int, threshold: int, privileged: bool = Fal
                        sorted(squad.roadmap_items, key=lambda x: (x.quarter, x.display_order, x.id)) if r.year == year],
         kpis=[KpiOut.model_validate(k) for k in sorted(squad.kpis, key=lambda x: x.id)],
         members=[MemberOut.model_validate(m) for m in sorted(squad.members, key=lambda x: (x.display_order, x.id))],
-        key_messages=[KeyMessageOut.model_validate(m) for m in
-                      sorted(squad.key_messages, key=lambda x: (x.display_order, x.id)) if m.year == year],
+        # Those of the reporting in progress, else those of the last submitted one
+        # (flagged ``submitted``): each reporting starts with no message.
+        key_messages=[KeyMessageOut.model_validate(m) for m in current_key_messages(squad.key_messages, year)],
         # Committees are standing (not year-scoped): show them all, active first.
         committees=[CommitteeOut.model_validate(c) for c in
                     sorted(squad.committees, key=lambda x: (not x.is_active, x.display_order, x.id))],

@@ -8,7 +8,7 @@ the same six sections the reporting counts as "changed". The router is gated by 
 lead the squad (or be admin), while reads follow the squad-visibility rules.
 """
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from .. import status as st
@@ -16,7 +16,7 @@ from ..database import get_db
 from ..generalconfig import reference_year
 from ..deps import (assert_can_read_squad, get_current_user, record_audit,
                     require_capability, require_module, require_writer)
-from ..models import ReportSnapshot, Squad, User, utcnow
+from ..models import KeyMessage, ReportSnapshot, Squad, User, current_key_messages, utcnow
 from ..serializers import annual_progress, dependency_label
 from ..schemas import SnapshotMeta, SnapshotOut, SubmitCycleIn
 
@@ -84,8 +84,7 @@ def build_payload(db: Session, squad: Squad, year: int) -> dict:
         "key_messages": [
             {"kind": m.kind, "text": m.text,
              "created_at": m.created_at.strftime("%Y-%m-%d %H:%M") if m.created_at else None}
-            for m in sorted(squad.key_messages, key=lambda x: (x.display_order, x.id))
-            if m.year == year
+            for m in current_key_messages(squad.key_messages, year)
         ],
         "quarter_progress": {str(q): {"progress_pct": progress[q], "comment": comments[q]} for q in (1, 2, 3, 4)},
         "kpis": [
@@ -111,7 +110,8 @@ def submit_cycle(squad_id: int, payload: SubmitCycleIn, db: Session = Depends(ge
     Access: writer role + edit rights on the squad; additionally gated by the
     `reporting` capability. Business rules: defaults to the current year, and
     auto-labels the cycle "<year>-W<week>" when no label is provided.
-    Side effects: writes a "cycle.submit" audit entry.
+    Side effects: writes a "cycle.submit" audit entry, and closes the open key
+    messages of that year (the next reporting starts with none).
     """
     squad = db.get(Squad, squad_id)
     if squad is None:
@@ -141,6 +141,12 @@ def submit_cycle(squad_id: int, payload: SubmitCycleIn, db: Session = Depends(ge
     )
     db.add(snap)
     db.flush()
+    # The reporting's key messages close with it: the next one starts with none,
+    # and the documents keep these until it has its own.
+    db.execute(update(KeyMessage)
+               .where(KeyMessage.squad_id == squad_id, KeyMessage.year == year,
+                      KeyMessage.snapshot_id.is_(None))
+               .values(snapshot_id=snap.id))
     record_audit(db, user.id, "cycle.submit", entity="snapshot", entity_id=snap.id,
                  detail={"squad_id": squad_id, "year": year, "cycle_label": label})
     db.commit()

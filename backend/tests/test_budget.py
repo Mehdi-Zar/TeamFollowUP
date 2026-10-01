@@ -108,3 +108,51 @@ def test_budget_and_key_messages_in_squad_export(seeded, client):
     html_member = client.get(f"/api/reports/dashboard.html?squad_id={sa}&year={YEAR}").text
     assert "Vendor slipping" in html_member
     assert "12\u202f345" not in html_member
+
+
+
+def _slide_text(client, sa):
+    import io
+    from pptx import Presentation
+    r = client.get(f"/api/reports/dashboard.pptx?squad_id={sa}&year={YEAR}")
+    assert r.status_code == 200, r.text
+    prs = Presentation(io.BytesIO(r.content))
+    return "\n".join(sh.text_frame.text for sl in prs.slides for sh in sl.shapes if sh.has_text_frame)
+
+
+def test_key_messages_four_per_reporting_and_each_reporting_starts_afresh(seeded, client):
+    sa = seeded["squad_a"]
+    base = f"/api/squads/{sa}/key-messages?year={YEAR}"
+    login(client, seeded["sl_a"])
+    texts = [f"Message numero {i}" for i in range(1, 5)]
+    for i, txt in enumerate(texts):
+        r = client.post(base, json={"kind": ["success", "alert", "risk", "success"][i], "text": txt})
+        assert r.status_code == 201, r.text
+    # A fifth is refused: four is what a reader takes in, and what the slide holds.
+    assert client.post(base, json={"kind": "risk", "text": "Cinquieme"}).status_code == 409
+    slide = _slide_text(client, sa)
+    for txt in texts:
+        assert txt in slide, txt
+
+    # Submitting closes the reporting and its messages.
+    r = client.post(f"/api/squads/{sa}/snapshots", json={"year": YEAR})
+    assert r.status_code == 201, r.text
+    snap = client.get(f"/api/squads/{sa}/snapshots/{r.json()['id']}").json()
+    assert [m["text"] for m in snap["payload"]["key_messages"]] == texts
+
+    # Between two reportings the documents keep the last submitted messages, read only.
+    kms = client.get(f"/api/squads/{sa}?year={YEAR}").json()["key_messages"]
+    assert [m["text"] for m in kms] == texts and all(m["snapshot_id"] for m in kms)
+    assert client.put(f"/api/squads/{sa}/key-messages/{kms[0]['id']}",
+                      json={"text": "change"}).status_code == 409
+    assert client.delete(f"/api/squads/{sa}/key-messages/{kms[0]['id']}").status_code == 409
+
+    # The new reporting starts with none of its own: four new ones are accepted,
+    # and they replace the old ones everywhere.
+    for i in range(1, 5):
+        assert client.post(base, json={"kind": "success", "text": f"Nouveau {i}"}).status_code == 201
+    assert client.post(base, json={"kind": "risk", "text": "Cinquieme"}).status_code == 409
+    kms = client.get(f"/api/squads/{sa}?year={YEAR}").json()["key_messages"]
+    assert [m["text"] for m in kms] == [f"Nouveau {i}" for i in range(1, 5)]
+    slide = _slide_text(client, sa)
+    assert "Nouveau 4" in slide and "Message numero 1" not in slide

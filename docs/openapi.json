@@ -3,7 +3,7 @@
   "info": {
     "title": "TeamFollowUP",
     "description": "Outil de pilotage de tribe : consolidation, drill-down, saisie, organigramme, exports.",
-    "version": "2.3.2"
+    "version": "2.4.0"
   },
   "paths": {
     "/api/auth/config": {
@@ -1194,7 +1194,7 @@
           "squads"
         ],
         "summary": "Create Key Message",
-        "description": "POST /api/squads/{squad_id}/key-messages: add a curated key message\n(success/alert/risk) for a year (201).\n\nSquad leader (or admin) only. Audited, then ``notify_change(..., \"key_message\",\n...)``. ``year`` defaults to the current one.",
+        "description": "POST /api/squads/{squad_id}/key-messages: add a curated key message\n(success/alert/risk) for a year (201).\n\nSquad leader (or admin) only. Audited, then ``notify_change(..., \"key_message\",\n...)``. ``year`` defaults to the current one. 409 once the squad already has\n``KEY_MESSAGES_MAX`` (4) messages in the reporting in progress.",
         "operationId": "create_key_message_api_squads__squad_id__key_messages_post",
         "parameters": [
           {
@@ -2365,7 +2365,7 @@
           "snapshots"
         ],
         "summary": "Submit Cycle",
-        "description": "Freeze the squad's current reporting cycle into a new snapshot.\n\nPOST /api/squads/{squad_id}/snapshots\nAccess: writer role + edit rights on the squad; additionally gated by the\n`reporting` capability. Business rules: defaults to the current year, and\nauto-labels the cycle \"<year>-W<week>\" when no label is provided.\nSide effects: writes a \"cycle.submit\" audit entry.",
+        "description": "Freeze the squad's current reporting cycle into a new snapshot.\n\nPOST /api/squads/{squad_id}/snapshots\nAccess: writer role + edit rights on the squad; additionally gated by the\n`reporting` capability. Business rules: defaults to the current year, and\nauto-labels the cycle \"<year>-W<week>\" when no label is provided.\nSide effects: writes a \"cycle.submit\" audit entry, and closes the open key\nmessages of that year (the next reporting starts with none).",
         "operationId": "submit_cycle_api_squads__squad_id__snapshots_post",
         "parameters": [
           {
@@ -10962,6 +10962,17 @@
             "type": "string",
             "format": "date-time",
             "title": "Created At"
+          },
+          "snapshot_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snapshot Id"
           }
         },
         "type": "object",

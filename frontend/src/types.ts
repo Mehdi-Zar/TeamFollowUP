@@ -343,6 +343,8 @@ export interface KeyMessage {
   text: string;
   display_order: number;
   created_at: string;
+  /** The submission that carried it; null while its reporting is open. */
+  snapshot_id?: number | null;
 }
 
 /** How often a committee meets (`other` = free text in `frequency_other`). */
