@@ -38,7 +38,7 @@ describe("DirectorySearch", () => {
     fireEvent.change(box, { target: { value: "al" } });
     const option = await screen.findByRole("option", {}, { timeout: 2000 });
     expect(get).toHaveBeenCalledWith("/api/directory/search?q=al");
-    expect(screen.getByText(/LDAP \/ Active Directory n'a pas répondu/)).toBeTruthy();
+    expect(screen.getByText(/LDAP \(OpenLDAP, FreeIPA\.\.\.\) n'a pas répondu/)).toBeTruthy();
     fireEvent.click(option);
     expect(onPick).toHaveBeenCalledWith(ALICE);
   });

@@ -298,3 +298,14 @@ def test_at_most_two_commitments_fall_due_in_a_month_per_squad(client, seeded):
     for i in (1, 2):
         assert client.post("/api/otds", json={**on_b, "title": f"B{i}"}).status_code == 201
     assert client.post("/api/otds", json={**on_b, "title": "B3"}).status_code == 409
+
+
+def test_an_otd_title_is_limited_to_thirty_characters(client, seeded):
+    """Un engagement se lit d'un coup d'oeil: au-dela de 30 caracteres, l'API refuse."""
+    login(client, seeded["tribe"])
+    base = {"tribe_id": seeded["t1"], "year": YEAR}
+    assert client.post("/api/otds", json={**base, "title": "x" * 31}).status_code == 422
+    r = client.post("/api/otds", json={**base, "title": "x" * 30})
+    assert r.status_code == 201, r.text
+    assert client.put(f"/api/otds/{r.json()['id']}",
+                      json={"title": "y" * 31}).status_code == 422

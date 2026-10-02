@@ -36,6 +36,7 @@ from .database import SessionLocal
 from .deps import ADMIN, SQUAD, TRIBE
 from . import platforms as plat
 from .models import Platform, Initiative, Otd, Squad, Tribe, User
+from .schemas import OTD_TITLE_MAX
 from .security import hash_password
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -134,6 +135,13 @@ def import_org(db: Session, data: dict) -> dict:
     if not (tribe_def.get("name") or "").strip():
         raise ValueError("La tribe n'a pas de nom : renseignez la colonne "
                          "\"Nom de la tribe\" de l'onglet Tribe.")
+    # Checked before anything is written: an OTD title the screens refuse would
+    # otherwise enter through the file and be impossible to edit afterwards.
+    too_long = [(o.get("title") or "").strip() for o in data.get("otds") or []
+                if len((o.get("title") or "").strip()) > OTD_TITLE_MAX]
+    if too_long:
+        raise ValueError(f"Titre d'OTD trop long ({OTD_TITLE_MAX} caracteres maximum) : "
+                         + ", ".join(f"« {t} »" for t in too_long) + ".")
     tribe = db.scalar(select(Tribe).where(Tribe.name == tribe_def["name"]))
     if tribe is None:
         tribe = Tribe(name=tribe_def["name"], description=tribe_def.get("description"), display_order=1)

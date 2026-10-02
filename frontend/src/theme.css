@@ -395,10 +395,10 @@ tr:last-child td { border-bottom: none; }
 
 /* Modal dialog */
 .modal-overlay { position: fixed; inset: 0; z-index: 1100; background: rgba(15, 23, 42, .42);
-  display: flex; align-items: flex-start; justify-content: center; padding: 48px 16px; overflow: auto; }
+  display: flex; align-items: flex-start; justify-content: center; padding: 32px 16px; overflow: auto; }
 .modal-card { background: #fff; border-radius: 12px; width: 100%;
   box-shadow: 0 16px 48px rgba(15, 23, 42, .28);
-  display: flex; flex-direction: column; max-height: calc(100vh - 96px); }
+  display: flex; flex-direction: column; max-height: calc(100vh - 64px); }
 .modal-head { display: flex; justify-content: space-between; align-items: center;
   padding: 16px 20px; border-bottom: 1px solid var(--line); flex: 0 0 auto; }
 .modal-body { padding: 20px; overflow-y: auto; flex: 1 1 auto; }
@@ -764,6 +764,59 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); width
 .persona-matrix--rows tr.persona-group-row th { text-align: left; background: var(--bg); color: var(--navy); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; padding-top: 14px; }
 .persona-matrix--rows tbody tr.persona-group-row:hover { background: transparent; }
 .persona-matrix input[type="checkbox"] { width: 17px; height: 17px; accent-color: var(--accent); }
+/* Le tableau dans une carte, et ses deux parties nettement separees: l'acces a
+   l'application sur une bande claire, l'administration sur une bande marine, ses
+   familles repliables avec, repliees, ce que chaque persona y detient. */
+.persona-card {
+  background: #fff; border: 1px solid var(--line); border-radius: 14px;
+  box-shadow: 0 1px 2px rgba(20,27,71,.04), 0 8px 24px rgba(20,27,71,.06);
+}
+.persona-card .persona-matrix--rows thead th { background: #fff; padding: 12px 8px; }
+.persona-card .persona-matrix--rows thead th:first-child { border-top-left-radius: 14px; padding-left: 16px; }
+.persona-card .persona-matrix--rows thead th:last-child { border-top-right-radius: 14px; }
+.persona-card thead th { text-transform: none; letter-spacing: normal; }
+.persona-head {
+  display: inline-block; padding: 3px 10px; border-radius: 999px;
+  background: var(--ice-soft); color: var(--navy); font-size: 12px; font-weight: 700;
+}
+.persona-card .persona-matrix td.persona-option { padding-left: 16px; font-weight: 500; color: var(--text); }
+.persona-section-row th { text-align: left; padding: 12px 16px; border-bottom: none; text-transform: none; letter-spacing: normal; }
+.persona-section-row:hover { background: transparent !important; }
+.persona-section-app th { background: var(--ice-soft); color: var(--navy); }
+.persona-section-admin th {
+  background: linear-gradient(135deg, var(--navy-deep), var(--navy)); color: #fff;
+}
+.persona-section-title { display: block; font-size: 13px; font-weight: 800; letter-spacing: .02em; }
+.persona-section-sub { display: block; font-size: 11px; font-weight: 500; opacity: .75; }
+.persona-section-icon {
+  width: 28px; height: 28px; border-radius: 8px; flex: 0 0 auto;
+  display: inline-flex; align-items: center; justify-content: center; background: rgba(255,255,255,.15);
+}
+.persona-tool {
+  background: rgba(255,255,255,.12); color: #fff; border: 1px solid rgba(255,255,255,.22);
+  border-radius: 8px; padding: 4px 10px; font-size: 11px; font-weight: 600; cursor: pointer;
+}
+.persona-tool:hover { background: rgba(255,255,255,.22); }
+.persona-family-row { cursor: pointer; background: #F8FAFC; }
+.persona-family-row:hover { background: var(--ice-soft) !important; }
+.persona-family-btn {
+  display: inline-flex; align-items: center; gap: 8px; background: none; border: none; padding: 0;
+  font: inherit; font-weight: 700; color: var(--navy); cursor: pointer;
+}
+.persona-chevron { display: inline-block; width: 12px; font-size: 16px; line-height: 1; color: var(--grey); transition: transform .15s ease; }
+.persona-family-row.open .persona-chevron { transform: rotate(90deg); }
+.persona-count {
+  font-size: 11px; font-weight: 700; color: var(--grey); background: #EEF2F6;
+  border-radius: 999px; padding: 1px 8px;
+}
+.persona-held {
+  display: inline-block; min-width: 38px; padding: 2px 8px; border-radius: 999px;
+  font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums;
+  background: var(--ice-soft); color: var(--navy);
+}
+.persona-held.all { background: rgba(2,122,72,.12); color: var(--green); }
+.persona-held.none { background: #F1F5F9; color: var(--grey); }
+.persona-sub-row td.persona-option { padding-left: 40px !important; color: #475467; }
 
 @media (max-width: 768px) {
   .persona-matrix th, .persona-matrix td { padding: 7px 6px; font-size: 12px; }
@@ -1165,3 +1218,176 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); width
 /* Session ended while a page was open: pinned above everything, the page stays. */
 .session-lost { position: fixed; left: 50%; transform: translateX(-50%); bottom: 16px; z-index: 200;
   display: flex; gap: 12px; align-items: center; max-width: min(720px, calc(100vw - 32px)); box-shadow: var(--shadow); }
+
+/* Un parcours plus long que la largeur (l'annuaire en a sept etapes) passe a la
+   ligne plutot que de se cacher derriere une barre de defilement. */
+.step-rail-wrap { flex-wrap: wrap; overflow: visible; row-gap: 8px; }
+.step-rail-wrap .step-chip { padding: 8px 12px; }
+.step-title, .step-state { white-space: nowrap; }
+
+/* La fenetre de reglage d'une squad: un menu d'etapes a gauche (numero, nom, ce
+   qui y est deja), l'etape a droite, en blocs titres et aeres. */
+.sq-title { display: flex; flex-direction: column; gap: 2px; }
+.sq-title-sub { font-size: 12px; font-weight: 500; color: var(--grey); }
+.sq-layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 28px; align-items: start; }
+.sq-nav { position: sticky; top: 0; display: flex; flex-direction: column; gap: 4px;
+  padding-right: 20px; border-right: 1px solid var(--line); }
+.sq-nav-item {
+  display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
+  background: none; border: 1px solid transparent; border-radius: 12px; padding: 10px 12px;
+  font: inherit; color: var(--text); cursor: pointer; transition: background .12s, border-color .12s;
+}
+.sq-nav-item:hover { background: #F5F7FB; }
+.sq-nav-item.on { background: var(--ice-soft); border-color: rgba(30, 39, 97, .10); }
+.sq-nav-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.sq-nav-title { font-size: 14px; font-weight: 700; color: var(--navy); }
+.sq-nav-meta { font-size: 12px; color: var(--grey); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sq-panel { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+.sq-panel-head h3 { margin: 0; font-size: 20px; color: var(--navy); }
+.sq-panel-head p { margin: 4px 0 0; font-size: 13px; color: var(--grey); }
+.sq-section {
+  display: flex; flex-direction: column; gap: 14px;
+  border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; background: #fff;
+}
+.sq-section-head h4 { margin: 0; font-size: 14px; font-weight: 700; color: var(--navy); }
+.sq-section-head p { margin: 3px 0 0; font-size: 12.5px; color: var(--grey); line-height: 1.45; }
+.sq-section label:not(.switch) { display: block; margin-bottom: 6px; }
+.sq-grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
+.sq-readonly { display: flex; flex-direction: column; gap: 2px; }
+.sq-option { display: flex; align-items: center; justify-content: space-between; gap: 18px;
+  padding: 12px 0; border-top: 1px solid var(--line); }
+.sq-section-head + .sq-option { border-top: none; padding-top: 0; }
+.sq-option-text { display: flex; flex-direction: column; gap: 2px; }
+.sq-danger { color: var(--red); }
+.sq-danger:hover { background: rgba(180, 35, 24, .08); }
+@media (max-width: 860px) {
+  .sq-layout { grid-template-columns: 1fr; gap: 16px; }
+  .sq-nav { position: static; flex-direction: row; overflow-x: auto; padding: 0 0 8px; border-right: none;
+    border-bottom: 1px solid var(--line); }
+  .sq-nav-item { flex: 0 0 auto; width: auto; }
+}
+
+/* A step window holds more: its body takes the height it is given. */
+.modal-body:has(> .sq-layout) { padding: 24px 28px; min-height: min(640px, calc(100vh - 220px)); }
+/* Inside a window, a table header sticks to the top of the window's own scroll,
+   not under the page's top bar: a window opened from a card inherited the card's
+   offset and its header floated in the middle of the rows. */
+.modal-overlay table thead th { top: 0; }
+
+/* Annuaire, test personnalise: les exemples a un clic, la reponse brute lisible. */
+.sq-chip { font-family: ui-monospace, monospace; font-size: 11.5px; border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; }
+.sq-pre {
+  margin: 0; max-height: 420px; overflow: auto; padding: 14px 16px; border-radius: 12px;
+  background: #0F172A; color: #E2E8F0; font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-break: break-word;
+}
+
+/* La barre laterale: l'administration en bas, a part, sous un trait. */
+.sidebar-admin { border-top: 1px solid rgba(255, 255, 255, .14); padding-top: 10px; }
+
+/* ---- Administration: les ecrans, au style des fenetres a etapes ----
+   Un en-tete (nom et usage de l'ecran), des blocs a fin trait et coins arrondis,
+   des titres de bloc marine, de l'air. */
+.admin-page-head h2 { margin: 0; font-size: 22px; color: var(--navy); }
+.admin-page-head p { margin: 4px 0 0; font-size: 13.5px; color: var(--grey); max-width: 760px; line-height: 1.5; }
+.admin-content .card {
+  border: 1px solid var(--line); border-radius: 14px;
+  box-shadow: 0 1px 2px rgba(20, 27, 71, .04); padding: 20px 22px;
+}
+.admin-content .card > h3:first-child,
+.admin-content .card > .between:first-child h3 { margin: 0 0 12px; font-size: 15px; color: var(--navy); }
+.admin-content .card label:not(.switch) { display: block; margin-bottom: 5px; }
+.admin-content .banner { border-radius: 12px; line-height: 1.5; }
+.admin-content table th { font-size: 11px; letter-spacing: .04em; }
+/* Squads: la colonne du nom se lisait « Clo », « Tri ». */
+.admin-squads-table td:first-child input { font-weight: 600; }
+/* Une liste de reglages: une ligne par element, son interrupteur a droite. */
+.admin-list { padding: 4px 22px !important; }
+.admin-list-row { padding: 14px 0; border-bottom: 1px solid var(--line); }
+.admin-list-row:last-child { border-bottom: none; }
+.admin-list-row.off .admin-list-text { opacity: .6; }
+.admin-list-main { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+.admin-list-text { display: flex; flex-direction: column; gap: 2px; }
+.admin-list-sub {
+  display: flex; flex-direction: column; gap: 8px;
+  margin: 10px 0 0; padding: 10px 14px; border-radius: 10px; background: #F8FAFC;
+}
+/* L'administration prend la largeur qu'on lui donne: ses tableaux en ont besoin. */
+.app-content:has(.admin-layout) { max-width: 1480px; }
+
+/* ---- Administration: jamais de defilement lateral ----
+   Les tableaux tiennent dans la largeur: leurs champs et listes se reduisent a
+   leur colonne, les valeurs longues (emails, DN) passent a la ligne, et les blocs
+   de code comme les apercus se replient. Une barre de defilement horizontale
+   cachait des colonnes entieres (le bouton Supprimer, les contributeurs). */
+.admin-content { container-type: inline-size; }
+.admin-content table { width: 100%; max-width: 100%; }
+.admin-content td, .admin-content th { overflow-wrap: anywhere; }
+.admin-content td input:not([type="checkbox"]):not([type="radio"]),
+.admin-content td select, .admin-content td textarea { width: 100%; min-width: 0; max-width: 100%; }
+.admin-content td .w-auto { width: 100%; }
+.admin-content pre, .admin-content code { white-space: pre-wrap; overflow-wrap: anywhere; }
+.admin-content iframe, .admin-content img { max-width: 100%; }
+.admin-content .card[style*="overflow"] { overflow-x: visible !important; }
+/* The Steerco grids (12 months) shrink their columns instead of scrolling. */
+.admin-content .sc-hist { overflow-x: visible; }
+.admin-content .sc-hist col.c-m, .admin-content .sc-hist col.c-cur,
+.admin-content .sc-hist col.c-delta, .admin-content .sc-hist col.c-status { width: auto; }
+.admin-content .sc-hist th, .admin-content .sc-hist td { white-space: normal; }
+/* Narrow: a table's row becomes a block, each cell on its own line with its header. */
+@container (max-width: 720px) {
+  .admin-content table:not(.persona-matrix) thead { display: none; }
+  .admin-content table:not(.persona-matrix), .admin-content table:not(.persona-matrix) tbody,
+  .admin-content table:not(.persona-matrix) tr, .admin-content table:not(.persona-matrix) td { display: block; width: 100%; }
+  .admin-content table:not(.persona-matrix) tr { padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .admin-content table:not(.persona-matrix) td { border: none; padding: 4px 12px; text-align: left !important; }
+}
+
+/* Annuaire: le tableau des connecteurs, en console d'administration. */
+.dir-summary { display: flex; flex-wrap: wrap; gap: 8px 28px; padding: 10px 14px;
+  border: 1px solid var(--line); border-radius: 10px; background: #F8FAFC; font-size: 13px; }
+.dir-table tbody tr { cursor: pointer; }
+.dir-table tbody tr.on { background: var(--ice-soft); box-shadow: inset 3px 0 0 var(--accent); }
+.dir-table .mono { font-family: ui-monospace, monospace; font-size: 12px; }
+/* En colonne (ecran etroit), la zone de contenu prend toute la largeur: mesuree
+   comme conteneur, elle ne se dimensionne plus sur son contenu et se serait
+   reduite a rien. */
+.admin-content { width: 100%; align-self: stretch; }
+/* Personas, ecran etroit: les cases se resserrent, les noms passent a la ligne. */
+@container (max-width: 760px) {
+  .admin-content .persona-matrix th, .admin-content .persona-matrix td { padding: 6px 3px; font-size: 11.5px; }
+  .admin-content .persona-head { padding: 2px 6px; font-size: 10.5px; white-space: normal; }
+  .admin-content .persona-matrix td.persona-option { padding-left: 8px !important; }
+  .admin-content .persona-sub-row td.persona-option { padding-left: 16px !important; }
+}
+/* A button or a badge never breaks inside a word: only text cells wrap. */
+.admin-content td button, .admin-content td .btn, .admin-content td .badge { overflow-wrap: normal; white-space: nowrap; }
+/* Except the families of the personas matrix: their name is a label, it wraps. */
+.admin-content .persona-matrix td button.persona-family-btn { white-space: normal; text-align: left; }
+
+/* Saisie, jalons: un trimestre par ligne, toute la largeur. En-tete (trimestre,
+   avancement, case N/A, ajout), puis une ligne par jalon en colonnes alignees:
+   statut, theme, titre entier, etape, porteur, menu de statut. */
+.q-row { border: 1px solid var(--line); border-radius: 14px; padding: 14px 18px; background: #fff; }
+.q-row.current { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(23, 92, 211, .08); }
+.q-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.q-pill { display: inline-flex; align-items: center; justify-content: center; min-width: 38px; height: 28px;
+  padding: 0 10px; border-radius: 8px; background: var(--navy); color: #fff; font-weight: 800; font-size: 13px; }
+.q-progress { display: inline-flex; align-items: center; gap: 10px; }
+.q-bar { display: inline-block; width: 180px; height: 8px; border-radius: 6px; background: var(--line); overflow: hidden; }
+.q-bar > span { display: block; height: 100%; background: var(--navy); }
+.q-items { margin-top: 10px; border-top: 1px solid var(--line); }
+.q-item { display: grid; grid-template-columns: 12px minmax(90px, 170px) minmax(0, 1fr) auto minmax(0, 150px) 150px;
+  align-items: center; gap: 14px; padding: 9px 4px; border-bottom: 1px solid var(--line); }
+.q-item:last-child { border-bottom: none; }
+.q-item:hover { background: #F8FAFC; }
+.q-theme .badge { white-space: normal; text-align: left; }
+.q-title, .q-title:disabled { text-align: left; padding: 0; border: none; background: none; box-shadow: none; min-height: 0;
+  font-size: 14px; font-weight: 500; color: var(--text); white-space: normal; line-height: 1.35; cursor: pointer; opacity: 1; }
+.q-title:hover:not(:disabled) { color: var(--accent); text-decoration: underline; }
+.q-owner { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.q-item select { width: 100%; }
+@media (max-width: 760px) {
+  .q-item { grid-template-columns: 12px minmax(0, 1fr) 130px; }
+  .q-item .q-theme, .q-item .q-owner, .q-item > span:nth-child(4) { display: none; }
+  .q-bar { width: 110px; }
+}

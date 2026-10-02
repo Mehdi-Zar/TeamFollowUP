@@ -121,6 +121,14 @@ export default function AdminPage() {
         ))}
       </nav>
       <div className="admin-content stack" style={{ gap: 16 }}>
+        {/* Chaque ecran dit ce qu'il est et a quoi il sert, comme les etapes des
+            fenetres de squad et d'annuaire: le contenu ne commence plus a froid. */}
+        {tab && (
+          <div className="admin-page-head">
+            <h2>{t(TAB_LABEL[tab] ?? tab)}</h2>
+            <p>{t(`admin.desc.${tab}`)}</p>
+          </div>
+        )}
         {tab === "tribes" && <TribesAdmin />}
         {tab === "import" && <ImportOrgAdmin />}
         {tab === "tribe" && <TribeSelfAdmin perms={perms} />}

@@ -16,7 +16,8 @@ import { useI18n } from "../i18n";
 import { CandidateJalon, OtdReport, OtdScope, SquadDetail } from "../types";
 import { Collapsible, ErrorBanner, Modal, PickItem } from "./ui";
 
-/** Show only the date part of an ISO timestamp, or "-" when absent. */
+/** Longueur maximale d'un titre d'OTD, la meme que cote API (schemas.OTD_TITLE_MAX). */
+const OTD_TITLE_MAX = 30;
 
 /** La portee d'un engagement, avec son defaut: les lignes d'avant la distinction
  *  sont, par definition, des engagements du management. */
@@ -216,6 +217,8 @@ function OtdDetailModal({ otd, squad, onClose, onSaved, t }: any) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const set = (k: string, v: any) => setF((p: any) => ({ ...p, [k]: v }));
+  // Un titre saisi avant la limite peut la depasser: il faut le raccourcir pour enregistrer.
+  const tooLong = (f.title ?? "").trim().length > OTD_TITLE_MAX;
   const scope: OtdScope = scopeOf(otd);
   // Chaque portee a son propre lien vers le jalon; lire celui de l'autre ferait
   // apparaitre comme « deja pris » un jalon que cette portee peut parfaitement
@@ -241,7 +244,7 @@ function OtdDetailModal({ otd, squad, onClose, onSaved, t }: any) {
   });
 
   async function save() {
-    if (!f.title?.trim() || !f.committed_date || busy) return;
+    if (!f.title?.trim() || tooLong || !f.committed_date || busy) return;
     setBusy(true);
     setErr(null);
     try {
@@ -279,7 +282,7 @@ function OtdDetailModal({ otd, squad, onClose, onSaved, t }: any) {
     <Modal width={640} title={f.id ? t("otd.edit") : t(`otd.scope_${scope}`)} onClose={onClose}
       footer={<>
         <button className="btn-secondary" onClick={onClose}>{t("action.cancel")}</button>
-        <button onClick={save} disabled={!f.title?.trim() || !f.committed_date || busy}>{busy ? t("common.saving") : t("action.save")}</button>
+        <button onClick={save} disabled={!f.title?.trim() || tooLong || !f.committed_date || busy}>{busy ? t("common.saving") : t("action.save")}</button>
       </>}>
       <div className="stack" style={{ gap: 16 }}>
         {err && <ErrorBanner message={err} />}
@@ -294,7 +297,10 @@ function OtdDetailModal({ otd, squad, onClose, onSaved, t }: any) {
         <div className="stack" style={{ gap: 4 }}>
           <label className="field-label">{t("otd.title_field")} *</label>
           <input value={f.title ?? ""} placeholder={t("otd.title_ph")} style={{ fontSize: 15 }}
-                 onChange={(e) => set("title", e.target.value)} />
+                 maxLength={OTD_TITLE_MAX} onChange={(e) => set("title", e.target.value)} />
+          <div className="small muted" style={{ textAlign: "right", color: tooLong ? "var(--red)" : undefined }}>
+            {(f.title ?? "").trim().length}/{OTD_TITLE_MAX}
+          </div>
         </div>
 
         <div className="stack" style={{ gap: 4 }}>

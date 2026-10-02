@@ -44,22 +44,41 @@ La recherche porte sur `displayName`, `mail` et `userPrincipalName`, comptes act
 seulement (`$search` avec `ConsistencyLevel: eventual`). Les hôtes Graph et
 d'authentification se changent pour les clouds nationaux (US Gov, Chine).
 
-### LDAP / Active Directory
+### Active Directory
 
-Active Directory, OpenLDAP, FreeIPA, tout annuaire LDAP v3.
+Un connecteur à part, parce qu'AD ne parle pas le même dialecte LDAP que les autres
+annuaires : authentification par UPN, `sAMAccountName`, comptes désactivés marqués
+dans `userAccountControl`. Ses réglages partent donc de valeurs AD et restent
+distincts de ceux du connecteur LDAP : les deux peuvent être actifs à la fois.
+
+| Champ | Exemple, ou valeur par défaut |
+|---|---|
+| URL | `ldaps://dc.corp.example:636` (`3269` pour le catalogue global, toute la forêt) |
+| Compte de service | `svc-teamfollowup@corp.example` ou `CN=svc-teamfollowup,OU=Services,DC=corp,DC=example` |
+| Base DN | `DC=corp,DC=example` |
+| Filtre des utilisateurs | `(&(objectCategory=person)(objectClass=user)(mail=*)(!(userAccountControl:1.2.840.113556.1.4.803:=2)))` : personnes avec un email, comptes désactivés exclus |
+| Attributs où chercher | `displayName,mail,userPrincipalName,sAMAccountName,givenName,sn` |
+
+Quand AD refuse l'authentification, le test traduit le sous-code qu'il renvoie
+(`data 52e` mot de passe incorrect, `775` compte verrouillé, `532` mot de passe expiré,
+`533` compte désactivé, `525` compte introuvable...).
+
+### LDAP (OpenLDAP, FreeIPA, 389 Directory Server...)
 
 | Champ | Exemple |
 |---|---|
-| URL | `ldaps://ad.corp.example:636` (ou `ldap://...:389` avec StartTLS) |
-| Compte de service | `CN=svc-teamfollowup,OU=Services,DC=corp,DC=example` |
-| Base DN | `DC=corp,DC=example` |
-| Filtre des utilisateurs | `(&(objectClass=user)(mail=*)(!(userAccountControl:1.2.840.113556.1.4.803:=2)))` pour les comptes AD actifs |
-| Attributs où chercher | `displayName,cn,mail,givenName,sn,sAMAccountName` |
+| URL | `ldaps://ldap.corp.example:636` (ou `ldap://...:389` avec StartTLS) |
+| Compte de service | `cn=svc,ou=services,dc=corp,dc=example` ; vide pour une connexion anonyme |
+| Base DN | `ou=people,dc=corp,dc=example` |
+| Filtre des utilisateurs | `(&(objectClass=person)(mail=*))` |
+| Attributs où chercher | `displayName,cn,mail,givenName,sn,uid` |
 
-La correspondance des attributs (nom, email, prénom, nom, fonction, service) se règle
-pour les annuaires qui n'utilisent pas les noms usuels. Le texte tapé est échappé
-avant d'entrer dans le filtre LDAP. Le mot de passe du compte de service n'est jamais
-envoyé sur une connexion en clair : sans LDAPS ni StartTLS, la recherche est refusée.
+Pour les deux connecteurs, la correspondance des attributs (nom, email, prénom, nom,
+fonction, service) se règle pour les annuaires qui n'utilisent pas les noms usuels :
+le test affiche une entrée brute avec tous ses attributs pour la remplir. Le texte
+tapé est échappé avant d'entrer dans le filtre LDAP. Le mot de passe du compte de
+service n'est jamais envoyé sur une connexion en clair : sans LDAPS ni StartTLS, la
+recherche est refusée.
 
 ### Google Workspace
 
@@ -73,7 +92,59 @@ envoyé sur une connexion en clair : sans LDAPS ni StartTLS, la recherche est re
 
 Les comptes suspendus ou archivés ne sont pas proposés.
 
-## 3. Provisioning SCIM 2.0
+## 3. L'écran Administration > Annuaire
+
+La page est une liste en deux groupes : **Recherche de personnes** (Microsoft Entra ID,
+Active Directory, LDAP, Google Workspace) et **Provisioning des comptes** (SCIM 2.0).
+Chaque ligne donne le protocole, le point de connexion configuré et l'état (activé,
+configuré mais désactivé, non configuré), avec un bouton **Configurer**.
+
+**Configurer** ouvre une fenêtre construite comme celle du reporting Steerco : les
+étapes à gauche, avec ce qui est déjà fait, l'étape courante à droite, puis Précédent,
+Suivant et **Enregistrer**. Fermer sans enregistrer remet les réglages enregistrés.
+
+| Connecteur | Étapes |
+|---|---|
+| Entra ID, Google Workspace | Prérequis, Connexion, Test, Activation |
+| Active Directory, LDAP | Prérequis, Connexion, Recherche (base, filtre, correspondance des attributs), Test, Activation |
+| Provisioning SCIM | Prérequis (par fournisseur : Entra ID, Okta, PingFederate, autre), URL, Comptes créés, Jeton, Activation, Test |
+
+L'étape **URL** du SCIM montre et modifie l'**URL publique de l'application**, le
+même réglage que les rappels OIDC et SAML (Administration > Authentification) :
+l'URL SCIM en découle (`<URL publique>/scim/v2`), avec un bouton Copier.
+
+### Le test d'une source de recherche
+
+Trois tests : **Chercher un utilisateur** (la recherche des écrans), **Chercher un
+groupe** (Graph `/groups`, groupes AD et LDAP, API Groups de Google, avec la permission
+qu'il demande) et **Test personnalisé** (filtre, base, portée et attributs LDAP ; chemin
+Graph ou Admin SDK), en lecture seule et sur le serveur configuré uniquement, réponse
+affichée brute. Chacun détaille ses étapes, avec son résultat (OK,
+avertissement, échec, ignorée), sa durée et ce qu'il faut corriger :
+
+| Source | Étapes |
+|---|---|
+| Entra ID | configuration, jeton (avec les permissions qu'il porte réellement : un jeton sans `User.Read.All` est signalé avant que Graph ne réponde 403), recherche |
+| Active Directory, LDAP | configuration, connexion et TLS, authentification, base de recherche, recherche (filtre exact envoyé, entrées sans email signalées), attributs (correspondances absentes de l'entrée signalées) |
+| Google Workspace | clé du compte de service, administrateur, jeton, recherche |
+
+Le test s'arrête à la première étape en échec. Il affiche ensuite les personnes
+trouvées et, pour AD et LDAP, l'**entrée brute** de l'annuaire. **Copier le
+diagnostic** met le résultat complet (JSON) dans le presse-papiers, pour un ticket.
+
+### Le test du provisioning SCIM
+
+Le fournisseur d'identité appelle l'application, et non l'inverse : le test vérifie
+donc ce qu'il rencontrera. Activation, jeton (collez celui saisi chez le fournisseur :
+le test dit s'il correspond au jeton en place), URL publique (HTTPS exigé par Entra et
+Okta), persona et tribe des comptes créés. Il liste surtout les **derniers appels
+reçus**, acceptés ou refusés avec la raison (provisioning désactivé, pas de jeton,
+mauvais jeton), et les dernières modifications faites par SCIM. Un appel refusé ne
+laisse aucune autre trace ; sans appel du tout, le fournisseur n'atteint pas l'URL
+(pare-feu, proxy, DNS). Ces appels sont gardés en mémoire, par processus, depuis le
+dernier démarrage.
+
+## 4. Provisioning SCIM 2.0
 
 Avec SCIM, c'est le fournisseur d'identité qui tient les comptes à jour : il crée le
 compte quand on assigne l'application à quelqu'un, le met à jour quand l'annuaire
@@ -99,7 +170,14 @@ application maison, *Base URL* = l'URL SCIM, *Authorization* = `Bearer <jeton>`,
 identifiant unique = `email`. Activer *Create Users*, *Update User Attributes* et
 *Deactivate Users*.
 
-OneLogin, JumpCloud, Ping et les autres connecteurs SCIM 2.0 se règlent de la même
+**PingFederate** : connecteur SCIM de PingFederate (*SCIM Connector*). *Applications >
+SP Connections > Create Connection*, type *Outbound Provisioning*, *SCIM Connector*.
+Cible : *SCIM URL* = l'URL SCIM, *SCIM Version* 2.0, *Authentication Method* = *OAuth 2
+Bearer Token* avec le jeton. Identifiant unique `userName` (ou email), *Remove User
+Action* = *Disable*. Le canal lit la source (LDAP ou AD) et associe `userName`,
+`emails`, `name.givenName`, `name.familyName`, `displayName`, `active`.
+
+OneLogin, JumpCloud, PingOne et les autres connecteurs SCIM 2.0 se règlent de la même
 façon.
 
 ### Ce que SCIM fait et ne fait pas
@@ -121,13 +199,13 @@ d'administrateur : un jeton volé ne donne pas l'administration. Le compte de se
 Toutes les opérations SCIM sont tracées dans le journal d'audit (`scim.user_create`,
 `scim.user_update`, `scim.user_status`, `scim.user_delete`).
 
-## 4. Référence technique
+## 5. Référence technique
 
 | Élément | Où |
 |---|---|
 | Configuration (une entrée `app_settings['directory']`) | `backend/app/directoryconfig.py` |
-| Connecteurs Entra / LDAP / Google | `backend/app/directory.py` |
-| Recherche et écran d'administration | `backend/app/routers/directory.py` (`/api/directory/*`, `/api/admin/directory-config`) |
+| Connecteurs Entra, Active Directory, LDAP, Google et leur diagnostic | `backend/app/directory.py` |
+| Recherche et écran d'administration | `backend/app/routers/directory.py` (`/api/directory/*`, `/api/admin/directory-config`, `.../test`, `.../scim-test`) |
 | Serveur SCIM | `backend/app/routers/scim.py` (`/scim/v2`) |
 | Identifiant SCIM du compte | colonne `users.scim_external_id` (migration `0042`) |
 | Composant de recherche | `frontend/src/components/DirectorySearch.tsx` |

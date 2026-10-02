@@ -14,6 +14,7 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { api, errorText } from "../api";
 import { useI18n } from "../i18n";
 import { Modal, Spinner } from "./ui";
+import { StepLayout } from "./StepLayout";
 import { BackfillGrid } from "./SteercoEditor";
 import {
   SteercoData, SteercoKpi, SlaCell, SteercoEvent, PlatformTemplate, EditableItems,
@@ -175,9 +176,21 @@ export default function SteercoWizard({ platformId, platformName, initialPeriod,
   const monthName = monthLongLabel(period, lang);
   const ownedCount = editable.kpis.length + editable.sla.length + (editable.incidents ? 1 : 0);
 
+  // What each step already holds, under its name in the side menu.
+  const kpiFilled = kpis.filter((k) => (k.value || "").trim()).length;
+  const slaFilled = (sla.cells || []).filter((c) => (c.v || "").trim()).length;
+  const evCount = evList("last_events").length + evList("next_events").length;
+  const meta: Record<string, { text: string; done: boolean }> = {
+    month: { text: monthName, done: true },
+    kpis: { text: `${kpiFilled}/${kpis.length}`, done: kpis.length > 0 && kpiFilled === kpis.length },
+    sla: { text: `${slaFilled}/${sla.services.length}`, done: sla.services.length > 0 && slaFilled === sla.services.length },
+    events: { text: t("steerco.wiz.meta_events", { n: evCount }), done: evCount > 0 },
+    review: { text: existed ? t("steerco.wiz.status_draft") : t("steerco.wiz.status_new"), done: false },
+  };
+
   return (
     <Modal
-      width={980}
+      width={1360}
       title={t("steerco.wiz.title")}
       onClose={onClose}
       footer={
@@ -196,27 +209,20 @@ export default function SteercoWizard({ platformId, platformName, initialPeriod,
         </div>
       }
     >
-      {/* Stepper */}
-      <div className="wiz-steps">
-        {steps.map((s, i) => (
-          <div key={s.key} className={`wiz-step ${i === step ? "active" : i < step ? "done" : ""}`}
-               onClick={() => i < step && setStep(i)}>
-            <span className="wiz-dot">{i < step ? "✓" : i + 1}</span>
-            <span>{s.label}</span>
-          </div>
-        ))}
-      </div>
-
-      {/* Persistent context: which platform + which month this report is for */}
-      <div className="wiz-ctx">
-        <span>{t("steerco.wiz.ctx_prefix")}</span>
-        <span className="wiz-month">{platformName}, {monthName}</span>
-        <span className="wiz-badge">{existed ? t("steerco.wiz.status_draft") : t("steerco.wiz.status_new")}</span>
-      </div>
+      <StepLayout ariaLabel={t("steerco.wiz.title")} at={step} onGo={setStep}
+                  desc={t(`steerco.wiz.stepd.${steps[step].key}`)}
+                  steps={steps.map((x) => ({ key: x.key, title: x.label, meta: meta[x.key]?.text, done: meta[x.key]?.done }))}
+                  aside={
+                    // Persistent context: which platform + which month this report is for.
+                    <div className="wiz-ctx" style={{ margin: 0 }}>
+                      <span className="wiz-month">{platformName}, {monthName}</span>
+                      <span className="wiz-badge">{existed ? t("steerco.wiz.status_draft") : t("steerco.wiz.status_new")}</span>
+                    </div>
+                  }>
 
       {/* What this contributor owns on a slide fed by several squads. */}
       {!ro && contributors.length > 1 && (
-        <div className="small muted" style={{ marginBottom: 10 }}>
+        <div className="small muted">
           {t("steerco.wiz.shared_hint", { n: ownedCount, who: contributors.map((c) => c.name).join(", ") })}
         </div>
       )}
@@ -477,6 +483,7 @@ export default function SteercoWizard({ platformId, platformName, initialPeriod,
           )}
         </>
       )}
+      </StepLayout>
     </Modal>
   );
 }

@@ -2,6 +2,61 @@
 
 ## Unreleased
 
+- Titre d'OTD limite a 30 caracteres (API, import Excel/YAML, compteur dans la
+  fenetre d'edition). Les donnees de demonstration ont des titres raccourcis. Un OTD
+  existant plus long reste lisible, mais il faut raccourcir son titre pour l'enregistrer.
+- Administration > Annuaire : un parcours par etapes comme le reporting (connecteur,
+  prerequis, connexion, recherche, test, activation) pour Entra ID, Active Directory,
+  LDAP, Google Workspace et SCIM, avec un test detaille etape par etape (duree, cause, correction, entree
+  brute LDAP, copie du diagnostic). Active Directory devient un connecteur distinct de
+  LDAP, avec ses propres reglages et la traduction des codes de refus AD (doc 34).
+- SCIM : PingFederate documente a cote d'Entra ID et Okta ; l'URL SCIM suit l'URL
+  publique de l'application (celle d'OIDC et SAML), modifiable depuis l'etape URL.
+- Personas et droits : le tableau separe nettement l'acces a l'application (bande
+  claire) de l'administration (bande marine) ; les familles d'administration se
+  replient (repliees par defaut, choix memorise) et montrent, repliees, ce que chaque
+  persona y detient (« 3/7 »).
+- Annuaire, etape Test : trois tests, « Chercher un utilisateur », « Chercher un
+  groupe » (Graph /groups, groupes AD et LDAP, API Groups de Google, avec la verification
+  de la permission correspondante) et « Test personnalise » (filtre, base, portee et
+  attributs LDAP ; chemin Graph ou Admin SDK), en lecture seule et sur le serveur
+  configure uniquement ; reponse brute affichee.
+- Administration : chaque ecran a un en-tete (nom et usage), des blocs au style des
+  fenetres a etapes et la pleine largeur ; Services actifs en une seule liste ; Squads
+  lisible. Dans la barre laterale, Administration est en bas, a part.
+- Administration : plus aucun defilement horizontal, quelle que soit la largeur
+  (verifie sur les 22 ecrans a 420, 768, 1024 et 1280 px) : les tableaux tiennent dans
+  leur largeur, et passent en lignes empilees sur ecran etroit.
+- Annuaire refait : la page est une liste (recherche de personnes, provisioning SCIM)
+  avec protocole, point de connexion et etat ; « Configurer » ouvre une fenetre a
+  etapes comme celle du reporting Steerco.
+- Test SCIM : activation, jeton colle compare au jeton en place, URL, persona et tribe,
+  derniers appels recus (acceptes ou refuses, avec la raison) et dernieres modifications.
+- Correction : Tableau de bord, passer d'Initiatives a Steerco faisait disparaitre les
+  onglets (ils attendaient les donnees de la vue d'ensemble, que Steerco ne charge pas).
+- Correction : la connexion LDAP echouait toujours (« serveur injoignable ») face a un
+  vrai serveur, `open()` de ldap3 ne renvoyant rien en cas de succes.
+- Mes squads, fenetre de reglage d'une squad : plus large, un menu d'etapes a gauche
+  (numero, nom et ce qui y est deja : responsable, nombre d'OTD, de membres...) et
+  chaque etape en blocs titres et aeres (Identite, Responsables, Contributeurs,
+  Perimetre, Rattachement ; Modules avec des interrupteurs expliques).
+- Mes squads : le bouton « Equipe » ouvre une fenetre dediee a l'equipe (la meme que
+  depuis l'organigramme) ; l'equipe n'est plus une etape de la fenetre de reglage.
+- Les fenetres a etapes partagent la meme presentation (composant StepLayout) : la
+  fenetre de squad et l'assistant Steerco (mois, KPI, SLA, evenements, relecture, avec
+  ce qui est rempli sous chaque etape). Fenetres plus grandes et plus hautes. Dans une
+  fenetre, l'en-tete d'un tableau ne flotte plus au milieu des lignes.
+- Equipe : le pourcentage de l'ajout d'un membre est libelle « Temps sur la squad ».
+- Saisie : le budget devient une etape du reporting (consomme, atterrissage,
+  commentaire), pour le squad leader et ses co-leaders (pas les contributeurs) ;
+  l'enveloppe reste au tribe leader dans Mes squads. La ligne « Equipe de la squad renseignee » quitte la liste d'envoi : l'equipe
+  n'est pas du reporting.
+- Saisie, etape Jalons : un trimestre par ligne sur toute la largeur (avancement, case
+  N/A, ajout dans l'en-tete ; jalons en colonnes alignees : statut, theme, titre entier,
+  etape, porteur, menu de statut) ; le trimestre en cours est mis en avant.
+- Saisie : la case « Non concerne » d'un trimestre est aussi dans le tableau
+  d'avancement trimestriel.
+
 ## 2.5.0 (2026-10-01)
 
 ### Annuaire d'entreprise et provisioning SCIM

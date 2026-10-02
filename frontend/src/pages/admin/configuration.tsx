@@ -73,24 +73,29 @@ export function ModulesAdmin() {
   );
 
   return (
-    <div className="stack" style={{ maxWidth: 640 }}>
+    <div className="stack" style={{ maxWidth: 760 }}>
       {error && <ErrorBanner message={error} />}
       <div className="banner">{t("modules.intro")}</div>
-      <div className="stack" style={{ gap: 12 }}>
+      {/* Une seule liste, un service par ligne, son interrupteur a droite: des
+          cartes empilees se lisaient comme autant d'ecrans differents. */}
+      <div className="card admin-list">
         {MODULE_TREE.map(({ key, features }) => {
           const mod = cfg[key] || {};
           const on = mod.enabled !== false;
           return (
-            <div key={key} className="card stack" style={{ gap: 10, opacity: on ? 1 : 0.7 }}>
-              <div className="between">
-                <Switch checked={on} strong label={t(`mod.${key}`)} onChange={(v: boolean) => setModule(key, v)} />
-                {!on && <span className="badge badge-red">{t("modules.off")}</span>}
+            <div key={key} className={`admin-list-row${on ? "" : " off"}`}>
+              <div className="admin-list-main">
+                <span className="admin-list-text">
+                  <span className="strong">{t(`mod.${key}`)}</span>
+                  {features.length > 0 && <span className="small muted">{t(`mod.${key}.desc`)}</span>}
+                </span>
+                <span className="inline" style={{ gap: 10 }}>
+                  {!on && <span className="badge badge-grey">{t("modules.off")}</span>}
+                  <Switch checked={on} label="" onChange={(v: boolean) => setModule(key, v)} />
+                </span>
               </div>
-              {features.length > 0 && (
-                <div className="small muted">{t(`mod.${key}.desc`)}</div>
-              )}
               {features.length > 0 && on && (
-                <div className="stack" style={{ gap: 8, paddingLeft: 14, borderLeft: "2px solid var(--line)" }}>
+                <div className="admin-list-sub">
                   {features.map((f) => (
                     <Switch key={f} checked={mod[f] !== false} label={t(`mod.${key}.${f}`)}
                             onChange={(v: boolean) => setFeature(key, f, v)} />

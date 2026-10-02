@@ -156,3 +156,18 @@ def test_key_messages_four_per_reporting_and_each_reporting_starts_afresh(seeded
     assert [m["text"] for m in kms] == [f"Nouveau {i}" for i in range(1, 5)]
     slide = _slide_text(client, sa)
     assert "Nouveau 4" in slide and "Message numero 1" not in slide
+
+
+def test_a_contributor_neither_sees_nor_manages_the_budget(seeded, client):
+    """Contributors fill the reporting, but the budget is the squad leadership's:
+    the reporting's Budget step is not theirs."""
+    sa = seeded["squad_a"]
+    login(client, seeded["tribe"])
+    _enable(client, sa)
+    client.put(f"/api/squads/{sa}/budget?year={YEAR}", json={"total": 1000})
+    login(client, seeded["sl_a"])
+    assert client.put(f"/api/squads/{sa}", json={"contributor_user_ids": [seeded["member_id"]]}).status_code == 200
+
+    login(client, seeded["member"])
+    assert client.put(f"/api/squads/{sa}/budget?year={YEAR}", json={"spent": 200}).status_code == 403
+    assert client.get(f"/api/squads/{sa}?year={YEAR}").json()["budget"] is None

@@ -32,6 +32,7 @@ from sqlalchemy import select
 
 from app import report as report_mod
 from app import seed_fake
+from app.schemas import OTD_TITLE_MAX
 from app.models import User
 
 YEAR = datetime.now(timezone.utc).year
@@ -88,7 +89,9 @@ def test_the_commitment_band_is_loaded_and_reaches_december(db, fake):
     assert max(len(d["otds"]) for d in dets) >= 4, "il en faut assez pour s'empiler"
     assert any(o["month"] == 11 for o in otds), "aucun engagement en decembre"
     assert any(o["month"] == 10 for o in otds)
-    assert max(len(o["title"]) for o in otds) >= 50
+    # Un titre d'OTD est borne a OTD_TITLE_MAX : le cas de charge en porte un a
+    # la limite, le plus long que la bande puisse avoir a ranger.
+    assert max(len(o["title"]) for o in otds) == OTD_TITLE_MAX
 
 
 def test_no_shape_falls_outside_a_loaded_slide(db, fake):

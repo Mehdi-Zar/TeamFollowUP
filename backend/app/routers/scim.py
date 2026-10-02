@@ -23,6 +23,7 @@ are called by a server, not by the application's pages.
 """
 from __future__ import annotations
 
+from collections import deque
 from datetime import timezone
 
 from fastapi import APIRouter, Depends, Request
@@ -63,14 +64,36 @@ def _error(exc: ScimError) -> JSONResponse:
     return _json(body, exc.status)
 
 
+# The last calls the identity provider made, accepted or refused, for the
+# administrator's SCIM test. A refused call leaves no other trace: nothing is
+# written, and "the provisioning does nothing" is exactly the case to debug. Kept
+# in memory, per process: a debugging aid, not an audit trail (that is audit_log).
+RECENT: deque = deque(maxlen=30)
+
+
+def _remember_call(request: Request, outcome: str) -> None:
+    RECENT.appendleft({"at": utcnow().isoformat(), "method": request.method, "path": request.url.path,
+                       "query": request.url.query[:200] or None, "outcome": outcome,
+                       "client": request.client.host if request.client else None,
+                       "agent": (request.headers.get("user-agent") or "")[:80] or None})
+
+
 def scim_auth(request: Request, db: Session = Depends(get_db)) -> dict:
     """The SCIM settings when the call carries the right token, else a ScimError."""
     cfg = get_directory(db)
     header = request.headers.get("authorization") or ""
     token = header[7:].strip() if header.lower().startswith("bearer ") else None
-    if not cfg.get("scim_enabled") or not scim_token_ok(cfg, token):
-        raise ScimError(401, "Jeton SCIM absent, invalide ou provisioning désactivé")
-    return cfg
+    if not cfg.get("scim_enabled"):
+        _remember_call(request, "refused_disabled")
+    elif not token:
+        _remember_call(request, "refused_no_token")
+    elif not scim_token_ok(cfg, token):
+        _remember_call(request, "refused_bad_token")
+    else:
+        _remember_call(request, "accepted")
+        request.state.scim_base = scim_base_url(db, request)
+        return cfg
+    raise ScimError(401, "Jeton SCIM absent, invalide ou provisioning désactivé")
 
 
 def install(app) -> None:
@@ -80,8 +103,18 @@ def install(app) -> None:
         return _error(exc)
 
 
+def scim_base_url(db: Session, request: Request) -> str:
+    """The SCIM endpoint under the application's public URL, the one OIDC and SAML
+    callbacks are built on (Administration > Authentification), and not the
+    address the container happens to be reached at."""
+    from ..authconfig import get_auth_config
+    base = (get_auth_config(db, request).get("base_url_effective") or str(request.base_url)).rstrip("/")
+    return f"{base}/scim/v2"
+
+
 def _base(request: Request) -> str:
-    return str(request.base_url).rstrip("/") + "/scim/v2"
+    # Set by scim_auth, which every route goes through and which has the session.
+    return getattr(request.state, "scim_base", None) or str(request.base_url).rstrip("/") + "/scim/v2"
 
 
 def _iso(dt) -> str | None:

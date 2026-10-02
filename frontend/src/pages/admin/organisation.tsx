@@ -84,7 +84,7 @@ export function SquadsAdmin({ perms }: { perms: Permissions }) {
       {error && <ErrorBanner message={error} />}
       {noPeople && <div className="banner small">{t("admin.squads_no_accounts")}</div>}
       <div className="card" style={{ padding: 0, overflowX: "auto" }}>
-        <table>
+        <table className="admin-squads-table">
           <thead>
             <tr>
               <th>{t("admin.squad")}</th>
@@ -202,7 +202,7 @@ function PeopleCell({ label, people, all, value, onChange }: {
   const name = (id: number) => (people.find((u) => u.id === id) ?? all?.find((u) => u.id === id))?.display_name ?? `#${id}`;
   const left = people.filter((u) => !value.includes(u.id));
   return (
-    <div className="stack" style={{ gap: 4, minWidth: 180 }}>
+    <div className="stack" style={{ gap: 4, minWidth: 0 }}>
       {value.length > 0 && (
         <div className="inline" style={{ gap: 4, flexWrap: "wrap" }}>
           {value.map((id) => (
@@ -429,6 +429,8 @@ export function UsersAdmin({ perms }: { perms: Permissions }) {
 }
 
 
+const PERSONA_OPEN_KEY = "personas.open_groups";
+
 // Personas & permissions: a single matrix of persona × section-access toggles,
 // plus custom persona creation. Mirrors Admin → Modules wiring.
 /** Admin > Personas: the persona x capability matrix. Built-in roles show a fixed
@@ -445,6 +447,20 @@ export function PersonasAdmin() {
   const [newLabel, setNewLabel] = useState("");
   const [saved, setSaved] = useState(false);
   const { error, wrap } = useErr();
+  // Les familles d'administration ouvertes. Repliees par defaut: la partie
+  // administration est la plus longue du tableau et la moins souvent touchee.
+  const [open, setOpen] = useState<Set<string>>(() => {
+    try { return new Set(JSON.parse(localStorage.getItem(PERSONA_OPEN_KEY) || "[]")); } catch { return new Set(); }
+  });
+  const remember = (next: Set<string>) => {
+    setOpen(next);
+    try { localStorage.setItem(PERSONA_OPEN_KEY, JSON.stringify([...next])); } catch { /* private mode */ }
+  };
+  const toggleGroup = (k: string) => {
+    const next = new Set(open);
+    if (next.has(k)) next.delete(k); else next.add(k);
+    remember(next);
+  };
 
   type Out = { capabilities: string[]; admin_tab_options: string[]; admin_only_tabs?: string[]; personas: Persona[] };
   function apply(out: Out) {
@@ -495,20 +511,26 @@ export function PersonasAdmin() {
       <input type="checkbox" checked disabled aria-label={`${who(p)}, ${label}`} />
     ) : <span className="muted" title={t("personas.not_applicable")}>-</span>;
 
+  // What a persona holds in a family, shown on the folded row: "3/6".
+  const held = (p: Persona, items: string[]) => {
+    if (p.key === "admin") return items.filter((k) => adminHas.has(k)).length;
+    return items.filter((k) => !adminOnly.has(k) && (p.admin_tabs ?? []).includes(k)).length;
+  };
+
   return (
     <div className="stack" style={{ gap: 14, maxWidth: 980 }}>
       {error && <ErrorBanner message={error} />}
       <div className="banner">{t("personas.intro")}</div>
       {/* No overflow wrapper here: it would become the scroll box and the header
           would stop sticking under the top bar while the page scrolls. */}
-      <div>
+      <div className="persona-card">
         <table className="persona-matrix persona-matrix--rows">
           <thead>
             <tr>
-              <th style={{ textAlign: "left" }}></th>
+              <th style={{ textAlign: "left" }}>{t("personas.col_option")}</th>
               {personas.map((p) => (
                 <th key={p.key}>
-                  {p.builtin ? who(p) : (
+                  {p.builtin ? <span className="persona-head">{who(p)}</span> : (
                     <span className="inline" style={{ gap: 4, justifyContent: "center" }}>
                       <input style={{ width: 110 }} aria-label={t("a11y.persona_label")} value={p.label}
                              onChange={(e) => setLabel(p.key, e.target.value)} />
@@ -522,7 +544,13 @@ export function PersonasAdmin() {
             </tr>
           </thead>
           <tbody>
-            <tr className="persona-group-row"><th colSpan={cols}>{t("personas.group_sections")}</th></tr>
+            {/* Premiere partie: ce que chacun voit dans l'application. */}
+            <tr className="persona-section-row persona-section-app">
+              <th colSpan={cols}>
+                <span className="persona-section-title">{t("personas.group_sections")}</span>
+                <span className="persona-section-sub">{t("personas.section_app_hint")}</span>
+              </th>
+            </tr>
             {caps.map((c) => (
               <tr key={c}>
                 <td className="persona-option">{t(`cap.${c}`)}</td>
@@ -533,27 +561,73 @@ export function PersonasAdmin() {
                 ))}
               </tr>
             ))}
-            {groups.map((g) => (
-              <Fragment key={g.titleKey}>
-                <tr className="persona-group-row"><th colSpan={cols}>{t("personas.group_admin")}{t("common.colon")}{t(g.titleKey)}</th></tr>
-                {g.items.map((tab) => {
-                  const label = t(TAB_LABEL[tab] ?? `admin.tab.${tab}`);
-                  return (
-                    <tr key={tab}>
-                      <td className="persona-option">{label}</td>
-                      {personas.map((p) => (
+
+            {/* Seconde partie, nettement a part: les ecrans de reglage de l'instance. */}
+            <tr className="persona-section-row persona-section-admin">
+              <th colSpan={cols}>
+                <span className="between" style={{ gap: 10, flexWrap: "wrap" }}>
+                  <span className="inline" style={{ gap: 10 }}>
+                    <span className="persona-section-icon" aria-hidden>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+                           strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z" /></svg>
+                    </span>
+                    <span className="stack" style={{ gap: 0 }}>
+                      <span className="persona-section-title">{t("personas.group_admin")}</span>
+                      <span className="persona-section-sub">{t("personas.section_admin_hint")}</span>
+                    </span>
+                  </span>
+                  <span className="inline" style={{ gap: 4 }}>
+                    <button type="button" className="persona-tool" onClick={() => remember(new Set(groups.map((g) => g.titleKey)))}>
+                      {t("personas.expand_all")}</button>
+                    <button type="button" className="persona-tool" onClick={() => remember(new Set())}>
+                      {t("personas.collapse_all")}</button>
+                  </span>
+                </span>
+              </th>
+            </tr>
+            {groups.map((g) => {
+              const isOpen = open.has(g.titleKey);
+              return (
+                <Fragment key={g.titleKey}>
+                  <tr className={`persona-family-row${isOpen ? " open" : ""}`} onClick={() => toggleGroup(g.titleKey)}>
+                    <td className="persona-option">
+                      <button type="button" className="persona-family-btn" aria-expanded={isOpen}
+                              onClick={(e) => { e.stopPropagation(); toggleGroup(g.titleKey); }}>
+                        <span className="persona-chevron" aria-hidden>›</span>
+                        {t(g.titleKey)}
+                        <span className="persona-count">{g.items.length}</span>
+                      </button>
+                    </td>
+                    {personas.map((p) => {
+                      const n = held(p, g.items);
+                      return (
                         <td key={p.key}>
-                          {adminOnly.has(tab) && p.key !== "admin" ? (
-                            <span className="muted" title={t("personas.admin_only")}>{t("personas.admin_only_short")}</span>
-                          ) : cell(p, (p.admin_tabs ?? []).includes(tab), (v) => setTab(p.key, tab, v), label,
-                                   p.key === "admin" ? adminHas.has(tab) : undefined)}
+                          <span className={`persona-held${n === 0 ? " none" : n === g.items.length ? " all" : ""}`}>
+                            {n}/{g.items.length}
+                          </span>
                         </td>
-                      ))}
-                    </tr>
-                  );
-                })}
-              </Fragment>
-            ))}
+                      );
+                    })}
+                  </tr>
+                  {isOpen && g.items.map((tab) => {
+                    const label = t(TAB_LABEL[tab] ?? `admin.tab.${tab}`);
+                    return (
+                      <tr key={tab} className="persona-sub-row">
+                        <td className="persona-option">{label}</td>
+                        {personas.map((p) => (
+                          <td key={p.key}>
+                            {adminOnly.has(tab) && p.key !== "admin" ? (
+                              <span className="muted" title={t("personas.admin_only")}>{t("personas.admin_only_short")}</span>
+                            ) : cell(p, (p.admin_tabs ?? []).includes(tab), (v) => setTab(p.key, tab, v), label,
+                                     p.key === "admin" ? adminHas.has(tab) : undefined)}
+                          </td>
+                        ))}
+                      </tr>
+                    );
+                  })}
+                </Fragment>
+              );
+            })}
           </tbody>
         </table>
       </div>

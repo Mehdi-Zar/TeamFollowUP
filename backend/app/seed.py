@@ -521,8 +521,8 @@ def run_seed(db: Session) -> None:
         ).all()
         for j in js:
             j.squad_otd_id = o.id
-    squad_otd(gcp, "Montee de version du socle sans interruption", 2)
-    squad_otd(paiements, "Bascule des environnements internes", 4)
+    squad_otd(gcp, "Montee de version sans coupure", 2)
+    squad_otd(paiements, "Bascule des environnements", 4)
     squad_otd(analytics, "Reprise des flux historiques", 3)
 
     db.commit()

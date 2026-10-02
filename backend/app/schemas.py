@@ -276,6 +276,11 @@ class InitiativeOut(ORMModel):
     is_active: bool
 
 
+# Un engagement se lit d'un coup d'oeil dans la frise, les slides et les
+# listes : au-dela, le titre est coupe ou repousse la mise en page.
+OTD_TITLE_MAX = 30
+
+
 class OtdCreate(BaseModel):
     """Fields to create an OTD.
 
@@ -285,7 +290,7 @@ class OtdCreate(BaseModel):
     """
     tribe_id: int
     year: int
-    title: str = Field(min_length=1, max_length=300)
+    title: str = Field(min_length=1, max_length=OTD_TITLE_MAX)
     description: Optional[str] = None
     committed_date: Optional[datetime] = None
     owner_user_id: Optional[int] = None  # the squad leader this OTD is assigned to
@@ -301,7 +306,7 @@ class OtdUpdate(BaseModel):
     to turn their own commitment into a management one would be granting
     themselves write access to an object that is not theirs.
     """
-    title: Optional[str] = Field(default=None, min_length=1, max_length=300)
+    title: Optional[str] = Field(default=None, min_length=1, max_length=OTD_TITLE_MAX)
     description: Optional[str] = None
     committed_date: Optional[datetime] = None
     owner_user_id: Optional[int] = None

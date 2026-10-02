@@ -190,7 +190,7 @@ export default function Layout() {
         </div>
 
         <nav className="sidebar-nav">
-          {NAV.filter(navVisible).map(({ to, end, labelKey, Icon }) => (
+          {NAV.filter((n) => n.to !== "/admin" && navVisible(n)).map(({ to, end, labelKey, Icon }) => (
             <NavLink
               key={to}
               to={to}
@@ -211,6 +211,18 @@ export default function Layout() {
             </NavLink>
           ))}
         </nav>
+
+        {/* L'administration en bas, a part, sous un trait: ce n'est pas un ecran de
+            travail parmi les autres, c'est le reglage de l'instance. */}
+        {NAV.filter((n) => n.to === "/admin" && navVisible(n)).map(({ to, labelKey, Icon }) => (
+          <div key={to} className="sidebar-admin">
+            <NavLink to={to} className={({ isActive }) => `sidebar-link${isActive ? " active" : ""}`}
+                     title={collapsed ? t(labelKey) : undefined} onClick={() => setMobileOpen(false)}>
+              <Icon size={19} />
+              {!collapsed && <span className="sidebar-link-text">{t(labelKey)}</span>}
+            </NavLink>
+          </div>
+        ))}
 
         <button className="sidebar-collapse-btn" onClick={toggleCollapsed} title={collapsed ? t("nav.expand") : t("nav.collapse")}>
           {collapsed ? <IconExpand size={18} /> : <IconCollapse size={18} />}

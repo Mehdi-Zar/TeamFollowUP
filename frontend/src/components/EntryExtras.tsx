@@ -48,6 +48,19 @@ export function QuarterProgressEditor({ squad, year, readonly, onChange, t }: {
     } finally { setBusy(null); }
   }
 
+  // Le meme drapeau que la case de la colonne du trimestre dans la roadmap : on le
+  // cherchait ici, a cote du pourcentage qu'il remplace.
+  async function setNa(q: number, v: boolean) {
+    setBusy(q); setErr(null);
+    try {
+      await api.put(`/api/squads/${squad.id}/quarter-progress`, { year, quarter: q, not_applicable: v });
+      onChange();
+    } catch (e) {
+      setErr(errorText(e));
+      reportSaveError(errorText(e));
+    } finally { setBusy(null); }
+  }
+
   return (
     <Card title={t("entry.progress_title", { year })} hint={t("entry.progress_hint")}>
       {err && <div className="banner banner-red" style={{ marginBottom: 8 }}>{err}</div>}
@@ -56,6 +69,7 @@ export function QuarterProgressEditor({ squad, year, readonly, onChange, t }: {
           <tr>
             <th style={{ width: 70 }}>{t("entry.quarter")}</th>
             <th style={{ width: 120 }}>{t("entry.progress_derived")}</th>
+            <th style={{ width: 130 }} title={t("entry.q_na_hint")}>{t("entry.q_na_box")}</th>
             <th>{t("entry.progress_comment")}</th>
           </tr>
         </thead>
@@ -68,7 +82,12 @@ export function QuarterProgressEditor({ squad, year, readonly, onChange, t }: {
                   : current(q).not_applicable ? t("entry.q_na_short")
                     : <span className="muted">{t("entry.q_nothing")}</span>}
               </td>
-
+              <td title={planned(q) ? t("entry.q_na_planned") : t("entry.q_na_hint")}>
+                <input type="checkbox" aria-label={`${t("entry.q_na_box")} Q${q}`}
+                       disabled={readonly || busy === q || planned(q)}
+                       checked={!planned(q) && !!current(q).not_applicable}
+                       onChange={(e) => setNa(q, e.target.checked)} />
+              </td>
               <td>
                 <input disabled={readonly || busy === q} placeholder={t("entry.progress_comment_ph")}
                        aria-label={t("entry.progress_comment") + ` Q${q}`}

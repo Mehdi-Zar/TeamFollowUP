@@ -38,7 +38,7 @@ EN: dict[str, str] = {
     "Aucun annuaire n'est configuré": "No directory is configured",
     "Hôte manquant": "Missing host",
     "Persona inconnu ou non autorisé pour le provisioning": "Unknown persona, or not allowed for provisioning",
-    "Source inconnue (attendu : entra, ldap ou google)": "Unknown source (expected: entra, ldap or google)",
+    "Source inconnue (attendu : entra, ad, ldap ou google)": "Unknown source (expected: entra, ad, ldap or google)",
     "Tapez au moins 2 caractères": "Type at least 2 characters",
     "Comité introuvable": "Committee not found",
     "Compte administrateur introuvable": "Administrator account not found",

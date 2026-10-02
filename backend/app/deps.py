@@ -375,7 +375,9 @@ def assert_leads_squad(db: Session, user: User, squad_id: int) -> None:
 
 def is_squad_privileged(user: User, squad: Squad) -> bool:
     """Can see a squad's restricted data (budget): admin, the squad's tribe leader,
-    or whoever leads the squad (leader or co-leader), whatever their role."""
+    or whoever leads the squad (leader or co-leader), whatever their role. Not its
+    contributors: they fill the reporting, but the budget stays with the squad's
+    leadership."""
     if user.role == ADMIN:
         return True
     if user.role == TRIBE and squad.tribe_id == user.tribe_id:

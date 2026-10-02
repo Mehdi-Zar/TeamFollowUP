@@ -53,13 +53,16 @@ les objectifs annuels ont ete retires, l'OTD est le seul engagement.
 | Infos | qui est cette squad (nom, tribe, squad leader, co-leaders, contributeurs, description, ordre, produits, materiel) |
 | Options | ce qu'elle suit (KPI, budget) |
 | OTD | les engagements du management, et les initiatives qu'elle mene |
-| Equipe | ses membres |
-| Budget | les montants, quand le suivi est actif |
+| Budget | l'enveloppe de l'annee, quand le suivi est actif |
 | Comites | ses comites recurrents |
 
-Un squad leader ouvre la meme fenetre sur les squads qu'il dirige, sans Options ni
-choix du squad leader : fiche, contributeurs, ses propres OTD, equipe, budget,
-comites.
+L'equipe a sa propre fenetre, ouverte par le bouton « Equipe » de la carte. Le
+consomme et l'atterrissage du budget se renseignent dans le reporting (etape Budget),
+par le squad leader et ses co-leaders. Les contributeurs ne voient ni ne gerent le
+budget : l'etape ne leur est pas proposee.
+
+Un squad leader ouvre la meme fenetre sur les squads qu'il dirige, sans Options, ni
+choix du squad leader, ni budget : fiche, contributeurs, ses propres OTD, comites.
 
 Le panneau « Parametres » d'Administration > Squads a disparu : il proposait
 l'interrupteur KPI et les objectifs annuels (retires depuis). Deux

@@ -50,11 +50,18 @@ contributeurs, et n'epingle pas de message du fil.
 ## 4. Mes squads
 
 - Le tribe leader et l'admin y voient toutes les squads, avec un selecteur d'annee
-  (l'annee par defaut de l'instance) : Infos, Options, OTD et initiatives, Equipe,
-  Budget, Comites. Supprimer une squad demande une confirmation.
+  (l'annee par defaut de l'instance) : Infos, Options, OTD et initiatives, Budget,
+  Comites. Supprimer une squad demande une confirmation.
 - Le squad leader y voit **ses squads et elles seules** : Infos (nom, description,
-  produits, materiel, contributeurs), ses OTD, Equipe, Budget, Comites.
-- `/mes-squads?squad=12&step=otd` ouvre directement la fenetre sur la bonne etape.
+  produits, materiel, contributeurs), ses OTD, Comites.
+- Le budget se renseigne dans le reporting (etape Budget, quand il est active pour la
+  squad) : consomme, atterrissage et commentaire, par le squad leader et ses
+  co-leaders, jamais par les contributeurs. L'enveloppe reste au tribe leader, dans
+  Mes squads.
+- L'equipe a sa propre fenetre, ouverte par le bouton « Equipe » de la carte (la meme
+  que depuis l'organigramme) : elle n'est plus une etape de la fenetre de reglage.
+- `/mes-squads?squad=12&step=otd` ouvre directement la fenetre sur la bonne etape ;
+  `step=team` ouvre la fenetre de l'equipe.
 - On ne rattache ici qu'une initiative libre : celle d'une autre squad apparait
   grisee avec son nom. Changer une initiative de squad se fait dans l'ecran des
   initiatives, qui previent que ses jalons de l'ancienne squad seront detaches.

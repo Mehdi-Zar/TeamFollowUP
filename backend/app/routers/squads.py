@@ -535,10 +535,12 @@ def set_squad_budget(squad_id: int, payload: SquadBudgetIn, year: int | None = Q
     """PUT /api/squads/{squad_id}/budget: set the squad's budget line for a year
     (upsert).
 
-    Requires ``assert_can_edit_squad`` and the squad's budget module to be enabled
-    (403 otherwise). Business rule: the total envelope is a tribe-leader/admin
-    decision: a squad leader may only report spent/forecast/comment, so an
-    incoming ``total`` from a squad leader is ignored. Audited, then
+    Requires ``assert_can_edit_squad`` (the squad's leadership, its tribe leader,
+    an admin; never its contributors, even though the budget is filled in the
+    reporting) and the squad's budget module to be enabled (403 otherwise).
+    Business rule: the total envelope is a tribe-leader/admin decision: the squad
+    leader only reports spent/forecast/comment, so an incoming ``total`` from them
+    is ignored. Audited, then
     ``notify_change(..., "budget", ...)``."""
     squad = db.get(Squad, squad_id)
     if squad is None:

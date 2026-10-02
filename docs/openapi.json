@@ -1125,7 +1125,7 @@
           "squads"
         ],
         "summary": "Set Squad Budget",
-        "description": "PUT /api/squads/{squad_id}/budget: set the squad's budget line for a year\n(upsert).\n\nRequires ``assert_can_edit_squad`` and the squad's budget module to be enabled\n(403 otherwise). Business rule: the total envelope is a tribe-leader/admin\ndecision: a squad leader may only report spent/forecast/comment, so an\nincoming ``total`` from a squad leader is ignored. Audited, then\n``notify_change(..., \"budget\", ...)``.",
+        "description": "PUT /api/squads/{squad_id}/budget: set the squad's budget line for a year\n(upsert).\n\nRequires ``assert_can_edit_squad`` (the squad's leadership, its tribe leader,\nan admin; never its contributors, even though the budget is filled in the\nreporting) and the squad's budget module to be enabled (403 otherwise).\nBusiness rule: the total envelope is a tribe-leader/admin decision: the squad\nleader only reports spent/forecast/comment, so an incoming ``total`` from them\nis ignored. Audited, then\n``notify_change(..., \"budget\", ...)``.",
         "operationId": "set_squad_budget_api_squads__squad_id__budget_put",
         "parameters": [
           {
@@ -9634,7 +9634,7 @@
           "directory"
         ],
         "summary": "Test Directory Config",
-        "description": "POST /api/admin/directory-config/test: run a sample search on one source.\n\nBody ``{\"source\": \"entra|ldap|google\", \"q\": \"...\", \"config\": {...}}``: the\ndraft values on screen are layered over the stored ones, so a change can be\nchecked before it is saved. Nothing is persisted.",
+        "description": "POST /api/admin/directory-config/test: run a sample search on one source, step by step.\n\nBody ``{\"source\": \"entra|ad|ldap|google\", \"mode\": \"user|group|custom\", \"q\": \"...\",\n\"custom\": {...}, \"config\": {...}}``. ``mode`` picks a people search, a group\nsearch, or the administrator's own read-only query (``custom``: LDAP ``base``,\n``scope`` base|one|sub, ``filter``, ``attributes``, ``limit``; Entra ``path``\nunder /v1.0/ or /beta/; Google ``path`` under the Admin SDK directory and\n``scope`` user|group), always on the configured server. The\ndraft values on screen are layered over the stored ones, so a change can be\nchecked before it is saved. Nothing is persisted. The answer lists each step\n(configuration, connection, authentication, query, attributes) with its\noutcome, duration and detail, the people found, and for LDAP and AD the first\nentry with all its attributes.",
         "operationId": "test_directory_config_api_admin_directory_config_test_post",
         "requestBody": {
           "content": {
@@ -9647,6 +9647,48 @@
             }
           },
           "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/directory-config/scim-test": {
+      "post": {
+        "tags": [
+          "directory"
+        ],
+        "summary": "Test Scim Config",
+        "description": "POST /api/admin/directory-config/scim-test: what an identity provider would meet.\n\nBody ``{\"token\": \"...\"}`` (optional): the token pasted in the identity\nprovider, checked against the stored hash. Returns the checks (enabled,\ntoken, URL, persona and tribe given to new accounts), the last calls received\nby this process, accepted or refused, and the last provisioning changes from\nthe audit trail.",
+        "operationId": "test_scim_config_api_admin_directory_config_scim_test_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "type": "object",
+                "title": "Payload",
+                "default": {}
+              }
+            }
+          }
         },
         "responses": {
           "200": {
@@ -13238,7 +13280,7 @@
           },
           "title": {
             "type": "string",
-            "maxLength": 300,
+            "maxLength": 30,
             "minLength": 1,
             "title": "Title"
           },
@@ -13332,7 +13374,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "maxLength": 300,
+                "maxLength": 30,
                 "minLength": 1
               },
               {

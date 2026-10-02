@@ -315,3 +315,12 @@ def test_a_file_without_a_tribe_name_says_so_instead_of_crashing(db):
     rows = {"Tribu": [HEADERS["Tribu"], [2026, None, "desc", None, None]]}
     with pytest.raises(ValueError, match="nom"):
         mod.import_org(db, mod.read_upload("org.xlsx", _minimal_workbook(**rows)))
+
+
+def test_an_otd_title_over_the_limit_rejects_the_file_before_writing(db):
+    """The screens refuse a title over OTD_TITLE_MAX; the file must not let one in."""
+    too_long = "Livrer la Landing Zone v2 partout"
+    rows = {"OTD": [HEADERS["OTD"], [too_long, "Landing Zone", datetime(2026, 9, 30), None]]}
+    with pytest.raises(ValueError, match="trop long"):
+        mod.import_org(db, mod.read_upload("org.xlsx", _minimal_workbook(**rows)))
+    assert db.scalar(select(Otd).where(Otd.title == too_long)) is None

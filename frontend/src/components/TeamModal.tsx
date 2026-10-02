@@ -204,11 +204,14 @@ export function TeamEditor({ squadId, onChange }: { squadId: number; onChange?: 
             <RolePicker value={add.role_title} ariaLabel={t("admin.member_role")}
                         onCommit={(v) => setAdd((a) => ({ ...a, role_title: v ?? "" }))} />
           </div>
-          <div style={{ width: 80 }}>
-            <input type="number" min={0} max={100} step={5} value={add.allocation_pct}
-                   aria-label={t("team.allocation")} title={t("team.allocation_hint")}
+          {/* Un nombre seul, sans libelle, ne disait pas ce qu'il mesurait. */}
+          <label className="inline small" style={{ gap: 4, whiteSpace: "nowrap" }} title={t("team.allocation_hint")}>
+            {t("team.allocation_add")}
+            <input type="number" min={0} max={100} step={5} value={add.allocation_pct} style={{ width: 64 }}
+                   aria-label={t("team.allocation")}
                    onChange={(e) => setAdd({ ...add, allocation_pct: pctOf(e.target.value) ?? 100 })} />
-          </div>
+            %
+          </label>
           <button type="submit" className="btn-sm"
                   disabled={!(looksLikeEmail(add.email) || (!add.email.trim() && (add.first_name.trim() || add.last_name.trim())))}>
             {t("admin.add")}
@@ -219,15 +222,34 @@ export function TeamEditor({ squadId, onChange }: { squadId: number; onChange?: 
   );
 }
 
-/** TeamEditor in a modal window, titled with the squad name. */
+/** The squad's team, in a window of its own: the same presentation as the squad's
+ *  set-up window (name in the header, a titled block, the autosave said in the
+ *  footer). Opened from My squads and from the org chart. */
 export function TeamModal({ squadId, squadName, onClose, onChange }: {
   squadId: number; squadName: string; onClose: () => void; onChange?: () => void;
 }) {
   const { t } = useI18n();
   return (
-    <Modal title={`${t("mysquad.manage_team")}${t("common.colon")}${squadName}`} onClose={onClose}
-           footer={<button className="btn-sm" onClick={onClose}>{t("action.close")}</button>}>
-      <TeamEditor squadId={squadId} onChange={onChange} />
+    <Modal width={1100} onClose={onClose}
+           title={
+             <span className="sq-title">
+               <span>{squadName}</span>
+               <span className="sq-title-sub">{t("mysquad.manage_team")}</span>
+             </span>
+           }
+           footer={
+             <div className="between" style={{ width: "100%", alignItems: "center" }}>
+               <span className="small muted">{t("mysquads.autosave")}</span>
+               <button className="btn-sm" onClick={onClose}>{t("action.close")}</button>
+             </div>
+           }>
+      <div className="sq-panel">
+        <div className="sq-panel-head">
+          <h3>{t("mysquads.step.team")}</h3>
+          <p>{t("mysquads.stepd.team")}</p>
+        </div>
+        <div className="sq-section"><TeamEditor squadId={squadId} onChange={onChange} /></div>
+      </div>
     </Modal>
   );
 }

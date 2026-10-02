@@ -18,7 +18,7 @@
  * derriere son drapeau de module comme avant.
  */
 import { Fragment, ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { api, errorText, reportSaveError } from "../api";
 import { useAuth } from "../auth";
 import { useI18n } from "../i18n";
@@ -36,6 +36,7 @@ import { useSetPageChrome } from "../components/pageChrome";
 import { roadmapRag } from "../labels";
 import { currentSteercoPeriod, monthLongLabel } from "../steerco";
 import SteercoWizard, { SteercoPreviewModal } from "../components/SteercoWizard";
+import { BudgetPanel } from "./SquadDetailPage";
 
 
 /**
@@ -44,10 +45,9 @@ import SteercoWizard, { SteercoPreviewModal } from "../components/SteercoWizard"
  * when the viewer cannot write to the squad.
  */
 export default function EntryPage() {
-  const { user, effectiveRole, can } = useAuth();
+  const { user, effectiveRole } = useAuth();
   // The team is set up in My squads: the link only for whoever may open it (a
   // contributor does the reporting, not the team).
-  const teamLink = (id: number) => (can("mysquads") ? `/mes-squads?squad=${id}&step=team` : undefined);
   const { t, roadmap, trend, freshness, formatDate } = useI18n();
   const { default_year } = useConfig();
   const moduleOn = useModule();
@@ -260,6 +260,16 @@ export default function EntryPage() {
         </div>
       ),
     },
+    // Le budget se renseigne avec le reste du reporting: le consomme et
+    // l'atterrissage de la squad, par sa direction (leader, co-leaders), jamais
+    // par ses contributeurs, a qui le serveur ne l'envoie pas. L'enveloppe reste
+    // au tribe leader (le serveur ignore un total envoye par quelqu'un d'autre).
+    ...(squad.budget_enabled && squad.budget ? [{
+      key: "budget",
+      state: (squad.budget.spent != null || squad.budget.forecast != null ? "done" : "todo") as StepState,
+      node: <BudgetPanel squad={squad} canEdit={canEditSquad(role, user?.id, squad)} onChange={reload}
+                         canToggle={role === "admin" || role === "tribe_leader"} />,
+    }] : []),
     // Le Steerco n'est une etape que pour une squad qui contribue a une
     // plateforme: ailleurs, l'etape n'ouvrait que sur « demandez a votre tribe
     // leader ». Une etape ou il n'y a rien a faire se traverse quand meme, et
@@ -275,8 +285,7 @@ export default function EntryPage() {
       state: (pending?.any || staleConfirm ? "tosubmit" : submitted ? "uptodate" : "todo") as StepState,
       node: (
         <div className="step-center stack" style={{ gap: 14, alignItems: "center" }}>
-          <SubmitChecklist squad={squad} t={t} flags={{ roadmapOn, progressOn, kpisOn }}
-                           teamTo={teamLink(squad.id)} />
+          <SubmitChecklist squad={squad} t={t} flags={{ roadmapOn, progressOn, kpisOn }} />
           <button className="btn" disabled={!maySubmit} onClick={() => setRecap(true)}>
             {t("action.submit")}
           </button>
@@ -349,7 +358,7 @@ export default function EntryPage() {
       )}
 
       {recap && squad && <SubmitRecap squad={squad} year={year} pending={pending} formatDate={formatDate}
-                                      flags={{ roadmapOn, progressOn, kpisOn }} teamTo={teamLink(squad.id)}
+                                      flags={{ roadmapOn, progressOn, kpisOn }}
                                       error={recapError}
                                       onConfirm={confirmSubmit} onCancel={() => { setRecap(false); setRecapError(null); }} t={t} />}
     </div>
@@ -423,38 +432,35 @@ function StepRail({ steps, at, onGo, t }: {
  * Ce qui est rempli et ce qui ne l'est pas, avant d'envoyer.
  *
  * Aucune de ces lignes ne bloque l'envoi: une squad peut legitimement n'avoir ni
- * KPI ni membre declare. Elles sont montrees sur la derniere etape, la ou l'on
+ * KPI ni engagement propre. Seul ce que le reporting fait remplir y figure:
+ * l'equipe se regle dans Mes squads, elle n'a rien a faire ici. Elles sont montrees sur la derniere etape, la ou l'on
  * peut encore y faire quelque chose, et non plus seulement dans la fenetre de
  * confirmation.
  */
-function SubmitChecklist({ squad, t, flags, teamTo }: {
+function SubmitChecklist({ squad, t, flags }: {
   squad: any; t: (k: string) => string;
-  flags: { roadmapOn: boolean; progressOn: boolean; kpisOn: boolean }; teamTo?: string;
+  flags: { roadmapOn: boolean; progressOn: boolean; kpisOn: boolean };
 }) {
   // Only what this screen lets one fill, for the services that are on: the
   // progress percentage is computed (its comment is what one writes), and a KPI
   // line only exists when the squad tracks KPIs.
-  const items: Array<[boolean, string, string | undefined]> = [
-    ...(flags.roadmapOn ? [[squad.roadmap_items.length > 0, t("entry.check.jalons"), undefined] as [boolean, string, undefined]] : []),
+  const items: Array<[boolean, string]> = [
+    ...(flags.roadmapOn ? [[squad.roadmap_items.length > 0, t("entry.check.jalons")] as [boolean, string]] : []),
     ...(flags.progressOn ? [[[1, 2, 3, 4].some((q: number) => !!squad.quarter_progress[String(q)]?.comment),
-                             t("entry.check.progress"), undefined] as [boolean, string, undefined]] : []),
+                             t("entry.check.progress")] as [boolean, string]] : []),
     // Une squad peut legitimement n'avoir pris aucun engagement propre: la ligne
     // le dit, elle ne l'exige pas. Comme toutes les autres.
-    [(squad.otd_count ?? 0) > 0, t("entry.check.otd"), undefined],
-    ...(flags.kpisOn && squad.kpis_enabled ? [[squad.kpis.length > 0, t("entry.check.kpis"), undefined] as [boolean, string, undefined]] : []),
-    [(squad.key_messages?.length ?? 0) > 0, t("entry.check.km"), undefined],
-    [!!squad.mood, t("entry.check.mood"), undefined],
-    // The team is not a step of this route: the line links to where it is kept,
-    // "My squads", where the squad is managed.
-    [squad.members.length > 0, t("entry.check.members"), teamTo],
+    [(squad.otd_count ?? 0) > 0, t("entry.check.otd")],
+    ...(flags.kpisOn && squad.kpis_enabled ? [[squad.kpis.length > 0, t("entry.check.kpis")] as [boolean, string]] : []),
+    [(squad.key_messages?.length ?? 0) > 0, t("entry.check.km")],
+    [!!squad.mood, t("entry.check.mood")],
   ];
   return (
     <div className="stack" style={{ gap: 6 }}>
-      {items.map(([ok, label, act], i) => (
+      {items.map(([ok, label], i) => (
         <div key={i} className="inline">
           <span className={`badge ${ok ? "badge-green" : "badge-grey"}`}>{ok ? "✓" : "○"}</span>
           <span className="small">{label}</span>
-          {!ok && act && <Link className="small" to={act}>{t("entry.check.fill")}</Link>}
         </div>
       ))}
     </div>
@@ -465,7 +471,7 @@ function SubmitChecklist({ squad, t, flags, teamTo }: {
  * Pre-submit confirmation. Shows the same readiness check as the last step, then
  * asks for the snapshot; none of the lines block submission.
  */
-function SubmitRecap({ squad, year, pending, formatDate, flags, teamTo, error, onConfirm, onCancel, t }: any) {
+function SubmitRecap({ squad, year, pending, formatDate, flags, error, onConfirm, onCancel, t }: any) {
   const [busy, setBusy] = useState(false);
   return (
     <Modal title={t("entry.submit_recap_year", { name: squad.name, year })} onClose={onCancel} dirty={busy}>
@@ -477,7 +483,7 @@ function SubmitRecap({ squad, year, pending, formatDate, flags, teamTo, error, o
           </div>
         )}
         <div className="stack" style={{ margin: "12px 0" }}>
-          <SubmitChecklist squad={squad} t={t} flags={flags} teamTo={teamTo} />
+          <SubmitChecklist squad={squad} t={t} flags={flags} />
         </div>
         {error && <ErrorBanner message={error} />}
         <div className="inline" style={{ justifyContent: "flex-end", gap: 8 }}>
@@ -496,7 +502,8 @@ function emptyJalon(year: number, quarter: number): Partial<RoadmapItem> {
 }
 
 /**
- * Roadmap editor: four QuarterEditor columns plus a JalonModal for create/edit.
+ * Roadmap editor: one QuarterEditor row per quarter, the full width, plus a
+ * JalonModal for create/edit. Four columns side by side cut every title short.
  * `save` decides POST (new) vs PUT (existing, stripping id/squad_id). Read-only
  * mode hides add/edit affordances. Rien a exporter d'ici: cette page sert a saisir,
  * et les documents se prennent dans le menu Exporter de la barre de page, un seul
@@ -532,7 +539,7 @@ function RoadmapEditor({ squad, year, onChange, readonly, t, roadmap, squads, tr
   return (
     <Card title={t("squad.roadmap", { year })} hint={t("entry.roadmap_hint")}>
       {err && !editing && <ErrorBanner message={err} />}
-      <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" }}>
+      <div className="stack" style={{ gap: 12 }}>
         {[1, 2, 3, 4].map((q) => (
           <QuarterEditor
             key={q}
@@ -563,8 +570,10 @@ function RoadmapEditor({ squad, year, onChange, readonly, t, roadmap, squads, tr
 }
 
 /**
- * One quarter column: its milestones and an auto-computed progress bar. Rows are
- * clickable to edit unless read-only. Progress is derived, never entered.
+ * One quarter, one row the full width: its header (progress derived from the
+ * milestones, the N/A box when it has none, the add button), then a line per
+ * milestone in aligned columns: status, theme, title, stage, owner, status menu.
+ * Rows are clickable to edit unless read-only. Progress is derived, never entered.
  */
 function QuarterEditor({ squad, year, quarter, readonly, t, roadmap, onAdd, onEdit, onStatus, onChange }: any) {
   const items = squad.roadmap_items.filter((r: RoadmapItem) => r.quarter === quarter);
@@ -583,52 +592,60 @@ function QuarterEditor({ squad, year, quarter, readonly, t, roadmap, onAdd, onEd
       onChange();
     } catch (e) { setNaErr(errorText(e)); }
   }
+  const now = new Date();
+  const isCurrent = now.getFullYear() === year && Math.floor(now.getMonth() / 3) + 1 === quarter;
 
   return (
-    <div className="quarter-block">
-      <div className="between">
-        <h4>Q{quarter}</h4>
-        {total > 0
-          ? <span className="small muted" title={t("entry.progress_auto")}>{pct}%, {done}/{total}</span>
-          : <span className="small muted" title={t("entry.q_na_hint")}>{na ? t("entry.q_na_short") : t("entry.q_nothing")}</span>}
+    <section className={`q-row${isCurrent ? " current" : ""}`}>
+      <div className="q-head">
+        <span className="q-pill">Q{quarter}</span>
+        <span className="strong" style={{ color: "var(--navy)" }}>{year}</span>
+        {isCurrent && <span className="badge badge-navy">{t("entry.q_current")}</span>}
+        {total > 0 ? (
+          <span className="q-progress" title={t("entry.progress_auto")}>
+            <span className="q-bar" aria-label={`${pct}%`}><span style={{ width: `${pct}%` }} /></span>
+            <span className="small muted">{pct}%, {done}/{total}</span>
+          </span>
+        ) : (
+          <span className="small muted" title={t("entry.q_na_hint")}>{na ? t("entry.q_na_short") : t("entry.q_nothing")}</span>
+        )}
+        <span style={{ flex: 1 }} />
+        {total === 0 && (
+          <label className="inline small" style={{ gap: 6 }} title={t("entry.q_na_hint")}>
+            <input type="checkbox" disabled={readonly} checked={na} onChange={(e) => setNa(e.target.checked)} />
+            {t("entry.q_na_box")}
+          </label>
+        )}
+        {!readonly && (
+          <button className="btn-secondary btn-sm" onClick={onAdd}>+ {t("jalon.add")}</button>
+        )}
       </div>
-      {total > 0 ? (
-        <div style={{ height: 8, background: "var(--line)", borderRadius: 6, overflow: "hidden", marginBottom: 4 }} aria-label={`${pct}%`}>
-          <div style={{ width: `${pct}%`, height: "100%", background: "var(--navy)" }} />
-        </div>
-      ) : (
-        <label className="inline small" style={{ gap: 6 }} title={t("entry.q_na_hint")}>
-          <input type="checkbox" disabled={readonly} checked={na} onChange={(e) => setNa(e.target.checked)} />
-          {t("entry.q_na_box")}
-        </label>
-      )}
       {naErr && <div className="small" style={{ color: "var(--red)" }}>{naErr}</div>}
-      <div style={{ marginTop: 8 }}>
-        {items.map((r: RoadmapItem) => (
-          <div key={r.id} className="item-row">
-            <Dot status={roadmapRag(r.status)} />
-            {/* The title opens the milestone: a button, so the keyboard reaches it. */}
-            <button type="button" className="btn-ghost grow small" style={{ textAlign: "left", padding: 0 }}
-                    disabled={readonly} onClick={() => onEdit(r)} title={t("jalon.details")}>
-              {r.theme ? <span className="strong" style={{ color: "var(--navy)" }}>{r.theme}, </span> : null}
-              {r.title}
-            </button>
-            {stageTag(r.release_stage) && <span className="badge badge-navy" style={{ fontSize: 10 }}>{r.release_stage}</span>}
-            {/* The weekly gesture, in one click: the status, changed where it shows. */}
-            {!readonly && (
-              <select className="w-auto small" aria-label={`${t("jalon.status")} ${r.title}`} value={r.status}
-                      onChange={(e) => onStatus(r, e.target.value)} style={{ maxWidth: 120 }}>
-                {["on_track", "at_risk", "blocked", "done"].map((s) => <option key={s} value={s}>{roadmap(s)}</option>)}
-              </select>
-            )}
-            {r.owner ? <span className="small muted">{r.owner}</span> : null}
-          </div>
-        ))}
-      </div>
-      {!readonly && (
-        <button className="btn-secondary btn-sm" style={{ marginTop: 8 }} onClick={onAdd}>+ {t("jalon.add")}</button>
+      {items.length > 0 && (
+        <div className="q-items">
+          {items.map((r: RoadmapItem) => (
+            <div key={r.id} className="q-item">
+              <Dot status={roadmapRag(r.status)} />
+              <span className="q-theme">{r.theme ? <span className="badge badge-grey">{r.theme}</span> : null}</span>
+              {/* The title opens the milestone: a button, so the keyboard reaches it. */}
+              <button type="button" className="btn-ghost q-title" disabled={readonly}
+                      onClick={() => onEdit(r)} title={t("jalon.details")}>
+                {r.title}
+              </button>
+              <span>{stageTag(r.release_stage) && <span className="badge badge-navy" style={{ fontSize: 10 }}>{r.release_stage}</span>}</span>
+              <span className="small muted q-owner">{r.owner ?? ""}</span>
+              {/* The weekly gesture, in one click: the status, changed where it shows. */}
+              {!readonly ? (
+                <select className="small" aria-label={`${t("jalon.status")} ${r.title}`} value={r.status}
+                        onChange={(e) => onStatus(r, e.target.value)}>
+                  {["on_track", "at_risk", "blocked", "done"].map((st) => <option key={st} value={st}>{roadmap(st)}</option>)}
+                </select>
+              ) : <span className="small">{roadmap(r.status)}</span>}
+            </div>
+          ))}
+        </div>
       )}
-    </div>
+    </section>
   );
 }
 

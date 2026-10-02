@@ -9,6 +9,7 @@
  * Server-side permissions remain authoritative; the split here is only UX.
  */
 import { useEffect, useState } from "react";
+import { StepLayout, StepSection } from "../components/StepLayout";
 import { Link, useSearchParams } from "react-router-dom";
 import { api, ApiError, errorText } from "../api";
 import { useI18n } from "../i18n";
@@ -19,7 +20,7 @@ import { useSetPageChrome } from "../components/pageChrome";
 import { useConfig, useModule } from "../config";
 import { OtdPanel } from "../components/OtdPanel";
 import { leadsSquad } from "../perms";
-import { TeamEditor } from "../components/TeamModal";
+import { TeamModal } from "../components/TeamModal";
 import { BudgetPanel, CommitteesPanel } from "./SquadDetailPage";
 
 
@@ -146,9 +147,12 @@ function SquadCard({ squadId, year, leaders, tribes, isAdmin, manager, autoOpen,
 }) {
   const { t } = useI18n();
   const [d, setD] = useState<SquadDetail | null>(null);
-  const [edit, setEdit] = useState(!!autoOpen);
-  // The step the window opens on: the link's, or the team when asked from the card.
-  const [startStep, setStartStep] = useState<SquadStep | undefined>(autoOpen ? initialStep : undefined);
+  // The team has its own window: a link that asks for it (?step=team) opens that
+  // one, not the set-up window.
+  const askTeam = !!autoOpen && initialStep === "team";
+  const [edit, setEdit] = useState(!!autoOpen && !askTeam);
+  const [team, setTeam] = useState(askTeam);
+  const [startStep, setStartStep] = useState<SquadStep | undefined>(autoOpen && !askTeam ? initialStep : undefined);
   const open = (s?: SquadStep) => { setStartStep(s); setEdit(true); };
 
   async function load() {
@@ -166,7 +170,7 @@ function SquadCard({ squadId, year, leaders, tribes, isAdmin, manager, autoOpen,
         <div className="strong" style={{ fontSize: 16 }}>{d.name}</div>
         <span className="inline" style={{ gap: 6 }}>
           {/* The team is what a squad leader changes most: one click to it. */}
-          <button className="btn-secondary btn-sm" onClick={() => open("team")}>
+          <button className="btn-secondary btn-sm" onClick={() => setTeam(true)}>
             {t("mysquads.manage_team_n", { n: d.members.length })}
           </button>
           <button className="btn-secondary btn-sm" onClick={() => open()}>✎ {manager ? t("action.edit") : t("mysquads.manage")}</button>
@@ -205,6 +209,11 @@ function SquadCard({ squadId, year, leaders, tribes, isAdmin, manager, autoOpen,
 
       {steercoOn && d.steerco_enabled && (
         <div className="small muted">{t("steerco.contributes")}</div>
+      )}
+
+      {team && (
+        <TeamModal squadId={d.id} squadName={d.name}
+                   onClose={() => { setTeam(false); onClosed?.(); load(); onChanged(); }} />
       )}
 
       {edit && (
@@ -285,8 +294,9 @@ function EditSquadModal({ detail, year, initialStep, leaders, tribes, isAdmin, m
     "infos",
     ...(manager ? ["options" as SquadStep] : []),
     "otd",
-    "team",
-    ...(d.budget_enabled ? ["budget" as SquadStep] : []),
+    // Le budget se renseigne dans le reporting; ne reste ici que l'enveloppe,
+    // qui est au tribe leader.
+    ...(manager && d.budget_enabled ? ["budget" as SquadStep] : []),
     ...(committeesOn ? ["committees" as SquadStep] : []),
   ];
   const [step, setStep] = useState(Math.max(0, keys.indexOf(initialStep ?? "infos")));
@@ -295,14 +305,36 @@ function EditSquadModal({ detail, year, initialStep, leaders, tribes, isAdmin, m
   const last = keys.length - 1;
   const saisieTo = `/saisie?squad=${d.id}&year=${year}`;
 
+  // What each step holds, under its name in the side menu: one glance says what
+  // is set and what is left, without opening every step.
+  const meta: Record<SquadStep, { text: string; done: boolean }> = {
+    infos: d.leader ? { text: d.leader.display_name ?? "", done: true } : { text: t("mysquads.meta.no_leader"), done: false },
+    options: {
+      text: t("mysquads.meta.options", { n: [kpisOn && d.kpis_enabled, d.budget_enabled].filter(Boolean).length }),
+      done: true,
+    },
+    otd: { text: t("mysquads.meta.otd", { n: d.otd_count ?? 0 }), done: (d.otd_count ?? 0) > 0 },
+    team: { text: t("mysquads.meta.team", { n: d.members.length }), done: d.members.length > 0 },
+    budget: d.budget ? { text: t("mysquads.meta.budget_set"), done: true } : { text: t("mysquads.meta.budget_empty"), done: false },
+    committees: { text: t("mysquads.meta.committees", { n: d.committees.length }), done: d.committees.length > 0 },
+  };
+  const tribeName = tribes.find((tr) => tr.id === d.tribe_id)?.name;
+
   return (
     <Modal
-      width={720}
-      title={`${manager ? t("action.edit") : t("mysquads.manage")} : ${d.name}`}
+      width={1240}
+      title={
+        <span className="sq-title">
+          <span>{d.name}</span>
+          <span className="sq-title-sub">
+            {[tribeName, manager ? t("action.edit") : t("mysquads.manage")].filter(Boolean).join(", ")}
+          </span>
+        </span>
+      }
       onClose={onClose}
       footer={
-        <div className="between" style={{ width: "100%", alignItems: "center" }}>
-          {!manager ? <span /> : confirmDel ? (
+        <div className="between" style={{ width: "100%", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          {!manager ? <span className="small muted">{t("mysquads.autosave")}</span> : confirmDel ? (
             <div className="inline" style={{ gap: 6 }}>
               <span className="small">{t("mysquads.del_confirm")}</span>
               <button className="btn-danger btn-sm" onClick={async () => {
@@ -316,7 +348,10 @@ function EditSquadModal({ detail, year, initialStep, leaders, tribes, isAdmin, m
               <button className="btn-secondary btn-sm" onClick={() => setConfirmDel(false)}>{t("action.cancel")}</button>
             </div>
           ) : (
-            <button className="btn-danger btn-sm" onClick={() => setConfirmDel(true)}>{t("mysquads.delete_squad")}</button>
+            <span className="inline" style={{ gap: 12 }}>
+              <button className="btn-ghost btn-sm sq-danger" onClick={() => setConfirmDel(true)}>{t("mysquads.delete_squad")}</button>
+              <span className="small muted">{t("mysquads.autosave")}</span>
+            </span>
           )}
           <div className="inline" style={{ gap: 8 }}>
             <button className="btn-secondary btn-sm" disabled={at === 0} onClick={() => setStep(Math.max(0, at - 1))}>‹ {t("common.prev")}</button>
@@ -327,170 +362,189 @@ function EditSquadModal({ detail, year, initialStep, leaders, tribes, isAdmin, m
         </div>
       }
     >
-      {err && <ErrorBanner message={err} />}
-      {/* Step chips: shows where you are and lets you jump. */}
-      <div className="inline" style={{ gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
-        {keys.map((k, i) => (
-          <button key={k} onClick={() => setStep(i)}
-            className={`badge ${i === at ? "badge-navy" : "badge-grey"}`}
-            style={{ cursor: "pointer", border: 0 }}>
-            {i + 1}. {t(`mysquads.step.${k}`)}
-          </button>
-        ))}
-      </div>
+      <StepLayout ariaLabel={d.name} at={at} onGo={setStep} desc={t(`mysquads.stepd.${current}`)}
+                  steps={keys.map((k) => ({ key: k, title: t(`mysquads.step.${k}`), meta: meta[k].text, done: meta[k].done }))}>
+          {err && <ErrorBanner message={err} />}
 
-      {current === "infos" && (
-        <div className="stack" style={{ gap: 14 }}>
-          <div className="row" style={{ gap: 12 }}>
-            <div style={{ flex: 1, minWidth: 180 }}>
-              <label htmlFor="sq-name">{t("admin.name")}</label>
-              <input id="sq-name" defaultValue={d.name} onBlur={(e) => {
-                const v = e.target.value.trim();
-                if (!v) { e.target.value = d.name; return; }  // a squad keeps a name
-                if (v !== d.name) patch({ name: v });
-              }} />
-            </div>
-            {manager ? (
-              <div style={{ flex: 1, minWidth: 160 }}>
-                <label htmlFor="sq-leader">{t("squad.squad_leader")}</label>
-                <select id="sq-leader" value={d.leader_user_id ?? ""} onChange={(e) => patch({ leader_user_id: e.target.value ? Number(e.target.value) : null })}>
-                  <option value="">-</option>
-                  {d.leader && !tribePeople.some((u) => u.id === d.leader_user_id) && (
-                    <option value={d.leader_user_id ?? ""}>{d.leader.display_name}</option>
-                  )}
-                  {tribePeople.map((u) => <option key={u.id} value={u.id}>{u.display_name}</option>)}
-                </select>
-              </div>
-            ) : (
-              <div style={{ flex: 1, minWidth: 160 }}>
-                <label>{t("squad.squad_leader")}</label>
-                <div className="small" style={{ paddingTop: 8 }}>{d.leader?.display_name || "-"}</div>
-              </div>
-            )}
-          </div>
+          {current === "infos" && (
+            <>
+              <StepSection title={t("mysquads.sec.identity")}>
+                <div>
+                  <label htmlFor="sq-name">{t("admin.name")}</label>
+                  <input id="sq-name" defaultValue={d.name} onBlur={(e) => {
+                    const v = e.target.value.trim();
+                    if (!v) { e.target.value = d.name; return; }  // a squad keeps a name
+                    if (v !== d.name) patch({ name: v });
+                  }} />
+                </div>
+                <div>
+                  <label htmlFor="sq-desc">{t("admin.description")}</label>
+                  <textarea id="sq-desc" rows={3} defaultValue={d.description ?? ""} placeholder={t("mysquads.desc_ph")}
+                            onBlur={(e) => (e.target.value || null) !== (d.description ?? null) && patch({ description: e.target.value || null })} />
+                </div>
+              </StepSection>
 
-          {/* Co-leaders: the same rights on this squad. Naming them is the tribe
-              leader's call; the leader reads who they are. */}
-          {manager ? (
-            <div>
-              <label>{t("squad.co_leaders")}</label>
-              <div className="small muted" style={{ marginBottom: 4 }}>{t("squad.co_leaders_hint")}</div>
-              <PeoplePicker options={tribePeople.filter((u) => u.id !== d.leader_user_id)}
-                            value={d.co_leader_user_ids ?? []} known={d.co_leaders}
-                            onChange={(v) => patch({ co_leader_user_ids: v })} />
-            </div>
-          ) : (d.co_leaders?.length ?? 0) > 0 && (
-            <div className="small muted">{t("squad.co_leaders")}{t("common.colon")}{d.co_leaders!.map((c) => c.display_name).join(", ")}</div>
-          )}
+              <StepSection title={t("mysquads.sec.leaders")} hint={manager ? t("squad.co_leaders_hint") : undefined}>
+                {manager ? (
+                  <div>
+                    <label htmlFor="sq-leader">{t("squad.squad_leader")}</label>
+                    <select id="sq-leader" value={d.leader_user_id ?? ""} onChange={(e) => patch({ leader_user_id: e.target.value ? Number(e.target.value) : null })}>
+                      <option value="">-</option>
+                      {d.leader && !tribePeople.some((u) => u.id === d.leader_user_id) && (
+                        <option value={d.leader_user_id ?? ""}>{d.leader.display_name}</option>
+                      )}
+                      {tribePeople.map((u) => <option key={u.id} value={u.id}>{u.display_name}</option>)}
+                    </select>
+                  </div>
+                ) : (
+                  <div className="sq-readonly">
+                    <span className="small muted">{t("squad.squad_leader")}</span>
+                    <span className="strong">{d.leader?.display_name || "-"}</span>
+                  </div>
+                )}
+                {/* Co-leaders: the same rights on this squad. Naming them is the tribe
+                    leader's call; the leader reads who they are. */}
+                {manager ? (
+                  <div>
+                    <label>{t("squad.co_leaders")}</label>
+                    <PeoplePicker options={tribePeople.filter((u) => u.id !== d.leader_user_id)}
+                                  value={d.co_leader_user_ids ?? []} known={d.co_leaders}
+                                  onChange={(v) => patch({ co_leader_user_ids: v })} />
+                  </div>
+                ) : (d.co_leaders?.length ?? 0) > 0 && (
+                  <div className="sq-readonly">
+                    <span className="small muted">{t("squad.co_leaders")}</span>
+                    <span className="strong">{d.co_leaders!.map((c) => c.display_name).join(", ")}</span>
+                  </div>
+                )}
+              </StepSection>
 
-          {/* Contributors: they fill in and submit the squad's reporting, and
-              nothing else. Named by the tribe leader or by the squad's leader. */}
-          <div>
-            <label>{t("squad.contributors")}</label>
-            <div className="small muted" style={{ marginBottom: 4 }}>{t("squad.contributors_hint")}</div>
-            <PeoplePicker options={candidates.filter((u) => !leadership.has(u.id))}
-                          value={d.contributor_user_ids ?? []} known={d.contributors}
-                          addLabel={t("squad.contributors_add")} noneLabel={t("squad.contributors_none")}
-                          onChange={(v) => patch({ contributor_user_ids: v })} />
-          </div>
+              {/* Contributors: they fill in and submit the squad's reporting, and
+                  nothing else. Named by the tribe leader or by the squad's leader. */}
+              <StepSection title={t("squad.contributors")} hint={t("squad.contributors_hint")}>
+                <PeoplePicker options={candidates.filter((u) => !leadership.has(u.id))}
+                              value={d.contributor_user_ids ?? []} known={d.contributors}
+                              addLabel={t("squad.contributors_add")} noneLabel={t("squad.contributors_none")}
+                              onChange={(v) => patch({ contributor_user_ids: v })} />
+              </StepSection>
 
-          {manager && (
-            <div className="row" style={{ gap: 12 }}>
-              {/* Moving a squad to another tribe is an administrator's decision. */}
-              {isAdmin && (
-                <div style={{ flex: 1, minWidth: 160 }}>
-                  <label htmlFor="sq-tribe">{t("admin.tribe")}</label>
-                  <select id="sq-tribe" value={d.tribe_id} onChange={(e) => patch({ tribe_id: Number(e.target.value) })}>
-                    {tribes.map((tr) => <option key={tr.id} value={tr.id}>{tr.name}</option>)}
-                  </select>
+              <StepSection title={t("mysquads.sec.scope")} hint={t("mysquads.sec.scope_hint")}>
+                <div className="sq-grid-2">
+                  <div>
+                    <label>{t("squad.products")}</label>
+                    <TagListEditor value={d.products ?? []} placeholder={t("squad.products_ph")}
+                                   onChange={(v) => patch({ products: v })} />
+                  </div>
+                  <div>
+                    <label>{t("squad.hardware")}</label>
+                    <TagListEditor value={d.hardware ?? []} placeholder={t("squad.hardware_ph")}
+                                   onChange={(v) => patch({ hardware: v })} />
+                  </div>
+                </div>
+              </StepSection>
+
+              {manager && (
+                <StepSection title={t("mysquads.sec.attach")}>
+                  <div className="sq-grid-2">
+                    {/* Moving a squad to another tribe is an administrator's decision. */}
+                    {isAdmin ? (
+                      <div>
+                        <label htmlFor="sq-tribe">{t("admin.tribe")}</label>
+                        <select id="sq-tribe" value={d.tribe_id} onChange={(e) => patch({ tribe_id: Number(e.target.value) })}>
+                          {tribes.map((tr) => <option key={tr.id} value={tr.id}>{tr.name}</option>)}
+                        </select>
+                      </div>
+                    ) : (
+                      <div className="sq-readonly">
+                        <span className="small muted">{t("admin.tribe")}</span>
+                        <span className="strong">{tribeName ?? "-"}</span>
+                      </div>
+                    )}
+                    <div>
+                      <label htmlFor="sq-order">{t("admin.order")}</label>
+                      <input id="sq-order" type="number" defaultValue={d.display_order} style={{ maxWidth: 140 }}
+                             onBlur={(e) => Number(e.target.value) !== d.display_order && patch({ display_order: Number(e.target.value) })} />
+                    </div>
+                  </div>
+                </StepSection>
+              )}
+
+              {/* The week's content is not a setting: it lives in the reporting. */}
+              {!manager && can("reporting") && (
+                <div className="banner small">
+                  {t("mysquads.weekly_in_reporting")} <Link to={saisieTo}>{t("squad.update_in_reporting")}</Link>
                 </div>
               )}
-              <div style={{ width: 120 }}>
-                <label htmlFor="sq-order">{t("admin.order")}</label>
-                <input id="sq-order" type="number" defaultValue={d.display_order}
-                       onBlur={(e) => Number(e.target.value) !== d.display_order && patch({ display_order: Number(e.target.value) })} />
-              </div>
+            </>
+          )}
+
+          {current === "options" && (
+            <>
+              <StepSection title={t("mysquads.sec.modules")} hint={t("mysquads.options_hint")}>
+                {kpisOn && (
+                  <div className="sq-option">
+                    <span className="sq-option-text">
+                      <span className="strong">{t("admin.kpis_enabled")}</span>
+                      <span className="small muted">{t("mysquads.opt.kpis_hint")}</span>
+                    </span>
+                    <label className="switch">
+                      <input type="checkbox" checked={!!d.kpis_enabled} aria-label={t("admin.kpis_enabled")}
+                             onChange={(e) => patch({ kpis_enabled: e.target.checked })} />
+                      <span className="track"><span className="knob" /></span>
+                    </label>
+                  </div>
+                )}
+                <div className="sq-option">
+                  <span className="sq-option-text">
+                    <span className="strong">{t("mysquads.budget_enabled")}</span>
+                    <span className="small muted">{t("mysquads.opt.budget_hint")}</span>
+                  </span>
+                  <label className="switch">
+                    <input type="checkbox" checked={!!d.budget_enabled} aria-label={t("mysquads.budget_enabled")}
+                           onChange={(e) => patch({ budget_enabled: e.target.checked })} />
+                    <span className="track"><span className="knob" /></span>
+                  </label>
+                </div>
+              </StepSection>
+              {/* The Steerco is managed in one place: Administration > Platforms and
+                  Steerco (which squads feed which platform, the skeleton). */}
+              <StepSection title={t("steerco.tab")}>
+                {steercoOn
+                  ? <div className="small muted">
+                      {t("mysquads.steerco_managed")}{" "}
+                      {adminTabs.includes("platforms")
+                        ? <Link to="/admin?section=platforms">{t("admin.tab.platforms")}</Link>
+                        : <span className="strong">{t("admin.tab.platforms")}</span>}
+                    </div>
+                  : <div className="small muted">{t("mysquads.module_off", { name: t("steerco.tab") })}</div>}
+              </StepSection>
+            </>
+          )}
+
+          {/* OTD: the management's for whoever manages the squads, the squad's own for
+              its leader (the management's shows read-only beside it). */}
+          {current === "otd" && (
+            <div className="stack" style={{ gap: 16 }}>
+              <OtdPanel squad={d} canManage={manager}
+                        canOwn={!manager || isAdmin || leadsSquad(user?.role ?? "member", user?.id, d)} onChange={reload} />
+              {manager && <SquadInitiatives squad={d} onChange={reload} onError={onError} />}
             </div>
           )}
 
-          <div>
-            <label htmlFor="sq-desc">{t("admin.description")}</label>
-            <textarea id="sq-desc" rows={2} defaultValue={d.description ?? ""}
-                      onBlur={(e) => (e.target.value || null) !== (d.description ?? null) && patch({ description: e.target.value || null })} />
-          </div>
 
-          <div className="row" style={{ gap: 12 }}>
-            <div style={{ flex: 1, minWidth: 200 }}>
-              <label>{t("squad.products")}</label>
-              <TagListEditor value={d.products ?? []} placeholder={t("squad.products_ph")}
-                             onChange={(v) => patch({ products: v })} />
-            </div>
-            <div style={{ flex: 1, minWidth: 200 }}>
-              <label>{t("squad.hardware")}</label>
-              <TagListEditor value={d.hardware ?? []} placeholder={t("squad.hardware_ph")}
-                             onChange={(v) => patch({ hardware: v })} />
-            </div>
-          </div>
-
-          {/* The week's content is not a setting: it lives in the reporting. */}
-          {!manager && can("reporting") && (
-            <div className="small muted">
-              {t("mysquads.weekly_in_reporting")} <Link to={saisieTo}>{t("squad.update_in_reporting")}</Link>
-            </div>
+          {current === "budget" && (
+            <BudgetPanel squad={d} canEdit canToggle={manager} onChange={reload} />
           )}
-        </div>
-      )}
 
-      {current === "options" && (
-        <div className="stack" style={{ gap: 16 }}>
-          <div className="small muted">{t("mysquads.options_hint")}</div>
-          {kpisOn && (
-            <label className="switch">
-              <input type="checkbox" checked={!!d.kpis_enabled} onChange={(e) => patch({ kpis_enabled: e.target.checked })} />
-              <span className="track"><span className="knob" /></span>
-              <span className="small">{t("admin.kpis_enabled")}</span>
-            </label>
+          {current === "committees" && (
+            <CommitteesPanel squad={d} canEdit onChange={reload} />
           )}
-          <label className="switch">
-            <input type="checkbox" checked={!!d.budget_enabled} onChange={(e) => patch({ budget_enabled: e.target.checked })} />
-            <span className="track"><span className="knob" /></span>
-            <span className="small">{t("mysquads.budget_enabled")}</span>
-          </label>
-          {/* The Steerco is managed in one place: Administration > Platforms and
-              Steerco (which squads feed which platform, the skeleton). */}
-          {steercoOn
-            ? <div className="small muted">
-                {t("mysquads.steerco_managed")}{" "}
-                {adminTabs.includes("platforms")
-                  ? <Link to="/admin?section=platforms">{t("admin.tab.platforms")}</Link>
-                  : <span className="strong">{t("admin.tab.platforms")}</span>}
-              </div>
-            : <div className="small muted">{t("mysquads.module_off", { name: t("steerco.tab") })}</div>}
-        </div>
-      )}
-
-      {/* OTD: the management's for whoever manages the squads, the squad's own for
-          its leader (the management's shows read-only beside it). */}
-      {current === "otd" && (
-        <div className="stack" style={{ gap: 16 }}>
-          <OtdPanel squad={d} canManage={manager}
-                    canOwn={!manager || isAdmin || leadsSquad(user?.role ?? "member", user?.id, d)} onChange={reload} />
-          {manager && <SquadInitiatives squad={d} onChange={reload} onError={onError} />}
-        </div>
-      )}
-
-      {current === "team" && <TeamEditor squadId={d.id} onChange={reload} />}
-
-      {current === "budget" && (
-        <BudgetPanel squad={d} canEdit canToggle={manager} onChange={reload} />
-      )}
-
-      {current === "committees" && (
-        <CommitteesPanel squad={d} canEdit onChange={reload} />
-      )}
+      </StepLayout>
     </Modal>
   );
 }
+
+
 
 
 /**

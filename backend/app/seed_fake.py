@@ -111,18 +111,18 @@ JALONS_PER_SQUAD = 9
 # repere sur la frise, et il n'existait dans aucun jeu de donnees.
 # (titre, mois)
 OTD_SPECS = [
-    ("Premiere region secondaire ouverte", 1),
+    ("Region secondaire ouverte", 1),
     ("Socle multi-cloud disponible", 2),
     ("Landing zones certifiees", 3),
-    ("Portail self-service ouvert aux equipes", 4),
-    ("Catalogue de services manages publie", 5),
-    ("Chaine de deploiement continue generalisee a toute la tribu", 6),
+    ("Portail self-service ouvert", 4),
+    ("Catalogue manage publie", 5),
+    ("Deploiement continu generalise", 6),
     ("Observabilite unifiee", 7),
     ("Revue de securite annuelle", 8),
     ("Reversibilite demontree", 9),
-    ("Bascule du trafic client sur la nouvelle plateforme", 10),
-    ("Decommissionnement du socle historique", 11),
-    ("Cloture budgetaire du programme et bilan annuel de la tribu", 12),
+    ("Bascule du trafic client", 10),
+    ("Ancien socle decommissionne", 11),
+    ("Bilan annuel du programme", 12),
 ]
 OTDS_PER_SQUAD = 5
 
@@ -170,8 +170,8 @@ def _wipe(db: Session) -> None:
 # Deux par squad suffisent a montrer la distinction sur une slide: la couleur du
 # repere, celle du titre de la carte, et la legende du bas.
 SQUAD_OTD_SPECS = [
-    ("Montee de version du socle sans interruption", 3),
-    ("Bascule des environnements internes", 9),
+    ("Montee de version sans coupure", 3),
+    ("Bascule des environnements", 9),
 ]
 
 

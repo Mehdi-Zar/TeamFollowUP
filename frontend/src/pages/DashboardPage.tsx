@@ -143,9 +143,12 @@ export default function DashboardPage() {
     setParams(next, { replace: true });
   };
 
+  // The tabs do not wait for the overview's data: the Steerco tab never loads it,
+  // so opening /?tab=steerco directly (from the Initiatives tab) used to show no
+  // tabs at all, and no way back.
+  const chromeYear = data?.year ?? shownYear;
   useSetPageChrome(
-    data
-      ? {
+    {
           tabs: [
             { key: "overview", label: t("dash.tab_overview") },
             ...(steercoTabOn ? [{ key: "steerco", label: t("steerco.tab") }] : []),
@@ -154,7 +157,7 @@ export default function DashboardPage() {
           activeTab: tab,
           onTab: (k) => {
             // The year travels from tab to tab.
-            const y = data?.year ?? shownYear;
+            const y = chromeYear;
             if (k === "initiatives") navigate(`/initiatives${y ? `?year=${y}` : ""}`);
             else if (k === "steerco") setParams({ tab: "steerco", ...(y ? { year: String(y) } : {}) });
             else setParams(y ? { year: String(y) } : {});
@@ -170,21 +173,20 @@ export default function DashboardPage() {
               )}
               <ExportMenu docs={["steerco", "report"]} steerco={{ period: steercoPeriod, platformId: steercoPlatform }} />
             </>
-          ) : (
+          ) : chromeYear ? (
             <>
               <div className="seg">
                 {/* The chosen year and its two neighbours, as on every other screen. */}
-                {[data.year - 1, data.year, data.year + 1].map((y) => (
-                  <button key={y} className={y === data.year ? "active" : ""} aria-pressed={y === data.year} onClick={() => setYear(y)}>{y}</button>
+                {[chromeYear - 1, chromeYear, chromeYear + 1].map((y) => (
+                  <button key={y} className={y === chromeYear ? "active" : ""} aria-pressed={y === chromeYear} onClick={() => setYear(y)}>{y}</button>
                 ))}
               </div>
               <ReportingButton />
-              <ExportMenu year={data.year} docs={["dashboard", "report"]} />
+              <ExportMenu year={chromeYear} docs={["dashboard", "report"]} />
             </>
-          ),
-        }
-      : {},
-    [data?.year, showInitiatives, steercoTabOn, tab, steercoPeriod, steercoPlatform, t]
+          ) : null,
+    },
+    [chromeYear, showInitiatives, steercoTabOn, tab, steercoPeriod, steercoPlatform, canManagePlatforms, t]
   );
 
   if (tab === "steerco" && steercoTabOn)
