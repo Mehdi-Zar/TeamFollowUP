@@ -16,6 +16,7 @@ import { ADMIN_TABS_BY_ROLE, ALL_ROLES } from "../../perms";
 import { ADMIN_GROUPS, TAB_LABEL } from "./tabs";
 
 import { useErr, useLoadState } from "./shared";
+import { Sorted, SortTh } from "../../components/tableView";
 
 /** Admin > Squads: the table of the squads, one row each, to see and change at a
  *  glance who leads them. Name, tribe (admin), squad leader, co-leaders,
@@ -84,20 +85,21 @@ export function SquadsAdmin({ perms }: { perms: Permissions }) {
       {error && <ErrorBanner message={error} />}
       {noPeople && <div className="banner small">{t("admin.squads_no_accounts")}</div>}
       <div className="card" style={{ padding: 0, overflowX: "auto" }}>
+        <Sorted storageKey="admin.squads" rows={squads} cols={[{ key: "name", value: (s: Squad) => s.name }, { key: "tribe", value: (s: Squad) => tribeName(s.tribe_id) }, { key: "leader", value: (s: Squad) => users.find((u) => u.id === s.leader_user_id)?.display_name ?? "" }, { key: "order", value: (s: Squad) => s.display_order }]} defaultSort="order">{(v) => (
         <table className="admin-squads-table">
           <thead>
             <tr>
-              <th>{t("admin.squad")}</th>
-              <th>{t("admin.tribe")}</th>
-              <th>{t("squad.squad_leader")}</th>
+              <SortTh view={v} col="name">{t("admin.squad")}</SortTh>
+              <SortTh view={v} col="tribe">{t("admin.tribe")}</SortTh>
+              <SortTh view={v} col="leader">{t("squad.squad_leader")}</SortTh>
               <th>{t("squad.co_leaders")}</th>
               <th>{t("squad.contributors")}</th>
-              <th>{t("admin.order")}</th>
+              <SortTh view={v} col="order">{t("admin.order")}</SortTh>
               <th />
             </tr>
           </thead>
           <tbody>
-            {squads.map((s) => (
+            {v.rows.map((s) => (
               <tr key={s.id}>
                 <td className="strong">
                   <input aria-label={t("admin.squad")} defaultValue={s.name}
@@ -150,6 +152,7 @@ export function SquadsAdmin({ perms }: { perms: Permissions }) {
             ))}
           </tbody>
         </table>
+        )}</Sorted>
       </div>
 
       <div className="card">
@@ -315,19 +318,20 @@ export function UsersAdmin({ perms }: { perms: Permissions }) {
     <div className="stack">
       {error && <ErrorBanner message={error} />}
       <div className="card" style={{ padding: 0, overflowX: "auto" }}>
+<Sorted storageKey="admin.users" rows={users} cols={[{ key: "name", value: (u: any) => u.display_name }, { key: "email", value: (u: any) => u.email }, { key: "role", value: (u: any) => u.role }, { key: "tribe", value: (u: any) => tribes.find((x) => x.id === u.tribe_id)?.name ?? "" }, { key: "login", value: (u: any) => u.last_login_at || "" }]}>{(v) => (
         <table>
           <thead>
             <tr>
-              <th>{t("admin.user")}</th>
-              <th>{t("admin.email")}</th>
-              <th>{t("admin.role")}</th>
-              <th>{t("admin.tribe")}</th>
-              <th>{t("admin.last_login")}</th>
+              <SortTh view={v} col="name">{t("admin.user")}</SortTh>
+              <SortTh view={v} col="email">{t("admin.email")}</SortTh>
+              <SortTh view={v} col="role">{t("admin.role")}</SortTh>
+              <SortTh view={v} col="tribe">{t("admin.tribe")}</SortTh>
+              <SortTh view={v} col="login">{t("admin.last_login")}</SortTh>
               <th />
             </tr>
           </thead>
           <tbody>
-            {users.map((u) => (
+            {v.rows.map((u) => (
               <tr key={u.id}>
                 <td className="strong">
                   {u.display_name}
@@ -379,6 +383,7 @@ export function UsersAdmin({ perms }: { perms: Permissions }) {
             )}
           </tbody>
         </table>
+)}</Sorted>
       </div>
 
       <div className="card">

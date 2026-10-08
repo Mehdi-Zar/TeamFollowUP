@@ -15,6 +15,10 @@ import { AuthProvider } from "./auth";
 import { I18nProvider } from "./i18n";
 import { ConfigProvider } from "./config";
 import "./theme.css";
+import { installDraggableWindows } from "./components/dragWindows";
+
+// Every window can be moved by its title bar (see dragWindows).
+installDraggableWindows();
 
 // Non-null assertion: index.html always ships the #root element.
 ReactDOM.createRoot(document.getElementById("root")!).render(

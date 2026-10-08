@@ -15,6 +15,7 @@ import { api, errorText } from "../api";
 import { useI18n } from "../i18n";
 import { CandidateJalon, OtdReport, OtdScope, SquadDetail } from "../types";
 import { Collapsible, ErrorBanner, Modal, PickItem } from "./ui";
+import { Sorted, SortTh } from "./tableView";
 
 /** Longueur maximale d'un titre d'OTD, la meme que cote API (schemas.OTD_TITLE_MAX). */
 const OTD_TITLE_MAX = 30;
@@ -75,19 +76,20 @@ export function OtdPanel({ squad, canManage, canOwn, onChange, editTo, editLabel
    *  la fenetre de l'engagement, qui est aussi la ou on les rattache. */
   const otdTable = (list: OtdReport[]) => (
     <div style={{ overflowX: "auto" }}>
+      <Sorted storageKey="otd.table" rows={list} cols={[{ key: "title", value: (o: OtdReport) => o.title }, { key: "scope", value: (o) => scopeOf(o) }, { key: "date", value: (o) => o.committed_date || "" }, { key: "status", value: (o) => o.status }, { key: "jalons", value: (o) => o.counts.total }]}>{(v) => (
       <table className="otd-tbl">
         <thead>
           <tr>
-            <th>{t("otd.h_title")}</th>
-            <th style={{ width: 150 }}>{t("otd.h_scope")}</th>
-            <th style={{ width: 140 }}>{t("otd.committed")}</th>
-            <th style={{ width: 120 }}>{t("otd.h_status")}</th>
-            <th style={{ width: 190 }}>{t("otd.h_jalons")}</th>
+            <SortTh view={v} col="title">{t("otd.h_title")}</SortTh>
+            <SortTh view={v} col="scope" style={{ width: 150 }}>{t("otd.h_scope")}</SortTh>
+            <SortTh view={v} col="date" style={{ width: 140 }}>{t("otd.committed")}</SortTh>
+            <SortTh view={v} col="status" style={{ width: 120 }}>{t("otd.h_status")}</SortTh>
+            <SortTh view={v} col="jalons" style={{ width: 190 }}>{t("otd.h_jalons")}</SortTh>
             <th style={{ width: 110 }} />
           </tr>
         </thead>
         <tbody>
-          {list.map((o) => {
+          {v.rows.map((o) => {
             const scope = scopeOf(o);
             const writable = canWrite(o);
             return (
@@ -141,6 +143,7 @@ export function OtdPanel({ squad, canManage, canOwn, onChange, editTo, editLabel
           })}
         </tbody>
       </table>
+      )}</Sorted>
     </div>
   );
 

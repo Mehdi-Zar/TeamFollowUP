@@ -18,7 +18,7 @@ import { usePeople } from "../components/usePeople";
 import { useModule } from "../config";
 import { fte } from "../components/RolePicker";
 import { Budget, Committee, CommitteeFrequency, DependentItem, Initiative, Member, RoadmapItem, SnapshotMeta, SquadDetail, Weekday, stageTag } from "../types";
-import { Dot, FreshnessBadge, ProgressBar, Spinner, ErrorBanner, Collapsible } from "../components/ui";
+import { Dot, FreshnessBadge, ProgressBar, Spinner, ErrorBanner, Collapsible, StageBadge } from "../components/ui";
 import { InitiativesCard } from "../components/InitiativesCard";
 import { OtdPanel } from "../components/OtdPanel";
 import KeyMessagesPanel from "../components/KeyMessagesPanel";
@@ -29,6 +29,7 @@ import { useSetPageChrome } from "../components/pageChrome";
 import { roadmapRag, trendRag } from "../labels";
 import { contributesTo, leadsSquad } from "../perms";
 import { ReportingButton } from "../components/ReportingModal";
+import { Sorted, SortTh } from "../components/tableView";
 
 /**
  * Squad detail root. Reads the squad id from the route and the year from the
@@ -259,7 +260,7 @@ export default function SquadDetailPage() {
                     <div key={r.id} className="item-row clickable-row" role="button" onClick={() => setOpenJalon(r)} tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpenJalon(r); } }} title={t("jalon.details")}>
                       <Dot status={roadmapRag(r.status)} />
                       <span className="grow small">{r.title}</span>
-                      {stageTag(r.release_stage) && <span className="badge badge-navy" style={{ fontSize: 10 }}>{r.release_stage}</span>}
+                      <StageBadge stage={r.release_stage} other={r.release_stage_other} />
                       <span className="small muted">{roadmap(r.status)}</span>
                       <span className="chevron">›</span>
                     </div>
@@ -554,19 +555,20 @@ export function CommitteesPanel({ squad, canEdit, onChange, manageTo }:
         <div className="small muted" style={{ marginTop: 12 }}>{t("committee.none")}</div>
       ) : (
         <div style={{ overflowX: "auto", marginTop: 12 }}>
+          <Sorted storageKey="squad.committees" rows={committees} cols={[{ key: "name", value: (c: Committee) => c.name }, { key: "objective", value: (c: Committee) => c.objective ?? "" }, { key: "frequency", value: (c: Committee) => c.frequency ?? "" }]}>{(v) => (
           <table className="committee-tbl">
             <thead>
               <tr>
-                <th>{t("committee.col_name")}</th>
-                <th>{t("committee.objective")}</th>
-                <th>{t("committee.frequency")}</th>
+                <SortTh view={v} col="name">{t("committee.col_name")}</SortTh>
+                <SortTh view={v} col="objective">{t("committee.objective")}</SortTh>
+                <SortTh view={v} col="frequency">{t("committee.frequency")}</SortTh>
                 <th>{t("committee.when")}</th>
                 <th>{t("committee.participants")}</th>
                 {canEdit && <th style={{ width: 1 }} />}
               </tr>
             </thead>
             <tbody>
-              {committees.map((c) => (
+              {v.rows.map((c) => (
                 <tr key={c.id} className={c.is_active ? "" : "inactive"}>
                   <td>
                     <div className="inline" style={{ gap: 8, alignItems: "center" }}>
@@ -590,6 +592,7 @@ export function CommitteesPanel({ squad, canEdit, onChange, manageTo }:
               ))}
             </tbody>
           </table>
+          )}</Sorted>
         </div>
       )}
 

@@ -12,6 +12,7 @@ import { AuditEntry, AuditPage } from "../../types";
 import { ErrorBanner, Spinner } from "../../components/ui";
 
 import { useAppRestart, useErr, useLoadState } from "./shared";
+import { Sorted, SortTh } from "../../components/tableView";
 
 /** Admin > Moderation: review every feed post (and replies) with delete + pin
  *  controls. Used to police the shared feed regardless of authorship. */
@@ -602,18 +603,19 @@ export function AuditAdmin() {
       </div>
 
       <div className="card" style={{ padding: 0, overflowX: "auto" }}>
+<Sorted storageKey="admin.audit" rows={page.items} cols={[{ key: "ts", value: (e: any) => e.timestamp }, { key: "user", value: (e: any) => who(e) }, { key: "action", value: (e: any) => e.action }, { key: "entity", value: (e: any) => e.entity ?? "" }]} search={false}>{(v) => (
         <table>
           <thead>
             <tr>
-              <th>{t("admin.ts")}</th>
-              <th>{t("admin.user_col")}</th>
-              <th>{t("admin.action")}</th>
-              <th>{t("admin.entity")}</th>
+              <SortTh view={v} col="ts">{t("admin.ts")}</SortTh>
+              <SortTh view={v} col="user">{t("admin.user_col")}</SortTh>
+              <SortTh view={v} col="action">{t("admin.action")}</SortTh>
+              <SortTh view={v} col="entity">{t("admin.entity")}</SortTh>
               <th>{t("admin.detail")}</th>
             </tr>
           </thead>
           <tbody>
-            {page.items.map((e) => (
+            {v.rows.map((e) => (
               <tr key={e.id}>
                 <td className="muted" style={{ whiteSpace: "nowrap" }}>{formatDateTime(e.timestamp)}</td>
                 <td>{who(e)}</td>
@@ -632,6 +634,7 @@ export function AuditAdmin() {
             )}
           </tbody>
         </table>
+)}</Sorted>
       </div>
 
       {pages > 1 && (

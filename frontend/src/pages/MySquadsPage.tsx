@@ -22,6 +22,7 @@ import { OtdPanel } from "../components/OtdPanel";
 import { leadsSquad } from "../perms";
 import { TeamModal } from "../components/TeamModal";
 import { BudgetPanel, CommitteesPanel } from "./SquadDetailPage";
+import { SortSpec, applyListView, useListView } from "../components/listView";
 
 
 /** "My squads": the squads one manages. Whoever may manage squads (admin, tribe
@@ -81,6 +82,15 @@ function TribeLeaderSquads() {
   // Anyone active may be named leader: the server promotes a member or a
   // contributor to squad leader, as for a co-leader.
   const leaders = users.filter((u) => u.status !== "disabled");
+  // Search and sort the squads, like every list of the app.
+  const view = useListView("mysquads", "order", false);
+  const sorts: SortSpec<Squad>[] = [
+    { key: "order", label: t("mysquads.sort_order"), cmp: (a, b) => (a.display_order ?? 0) - (b.display_order ?? 0) || a.id - b.id },
+    { key: "name", label: t("mysquads.sort_name"), cmp: (a, b) => a.name.localeCompare(b.name) },
+    { key: "tribe", label: t("mysquads.sort_tribe"), cmp: (a, b) =>
+      (tribes.find((x) => x.id === a.tribe_id)?.name ?? "").localeCompare(tribes.find((x) => x.id === b.tribe_id)?.name ?? "")
+      || a.name.localeCompare(b.name) },
+  ];
 
   useSetPageChrome(
     {
@@ -102,6 +112,8 @@ function TribeLeaderSquads() {
 
   if (error && !squads) return <ErrorBanner message={error} />;
   if (!squads) return <Spinner />;
+  const shownSquads = applyListView(squads, view, sorts,
+    (s, needle) => [s.name, tribes.find((x) => x.id === s.tribe_id)?.name].some((x) => (x || "").toLowerCase().includes(needle)));
 
   return (
     <div className="stack" style={{ gap: 16 }}>
@@ -109,8 +121,28 @@ function TribeLeaderSquads() {
       <div className="muted small">{t("mysquads.intro")}</div>
 
       {squads.length === 0 && <EmptyState message={t("mysquads.empty")} />}
+      {squads.length > 3 && (
+        <div className="toolbar toolbar-inline">
+          <div className="tb-field tb-search">
+            <label htmlFor="mysquads-search" className="tb-label">{t("list.search")}</label>
+            <input id="mysquads-search" type="search" value={view.query} placeholder={t("mysquads.search_ph")}
+                   className={view.query ? "tb-on" : ""} onChange={(e) => view.setQuery(e.target.value)} />
+          </div>
+          <span className="toolbar-sort">
+            <span className="small muted">{t("table.count", { n: shownSquads.length, total: squads.length })}</span>
+            <label htmlFor="mysquads-sort" className="small muted">{t("list.sort")}</label>
+            <select id="mysquads-sort" value={view.sort} onChange={(e) => view.pickSort(e.target.value)}>
+              {sorts.map((x) => <option key={x.key} value={x.key}>{x.label}</option>)}
+            </select>
+            <button type="button" className="btn-secondary btn-sm tb-dir" onClick={() => view.pickSort(view.sort)}
+                    title={t("list.sort_flip")}>{view.desc ? t("jalon.sort_desc") : t("jalon.sort_asc")}</button>
+            {view.touched && <button type="button" className="btn-ghost btn-sm" onClick={view.reset}>{t("list.reset")}</button>}
+          </span>
+        </div>
+      )}
+      {squads.length > 0 && shownSquads.length === 0 && <div className="small muted">{t("list.no_match")}</div>}
       <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 16 }}>
-        {squads.map((s) => (
+        {shownSquads.map((s) => (
           <SquadCard key={`${s.id}-${year}`} squadId={s.id} year={year} leaders={leaders} tribes={tribes} isAdmin={isAdmin}
                      // A squad of another tribe that this tribe leader leads: led, not managed.
                      manager={isAdmin || s.tribe_id === user?.tribe_id}

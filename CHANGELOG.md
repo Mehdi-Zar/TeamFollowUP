@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- Favicon par defaut (barres montantes sur fond bleu nuit) ; le reglage d'Apparence s'appelle « Favicon (icone
+  d'onglet) », dit les formats acceptes, et supprimer un favicon televerse revient a celui par defaut.
+- Liste des jalons : etiquette pour les phases « Autre » (le libelle saisi) et « Hors produit ».
+- Barres de filtre et de tri harmonisees : champs de meme largeur sur une ligne, filtre actif mis en evidence,
+  compteur a gauche, tri (liste + sens) a droite ; meme rendu pour les jalons et Mes squads, recherche des
+  tableaux alignee. Correction : la pastille d'etape survolee du reporting devenait illisible.
+- Saisie, etape Jalons : recherche, filtres (statut, theme, phase, porteur, OTD) et tri (ordre de saisie, statut,
+  titre, theme, porteur, phase) ; l'avancement d'un trimestre reste calcule sur tous ses jalons.
+- Tri et recherche partout : un clic sur un en-tete de colonne trie (un second clic inverse le sens) et un champ
+  recherche filtre, sur les tableaux des OTD, des conges de l'equipe, des squads et des utilisateurs
+  (administration), des comites, des initiatives, des plateformes et du journal d'audit ; Mes squads gagne
+  recherche et tri. Le tri choisi est retenu par tableau dans le navigateur.
+- Toutes les fenetres (jalon, OTD, exports, administration...) se deplacent en les attrapant par leur barre de
+  titre ; elles ne sortent jamais assez de l'ecran pour perdre cette barre.
+- Libelles : « Engagement management » et « Engagement de la squad » deviennent **« OTD de la tribe »** et
+  **« OTD de la squad »** (ecrans, fenetre du jalon, legendes des exports, historique, notifications).
+
 ## 3.0.0 (2026-10-07)
 
 ### Studio des exports

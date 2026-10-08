@@ -257,7 +257,7 @@ def test_the_html_export_shows_the_whole_block(db, chained):
     # Et la boite porte le titre de l'engagement, ou le theme a defaut.
     assert "Plan VCF9 presente" in html and "Hygiene des images" in html
     # Les deux portees se distinguent, et leur legende voyage avec la frise.
-    assert "xtl-scope-squad" in html and "Engagement de la squad" in html
+    assert "xtl-scope-squad" in html and "OTD de la squad" in html
     # Un engagement sans date est cite sous la bande, pas efface.
     assert "Engagements sans date" in html and "Engagement sans date arretee" in html
     # Le moral, avec la date qui le date (le libelle part echappe, pas le niveau).
@@ -276,7 +276,7 @@ def test_the_deck_puts_one_squad_on_one_slide(db, chained):
     assert "Build incremental" in text
     assert "Nettoyage des images" in text
     assert "Plan VCF9 presente" in text and "Bascule 25G" in text
-    assert "Engagement management" in text, "la legende des deux portees"
+    assert "OTD de la tribe" in text, "la legende des deux portees"
     # Le moral: « Moral » au-dessus, « équipe » en dessous, et le nuage a droite. Le
     # niveau n'est plus ecrit a cote: il se lit sur le visage et sur la couleur,
     # et l'ecrire revenait a le dire deux fois dans deux centimetres.

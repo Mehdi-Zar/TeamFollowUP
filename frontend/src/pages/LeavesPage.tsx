@@ -13,6 +13,7 @@ import { useAuth } from "../auth";
 import { ErrorBanner, Modal, Spinner } from "../components/ui";
 import { Leave, LeaveConfig, LeaveOverlapDay, LeaveStatus, LeaveType } from "../types";
 import { leaveLabel, leaveTypeLabel } from "../leaves";
+import { Sorted, SortTh } from "../components/tableView";
 
 /* ---------- date helpers (local, no external dep) ---------- */
 // Small pure date utilities kept in-file to avoid a date library dependency.
@@ -292,13 +293,14 @@ function ListView({ bump, types, onOpen }: { bump: number; types: LeaveType[]; o
       {!rows ? <Spinner /> : filtered.length === 0 ? (
         <div className="small muted" style={{ padding: 8 }}>{t("leaves.none")}</div>
       ) : (
+<Sorted storageKey="leaves.team" rows={filtered} cols={[{ key: "person", value: (r: Leave) => r.user_name }, { key: "type", value: (r: Leave) => leaveLabel(r, lang) }, { key: "start", value: (r: Leave) => r.start_date }, { key: "days", value: (r: Leave) => Number(r.days) }, { key: "status", value: (r: Leave) => r.status }]} search={false}>{(v) => (
         <table>
           <thead><tr>
-            <th>{t("leaves.person")}</th><th>{t("leaves.type")}</th><th>{t("leaves.period")}</th>
-            <th>{t("leaves.days")}</th><th>{t("leaves.status_label")}</th>
+            <SortTh view={v} col="person">{t("leaves.person")}</SortTh><SortTh view={v} col="type">{t("leaves.type")}</SortTh><SortTh view={v} col="start">{t("leaves.period")}</SortTh>
+            <SortTh view={v} col="days">{t("leaves.days")}</SortTh><SortTh view={v} col="status">{t("leaves.status_label")}</SortTh>
           </tr></thead>
           <tbody>
-            {filtered.map((r) => (
+            {v.rows.map((r) => (
               <tr key={r.id} style={{ cursor: "pointer" }} onClick={() => onOpen(r)} tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(r); } }}>
                 <td><strong>{r.user_name}</strong></td>
                 <td><span className="inline" style={{ gap: 6 }}><span className="dot" style={{ background: r.type_color }} />{leaveLabel(r, lang)}</span></td>
@@ -309,6 +311,7 @@ function ListView({ bump, types, onOpen }: { bump: number; types: LeaveType[]; o
             ))}
           </tbody>
         </table>
+)}</Sorted>
       )}
     </div>
   );

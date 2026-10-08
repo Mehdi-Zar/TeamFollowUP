@@ -5,6 +5,7 @@ import { Link } from "react-router-dom";
 import { Initiative } from "../types";
 import { useI18n } from "../i18n";
 import { Collapsible } from "./ui";
+import { Sorted, SortTh } from "./tableView";
 
 /** Read-only Initiatives card (assigned to the squad by the tribe leader). Always
  *  shown - even when empty - so the exact same rendering appears at the top of the
@@ -20,12 +21,13 @@ export function InitiativesCard({ initiatives, editTo, editLabel }: {
       {initiatives.length === 0 ? (
         <div className="small muted">{t("init.empty_here")}</div>
       ) : (
+        <Sorted storageKey="squad.initiatives" rows={initiatives} cols={[{ key: "title", value: (i: any) => i.title }, { key: "owner", value: (i: any) => i.owner ?? "" }, { key: "deadline", value: (i: any) => i.deadline ?? "" }]}>{(v) => (
         <table className="init-tbl">
           <thead><tr>
-            <th>{t("init.h_initiative")}</th><th>{t("init.h_owner")}</th><th>{t("init.h_deadline")}</th>
+            <SortTh view={v} col="title">{t("init.h_initiative")}</SortTh><SortTh view={v} col="owner">{t("init.h_owner")}</SortTh><SortTh view={v} col="deadline">{t("init.h_deadline")}</SortTh>
           </tr></thead>
           <tbody>
-            {initiatives.map((i) => (
+            {v.rows.map((i) => (
               <tr key={i.id}>
                 <td><strong>{i.title}</strong></td>
                 <td>{i.owner || "-"}</td>
@@ -34,6 +36,7 @@ export function InitiativesCard({ initiatives, editTo, editLabel }: {
             ))}
           </tbody>
         </table>
+        )}</Sorted>
       )}
     </Collapsible>
   );

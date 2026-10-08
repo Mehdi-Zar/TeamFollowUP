@@ -18,6 +18,7 @@ import { Squad, Tribe } from "../../types";
 import { ImportSteercoAdmin } from "./imports";
 import { Platform, PlatformTemplate, TemplateItem } from "../../steerco";
 import { ErrorBanner, Modal, Spinner, EmptyState } from "../../components/ui";
+import { Sorted, SortTh } from "../../components/tableView";
 
 const EMPTY: PlatformTemplate = { kpis: [], sla: [], incidents: { owner_squad_id: null } };
 
@@ -81,18 +82,19 @@ export function PlatformsAdmin() {
       {rows === null ? <Spinner /> : rows.length === 0 ? (
         <EmptyState message={t("platforms.empty")} />
       ) : (
+<Sorted storageKey="admin.platforms" rows={rows} cols={[{ key: "name", value: (p: Platform) => p.name }, { key: "contributors", value: (p: Platform) => p.contributors.map((c) => c.name).join(", ") }]}>{(v) => (
         <table className="table">
           <thead>
             <tr>
-              <th>{t("platforms.name")}</th>
-              <th>{t("platforms.contributors")}</th>
+              <SortTh view={v} col="name">{t("platforms.name")}</SortTh>
+              <SortTh view={v} col="contributors">{t("platforms.contributors")}</SortTh>
               <th>{t("platforms.items")}</th>
               <th>{t("platforms.state")}</th>
               <th></th>
             </tr>
           </thead>
           <tbody>
-            {rows.map((p) => (
+            {v.rows.map((p) => (
               <tr key={p.id}>
                 <td className="strong">{p.name}</td>
                 <td className="small">{p.contributors.map((c) => c.name).join(", ") || "-"}</td>
@@ -124,6 +126,7 @@ export function PlatformsAdmin() {
             ))}
           </tbody>
         </table>
+)}</Sorted>
       )}
 
       {editing && (

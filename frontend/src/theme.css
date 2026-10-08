@@ -1103,7 +1103,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); width
   background: #fff; color: var(--text); border: 1px solid var(--line);
   border-radius: 12px; padding: 10px 14px; font: inherit; cursor: pointer; text-align: left;
 }
-.step-chip:hover { border-color: var(--accent); }
+.step-chip:hover { border-color: var(--accent); background: #fff; color: var(--text); }
 .step-chip.on { border-color: var(--navy); box-shadow: 0 0 0 3px rgba(30, 39, 97, .08); }
 /* Le chevron entre deux etapes. Des cartes posees cote a cote se lisent comme un
    menu, ou l'on choisit; une suite flechee se lit comme un parcours, ou l'on
@@ -1550,3 +1550,47 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); width
 .dep-add { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .dep-add select { flex: 1 1 200px; }
 .dep-add input { flex: 1 1 160px; }
+
+/* Windows move by their title bar (components/dragWindows.ts). */
+.modal-head, .modal > h3:first-child, .modal > .between:first-child { cursor: move; user-select: none; }
+.modal-head button, .modal > .between:first-child button { cursor: pointer; }
+.dragging-window { transition: none !important; box-shadow: 0 24px 64px rgba(15, 23, 42, .35); }
+
+/* A filter toolbar: equal fields on one row (they wrap as a block on a narrow
+   screen), then a foot with the count on the left and the sort on the right. */
+.toolbar { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; padding: 12px 14px;
+  background: #F8FAFC; border: 1px solid var(--line); border-radius: 12px; }
+.toolbar-fields { display: grid; grid-template-columns: minmax(220px, 2fr) repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; align-items: end; }
+.tb-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.tb-label { font-size: 12px; font-weight: 600; color: var(--grey); margin: 0; text-transform: none; }
+.tb-field select, .tb-field input { width: 100%; height: 36px; box-sizing: border-box; }
+.tb-on { border-color: var(--accent) !important; background: #fff; box-shadow: 0 0 0 2px rgba(23, 92, 211, .12); }
+.toolbar-foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap;
+  border-top: 1px solid var(--line); padding-top: 10px; }
+.toolbar-sort { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.toolbar-sort select { width: auto; min-width: 160px; height: 34px; }
+.tb-dir { height: 34px; white-space: nowrap; }
+@media (max-width: 900px) { .toolbar-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); } .tb-search { grid-column: 1 / -1; } }
+
+/* Sortable tables (components/tableView.tsx): click a header to sort. */
+th.sort-th { padding: 0; }
+.sort-th-btn { all: unset; box-sizing: border-box; display: inline-flex; align-items: center; gap: 4px; width: 100%;
+  padding: 8px 10px; cursor: pointer; font: inherit; color: inherit; text-transform: inherit; letter-spacing: inherit; }
+.sort-th-btn:hover { color: var(--navy); }
+.sort-th-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.sort-th-mark { font-size: 10px; opacity: .35; }
+th.sort-th.on .sort-th-mark { opacity: 1; color: var(--accent); }
+.table-tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 8px; }
+.table-search { max-width: 240px; }
+.toolbar-sort label { margin: 0; display: inline; line-height: 34px; }
+
+/* One-row toolbar: the search on the left, count and sort on the right. */
+.toolbar-inline { flex-direction: row; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; margin-bottom: 0; }
+.toolbar-inline .tb-search { flex: 0 1 340px; }
+/* The search box above a table matches the toolbars. */
+.table-search { height: 36px; width: 260px; max-width: 100%; box-sizing: border-box; }
+.table-tools { min-height: 36px; }
+.card > .table-tools, .card[style*="padding: 0"] > .table-tools { padding: 12px 14px 4px; margin: 0; }
+.sort-th-btn { white-space: nowrap; }
+
+.stage-other { font-size: 10px; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; vertical-align: middle; }

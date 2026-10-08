@@ -9,7 +9,7 @@ desormais administrables.
 
 | Bloc | Contenu |
 |---|---|
-| Identite | Nom et sous-titre de l'application, logo, icone d'onglet, fond de l'ecran de connexion, logo des documents |
+| Identite | Nom et sous-titre de l'application, logo, favicon (icone d'onglet ; sans fichier, celui livre avec l'application, `frontend/public/favicon.svg`), fond de l'ecran de connexion, logo des documents |
 | Couleurs | Douze variables : principale, principale foncee, accent, deux teintes claires, vert, orange, rouge, texte, texte secondaire, bordures, fond. Cinq palettes pretes a l'emploi |
 | Typographie et mise en page | Police (liste fermee), taille du texte de 85 a 125 %, arrondi des angles de 0 a 24 px, densite confortable ou compacte, ombres |
 | Emails et documents | Pied de page ajoute aux emails envoyes |

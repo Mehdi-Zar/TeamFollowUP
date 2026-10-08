@@ -12,6 +12,9 @@ import { api } from "./api";
 import { useI18n } from "./i18n";
 import { Branding, ModuleKey, ModulesConfig, PublicConfig } from "./types";
 
+/** The favicon the app ships, used until one is uploaded in Administration > Apparence. */
+const DEFAULT_FAVICON = "/favicon.svg";
+
 /** Default module map: everything on except committees, steerco and squad KPIs. Used
  *  until the server config loads, and as the fallback when config is missing. */
 export const DEFAULT_MODULES: ModulesConfig = {
@@ -65,15 +68,16 @@ function applyBranding(branding?: Branding) {
     root.style.setProperty(name, value);
   }
   root.dataset.density = branding?.density ?? "comfortable";
-  if (branding?.favicon) {
-    let link = document.querySelector<HTMLLinkElement>("link[rel~='icon']");
-    if (!link) {
-      link = document.createElement("link");
-      link.rel = "icon";
-      document.head.appendChild(link);
-    }
-    link.href = branding.favicon;
+  // The uploaded favicon, else the one the app ships (public/favicon.svg): a
+  // favicon removed in Administration goes back to the default, not to nothing.
+  let link = document.querySelector<HTMLLinkElement>("link[rel~='icon']");
+  if (!link) {
+    link = document.createElement("link");
+    link.rel = "icon";
+    document.head.appendChild(link);
   }
+  link.href = branding?.favicon || DEFAULT_FAVICON;
+  if (branding?.favicon) link.removeAttribute("type"); else link.type = "image/svg+xml";
 }
 
 /** Fetches /api/config on mount and exposes it (plus a reload fn) to the tree. */

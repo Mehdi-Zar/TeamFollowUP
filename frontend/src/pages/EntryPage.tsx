@@ -23,8 +23,8 @@ import { api, errorText, reportSaveError } from "../api";
 import { useAuth } from "../auth";
 import { useI18n } from "../i18n";
 import { useConfig, useModule } from "../config";
-import { Dependency, Kpi, Member, RoadmapItem, Squad, SquadDetail, Tribe, Trend, Role, stageTag } from "../types";
-import { Dot, Spinner, ErrorBanner, EmptyState, Modal, SectionCard as Card } from "../components/ui";
+import { Dependency, Kpi, Member, RoadmapItem, Squad, SquadDetail, Tribe, Trend, Role } from "../types";
+import { Dot, Spinner, ErrorBanner, EmptyState, Modal, SectionCard as Card, StageBadge } from "../components/ui";
 import { QuarterProgressEditor } from "../components/EntryExtras";
 import TeamMood, { moodAge, WEEKLY_STALE_DAYS } from "../components/TeamMood";
 import KeyMessagesPanel from "../components/KeyMessagesPanel";
@@ -34,6 +34,7 @@ import { OtdPanel } from "../components/OtdPanel";
 import { canEditSquad, contributesTo, leadsSquad } from "../perms";
 import { useSetPageChrome } from "../components/pageChrome";
 import { roadmapRag } from "../labels";
+import { SortSpec, useListView } from "../components/listView";
 import { currentSteercoPeriod, monthLongLabel } from "../steerco";
 import SteercoWizard, { SteercoPreviewModal } from "../components/SteercoWizard";
 import { BudgetPanel } from "./SquadDetailPage";
@@ -217,7 +218,7 @@ export default function EntryPage() {
   const maySubmit = writeAllowed && ownsSquad;
   const steps: Step[] = squad ? [
     // Les OTD d'abord: on pose ce a quoi la squad s'engage, puis les jalons, qui
-    // s'y rattachent dans leur propre fenetre (deux listes, OTD management et OTD
+    // s'y rattachent dans leur propre fenetre (deux listes, OTD de la tribe et OTD
     // de la squad). L'OTD de la squad s'ecrit ici; celui du management se lit.
     {
       key: "otd",
@@ -508,8 +509,58 @@ function emptyJalon(year: number, quarter: number): Partial<RoadmapItem> {
  * et les documents se prennent dans le menu Exporter de la barre de page, un seul
  * endroit pour tous les formats et toutes les portees.
  */
+/** Severity order of a milestone status, the most worrying first. */
+const STATUS_RANK: Record<string, number> = { blocked: 0, at_risk: 1, on_track: 2, done: 3 };
+
+/** The filters of the milestones step, besides the search. */
+type JalonFilters = { status: string; theme: string; stage: string; owner: string; otd: string };
+const NO_FILTER: JalonFilters = { status: "", theme: "", stage: "", owner: "", otd: "" };
+
 function RoadmapEditor({ squad, year, onChange, readonly, t, roadmap, squads, tribes }: any) {
   const [editing, setEditing] = useState<Partial<RoadmapItem> | null>(null);
+  // Sort and search are reading preferences, kept per browser like the other lists.
+  const view = useListView("entry.jalons", "order", true);
+  const [flt, setFlt] = useState<JalonFilters>(NO_FILTER);
+  const all: RoadmapItem[] = squad.roadmap_items;
+  const themes = Array.from(new Set(all.map((r) => r.theme).filter(Boolean) as string[])).sort((a, b) => a.localeCompare(b));
+  const owners = Array.from(new Set(all.map((r) => r.owner).filter(Boolean) as string[])).sort((a, b) => a.localeCompare(b));
+  const byText = (a?: string | null, b?: string | null) => (a || "~").localeCompare(b || "~", undefined, { sensitivity: "base" });
+  const sorts: SortSpec<RoadmapItem>[] = [
+    { key: "order", label: t("jalon.sort_order"), cmp: (a, b) => a.display_order - b.display_order || a.id - b.id },
+    { key: "status", label: t("jalon.sort_status"), cmp: (a, b) => STATUS_RANK[a.status] - STATUS_RANK[b.status] || byText(a.title, b.title) },
+    { key: "title", label: t("jalon.sort_title"), cmp: (a, b) => byText(a.title, b.title) },
+    { key: "theme", label: t("jalon.sort_theme"), cmp: (a, b) => byText(a.theme, b.theme) || byText(a.title, b.title) },
+    { key: "owner", label: t("jalon.sort_owner"), cmp: (a, b) => byText(a.owner, b.owner) || byText(a.title, b.title) },
+    { key: "stage", label: t("jalon.sort_stage"), cmp: (a, b) => byText(a.release_stage, b.release_stage) || byText(a.title, b.title) },
+  ];
+  const filtering = !!view.query.trim() || Object.values(flt).some(Boolean);
+  /** The milestones of a quarter this toolbar lets through, in its order. */
+  function shown(items: RoadmapItem[]): RoadmapItem[] {
+    const needle = view.query.trim().toLowerCase();
+    let out = items.filter((r) =>
+      (!needle || [r.title, r.theme, r.owner, r.description, r.otd_label, r.squad_otd_label, r.dependency_label]
+        .some((x) => (x || "").toLowerCase().includes(needle)))
+      && (!flt.status || r.status === flt.status)
+      && (!flt.theme || r.theme === flt.theme)
+      && (!flt.stage || r.release_stage === flt.stage)
+      && (!flt.owner || (flt.owner === "-" ? !r.owner : r.owner === flt.owner))
+      && (!flt.otd || (flt.otd === "linked" ? !!(r.otd_id || r.squad_otd_id) : !(r.otd_id || r.squad_otd_id))));
+    const spec = sorts.find((s) => s.key === view.sort) ?? sorts[0];
+    out = [...out].sort(spec.cmp);
+    if (view.desc) out.reverse();
+    return out;
+  }
+  const matching = filtering ? [1, 2, 3, 4].reduce((n, q) => n + shown(all.filter((r) => r.quarter === q)).length, 0) : all.length;
+  const sel = (key: keyof JalonFilters, label: string, options: [string, string][]) => (
+    <div className="tb-field">
+      <label htmlFor={`jf-${key}`} className="tb-label">{label}</label>
+      <select id={`jf-${key}`} className={flt[key] ? "tb-on" : ""} value={flt[key]}
+              onChange={(e) => setFlt((f) => ({ ...f, [key]: e.target.value }))}>
+        <option value="">{t("jalon.filter_all")}</option>
+        {options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+      </select>
+    </div>
+  );
   // A failed save is shown in the milestone window (it stayed open, silently).
   const [err, setErr] = useState<string | null>(null);
   const fail = (e: unknown) => setErr(errorText(e));
@@ -538,10 +589,46 @@ function RoadmapEditor({ squad, year, onChange, readonly, t, roadmap, squads, tr
   return (
     <Card title={t("squad.roadmap", { year })} hint={t("entry.roadmap_hint")}>
       {err && !editing && <ErrorBanner message={err} />}
+      {all.length > 0 && (
+        <div className="toolbar">
+          <div className="toolbar-fields">
+            <div className="tb-field tb-search">
+              <label htmlFor="jalon-search" className="tb-label">{t("list.search")}</label>
+              <input id="jalon-search" type="search" value={view.query} placeholder={t("jalon.search_ph")}
+                     className={view.query ? "tb-on" : ""} onChange={(e) => view.setQuery(e.target.value)} />
+            </div>
+            {sel("status", t("jalon.status"), ["blocked", "at_risk", "on_track", "done"].map((s) => [s, roadmap(s)]))}
+            {themes.length > 1 && sel("theme", t("jalon.theme"), themes.map((x) => [x, x]))}
+            {sel("stage", t("jalon.stage"), [["EA", "EA"], ["GA", "GA"], ["NP", t("jalon.stage_np")], ["OT", t("jalon.stage_ot")]])}
+            {owners.length > 0 && sel("owner", t("jalon.owner"), [...owners.map((x) => [x, x] as [string, string]), ["-", t("jalon.filter_no_owner")]])}
+            {sel("otd", "OTD", [["linked", t("jalon.filter_otd_linked")], ["none", t("jalon.filter_otd_none")]])}
+          </div>
+          <div className="toolbar-foot">
+            <span className="small muted">
+              {filtering ? t("jalon.filter_count", { n: matching, total: all.length }) : t("jalon.count_all", { n: all.length })}
+            </span>
+            <span className="toolbar-sort">
+              <label htmlFor="jalon-sort" className="small muted">{t("list.sort")}</label>
+              <select id="jalon-sort" value={view.sort} onChange={(e) => view.pickSort(e.target.value)}>
+                {sorts.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+              </select>
+              <button type="button" className="btn-secondary btn-sm tb-dir" onClick={() => view.pickSort(view.sort)}
+                      title={t("list.sort_flip")} aria-label={t("list.sort_flip")}>
+                {view.desc ? t("jalon.sort_desc") : t("jalon.sort_asc")}
+              </button>
+              {(filtering || view.sort !== "order" || view.desc) && (
+                <button type="button" className="btn-ghost btn-sm" onClick={() => { view.reset(); setFlt(NO_FILTER); }}>{t("list.reset")}</button>
+              )}
+            </span>
+          </div>
+        </div>
+      )}
       <div className="stack" style={{ gap: 12 }}>
         {[1, 2, 3, 4].map((q) => (
           <QuarterEditor
             key={q}
+            shown={shown}
+            filtering={filtering}
             squad={squad}
             year={year}
             quarter={q}
@@ -574,8 +661,11 @@ function RoadmapEditor({ squad, year, onChange, readonly, t, roadmap, squads, tr
  * milestone in aligned columns: status, theme, title, stage, owner, status menu.
  * Rows are clickable to edit unless read-only. Progress is derived, never entered.
  */
-function QuarterEditor({ squad, year, quarter, readonly, t, roadmap, onAdd, onEdit, onStatus, onChange }: any) {
+function QuarterEditor({ squad, year, quarter, readonly, t, roadmap, onAdd, onEdit, onStatus, onChange, shown, filtering }: any) {
+  // Progress counts every milestone of the quarter; the list shows what the
+  // toolbar lets through, in its order.
   const items = squad.roadmap_items.filter((r: RoadmapItem) => r.quarter === quarter);
+  const visible: RoadmapItem[] = shown ? shown(items) : items;
   // Progress is auto-derived from milestone advancement (share done), never typed.
   const total = items.length;
   const done = items.filter((r: RoadmapItem) => r.status === "done").length;
@@ -620,9 +710,12 @@ function QuarterEditor({ squad, year, quarter, readonly, t, roadmap, onAdd, onEd
         )}
       </div>
       {naErr && <div className="small" style={{ color: "var(--red)" }}>{naErr}</div>}
-      {items.length > 0 && (
+      {filtering && items.length > 0 && visible.length === 0 && (
+        <div className="small muted" style={{ padding: "4px 2px" }}>{t("jalon.filter_none_here", { n: items.length })}</div>
+      )}
+      {visible.length > 0 && (
         <div className="q-items">
-          {items.map((r: RoadmapItem) => (
+          {visible.map((r: RoadmapItem) => (
             <div key={r.id} className="q-item">
               <Dot status={roadmapRag(r.status)} />
               <span className="q-theme">{r.theme ? <span className="badge badge-grey">{r.theme}</span> : null}</span>
@@ -631,7 +724,7 @@ function QuarterEditor({ squad, year, quarter, readonly, t, roadmap, onAdd, onEd
                       onClick={() => onEdit(r)} title={t("jalon.details")}>
                 {r.title}
               </button>
-              <span>{stageTag(r.release_stage) && <span className="badge badge-navy" style={{ fontSize: 10 }}>{r.release_stage}</span>}</span>
+              <span><StageBadge stage={r.release_stage} other={r.release_stage_other} /></span>
               <span className="small muted q-owner">{r.owner ?? ""}</span>
               {/* The weekly gesture, in one click: the status, changed where it shows. */}
               {!readonly ? (

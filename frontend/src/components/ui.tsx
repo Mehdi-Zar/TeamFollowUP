@@ -77,6 +77,16 @@ export function FitScale({ children, fitHeight }: { children: ReactNode; fitHeig
   );
 }
 
+/** A milestone's stage as a tag: EA and GA in navy, "Autre" with the name typed
+ *  for it and "Hors produit" in grey (they are not product releases). */
+export function StageBadge({ stage, other }: { stage?: string | null; other?: string | null }) {
+  const { t } = useI18n();
+  if (stage === "EA" || stage === "GA") return <span className="badge badge-navy" style={{ fontSize: 10 }}>{stage}</span>;
+  if (stage === "OT" && other) return <span className="badge badge-grey stage-other" title={other}>{other}</span>;
+  if (stage === "NP") return <span className="badge badge-grey stage-other">{t("jalon.stage_np_short")}</span>;
+  return null;
+}
+
 /** Small coloured RAG status dot. Pass `decorative` when an adjacent text label
  *  already names the status, so screen readers don't announce it twice. */
 export function Dot({ status, decorative }: { status: Rag; decorative?: boolean }) {
