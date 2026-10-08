@@ -85,13 +85,15 @@ labels, `group_by_theme`). The dependency runs one way only - `reportpptx` impor
 ```mermaid
 flowchart TB
   main[main.py\nFastAPI app + routers + startup scheduler]
-  main --> routers[routers\nauth, tribes, squads, dashboard, org, orgexport,\nroadmap, roadmapview, kpis,\nmembers, snapshots, feed, notifications,\nadmin, audit, reports, initiatives,\notds, access, leaves, committees,\nsteerco, data]
+  main --> routers[routers\nauth, tribes, squads, dashboard, org, orgexport,\nroadmap, roadmapview, kpis,\nmembers, snapshots, feed, notifications,\nadmin, audit, reports, initiatives,\notds, access, leaves, committees,\nsteerco, data, exports]
   routers --> deps[deps.py\nauth + RBAC + capability + module guards]
   routers --> serializers[serializers.py]
   routers --> schemas[schemas.py\nPydantic DTOs]
   serializers --> status[status.py\nhealth/progress/derived status]
   serializers --> models[models.py\nSQLAlchemy ORM]
   routers --> domain[Domain services\nreport.py, status.py,\nsubscriptions.py, notify.py]
+  routers --> studio[Studio des exports\nexportspec, exportengine, exportblocks,\nexportstore, pptxhtml]
+  studio --> domain
   config[Config stores in app_settings\ngeneralconfig, modulesconfig, personasconfig,\nsmtpconfig, reportconfig, authconfig] --> deps
   models --> db[(database.py\nSQLAlchemy engine/session)]
 ```

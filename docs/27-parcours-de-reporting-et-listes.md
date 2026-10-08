@@ -74,9 +74,10 @@ rien, donc elle n'avait pas lieu d'etre. Depuis, l'engagement a **deux portees**
 par son leader, comme ses jalons. C'est une declaration, donc de la saisie, et
 elle se prend au moment ou l'on remplit son cycle.
 
-L'etape **Engagements** suit donc immediatement celle des jalons, parce qu'on y
-rattache ceux qu'on vient d'ecrire et qu'ils sont encore en tete. Elle montre
-deux choses, dans cet ordre :
+L'etape **OTD** ouvre la saisie, avant les jalons (3.0.0) : on pose d'abord ce a
+quoi la squad s'engage, puis les jalons, qui s'y rattachent dans leur propre
+fenetre par deux listes deroulantes (OTD management, OTD de la squad). Elle
+montre deux choses, dans cet ordre :
 
 1. **ce que le management attend de cette squad**, en lecture ;
 2. **les engagements de la squad**, que son leader ecrit, date et raccroche a ses

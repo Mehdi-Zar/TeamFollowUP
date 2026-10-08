@@ -16,7 +16,7 @@ from . import pptxtpl
 from . import status as st
 from .generalconfig import get_general, reference_year
 from .models import ReportSnapshot, Squad, Tribe, current_key_messages, stage_tag, utcnow
-from .serializers import annual_progress, budget_out, dependency_label
+from .serializers import annual_progress, budget_out, dependency_entries, dependency_label
 
 # Shared with the PPTX renderers; see reportcommon.
 from .reportcommon import (_people_line, _sep, fmt_date, fmt_datetime, fmt_money, MOOD_EMOJI, STAGE_COLOR, _DEP_T, _INIT_T, _MONTHS, _lang,  # noqa: F401
@@ -1516,6 +1516,12 @@ def report_mail(db: Session, smtp: dict, to: str, subject: str, data: dict, *, w
     return send_email(smtp, to, subject, body, attachment=atts, html=True, cc=cc, lang=lang)
 
 
+def _studio_deck(db: Session, data: dict) -> bytes:
+    """The deck a mail attaches: the one its scope's template draws (docs/35)."""
+    from .exportstore import render_report
+    return render_report(db, data)
+
+
 def local_now(now: datetime) -> datetime:
     """The scheduler's clock: Paris time, the one the settings screens show.
     (Comparing the chosen hour with UTC sent "8 h" at 10 h in summer.)"""
@@ -1550,7 +1556,7 @@ def send_squad_docs_to_leaders(db: Session, squads: list, now: datetime | None =
             continue
         data = build_report_data(db, None, year, since, now, squad_id=squad.id, lang=lang)
         try:
-            pptx_bytes = render_pptx(data)
+            pptx_bytes = _studio_deck(db, data)
         except Exception:
             pptx_bytes = b""
         if report_mail(db, smtp, ", ".join(to), rt(lang, "subject", scope=squad.name, w=week), data,
@@ -1636,7 +1642,7 @@ def _send_schedule(db: Session, smtp: dict, cfg: dict, tribe_id: int | None, now
             sig = report_signature(data)
             changes = diff_report(get_baseline(db, scope_key), sig, lang)
             try:
-                pptx_bytes = render_pptx(data)
+                pptx_bytes = _studio_deck(db, data)
             except Exception:
                 pptx_bytes = b""
             subject = subject_prefix(changes, lang) + rt(lang, "subject", scope=scope_label, w=week)
@@ -1773,7 +1779,7 @@ def send_personal_subscriptions(db: Session, now: datetime | None = None) -> int
         if key not in rendered:
             data = build_report_data(db, scope_tribe, year, since, now, squad_id=squad_id, lang=lang)
             try:
-                pptx_bytes = render_pptx(data)
+                pptx_bytes = _studio_deck(db, data)
             except Exception:
                 pptx_bytes = b""
             rendered[key] = (data, pptx_bytes)
@@ -1883,41 +1889,44 @@ def build_dependencies_data(db: Session, scope_tribe: int | None, year: int | No
         for r in s.roadmap_items:
             if r.year != year:
                 continue
-            kind = r.dependency_kind
-            ttype = target_label = target_key = None
-            target_tribe = None
-            if kind == "tribe" and r.dependency_tribe_id:
-                if cross_only and r.dependency_tribe_id == s.tribe_id:
+            # A milestone that waits on several squads or tribes is listed under
+            # each of them: each target reads what it is expected to deliver.
+            for dep in dependency_entries(r):
+                kind = dep["kind"]
+                ttype = target_label = target_key = None
+                target_tribe = None
+                if kind == "tribe" and dep["tribe_id"]:
+                    if cross_only and dep["tribe_id"] == s.tribe_id:
+                        continue
+                    tt = tribes.get(dep["tribe_id"])
+                    ttype, target_label, target_key = "tribe", (tt.name if tt else None), ("tribe", dep["tribe_id"])
+                elif kind == "squad" and dep["squad_id"]:
+                    tgt = all_squads.get(dep["squad_id"])
+                    if not tgt:
+                        continue
+                    if cross_only and tgt.tribe_id == s.tribe_id:
+                        continue
+                    target_tribe = tribes[tgt.tribe_id].name if tgt.tribe_id in tribes else None
+                    ttype, target_label, target_key = "squad", tgt.name, ("squad", tgt.id)
+                elif kind == "text" and (dep["text"] or "").strip():
+                    if cross_only:
+                        continue  # free-text actors are not a tribe boundary
+                    target_label = dep["text"].strip()
+                    ttype, target_key = "text", ("text", target_label.lower())
+                if not target_label:
                     continue
-                tt = tribes.get(r.dependency_tribe_id)
-                ttype, target_label, target_key = "tribe", (tt.name if tt else None), ("tribe", r.dependency_tribe_id)
-            elif kind == "squad" and r.dependency_squad_id:
-                tgt = all_squads.get(r.dependency_squad_id)
-                if not tgt:
-                    continue
-                if cross_only and tgt.tribe_id == s.tribe_id:
-                    continue
-                target_tribe = tribes[tgt.tribe_id].name if tgt.tribe_id in tribes else None
-                ttype, target_label, target_key = "squad", tgt.name, ("squad", tgt.id)
-            elif (kind == "text" or kind is None) and (r.dependencies or "").strip():
-                if cross_only:
-                    continue  # free-text actors are not a tribe boundary
-                target_label = r.dependencies.strip()
-                ttype, target_key = "text", ("text", target_label.lower())
-            if not target_label:
-                continue
-            g = groups.get(target_key)
-            if g is None:
-                g = {"target_type": ttype, "target_label": target_label,
-                     "target_tribe": target_tribe, "items": []}
-                groups[target_key] = g
-            g["items"].append({
-                "jalon": r.title, "description": (r.description or "").strip(),
-                "squad_name": s.name, "tribe_name": src_tribe,
-                "quarter": r.quarter, "year": r.year,
-                "owner": r.owner or "", "status": r.status, "stage": stage_tag(r.release_stage) or "",
-            })
-            total += 1
+                g = groups.get(target_key)
+                if g is None:
+                    g = {"target_type": ttype, "target_label": target_label,
+                         "target_tribe": target_tribe, "items": []}
+                    groups[target_key] = g
+                g["items"].append({
+                    "jalon": r.title, "description": (r.description or "").strip(),
+                    "squad_name": s.name, "tribe_name": src_tribe,
+                    "quarter": r.quarter, "year": r.year,
+                    "owner": r.owner or "", "status": r.status, "stage": stage_tag(r.release_stage) or "",
+                })
+                total += 1
 
     type_order = {"tribe": 0, "squad": 1, "text": 2}
     group_list = sorted(groups.values(),

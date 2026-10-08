@@ -772,6 +772,8 @@ function JalonView({ jalon, onClose, t, roadmap }: { jalon: RoadmapItem; onClose
     [t("jalon.benefit"), jalon.user_benefit],
     [t("jalon.deps"), jalon.dependency_label ?? jalon.dependencies],
     [t("jalon.risks"), jalon.risks],
+    [t("jalon.otd_management"), jalon.otd_label],
+    [t("jalon.otd_squad"), jalon.squad_otd_label],
   ];
   return (
     <div className="modal-overlay" onClick={onClose}>

@@ -46,14 +46,38 @@ def annual_progress(squad: Squad, year: int) -> int:
     return st.annual_progress_pct(squad, year)
 
 
-def dependency_label(r) -> str | None:
-    """Human label for a milestone dependency (squad/tribe name or the free text)."""
+def dependency_entries(r) -> list[dict]:
+    """Every dependency of a milestone, as {kind, squad_id, tribe_id, text, label}.
+
+    The list when the milestone has one; else its single legacy dependency (a
+    milestone written before the list, or by an older client)."""
+    deps = getattr(r, "deps", None) or []
+    if deps:
+        out = []
+        for d in deps:
+            label = (d.squad.name if d.squad else None) if d.kind == "squad" else \
+                    (d.tribe.name if d.tribe else None) if d.kind == "tribe" else (d.text or None)
+            out.append({"kind": d.kind, "squad_id": d.squad_id, "tribe_id": d.tribe_id,
+                        "text": d.text, "label": label})
+        return out
     kind = getattr(r, "dependency_kind", None)
-    if kind == "squad":
-        return r.dependency_squad.name if r.dependency_squad else None
-    if kind == "tribe":
-        return r.dependency_tribe.name if r.dependency_tribe else None
-    return r.dependencies or None
+    if kind == "squad" and r.dependency_squad_id:
+        return [{"kind": "squad", "squad_id": r.dependency_squad_id, "tribe_id": None, "text": None,
+                 "label": r.dependency_squad.name if r.dependency_squad else None}]
+    if kind == "tribe" and r.dependency_tribe_id:
+        return [{"kind": "tribe", "squad_id": None, "tribe_id": r.dependency_tribe_id, "text": None,
+                 "label": r.dependency_tribe.name if r.dependency_tribe else None}]
+    if (r.dependencies or "").strip():
+        return [{"kind": "text", "squad_id": None, "tribe_id": None, "text": r.dependencies.strip(),
+                 "label": r.dependencies.strip()}]
+    return []
+
+
+def dependency_label(r) -> str | None:
+    """Human label for a milestone's dependencies (squad/tribe names, free text),
+    joined when there are several."""
+    labels = [d["label"] for d in dependency_entries(r) if d["label"]]
+    return ", ".join(labels) or None
 
 
 def roadmap_item_out(r) -> RoadmapItemOut:
@@ -61,7 +85,9 @@ def roadmap_item_out(r) -> RoadmapItemOut:
     the OTD it contributes to (both denormalized here for the client's convenience)."""
     out = RoadmapItemOut.model_validate(r)
     out.dependency_label = dependency_label(r)
+    out.dependency_list = dependency_entries(r)
     out.otd_label = r.otd.title if getattr(r, "otd", None) else None
+    out.squad_otd_label = r.squad_otd.title if getattr(r, "squad_otd", None) else None
     return out
 
 

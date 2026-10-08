@@ -26,7 +26,7 @@ def test_the_default_capabilities_decide_who_reaches_the_reporting_screen(client
 def test_get_personas_returns_builtins_and_catalog(client, seeded):
     login(client, seeded["admin"])
     out = client.get("/api/admin/personas").json()
-    assert out["capabilities"] == ["dashboard", "roadmap", "org", "feed", "reporting", "mysquads", "leaves"]
+    assert out["capabilities"] == ["dashboard", "roadmap", "org", "feed", "reporting", "mysquads", "leaves", "exports"]
     keys = [p["key"] for p in out["personas"]]
     assert keys[:5] == ["admin", "tribe_leader", "squad_leader", "contributor", "member"]
     assert all(p["builtin"] for p in out["personas"])

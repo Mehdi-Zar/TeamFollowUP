@@ -67,6 +67,17 @@ export function IconRoadmap(p: IconProps) {
 }
 
 /** A beach umbrella, for the leaves: the plain calendar was too close to the roadmap. */
+/** A slide on its easel, for the Studio des exports. */
+export function IconStudio(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <rect x="3" y="3" width="18" height="12" rx="1.5" />
+      <path d="M7 7h6M7 11h10" />
+      <path d="M12 15v3M8 21l4-3 4 3" />
+    </Svg>
+  );
+}
+
 export function IconLeave(p: IconProps) {
   return (
     <Svg {...p}>

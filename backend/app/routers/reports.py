@@ -89,6 +89,24 @@ def _data(request: Request, db: Session, user: User, tribe_id: int | None, year:
     return data
 
 
+def _deck(db: Session, user: User, kind: str, data: dict, legacy: str, *, family: str = "report",
+          chain: list[str] | None = None, template_id: int | None = None) -> tuple[bytes, str]:
+    """The deck of an export through the template its scope uses (Studio des
+    exports, docs/35), or an explicitly chosen one. Without any template
+    assigned this is the Standard deck, byte for byte the one it always was."""
+    from .. import exportstore
+    try:
+        blob, name, _meta = exportstore.render(
+            db, user, kind, {family: lambda: data},
+            chain=chain or exportstore.report_chain(db, data), lang=data.get("lang", "fr"),
+            scope_name=data.get("scope_name", ""), year=data.get("year"),
+            template_id=template_id, legacy_name=legacy)
+    except LookupError:
+        raise HTTPException(status_code=404, detail="Modèle introuvable")
+    db.commit()
+    return blob, name
+
+
 @router.get("/weekly.html", response_class=HTMLResponse, dependencies=[_report_gate])
 def weekly_html(request: Request, tribe_id: int | None = Query(default=None), year: int | None = Query(default=None),
                 since_days: int = Query(default=7, ge=1, le=365), squad_id: int | None = Query(default=None),
@@ -111,6 +129,7 @@ def weekly_pptx(request: Request, tribe_id: int | None = Query(default=None), ye
                 since_days: int = Query(default=7, ge=1, le=365), squad_id: int | None = Query(default=None),
                 lang: str | None = Query(default=None),
                  as_of: str | None = Query(default=None),
+                template_id: int | None = Query(default=None),
                 db: Session = Depends(get_db), user: User = Depends(_weekly_caller)):
     """Weekly report as a PPTX download.
 
@@ -120,11 +139,10 @@ def weekly_pptx(request: Request, tribe_id: int | None = Query(default=None), ye
     """
     data = _data(request, db, user, tribe_id, year, since_days, squad_id, lang, as_of=as_of)
     try:
-        pptxtpl.use(pptxtpl.get(db))
-        payload = render_pptx(data)
+        payload, filename = _deck(db, user, "weekly", data, f"rapport_{data['year']}.pptx",
+                                  template_id=template_id)
     except ImportError:
         raise HTTPException(status_code=501, detail="Génération PPTX indisponible (python-pptx non installé)")
-    filename = f"rapport_{data['year']}.pptx"
     # Fully buffered artifact → a plain Response so Starlette sets Content-Length
     # (not chunked). Without it the browser can't detect a truncated download and
     # shows "check your connection" on any mid-transfer TLS blip. See ADR/CHANGELOG.
@@ -155,16 +173,16 @@ def dashboard_pptx(request: Request, tribe_id: int | None = Query(default=None),
                    squad_ids: list[int] | None = Query(default=None),
                    lang: str | None = Query(default=None),
                  as_of: str | None = Query(default=None),
+                template_id: int | None = Query(default=None),
                    db: Session = Depends(get_db), user: User = Depends(_dashboard_caller)):
     """Dashboard view as a branded deck, optionally restricted to chosen squads."""
     data = _data(request, db, user, tribe_id, year, since_days, squad_id, lang, squad_ids, as_of)
     data["doc"] = "dashboard"
     try:
-        pptxtpl.use(pptxtpl.get(db))
-        payload = render_pptx(data)
+        payload, filename = _deck(db, user, "dashboard", data, f"dashboard_{data['year']}.pptx",
+                                  template_id=template_id)
     except ImportError:
         raise HTTPException(status_code=501, detail="Génération PPTX indisponible (python-pptx non installé)")
-    filename = f"dashboard_{data['year']}.pptx"
     # Fully buffered artifact → a plain Response so Starlette sets Content-Length
     # (not chunked). Without it the browser can't detect a truncated download and
     # shows "check your connection" on any mid-transfer TLS blip. See ADR/CHANGELOG.
@@ -193,15 +211,15 @@ def roadmap_pptx(request: Request, tribe_id: int | None = Query(default=None), y
                  squad_ids: list[int] | None = Query(default=None),
                  lang: str | None = Query(default=None),
                  as_of: str | None = Query(default=None),
+                template_id: int | None = Query(default=None),
                  db: Session = Depends(get_db), user: User = Depends(_roadmap_caller)):
     """Roadmap deck scoped to the caller (optionally restricted to chosen squads)."""
     data = _data(request, db, user, tribe_id, year, since_days, squad_id, lang, squad_ids, as_of)
     try:
-        pptxtpl.use(pptxtpl.get(db))
-        payload = render_roadmap_pptx(data)
+        payload, filename = _deck(db, user, "roadmap", data, f"roadmap_{data['year']}.pptx",
+                                  template_id=template_id)
     except ImportError:
         raise HTTPException(status_code=501, detail="Génération PPTX indisponible (python-pptx non installé)")
-    filename = f"roadmap_{data['year']}.pptx"
     # Fully buffered artifact → a plain Response so Starlette sets Content-Length
     # (not chunked). Without it the browser can't detect a truncated download and
     # shows "check your connection" on any mid-transfer TLS blip. See ADR/CHANGELOG.
@@ -284,15 +302,18 @@ def dependencies_html(request: Request, tribe_id: int | None = Query(default=Non
 def dependencies_pptx(request: Request, tribe_id: int | None = Query(default=None), year: int | None = Query(default=None),
                       squad_ids: list[int] | None = Query(default=None), lang: str | None = Query(default=None),
                       mode: str = Query(default="all"),
+                      template_id: int | None = Query(default=None),
                       db: Session = Depends(get_db), user: User = Depends(_roadmap_caller)):
     """Milestone-dependency deck (paginated table grouped by the entity waited on)."""
     data = _dep_data(request, db, user, tribe_id, year, squad_ids, lang, mode)
+    from .. import exportstore
     try:
-        pptxtpl.use(pptxtpl.get(db))
-        payload = render_dependencies_pptx(data)
+        payload, filename = _deck(db, user, "dependencies", data, f"dependances_{data['year']}.pptx",
+                                  family="dependencies",
+                                  chain=exportstore.chain_for(db, tribe_id=scoped_tribe_id(user, tribe_id)),
+                                  template_id=template_id)
     except ImportError:
         raise HTTPException(status_code=501, detail="Génération PPTX indisponible (python-pptx non installé)")
-    filename = f"dependances_{data['year']}.pptx"
     # Fully buffered artifact → a plain Response so Starlette sets Content-Length
     # (not chunked). Without it the browser can't detect a truncated download and
     # shows "check your connection" on any mid-transfer TLS blip. See ADR/CHANGELOG.
@@ -429,8 +450,8 @@ def weekly_email(request: Request, payload: dict = Body(default=None), db: Sessi
     data = _data(request, db, user, tribe_id, year, since_days, squad_id, lang, as_of=as_of)
     pptx_bytes = b""
     try:
-        pptxtpl.use(pptxtpl.get(db))
-        pptx_bytes = render_pptx(data) or b""
+        from .. import exportstore
+        pptx_bytes = exportstore.render_report(db, data, user=user) or b""
     except ImportError:
         pass  # send HTML-only if PPTX backend unavailable
 

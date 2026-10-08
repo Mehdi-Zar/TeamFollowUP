@@ -23,7 +23,7 @@ import { api, errorText, reportSaveError } from "../api";
 import { useAuth } from "../auth";
 import { useI18n } from "../i18n";
 import { useConfig, useModule } from "../config";
-import { Kpi, Member, RoadmapItem, Squad, SquadDetail, Tribe, Trend, Role, stageTag } from "../types";
+import { Dependency, Kpi, Member, RoadmapItem, Squad, SquadDetail, Tribe, Trend, Role, stageTag } from "../types";
 import { Dot, Spinner, ErrorBanner, EmptyState, Modal, SectionCard as Card } from "../components/ui";
 import { QuarterProgressEditor } from "../components/EntryExtras";
 import TeamMood, { moodAge, WEEKLY_STALE_DAYS } from "../components/TeamMood";
@@ -216,6 +216,14 @@ export default function EntryPage() {
   // corrects what the server lets them, but does not submit for the squad.
   const maySubmit = writeAllowed && ownsSquad;
   const steps: Step[] = squad ? [
+    // Les OTD d'abord: on pose ce a quoi la squad s'engage, puis les jalons, qui
+    // s'y rattachent dans leur propre fenetre (deux listes, OTD management et OTD
+    // de la squad). L'OTD de la squad s'ecrit ici; celui du management se lit.
+    {
+      key: "otd",
+      state: stateOf((squad.otd_count ?? 0) > 0, "otds", true),
+      node: <OtdPanel squad={squad} canManage={false} canOwn={ownsSquad} onChange={reload} />,
+    },
     ...(roadmapOn ? [{
       key: "jalons",
       state: stateOf(squad.roadmap_items.length > 0, "roadmap"),
@@ -224,15 +232,6 @@ export default function EntryPage() {
       node: <RoadmapEditor squad={squad} year={year} onChange={reload} readonly={!ownsSquad}
                            t={t} roadmap={roadmap} squads={squads} tribes={tribes} />,
     }] : []),
-    // Les engagements, tout de suite apres les jalons: on y rattache ceux qu'on
-    // vient de saisir, et l'ecran d'a cote est celui ou ils sont encore en tete.
-    // L'engagement de la squad s'ecrit ici; celui du management se lit seulement,
-    // et le panneau montre aussi ceux de la tribe, replies.
-    {
-      key: "otd",
-      state: stateOf((squad.otd_count ?? 0) > 0, "otds", true),
-      node: <OtdPanel squad={squad} canManage={false} canOwn={ownsSquad} onChange={reload} />,
-    },
     ...(kpisOn && squad.kpis_enabled ? [{
       key: "kpis",
       state: stateOf(squad.kpis.length > 0, "kpis"),
@@ -655,6 +654,71 @@ function QuarterEditor({ squad, year, quarter, readonly, t, roadmap, onAdd, onEd
  * optional link to an objective, and a dependency that can be free text, another
  * squad, or a tribe (`depKind`). Title + theme are required to save.
  */
+/** An OTD as the milestone window lists it (GET /api/otds). */
+type OtdChoice = { id: number; tribe_id: number; year: number; title: string; scope?: "management" | "squad";
+  squad_id?: number | null; owner_user_id?: number | null; committed_date?: string | null };
+
+/**
+ * The two commitments a milestone can deliver, picked from two lists: the
+ * management OTD (fixed by the tribe leader) and the squad's own OTD. It is the
+ * same link as the one the OTD window sets, seen from the milestone. The rights
+ * mirror the server (roadmap.may_link_otd): the squad's own OTDs for whoever
+ * reports for it; a management OTD for its tribe leader and the admin, and for
+ * the squad leader when it was fixed on their squad or assigned to them.
+ */
+function JalonOtdLinks({ f, set, squadId, tribeId, t }: {
+  f: Partial<RoadmapItem>; set: (k: string, v: any) => void; squadId: number; tribeId?: number; t: any;
+}) {
+  const { user } = useAuth();
+  const { formatDate } = useI18n();
+  const [otds, setOtds] = useState<OtdChoice[] | null>(null);
+  const year = f.year;
+  useEffect(() => {
+    if (!year) return;
+    let alive = true;
+    api.get<OtdChoice[]>(`/api/otds?year=${year}${tribeId ? `&tribe_id=${tribeId}` : ""}`)
+      .then((r) => { if (alive) setOtds(r); }).catch(() => { if (alive) setOtds([]); });
+    return () => { alive = false; };
+  }, [year, tribeId]);
+  if (!otds) return null;
+  const label = (o: OtdChoice) => o.committed_date ? `${o.title} (${formatDate(o.committed_date)})` : o.title;
+  const mayManagement = (o: OtdChoice) => user?.role === "admin"
+    || (user?.role === "tribe_leader" && user?.tribe_id === o.tribe_id)
+    || o.squad_id === squadId || (o.owner_user_id != null && o.owner_user_id === user?.id);
+  const mgmt = otds.filter((o) => (o.scope ?? "management") === "management" && (!tribeId || o.tribe_id === tribeId));
+  const mgmtOptions = mgmt.filter(mayManagement);
+  const current = mgmt.find((o) => o.id === f.otd_id);
+  // Linked by the tribe leader to a commitment of the whole tribe: shown, not changeable here.
+  const mgmtLocked = !!current && !mayManagement(current);
+  const own = otds.filter((o) => o.scope === "squad" && o.squad_id === squadId);
+  return (
+    <div className="stack" style={{ gap: 8 }}>
+      <div className="small strong">{t("jalon.otd_section")}</div>
+      <div className="row">
+        <div className="col">
+          <label htmlFor="jalon-otd">{t("jalon.otd_management")}</label>
+          <select id="jalon-otd" value={f.otd_id ?? ""} disabled={mgmtLocked || (!mgmtOptions.length && !current)}
+                  onChange={(e) => set("otd_id", e.target.value ? Number(e.target.value) : null)}>
+            <option value="">{mgmtOptions.length || current ? t("jalon.otd_none") : t("jalon.otd_no_management")}</option>
+            {mgmtLocked && current && <option value={current.id}>{label(current)}</option>}
+            {mgmtOptions.map((o) => <option key={o.id} value={o.id}>{label(o)}</option>)}
+          </select>
+          {mgmtLocked && <div className="small muted" style={{ marginTop: 4 }}>{t("jalon.otd_locked")}</div>}
+        </div>
+        <div className="col">
+          <label htmlFor="jalon-squad-otd">{t("jalon.otd_squad")}</label>
+          <select id="jalon-squad-otd" value={f.squad_otd_id ?? ""} disabled={!own.length && !f.squad_otd_id}
+                  onChange={(e) => set("squad_otd_id", e.target.value ? Number(e.target.value) : null)}>
+            <option value="">{own.length ? t("jalon.otd_none") : t("jalon.otd_no_squad")}</option>
+            {own.map((o) => <option key={o.id} value={o.id}>{label(o)}</option>)}
+          </select>
+        </div>
+      </div>
+      <div className="small muted">{t("jalon.otd_hint")}</div>
+    </div>
+  );
+}
+
 function JalonModal({ jalon, members, onSave, onCancel, onDelete, error, t, roadmap, squads, tribes, currentSquadId }: any) {
   const [f, setF] = useState<Partial<RoadmapItem>>(jalon);
   const [saving, setSaving] = useState(false);
@@ -681,8 +745,6 @@ function JalonModal({ jalon, members, onSave, onCancel, onDelete, error, t, road
         .map((s) => ({ id: s.id, label: s.tribe_id === ownTribe ? s.name : `${s.name} (${s.tribe_name})` }))
     : squads.map((s: Squad) => ({ id: s.id, label: s.name })))
     .filter((s: { id: number }) => s.id !== currentSquadId);
-  // A dependency can be: free text, another squad, or a tribe.
-  const depKind: "text" | "squad" | "tribe" = (f.dependency_kind as any) || "text";
   const field = (label: string, key: string, area = false) => (
     <div>
       <label htmlFor={`jf-${key}`}>{label}</label>
@@ -763,29 +825,12 @@ function JalonModal({ jalon, members, onSave, onCancel, onDelete, error, t, road
                 onPick={(v) => set("owner", v ?? "")} onText={(txt) => set("owner", txt)} />
             </div>
           </div>
+          <JalonOtdLinks f={f} set={set} squadId={currentSquadId}
+                         tribeId={squads.find((s: Squad) => s.id === currentSquadId)?.tribe_id} t={t} />
           {field(t("jalon.desc"), "description", true)}
           {field(t("jalon.success"), "success_criteria", true)}
           {field(t("jalon.benefit"), "user_benefit", true)}
-          <div>
-            <label htmlFor="jalon-dep">{t("jalon.deps")}</label>
-            {/* One list: the squads and tribes that exist, then "other" to type
-                something outside the app (a vendor, a team not in the tool). */}
-            <PickOrType id="jalon-dep"
-              groups={[
-                { label: t("jalon.dep_squad"), options: depSquads.map((s) => ({ value: `s:${s.id}`, label: s.label })) },
-                { label: t("jalon.dep_tribe"), options: tribes.map((tr: Tribe) => ({ value: `t:${tr.id}`, label: tr.name })) },
-              ]}
-              picked={depKind === "squad" && f.dependency_squad_id ? `s:${f.dependency_squad_id}`
-                : depKind === "tribe" && f.dependency_tribe_id ? `t:${f.dependency_tribe_id}` : null}
-              text={depKind === "text" ? f.dependencies : ""}
-              placeholder={t("jalon.dep_none")}
-              onPick={(v) => setF((p) => v?.startsWith("s:")
-                ? { ...p, dependency_kind: "squad", dependency_squad_id: Number(v.slice(2)), dependency_tribe_id: null, dependencies: null }
-                : v?.startsWith("t:")
-                ? { ...p, dependency_kind: "tribe", dependency_tribe_id: Number(v.slice(2)), dependency_squad_id: null, dependencies: null }
-                : { ...p, dependency_kind: null, dependency_squad_id: null, dependency_tribe_id: null, dependencies: "" })}
-              onText={(txt) => setF((p) => ({ ...p, dependency_kind: "text", dependency_squad_id: null, dependency_tribe_id: null, dependencies: txt }))} />
-          </div>
+          <JalonDependencies f={f} setF={setF} depSquads={depSquads} tribes={tribes} t={t} />
           {field(t("jalon.risks"), "risks", true)}
         </div>
         {error && <div style={{ marginTop: 10 }}><ErrorBanner message={error} /></div>}
@@ -812,6 +857,79 @@ function JalonModal({ jalon, members, onSave, onCancel, onDelete, error, t, road
           </span>
         </div>
     </Modal>
+  );
+}
+
+/**
+ * The dependencies of a milestone, as a list: as many tribes, squads and free
+ * texts (a vendor, a team outside the app) as it waits on. Each one is a chip
+ * that can be removed; a list adds a tribe or a squad, a field adds a text.
+ * The list is what the server keeps (dependency_list); the first entry is also
+ * the milestone's single dependency for the older screens.
+ */
+function JalonDependencies({ f, setF, depSquads, tribes, t }: {
+  f: Partial<RoadmapItem>; setF: (fn: (p: Partial<RoadmapItem>) => Partial<RoadmapItem>) => void;
+  depSquads: { id: number; label: string }[]; tribes: Tribe[]; t: any;
+}) {
+  const [text, setText] = useState("");
+  // A milestone written before the list carries its one dependency in the single fields.
+  const deps: Dependency[] = f.dependency_list ?? (
+    f.dependency_kind === "squad" && f.dependency_squad_id ? [{ kind: "squad", squad_id: f.dependency_squad_id }]
+    : f.dependency_kind === "tribe" && f.dependency_tribe_id ? [{ kind: "tribe", tribe_id: f.dependency_tribe_id }]
+    : f.dependencies?.trim() ? [{ kind: "text", text: f.dependencies.trim() }] : []);
+  const label = (d: Dependency) => d.kind === "squad" ? (depSquads.find((s) => s.id === d.squad_id)?.label ?? d.label ?? "?")
+    : d.kind === "tribe" ? (tribes.find((x) => x.id === d.tribe_id)?.name ?? d.label ?? "?") : (d.text ?? "");
+  const has = (d: Dependency) => deps.some((x) => x.kind === d.kind && x.squad_id === d.squad_id && x.tribe_id === d.tribe_id
+    && (x.text ?? "").toLowerCase() === (d.text ?? "").toLowerCase());
+  const setList = (list: Dependency[]) => setF((p) => ({ ...p, dependency_list: list }));
+  const add = (d: Dependency) => { if (!has(d)) setList([...deps, d]); };
+  function addText() {
+    const v = text.trim();
+    if (!v) return;
+    add({ kind: "text", text: v });
+    setText("");
+  }
+  return (
+    <div>
+      <label htmlFor="jalon-dep-add">{t("jalon.deps")}</label>
+      {deps.length > 0 ? (
+        <div className="dep-chips">
+          {deps.map((d, i) => (
+            <span key={`${d.kind}-${d.squad_id ?? d.tribe_id ?? d.text}`} className={`dep-chip dep-${d.kind}`}>
+              <span className="dep-kind">{d.kind === "text" ? t("jalon.dep_other") : t(`jalon.dep_${d.kind}`)}</span>
+              {label(d)}
+              <button type="button" aria-label={t("jalon.dep_remove", { name: label(d) })}
+                      onClick={() => setList(deps.filter((_, k) => k !== i))}>✕</button>
+            </span>
+          ))}
+        </div>
+      ) : <div className="small muted" style={{ marginBottom: 6 }}>{t("jalon.dep_none")}</div>}
+      <div className="dep-add">
+        <select id="jalon-dep-add" value="" onChange={(e) => {
+          const v = e.target.value;
+          if (v.startsWith("t:")) add({ kind: "tribe", tribe_id: Number(v.slice(2)) });
+          else if (v.startsWith("s:")) add({ kind: "squad", squad_id: Number(v.slice(2)) });
+        }}>
+          <option value="">{t("jalon.dep_add")}</option>
+          <optgroup label={t("jalon.dep_tribe")}>
+            {tribes.filter((tr) => !has({ kind: "tribe", tribe_id: tr.id })).map((tr) => (
+              <option key={tr.id} value={`t:${tr.id}`}>{tr.name}</option>
+            ))}
+          </optgroup>
+          <optgroup label={t("jalon.dep_squad")}>
+            {depSquads.filter((s) => !has({ kind: "squad", squad_id: s.id })).map((s) => (
+              <option key={s.id} value={`s:${s.id}`}>{s.label}</option>
+            ))}
+          </optgroup>
+        </select>
+        <span className="inline" style={{ gap: 6, flex: 1 }}>
+          <input value={text} maxLength={500} placeholder={t("jalon.dep_text_ph")} aria-label={t("jalon.dep_text_ph")}
+                 onChange={(e) => setText(e.target.value)}
+                 onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addText(); } }} />
+          <button type="button" className="btn-secondary btn-sm" disabled={!text.trim()} onClick={addText}>{t("jalon.dep_add_text")}</button>
+        </span>
+      </div>
+    </div>
   );
 }
 

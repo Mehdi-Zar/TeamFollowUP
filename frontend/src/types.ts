@@ -9,7 +9,7 @@
 export type Role = "admin" | "tribe_leader" | "squad_leader" | "contributor" | "member" | (string & {});
 
 /** Section-level access flags (persona capabilities) gating the main nav areas. */
-export type Capability = "dashboard" | "roadmap" | "org" | "feed" | "reporting" | "mysquads" | "leaves";
+export type Capability = "dashboard" | "roadmap" | "org" | "feed" | "reporting" | "mysquads" | "leaves" | "exports";
 
 /** One milestone (jalon) rendered inside a roadmap matrix cell. */
 export interface RoadmapCellItem {
@@ -266,6 +266,8 @@ export interface RoadmapItem {
   dependency_squad_id?: number | null;
   dependency_tribe_id?: number | null;
   dependency_label?: string | null;
+  /** Every dependency (several squads, tribes, free texts); the first is mirrored above. */
+  dependency_list?: Dependency[];
   risks?: string | null;
   owner?: string | null;
   status: RoadmapStatus;
@@ -273,6 +275,18 @@ export interface RoadmapItem {
   initiative_id?: number | null;
   otd_id?: number | null;
   otd_label?: string | null;
+  /** The squad's own commitment this milestone delivers (scope "squad"). */
+  squad_otd_id?: number | null;
+  squad_otd_label?: string | null;
+}
+
+/** One dependency of a milestone: a squad, a tribe, or free text. */
+export interface Dependency {
+  kind: "squad" | "tribe" | "text";
+  squad_id?: number | null;
+  tribe_id?: number | null;
+  text?: string | null;
+  label?: string | null;
 }
 
 /** An incoming dependency: a milestone in another squad that relies on this one. */

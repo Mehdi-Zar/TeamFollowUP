@@ -118,6 +118,15 @@ un engagement de squad seulement ceux de sa squad.
 ### roadmap (`/api/roadmap-items`) - module `squad_content.roadmap`
 `POST ""`; `PUT /{id}`; `DELETE /{id}` (writer + can-edit-squad). Normalizes EA/GA + dependency.
 
+`otd_id` et `squad_otd_id` se posent aussi ici, depuis le jalon (`roadmap.may_link_otd`): l'OTD de squad par qui fait le reporting de la squad; l'OTD management par son tribe leader et l'admin, et par le squad leader quand l'engagement est fixe sur sa squad ou lui est assigne. L'OTD doit etre de la bonne portee, de la tribe (management) ou de la squad (squad), et de l'annee du jalon (400). Detacher demande le meme droit que rattacher (403). La reponse porte `otd_label` et `squad_otd_label`.
+
+`dependency_list` (`[{kind: squad|tribe|text, squad_id, tribe_id, text}]`) donne toutes les dependances d'un jalon (20 au plus, doublons et la squad elle-meme ignores); quand il est envoye, il remplace les champs `dependency_*`, qui gardent la premiere. Sans lui, les champs `dependency_*` d'un ancien client donnent une liste d'une entree. La reponse porte `dependency_list` avec un `label` par entree, et `dependency_label` les joint.
+
+### exports (`/api/exports`) - Studio des exports, voir [35](35-studio-des-exports.md)
+`GET /catalog`; `GET|POST /templates`; `GET|PUT|DELETE /templates/{id}`; `POST /templates/{id}/publish|detach|restore`; `GET /templates/{id}/compare?a=&b=`; `GET /templates/{id}/file`; `POST /templates/import`; `GET|PUT /assignments`; `GET /effective`; `GET|POST /themes`, `PUT|DELETE /themes/{id}`; `GET|POST /assets`, `GET /assets/{id}/raw|slides`, `DELETE /assets/{id}`; `POST /preview`; `POST /render?fmt=pptx|html`; `GET /document.html`.
+
+Toutes ces routes demandent la capacite `exports` (Administration > Personas), sauf `/document.html`. Concevoir suit ensuite `exportstore.can_design`. Apercu et rendu passent par les memes gates que l'export du document. Les routes d'export PPTX existantes acceptent `template_id`.
+
 ### kpis (`/api/kpis`) - module `squad_content.kpis`
 `POST ""`; `PUT /{id}`; `DELETE /{id}`
 

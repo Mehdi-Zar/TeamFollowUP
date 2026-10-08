@@ -14,6 +14,7 @@ import { useAuth } from "../auth";
 import { Squad, Tribe } from "../types";
 import { Modal, PickItem } from "./ui";
 import { HtmlPreviewModal } from "./HtmlPreview";
+import { DocContext, DocKind as StudioKind, contextQuery } from "../studio/model";
 
 /** One tidy "Export / Share" dropdown that groups every export & email action
  *  (HTML/PPTX report, roadmap with squad selection, send by mail). HTML opens in
@@ -40,6 +41,7 @@ type View = "menu" | "emailReport";
  *  Le nombre de squads dit si la version est complete. */
 type Version = { date: string; squads: number; labels?: string[] };
 type Preview = { url: string; title: string };
+
 
 /** Render an export's HTML to a JPG (image equivalent of the HTML export):
  *  fetch the HTML, lay it out in an isolated off-screen iframe, html2canvas it. */
@@ -177,17 +179,25 @@ export default function ExportMenu({ year, squadId, sinceDays = 7, docs, steerco
     ) : (
       <button className="menu-item" onClick={onClick}>{children}</button>
     );
-  // One row per document; the three formats sit in a tidy segmented control.
-  const ExportRow = ({ label, html, pptx }: { label: string; html: string; pptx: string }) => (
+  // One row per document; the formats sit in a tidy segmented control. "Slides"
+  // is the PowerPoint itself, as its template lays it out, drawn in the browser.
+  const ExportRow = ({ label, html, pptx, kind, ctx }: { label: string; html: string; pptx: string;
+    kind?: StudioKind; ctx?: DocContext }) => (
     <div className="export-row">
       <span className="export-row-label">{label}</span>
       <span className="seg">
         <button onClick={() => { setPreview({ url: html, title: label }); setOpen(false); }}>HTML</button>
         <button onClick={() => htmlToJpg(html, `${label}.jpg`)}>JPG</button>
         <a href={pptx} download onClick={() => setOpen(false)}>PPTX</a>
+        {kind && ctx && (
+          <button title={t("quick.slides_hint")} onClick={() => {
+            setPreview({ url: `/api/exports/document.html?doc_kind=${kind}&${contextQuery(ctx)}`, title: label }); setOpen(false);
+          }}>{t("quick.slides")}</button>
+        )}
       </span>
     </div>
   );
+  const baseCtx: DocContext = { year, lang, as_of: asOf || undefined, since_days: sinceDays };
 
   return (
     <div ref={ref} style={{ position: "relative", display: "inline-block" }}>
@@ -213,12 +223,16 @@ export default function ExportMenu({ year, squadId, sinceDays = 7, docs, steerco
                 </div>
               )}
               {hasDownloads && <div className="menu-label">{t("export.group_download")}</div>}
-              {dashboardOn && squadId && <ExportRow label={t("export.doc_dashboard")} html={`/api/reports/dashboard.html?${rqs}`} pptx={`/api/reports/dashboard.pptx?${rqs}`} />}
+              {dashboardOn && squadId && <ExportRow label={t("export.doc_dashboard")} html={`/api/reports/dashboard.html?${rqs}`} pptx={`/api/reports/dashboard.pptx?${rqs}`}
+                                                    kind="dashboard" ctx={{ ...baseCtx, squad_id: squadId }} />}
               {dashboardOn && !squadId && <Item onClick={() => { setDashModal(true); setOpen(false); }}>{t("export.doc_dashboard")} …</Item>}
-              {roadmapAvail && squadId && <ExportRow label={t("export.doc_roadmap")} html={`${roadmapBase}.html?${roadmapQs}`} pptx={`${roadmapBase}.pptx?${roadmapQs}`} />}
+              {roadmapAvail && squadId && <ExportRow label={t("export.doc_roadmap")} html={`${roadmapBase}.html?${roadmapQs}`} pptx={`${roadmapBase}.pptx?${roadmapQs}`}
+                                                     kind="roadmap" ctx={{ ...baseCtx, squad_id: squadId }} />}
               {roadmapAvail && !squadId && <Item onClick={() => { setRoadmapModal(true); setOpen(false); }}>{t("export.doc_roadmap")} …</Item>}
-              {dependenciesOn && <ExportRow label={t("export.doc_dependencies")} html={`/api/reports/dependencies.html?${rqs}`} pptx={`/api/reports/dependencies.pptx?${rqs}`} />}
-              {steercoOn && <ExportRow label={t("export.doc_steerco")} html={steercoHtml} pptx={steercoPptx} />}
+              {dependenciesOn && <ExportRow label={t("export.doc_dependencies")} html={`/api/reports/dependencies.html?${rqs}`} pptx={`/api/reports/dependencies.pptx?${rqs}`}
+                                             kind="dependencies" ctx={{ year, lang }} />}
+              {steercoOn && <ExportRow label={t("export.doc_steerco")} html={steercoHtml} pptx={steercoPptx}
+                                        kind="steerco" ctx={{ lang, period: steerco?.period, platform_id: steerco?.platformId ? Number(steerco.platformId) : undefined }} />}
 
               {hasEmail && <div className="menu-label" style={{ marginTop: 6 }}>{t("export.group_email")}</div>}
               {hasEmail && <Item onClick={() => { setView("emailReport"); setMsg(null); }}>{t("export.send_report")} …</Item>}

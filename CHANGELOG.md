@@ -2,6 +2,39 @@
 
 ## Unreleased
 
+## 3.0.0 (2026-10-07)
+
+### Studio des exports
+- Nouveau menu **Studio des exports** : chaque document PowerPoint (tableau de bord, rapport hebdo, roadmap,
+  dependances, initiatives, steerco, organigramme) se met en page par un **modele** : sections dans l'ordre voulu,
+  blocs masques ou regles, page de garde, texte libre, mise en page libre en grille, slide PowerPoint importee,
+  pied de page et numeros de slide.
+- Modeles par portee (organisation, tribe, squad, plateforme), la plus proche l'emporte ; un modele suit son
+  parent (seuls ses ecarts sont gardes) ou en est une copie ; verrous ; brouillon, publication, versions,
+  comparaison et restauration ; import et export d'un modele en fichier.
+- Apercu en direct sur les vraies donnees, lu depuis le deck lui-meme, avec des controles : texte sous 8 pt,
+  debordement, contraste faible, caracteres proscrits.
+- Themes (masque PowerPoint, couleurs, police et taille) et bibliotheque de fichiers.
+- Menu Exporter : **Slides** (le PowerPoint affiche dans l'application, tel que son modele le met en page).
+- Nouvelle capacite **Studio des exports** dans Administration > Personas (cochee par defaut pour l'admin et les
+  tribe leaders, a cocher pour les squad leaders) : elle ouvre le menu et les routes du Studio.
+- Sans modele assigne, chaque document sort a l'identique d'avant (modele Standard, verifie par test). Les envois
+  planifies et les notifications utilisent le modele de leur portee.
+- Droits : admin partout, tribe leader sur sa tribe, squad leader sur sa squad en mode simple.
+
+### Jalons et OTD
+- La fenetre d'un jalon propose deux listes deroulantes, **OTD management** et **OTD de la squad**, pour le rattacher
+  depuis le jalon. C'est le meme lien que celui de la fenetre de l'OTD. Le squad leader peut rattacher ses jalons a
+  l'OTD management fixe sur sa squad ou qui lui est assigne ; un engagement de toute la tribe reste au tribe leader.
+- Studio simplifie : accueil « Mes documents » (une carte par document, bouton Modifier), editeur simple
+  (liste des slides, cases a cocher, fleches, reglages sous chaque slide) et un seul bouton « Enregistrer et
+  appliquer » ; la gestion des modeles, themes, fichiers et versions passe sous « Gestion avancee ».
+- Jalons : **plusieurs dependances** par jalon (plusieurs tribes, plusieurs squads, des textes libres), en
+  etiquettes qu'on ajoute et retire ; le document des dependances liste le jalon sous chacune, et chaque squad
+  visee le voit dans ses dependances entrantes. Les dependances existantes sont reprises (migration 0044).
+- Saisie : l'etape **OTD** (ex-« Engagements ») passe en premier, les jalons en second.
+- Menu Exporter elargi pour ses nouveaux boutons.
+
 ## 2.6.0 (2026-10-02)
 
 ### Annuaire et provisioning SCIM

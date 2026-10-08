@@ -17,7 +17,9 @@ from .models import AppSetting
 PERSONAS_KEY = "personas"
 
 # Section-access capabilities (the catalog shown in the admin matrix).
-CAPABILITIES = ["dashboard", "roadmap", "org", "feed", "reporting", "mysquads", "leaves"]
+# "exports" opens the Studio des exports (docs/35); what one may change there still
+# follows the role (exportstore.can_design).
+CAPABILITIES = ["dashboard", "roadmap", "org", "feed", "reporting", "mysquads", "leaves", "exports"]
 _CAP_SET = set(CAPABILITIES)
 
 BUILTINS = ["admin", "tribe_leader", "squad_leader", "contributor", "member"]
@@ -51,7 +53,7 @@ def _default_caps(key: str) -> dict:
     caps = {c: False for c in CAPABILITIES}
     # Leave/absence section is visible to everyone by default ("visible par tous").
     if key == "tribe_leader":
-        caps.update(dashboard=True, roadmap=True, org=True, feed=True, mysquads=True, leaves=True)
+        caps.update(dashboard=True, roadmap=True, org=True, feed=True, mysquads=True, leaves=True, exports=True)
     elif key == "squad_leader":
         caps.update(dashboard=True, roadmap=True, org=True, feed=True, reporting=True, mysquads=True, leaves=True)
     elif key == "contributor":

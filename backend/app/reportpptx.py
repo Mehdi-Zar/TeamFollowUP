@@ -15,6 +15,7 @@ from datetime import datetime
 
 
 from . import pptxtpl
+from .exportspec import block_on, bparam, sparam
 from .models import KEY_MESSAGES_MAX as KM_MAX
 from .reportcommon import (_people_line, _sep, fmt_date, fmt_datetime, fmt_money, MOOD_CLOUD, MOOD_CLOUD_BOX, MOOD_CLOUD_EYES,
                            MOOD_CLOUD_STROKE, OTD_SCOPE_COLOR,
@@ -39,6 +40,8 @@ _BRAND = {
 
 
 _RAG_BRAND = {"red": "#B42318", "amber": "#B54708", "green": "#027A48", "grey": "#6B7280"}
+# Les couleurs de statut suivent celles du theme du Studio quand il en fixe.
+RAG_MAP = {"red": "red", "amber": "orange", "green": "green"}
 
 
 # Libelles propres aux decks. Ils vivent ici plutot que dans reportcommon: seul le
@@ -239,6 +242,27 @@ def _pptx_toolkit():
     return Presentation, Inches, Pt, Emu, RGBColor, PP_ALIGN, MSO_ANCHOR, MSO_SHAPE
 
 
+def select_squads(rows: list[dict], sec: dict | None) -> list[dict]:
+    """The squads a section shows, in the order it shows them (``filter`` and
+    ``sort`` of the Studio). Without a section: all of them, in document order."""
+    from .report import is_attention, severity_key
+    flt = sparam(sec, "filter", "all")
+    if flt == "attention":
+        rows = [r for r in rows if is_attention(r)]
+    elif flt == "reported":
+        rows = [r for r in rows if r.get("age_days") is not None]
+    elif flt == "stale":
+        rows = [r for r in rows if r.get("is_stale") or r.get("age_days") is None]
+    srt = sparam(sec, "sort", "order")
+    if srt == "severity":
+        rows = sorted(rows, key=severity_key)
+    elif srt == "name":
+        rows = sorted(rows, key=lambda r: (r.get("name") or "").lower())
+    elif srt == "progress":
+        rows = sorted(rows, key=lambda r: (r.get("annual_pct") or 0))
+    return list(rows)
+
+
 def render_pptx(data: dict) -> bytes:
     """Render the weekly report as a branded deck (requires python-pptx):
     a summary one-pager (dropped for a single-squad export) followed by one slide
@@ -246,17 +270,31 @@ def render_pptx(data: dict) -> bytes:
     commitments placed on their date, then one row per commitment carrying the
     milestones that hold it, with key messages and budget along the bottom. The
     roadmap-only swimlane deck is produced separately by render_roadmap_pptx."""
+    from .exportspec import system_spec
+    prs = pptxtpl.new_deck()
+    deck = report_deck(prs, data)
+    kind = "dashboard" if data.get("doc") == "dashboard" else "weekly"
+    for sec in system_spec(kind)["sections"]:
+        deck[sec["type"]](sec)
+    deck["finish"]()
+    return pptxtpl.save_deck(prs)
+
+
+def report_deck(prs, data: dict) -> dict:
+    """The section drawers of the report family (dashboard, weekly report), bound to
+    one deck and one data set: ``{"summary": f(sec), "squad": f(sec), "attention":
+    f(sec)}``, plus the squad slide's parts for the Studio's free layouts. A section
+    is a Studio section (see ``exportspec``); its blocks and parameters switch parts
+    of the slide on and off. The Standard sections draw the deck the product always
+    made."""
     Presentation, Inches, Pt, Emu, RGBColor, PP_ALIGN, MSO_ANCHOR, MSO_SHAPE = _pptx_toolkit()
 
     def rgb(hexstr: str) -> RGBColor:
         return RGBColor.from_string(hexstr.lstrip("#").upper())
 
-    B = {k: rgb(v) for k, v in _BRAND.items()}
+    B = {k: rgb(v) for k, v in pptxtpl.palette(_BRAND, pptxtpl.BRAND_MAP).items()}
+    _RAG_BRAND = pptxtpl.palette(globals()["_RAG_BRAND"], RAG_MAP)
     lang = data.get("lang", "fr")
-
-    prs = pptxtpl.new_presentation()
-    prs.slide_width = Inches(13.333)
-    prs.slide_height = Inches(7.5)
 
     def new_slide():
         return pptxtpl.add_slide(prs)
@@ -360,7 +398,7 @@ def render_pptx(data: dict) -> bytes:
         return sh
 
     def chip(s, left, top, text, fill, *, color=None, size=10):
-        w = Inches(0.26 + 0.082 * FONT_SCALE * len(text))
+        w = Inches(0.26 + 0.082 * pptxtpl.font_scale() * len(text))
         sh = rrect(s, left, top, w, Inches(0.3), fill, radius=0.5)
         tf = sh.text_frame
         tf.word_wrap = False
@@ -416,25 +454,40 @@ def render_pptx(data: dict) -> bytes:
         textbox(s, Inches(9.3), Inches(0.3), Inches(3.5), Inches(0.6), meta, 11,
                 color=rgb("#C7D2FE"), align=PP_ALIGN.RIGHT)
 
-    def squad_table(s, rows, top):
-        headers = [rt(lang, "h_squad"), rt(lang, "h_leader"), rt(lang, "h_status"),
-                   rt(lang, "h_progress"), rt(lang, "h_blocked"), rt(lang, "h_atrisk"),
-                   _pt(lang, "h_last")]
-        wfrac = [0.27, 0.20, 0.12, 0.10, 0.09, 0.09, 0.13]
+    TABLE_COLS = ("name", "leader", "status", "progress", "blocked", "at_risk", "last")
+
+    def squad_table(s, rows, top, columns=None, left=None, width=None):
+        """Le tableau des squads, aux colonnes choisies (toutes par defaut), sur
+        toute la largeur utile ou dans le cadre donne (EMU)."""
+        heads = {"name": rt(lang, "h_squad"), "leader": rt(lang, "h_leader"), "status": rt(lang, "h_status"),
+                 "progress": rt(lang, "h_progress"), "blocked": rt(lang, "h_blocked"),
+                 "at_risk": rt(lang, "h_atrisk"), "last": _pt(lang, "h_last")}
+        fr = {"name": 0.27, "leader": 0.20, "status": 0.12, "progress": 0.10, "blocked": 0.09,
+              "at_risk": 0.09, "last": 0.13}
+        keys = [k for k in (columns or TABLE_COLS) if k in heads] or ["name"]
         # Une version passee n'a pas de « derniere saisie » a montrer: l'age porte
         # par les donnees est celui d'aujourd'hui, pas celui de la version.
         if data.get("as_of"):
-            headers, wfrac = headers[:-1], [0.30, 0.235, 0.13, 0.115, 0.11, 0.11]
-        table_w = int(prs.slide_width - margin * 2)
+            fr = {"name": 0.30, "leader": 0.235, "status": 0.13, "progress": 0.115, "blocked": 0.11,
+                  "at_risk": 0.11}
+            keys = [k for k in keys if k != "last"] or ["name"]
+        full = list(fr) == keys
+        wfrac = [fr[k] for k in keys]
+        if not full:
+            tot = sum(wfrac)
+            wfrac = [f / tot for f in wfrac]
+        headers = [heads[k] for k in keys]
+        x0 = margin if left is None else left
+        table_w = int(prs.slide_width - margin * 2) if width is None else int(width)
         widths = [Emu(int(table_w * f)) for f in wfrac]
         nrows = len(rows) + 1
-        tbl = s.shapes.add_table(max(nrows, 2), len(headers), margin, top, Emu(table_w),
+        tbl = s.shapes.add_table(max(nrows, 2), len(headers), x0, top, Emu(table_w),
                                  Inches(0.34) + Inches(0.255) * (nrows - 1)).table
         for ci, w in enumerate(widths):
             tbl.columns[ci].width = w
-        for ci, h in enumerate(headers):
-            align = PP_ALIGN.LEFT if ci < 2 else PP_ALIGN.CENTER
-            style_cell(tbl.cell(0, ci), h, 10, B["white"], bold=True, align=align, fill=B["navy"])
+        for ci, k in enumerate(keys):
+            align = PP_ALIGN.LEFT if k in ("name", "leader") else PP_ALIGN.CENTER
+            style_cell(tbl.cell(0, ci), heads[k], 10, B["white"], bold=True, align=align, fill=B["navy"])
         for ri, r in enumerate(rows, start=1):
             zebra = B["zebra"] if ri % 2 == 0 else B["white"]
             last, stale = _last_update(r, gen, lang)
@@ -444,123 +497,162 @@ def render_pptx(data: dict) -> bytes:
                 st_txt, st_col = _pt(lang, "not_reported"), rgb(_RAG_BRAND["grey"])
             else:
                 st_txt, st_col = _status_label(r["status"], lang), rgb(_RAG_BRAND[r["status_rag"]])
-            cells = [
-                (_cut(r["name"], 34), B["ink"], True, PP_ALIGN.LEFT),
-                (_cut(r["leader"] or "-", 26), B["muted"], False, PP_ALIGN.LEFT),
-                (st_txt, st_col, True, PP_ALIGN.CENTER),
-                (_pct(r["annual_pct"], lang), B["ink"], False, PP_ALIGN.CENTER),
-                (str(r["blocked"] or "-"), B["red"] if r["blocked"] else B["muted"], r["blocked"] > 0, PP_ALIGN.CENTER),
-                (str(r["at_risk"] or "-"), B["orange"] if r["at_risk"] else B["muted"], r["at_risk"] > 0, PP_ALIGN.CENTER),
+            cells = {
+                "name": (_cut(r["name"], 34), B["ink"], True, PP_ALIGN.LEFT),
+                "leader": (_cut(r["leader"] or "-", 26), B["muted"], False, PP_ALIGN.LEFT),
+                "status": (st_txt, st_col, True, PP_ALIGN.CENTER),
+                "progress": (_pct(r["annual_pct"], lang), B["ink"], False, PP_ALIGN.CENTER),
+                "blocked": (str(r["blocked"] or "-"), B["red"] if r["blocked"] else B["muted"], r["blocked"] > 0, PP_ALIGN.CENTER),
+                "at_risk": (str(r["at_risk"] or "-"), B["orange"] if r["at_risk"] else B["muted"], r["at_risk"] > 0, PP_ALIGN.CENTER),
                 # Une saisie perimee se voit sur sa ligne, pas seulement dans le
                 # total de la tuile du dessus.
-                (last, B["orange"] if stale else B["muted"], stale, PP_ALIGN.CENTER),
-            ][:len(headers)]
-            for ci, (val, color, bold, align) in enumerate(cells):
+                "last": (last, B["orange"] if stale else B["muted"], stale, PP_ALIGN.CENTER),
+            }
+            for ci, k in enumerate(keys):
+                val, color, bold, align = cells[k]
                 style_cell(tbl.cell(ri, ci), val, 9.5, color, bold=bold, align=align, fill=zebra)
 
-    def summary_slide():
-        s = new_slide()
-        summary_header(s, False)
-        kpis = [
-            (rt(lang, "k_squads"), str(sm["squads_total"]), B["navy"]),
-            (rt(lang, "k_progress"), _pct(sm["avg_progress"], lang), B["accent"]),
-            (rt(lang, "k_blocked"), str(sm["blocked"]), B["red"] if sm["blocked"] else B["ink"]),
-            (rt(lang, "k_atrisk"), str(sm["at_risk"]), B["orange"] if sm["at_risk"] else B["ink"]),
-            (rt(lang, "k_otd_late"), str(sm["otd_late"]), B["red"] if sm["otd_late"] else B["ink"]),
-            (rt(lang, "k_stale"), str(sm["stale"]), B["orange"] if sm["stale"] else B["ink"]),
-        ]
+    KPI_ITEMS = ("squads", "progress", "blocked", "at_risk", "otd_late", "stale")
+
+    def kpi_tiles(s, left, top, total_w, kh, items=None):
+        """Les compteurs de la synthese, en cartes egales sur la largeur donnee (EMU)."""
+        allk = {
+            "squads": (rt(lang, "k_squads"), str(sm["squads_total"]), B["navy"]),
+            "progress": (rt(lang, "k_progress"), _pct(sm["avg_progress"], lang), B["accent"]),
+            "blocked": (rt(lang, "k_blocked"), str(sm["blocked"]), B["red"] if sm["blocked"] else B["ink"]),
+            "at_risk": (rt(lang, "k_atrisk"), str(sm["at_risk"]), B["orange"] if sm["at_risk"] else B["ink"]),
+            "otd_late": (rt(lang, "k_otd_late"), str(sm["otd_late"]), B["red"] if sm["otd_late"] else B["ink"]),
+            "stale": (rt(lang, "k_stale"), str(sm["stale"]), B["orange"] if sm["stale"] else B["ink"]),
+        }
+        kpis = [allk[k] for k in (items if items is not None else KPI_ITEMS) if k in allk]
+        if not kpis:
+            return
         gap = Inches(0.14)
         n = len(kpis)
-        total_w = prs.slide_width - margin * 2
         card_w = Emu(int((total_w - gap * (n - 1)) / n))
-        ky, kh = Inches(1.34), Inches(1.05)
         for i, (label, val, color) in enumerate(kpis):
-            left = Emu(int(margin) + i * (int(card_w) + int(gap)))
-            kp = rect(s, left, ky, card_w, kh, B["card"], line=B["line"])
+            x = Emu(int(left) + i * (int(card_w) + int(gap)))
+            kp = rect(s, x, top, card_w, kh, B["card"], line=B["line"])
             # Value + label are the card's own text, vertically centered.
             place(kp, [(val, 26, color, True, PP_ALIGN.CENTER, 4),
                        (label, 10, B["muted"], False, PP_ALIGN.CENTER, 0)],
                   anchor=MSO_ANCHOR.MIDDLE, ml=0.05, mr=0.05)
+
+    def summary_slide(sec=None):
+        rows_all = select_squads(squads, sec)
+        first = int(sparam(sec, "rows_first", ROWS_FIRST) or ROWS_FIRST)
+        nxt = int(sparam(sec, "rows_next", ROWS_NEXT) or ROWS_NEXT)
+        cols = bparam(sec, "table", "columns", None)
+        head_on = block_on(sec, "header")
+        s = new_slide()
+        if head_on:
+            summary_header(s, False)
+        if block_on(sec, "kpis"):
+            kpi_tiles(s, margin, Inches(1.34), prs.slide_width - margin * 2, Inches(1.05),
+                      bparam(sec, "kpis", "items", None))
         top = 2.62
-        if version:
+        if version and block_on(sec, "version"):
             # Un document date qui ne se dit pas date a l'air du rapport du jour.
             textbox(s, margin, Inches(2.44), prs.slide_width - margin * 2, Inches(0.2),
                     _cut(version, 150), 10, bold=True, color=B["orange"])
             top = 2.72
-        squad_table(s, squads[:ROWS_FIRST], Inches(top))
-        rest = squads[ROWS_FIRST:]
+        if not block_on(sec, "table"):
+            return
+        squad_table(s, rows_all[:first], Inches(top), cols)
+        rest = rows_all[first:]
         while rest:
             s = new_slide()
-            summary_header(s, True)
-            squad_table(s, rest[:ROWS_NEXT], Inches(1.34))
-            rest = rest[ROWS_NEXT:]
+            if head_on:
+                summary_header(s, True)
+            squad_table(s, rest[:nxt], Inches(1.34), cols)
+            rest = rest[nxt:]
+
+    def squad_table_in(s, X, Y, W, H, params=None):
+        """Le tableau des squads dans un cadre (pouces): autant de lignes qu'il en tient."""
+        params = params or {}
+        rows = select_squads(squads, {"params": params})
+        fit = max(1, int((H - 0.34) / 0.255))
+        squad_table(s, rows[:fit], Inches(Y), params.get("columns"), Inches(X), Inches(W))
 
     # ---------------- Points d'attention (rapport hebdo) ---------------------------
     # Le deck hebdo annoncait une fenetre de sept jours et montrait la meme chose
     # que le tableau de bord. Ce que le HTML dit en plus (les squads a regarder,
     # les engagements que personne ne porte, les absences qui arrivent) a ici sa
     # slide, juste apres la synthese.
-    def attention_slide():
+    def attention_rows(which):
+        """(titre, lignes, texte si vide) d'une colonne des points d'attention."""
+        out = []
+        if which == "attention":
+            for r in data.get("attention") or []:
+                bits = []
+                if r.get("blocked"):
+                    bits.append(_pt(lang, "blocked", n=r["blocked"]))
+                # Un engagement en retard met la squad dans la liste: il se dit aussi.
+                if r.get("otd_late"):
+                    bits.append(_pt(lang, "otd_late", n=r["otd_late"]))
+                if r.get("is_stale"):
+                    last, _st = _last_update(r, gen, lang)
+                    bits.append(f'{_pt(lang, "last_on", d=last)} ({_pt(lang, "stale_since", n=r["age_days"])})'
+                                if r.get("age_days") is not None else _pt(lang, "last_never"))
+                out.append((r["name"], ", ".join(bits),
+                            B["red"] if r.get("blocked") or r.get("otd_late") else B["orange"]))
+            return rt(lang, "attention"), out, _pt(lang, "nothing")
+        if which == "tribe_otds":
+            for o in data.get("tribe_otds") or []:
+                late = o.get("status") == "late"
+                when = fmt_date(o["date"], lang) if o.get("date") else rt(lang, "tl_no_date_short")
+                out.append((o["title"], when + (f', {rt(lang, "otd_late").lower()}' if late else ""),
+                            B["red"] if late else B["navy"]))
+            return rt(lang, "h_tribe_otds"), out, _pt(lang, "nothing")
+        for lv in data.get("leaves_upcoming") or []:
+            extra = f' ({rt(lang, "leaves_pending")})' if lv.get("status") == "pending" else ""
+            out.append((lv["name"], f'{lv["start"]} - {lv["end"]}, {lv["days"]:g} {rt(lang, "days_short")}{extra}',
+                        B["ink"]))
+        return rt(lang, "leaves_upcoming"), out, _pt(lang, "no_leave")
+
+    def attention_column(s, which, x, y=1.34, cw=None, h=5.8):
+        """Une colonne des points d'attention, dans ce cadre (pouces)."""
+        title, rows, empty = attention_rows(which)
+        sh = rrect(s, Inches(x), Inches(y), Inches(cw), Inches(h), B["white"], line=B["line"], radius=0.03)
+        paras = [(title, 13, B["navy"], True, PP_ALIGN.LEFT, 8)]
+        # La place se compte en lignes, et chaque texte passe a la ligne
+        # (deux au plus): coupee sur une seule, « dernière saisie le ... »
+        # perdait justement « (périmée depuis 13 j) ».
+        cpl = int((cw - 0.4) / (0.0068 * _fs(10.5)))
+        line = _fs(10.5) * 1.2 / 72.0
+        budget = (h - 0.16 - 0.1 - _fs(13) * 1.2 / 72.0 - 8 / 72.0) - line  # garde la ligne « +N »
+        used, shown = 0.0, 0
+        for name, info, color in rows:
+            nl, il = min(2, wrap_lines(name, cpl)), (min(2, wrap_lines(info, cpl)) if info else 0)
+            need = (nl + il) * line + 6 / 72.0
+            if used + need > budget:
+                break
+            paras.append((_wrap_fit(name, cpl, nl), 10.5, color, True, PP_ALIGN.LEFT, 0))
+            if info:
+                paras.append((_wrap_fit(info, cpl, il), 10, B["muted"], False, PP_ALIGN.LEFT, 6))
+            used += need
+            shown += 1
+        if len(rows) > shown:
+            paras.append((_pt(lang, "more", n=len(rows) - shown), 10, B["muted"], False, PP_ALIGN.LEFT, 0))
+        if not rows:
+            paras.append((empty, 10.5, B["muted"], False, PP_ALIGN.LEFT, 0))
+        place(sh, paras, anchor=MSO_ANCHOR.TOP, ml=0.2, mt=0.16, mr=0.2)
+
+    def attention_slide(sec=None):
         s = new_slide()
-        summary_header(s, False)
-        cols = [
-            (rt(lang, "attention"), [], _pt(lang, "nothing")),
-            (rt(lang, "h_tribe_otds"), [], _pt(lang, "nothing")),
-        ]
+        if block_on(sec, "header"):
+            summary_header(s, False)
+        cols = [w for w in ("attention", "tribe_otds") if block_on(sec, w)]
         # Les absences n'ont une colonne que si le module est actif: sinon
         # « Aucune absence prevue » affirmait ce que personne ne saisit.
-        if data.get("leaves_enabled", True):
-            cols.append((rt(lang, "leaves_upcoming"), [], _pt(lang, "no_leave")))
-        for r in data.get("attention") or []:
-            bits = []
-            if r.get("blocked"):
-                bits.append(_pt(lang, "blocked", n=r["blocked"]))
-            # Un engagement en retard met la squad dans la liste: il se dit aussi.
-            if r.get("otd_late"):
-                bits.append(_pt(lang, "otd_late", n=r["otd_late"]))
-            if r.get("is_stale"):
-                last, _st = _last_update(r, gen, lang)
-                bits.append(f'{_pt(lang, "last_on", d=last)} ({_pt(lang, "stale_since", n=r["age_days"])})'
-                            if r.get("age_days") is not None else _pt(lang, "last_never"))
-            cols[0][1].append((r["name"], ", ".join(bits),
-                               B["red"] if r.get("blocked") or r.get("otd_late") else B["orange"]))
-        for o in data.get("tribe_otds") or []:
-            late = o.get("status") == "late"
-            when = fmt_date(o["date"], lang) if o.get("date") else rt(lang, "tl_no_date_short")
-            cols[1][1].append((o["title"], when + (f', {rt(lang, "otd_late").lower()}' if late else ""),
-                               B["red"] if late else B["navy"]))
-        for lv in (data.get("leaves_upcoming") or []) if len(cols) > 2 else []:
-            extra = f' ({rt(lang, "leaves_pending")})' if lv.get("status") == "pending" else ""
-            cols[2][1].append((lv["name"], f'{lv["start"]} - {lv["end"]}, {lv["days"]:g} {rt(lang, "days_short")}{extra}',
-                               B["ink"]))
+        if data.get("leaves_enabled", True) and block_on(sec, "leaves"):
+            cols.append("leaves")
         nc = len(cols)
+        if not nc:
+            return
         cw = (13.333 - 1.0 - (nc - 1) * 0.2) / nc
-        for i, (title, rows, empty) in enumerate(cols):
-            x = 0.5 + i * (cw + 0.2)
-            sh = rrect(s, Inches(x), Inches(1.34), Inches(cw), Inches(5.8), B["white"], line=B["line"], radius=0.03)
-            paras = [(title, 13, B["navy"], True, PP_ALIGN.LEFT, 8)]
-            # La place se compte en lignes, et chaque texte passe a la ligne
-            # (deux au plus): coupee sur une seule, « dernière saisie le ... »
-            # perdait justement « (périmée depuis 13 j) ».
-            cpl = int((cw - 0.4) / (0.0068 * _fs(10.5)))
-            line = _fs(10.5) * 1.2 / 72.0
-            budget = (5.8 - 0.16 - 0.1 - _fs(13) * 1.2 / 72.0 - 8 / 72.0) - line  # garde la ligne « +N »
-            used, shown = 0.0, 0
-            for name, info, color in rows:
-                nl, il = min(2, wrap_lines(name, cpl)), (min(2, wrap_lines(info, cpl)) if info else 0)
-                need = (nl + il) * line + 6 / 72.0
-                if used + need > budget:
-                    break
-                paras.append((_wrap_fit(name, cpl, nl), 10.5, color, True, PP_ALIGN.LEFT, 0))
-                if info:
-                    paras.append((_wrap_fit(info, cpl, il), 10, B["muted"], False, PP_ALIGN.LEFT, 6))
-                used += need
-                shown += 1
-            if len(rows) > shown:
-                paras.append((_pt(lang, "more", n=len(rows) - shown), 10, B["muted"], False, PP_ALIGN.LEFT, 0))
-            if not rows:
-                paras.append((empty, 10.5, B["muted"], False, PP_ALIGN.LEFT, 0))
-            place(sh, paras, anchor=MSO_ANCHOR.TOP, ml=0.2, mt=0.16, mr=0.2)
+        for i, which in enumerate(cols):
+            attention_column(s, which, 0.5 + i * (cw + 0.2), 1.34, cw, 5.8)
 
     # ---------------- Une slide par squad: la frise de l'annee --------------------
     #
@@ -568,54 +660,45 @@ def render_pptx(data: dict) -> bytes:
     # tete, les engagements poses sur leur mois, puis les boites de jalons, reliees
     # a leur date par un trait qui ne remonte jamais plus haut que les
     # engagements. C'est ce qui garantit qu'aucun trait ne traverse un titre.
-    LBL_X, LBL_W = 0.50, 1.58          # colonne des libelles, a gauche de l'axe
-    AX0, AX1 = 2.20, 12.80             # l'axe des douze mois
-    MW = (AX1 - AX0) / 12.0            # largeur nominale d'un mois
-    QW = MW * 3                        # un trimestre vaut trois mois
-    # L'axe est decoupe **par trimestre**, dans les deux bandes a la fois: un
-    # trimestre et ses trois mois forment un bloc, et la meme gouttiere separe deux
-    # blocs en haut comme en bas. La bande des mois etait d'un seul tenant sous des
-    # cartes de trimestre separees: rien ne disait ou Q1 s'arretait, et mars avait
-    # l'air de deborder du trimestre qui le contient.
-    Q_GAP = 0.09                       # la gouttiere entre deux blocs
-    QIW = QW - Q_GAP                   # largeur utile d'un bloc de trimestre
-    MIW = QIW / 3.0                    # largeur d'un mois dans son bloc
+    # La coche de statut d'un jalon: a 0,10 pouce elle faisait deux millimetres et
+    # ne se voyait pas une fois la slide projetee.
+    TICK = 0.15
 
-    def qx(q: int) -> float:
-        """Le bord gauche du bloc du trimestre q (0 a 3)."""
-        return AX0 + q * QW + Q_GAP / 2
+    # La coche d'un jalon dit les trois etats demandes par le dessin et pas
+    # seulement par la couleur: **fait** = pastille pleine et cochee, **en
+    # cours** = anneau avec un point au centre, **pas commence** = anneau vide.
+    # Deux anneaux identiques ne distinguaient pas ce qui avance de ce qui
+    # dort, et une couleur seule ne se lit pas une fois la slide projetee.
+    CHECK = [(0.10, 0.50), (0.38, 0.80), (0.90, 0.18), (1.00, 0.30),
+             (0.38, 1.00), (0.00, 0.62)]
 
-    def mx0(m: int) -> float:
-        """Le bord gauche du mois m (0 a 11), dans le bloc de son trimestre."""
-        return qx(m // 3) + (m % 3) * MIW
-    # La carte d'un trimestre porte une ligne de titre puis sa barre d'avancement:
-    # sa hauteur se **deduit du corps du texte**, elle n'est plus un nombre pose a
-    # la main. La barre etait a 0,25 pouce du haut, ce qui la mettait juste sous une
-    # ligne de 13 points; le corps ayant grandi, la ligne descend plus bas et
-    # « Q4  50 % » se retrouvait ecrit par-dessus sa propre barre.
-    Q_FS = 13                          # le corps du titre d'un trimestre
-    Q_PAD = 0.04                       # la marge interieure de la carte
-    Q_LINE = _fs(Q_FS) * 1.2 / 72.0    # la hauteur d'une ligne, au corps reel
-    Q_BAR_H = 0.12                     # l'epaisseur de la barre
-    Q_BAR_Y = Q_PAD + Q_LINE + 0.02    # la barre, juste sous le titre
-    QY, QH = 1.38, Q_BAR_Y + Q_BAR_H + Q_PAD     # la rangee des trimestres
-    BAND_Y, BAND_H = QY + QH + 0.04, 0.26        # la bande des mois, juste dessous
-    SEP_Y = BAND_Y + BAND_H
-    OTD_Y = SEP_Y + 0.08               # la bande des engagements
-    STAR_S = 0.13                      # l'etoile d'un engagement, posee sur sa date
-    OTD_MAX_LINES = 6                  # un titre d'engagement tient dans la largeur
-    OTD_MAX_H = 1.05                   #   d'un mois, sans jamais se couper, et la
-                                       #   bande ne prend pas plus d'un pouce: au-dela
-                                       #   il ne reste rien pour les jalons
-    OTD_GAP = 0.07                     # entre deux engagements du meme mois
-    GUTTER = 0.26                      # entre les engagements et les boites
-    BOX_BOTTOM = 5.82                  # le bas des boites (autant de hauteur qu'avant)
-    BOX_GAP = 0.12                     # entre deux boites
-    BOX_MIN_W = 1.25                   # la largeur sous laquelle un titre de
-                                       #   jalon casse ses mots en deux
-    TICK = 0.15                        # la coche de statut d'un jalon: a 0,10 pouce
-                                       #   elle faisait deux millimetres et ne se
-                                       #   voyait pas une fois la slide projetee
+    def _tick(s, x, y, status):
+        ink = rgb(_RAG_BRAND[_status_rag(status)])
+        ring = s.shapes.add_shape(MSO_SHAPE.OVAL, Inches(x), Inches(y),
+                                  Inches(TICK), Inches(TICK))
+        ring.line.color.rgb = ink; ring.line.width = Pt(1.5)
+        ring.shadow.inherit = False
+        if status != "done":
+            ring.fill.background()
+            if status:                 # en cours, a risque, bloque
+                d = TICK * 0.40
+                dot = s.shapes.add_shape(MSO_SHAPE.OVAL,
+                                         Inches(x + (TICK - d) / 2),
+                                         Inches(y + (TICK - d) / 2),
+                                         Inches(d), Inches(d))
+                dot.fill.solid(); dot.fill.fore_color.rgb = ink
+                dot.line.fill.background(); dot.shadow.inherit = False
+            return
+        ring.fill.solid(); ring.fill.fore_color.rgb = ink
+        s_ = TICK * 0.62
+        ox, oy = x + TICK * 0.19, y + TICK * 0.16
+        pts = [(ox + px * s_, oy + py * s_) for px, py in CHECK]
+        builder = s.shapes.build_freeform(Inches(pts[0][0]), Inches(pts[0][1]))
+        builder.add_line_segments([(Inches(px), Inches(py)) for px, py in pts[1:]],
+                                  close=True)
+        mark = builder.convert_to_shape()
+        mark.fill.solid(); mark.fill.fore_color.rgb = B["white"]
+        mark.line.fill.background(); mark.shadow.inherit = False
 
     def fit(text: str, chars: int) -> str:
         """Coupe a la largeur disponible. PowerPoint ne sait pas mettre de points
@@ -686,20 +769,13 @@ def render_pptx(data: dict) -> bytes:
                 + [at(px, py - th / 2) for px, py in reversed(curve)])
         polygon(s, band, ink)
 
-    def squad_slide(r):
-        det = r.get("detail") or {}
-        s = new_slide()
-        rect(s, Inches(0), Inches(0), prs.slide_width, prs.slide_height, rgb("#F5F7FA"))
-
-        # ----- entete: la squad, son responsable, et le moral a droite -----
-        # Tout le haut de la slide remonte: la marge au-dessus de l'entete etait
-        # plus large que tout le reste, et la legende, faute de place, finissait
-        # collee au bord bas de la slide.
-        hdr = rrect(s, Inches(0.4), Inches(0.14), Inches(10.72), Inches(0.74), B["navy"], radius=0.08)
+    def squad_header(s, r, X=0.4, Y=0.14, W=10.72, H=0.74, sec=None):
+        """Le bandeau d'une squad: son nom, son responsable, son avancement, sa saisie."""
+        hdr = rrect(s, Inches(X), Inches(Y), Inches(W), Inches(H), B["navy"], radius=0.08)
         # Le nom tient sur une ligne: le corps descend d'un cran pour un nom long,
         # puis le nom se coupe. Sur deux lignes, il sortait par le haut du bandeau
         # et poussait la ligne du responsable sous la frise.
-        HDR_W = 10.72 - 0.56
+        HDR_W = W - 0.56
         name = r["name"] or ""
         for name_fs in (20, 16, 14):
             name_cpl = int(HDR_W / (0.0085 * _fs(name_fs)))
@@ -717,9 +793,19 @@ def render_pptx(data: dict) -> bytes:
             when, stale = "", False
         leader = (f'{rt(lang, "h_leader")}{_sep(lang)}{r["leader"]}' if r.get("leader")
                   else _pt(lang, "no_leader"))
-        info = (f'{leader}, {rt(lang, "year")} {data["year"]}, '
-                f'{rt(lang, "h_progress_long")} {_pct(r["annual_pct"], lang)}' + (", " if when else ""))
-        people = _people_line(r, lang)
+        show = {k: bparam(sec, "header", k, True)
+                for k in ("show_leader", "show_progress", "show_last_update", "show_people")}
+        if all(show.values()):
+            info = (f'{leader}, {rt(lang, "year")} {data["year"]}, '
+                    f'{rt(lang, "h_progress_long")} {_pct(r["annual_pct"], lang)}' + (", " if when else ""))
+        else:
+            if not show["show_last_update"]:
+                when, stale = "", False
+            bits = ([leader] if show["show_leader"] else []) + [f'{rt(lang, "year")} {data["year"]}']
+            if show["show_progress"]:
+                bits.append(f'{rt(lang, "h_progress_long")} {_pct(r["annual_pct"], lang)}')
+            info = ", ".join(bits) + (", " if when else "")
+        people = _people_line(r, lang) if show["show_people"] else ""
         info_cpl = int(HDR_W / (0.0075 * _fs(12)))
         people = _cut(people, max(0, info_cpl - len(info) - len(when) - 2)) if people else ""
         place(hdr, [(name, name_fs, B["white"], True, PP_ALIGN.LEFT, 3)],
@@ -734,12 +820,14 @@ def render_pptx(data: dict) -> bytes:
             run = p2.add_run(); run.text = txt
             run.font.size = Pt(_fs(12)); run.font.bold = bold; run.font.color.rgb = color
 
+    def squad_mood(s, r, X=11.20, Y=0.14, sec=None):
+        """La carte du moral (1,73 x 0,74 pouce), sa date juste au-dessus."""
         # Le moral: trois niveaux, et la date qui les date. Un moral de mars
         # projete en septembre ment plus surement qu'une case vide.
         mood = r.get("mood")
         # Pas de nuage quand rien n'est declare: un nuage gris se lirait comme un
         # quatrieme niveau, alors que « non renseigne » n'en est pas un.
-        mcard = rrect(s, Inches(11.20), Inches(0.14), Inches(1.73), Inches(0.74),
+        mcard = rrect(s, Inches(X), Inches(Y), Inches(1.73), Inches(0.74),
                       B["white"], line=B["line"], radius=0.08)
         # « Team » au-dessus, « Mood » en dessous, le nuage a droite: le niveau se
         # lit sur le visage et sur la couleur, et l'ecrire en toutes lettres a cote
@@ -748,21 +836,80 @@ def render_pptx(data: dict) -> bytes:
                       (rt(lang, "mood_l2"), 12, B["navy"], True, PP_ALIGN.LEFT, 0)],
               anchor=MSO_ANCHOR.MIDDLE, ml=0.14, mr=0.75, mt=0.04, mb=0.04)
         if mood in MOOD_CLOUD:
-            mood_cloud(s, 12.18, 0.22, 0.56, mood)
+            if (X, Y) == (11.20, 0.14):
+                mood_cloud(s, 12.18, 0.22, 0.56, mood)
+            else:
+                mood_cloud(s, X + 0.98, Y + 0.08, 0.56, mood)
         else:
-            textbox(s, Inches(11.95), Inches(0.39), Inches(0.90), Inches(0.24),
+            textbox(s, Inches(X + 0.75), Inches(Y + 0.25), Inches(0.90), Inches(0.24),
                     mood_label(mood, lang), 9, color=B["muted"], align=PP_ALIGN.CENTER)
         # La date se range au-dessus de la carte, seule dans le coin de la slide, et
         # non dans l'encadre du visage. Elle date le moral, elle ne le dit pas: a
         # l'interieur, elle prenait le meme rang que le niveau, qui est la seule
         # chose a lire de loin.
         if r.get("mood_at"):
-            textbox(s, Inches(10.90), Inches(0.00), Inches(2.03), Inches(0.13),
+            textbox(s, Inches(X - 0.30), Inches(max(0.0, Y - 0.14)), Inches(2.03), Inches(0.13),
                     rt(lang, "mood_at", d=fmt_date(r["mood_at"], lang)), 8, color=B["muted"],
                     align=PP_ALIGN.RIGHT)
 
+    def squad_timeline(s, r, TX=0.4, TY=0.96, TW=12.53, TH=5.08, sec=None):
+        """La carte de la frise de l'annee d'une squad, dans ce cadre (pouces)."""
+        det = r.get("detail") or {}
+        std = (TX, TY, TW, TH) == (0.4, 0.96, 12.53, 5.08)
+
+        LBL_X, LBL_W = (0.50, 1.58) if std else (TX + 0.10, 1.58)   # les libelles, a gauche de l'axe
+        AX0, AX1 = (2.20, 12.80) if std else (TX + 1.80, TX + TW - 0.13)   # l'axe des douze mois
+        MW = (AX1 - AX0) / 12.0            # largeur nominale d'un mois
+        QW = MW * 3                        # un trimestre vaut trois mois
+        # L'axe est decoupe **par trimestre**, dans les deux bandes a la fois: un
+        # trimestre et ses trois mois forment un bloc, et la meme gouttiere separe deux
+        # blocs en haut comme en bas. La bande des mois etait d'un seul tenant sous des
+        # cartes de trimestre separees: rien ne disait ou Q1 s'arretait, et mars avait
+        # l'air de deborder du trimestre qui le contient.
+        Q_GAP = 0.09                       # la gouttiere entre deux blocs
+        QIW = QW - Q_GAP                   # largeur utile d'un bloc de trimestre
+        MIW = QIW / 3.0                    # largeur d'un mois dans son bloc
+
+        def qx(q: int) -> float:
+            """Le bord gauche du bloc du trimestre q (0 a 3)."""
+            return AX0 + q * QW + Q_GAP / 2
+
+        def mx0(m: int) -> float:
+            """Le bord gauche du mois m (0 a 11), dans le bloc de son trimestre."""
+            return qx(m // 3) + (m % 3) * MIW
+        # La carte d'un trimestre porte une ligne de titre puis sa barre d'avancement:
+        # sa hauteur se **deduit du corps du texte**, elle n'est plus un nombre pose a
+        # la main. La barre etait a 0,25 pouce du haut, ce qui la mettait juste sous une
+        # ligne de 13 points; le corps ayant grandi, la ligne descend plus bas et
+        # « Q4  50 % » se retrouvait ecrit par-dessus sa propre barre.
+        Q_FS = 13                          # le corps du titre d'un trimestre
+        Q_PAD = 0.04                       # la marge interieure de la carte
+        Q_LINE = _fs(Q_FS) * 1.2 / 72.0    # la hauteur d'une ligne, au corps reel
+        Q_BAR_H = 0.12                     # l'epaisseur de la barre
+        Q_BAR_Y = Q_PAD + Q_LINE + 0.02    # la barre, juste sous le titre
+        QY = 1.38 if std else TY + 0.42            # la rangee des trimestres
+        QH = Q_BAR_Y + Q_BAR_H + Q_PAD
+        BAND_Y, BAND_H = QY + QH + 0.04, 0.26        # la bande des mois, juste dessous
+        SEP_Y = BAND_Y + BAND_H
+        OTD_Y = SEP_Y + 0.08               # la bande des engagements
+        STAR_S = 0.13                      # l'etoile d'un engagement, posee sur sa date
+        OTD_MAX_LINES = 6                  # un titre d'engagement tient dans la largeur
+        OTD_MAX_H = 1.05                   #   d'un mois, sans jamais se couper, et la
+                                           #   bande ne prend pas plus d'un pouce: au-dela
+                                           #   il ne reste rien pour les jalons
+        OTD_GAP = 0.07                     # entre deux engagements du meme mois
+        GUTTER = 0.26                      # entre les engagements et les boites
+        BOX_BOTTOM = 5.82 if std else TY + TH - 0.22   # le bas des boites
+        BOX_GAP = 0.12                     # entre deux boites
+        BOX_MIN_W = 1.25                   # la largeur sous laquelle un titre de
+                                           #   jalon casse ses mots en deux
+        TICK = 0.15                        # la coche de statut d'un jalon: a 0,10 pouce
+                                           #   elle faisait deux millimetres et ne se
+                                           #   voyait pas une fois la slide projetee
+
+
         # ----- la carte de la frise -----
-        card(s, Inches(0.4), Inches(0.96), Inches(12.53), Inches(5.08),
+        card(s, Inches(TX), Inches(TY), Inches(TW), Inches(TH),
              rt(lang, "h_timeline", year=data["year"]))
 
         # Un trimestre, son avancement, sa barre. Rien d'autre: le commentaire du
@@ -774,8 +921,14 @@ def render_pptx(data: dict) -> bytes:
         from pptx.oxml.ns import qn
 
         months = _MONTHS[_lang(lang)]
-        otds = det.get("otds") or []
+        if not bparam(sec, "timeline", "show_done", True):
+            det = {**det, "quarters": [{**qd, "items": [it for it in qd.get("items") or []
+                                                        if it.get("status") != "done"]}
+                                       for qd in det.get("quarters") or []]}
+        otds = (det.get("otds") or []) if bparam(sec, "timeline", "show_otds", True) else []
         groups = timeline_groups(det)
+        qprog = bparam(sec, "timeline", "show_quarter_progress", True)
+        notes_on = bparam(sec, "timeline", "show_notes", True)
 
         def marker_label(x, y, w, h, runs, fs, *, align=PP_ALIGN.LEFT,
                          anchor=MSO_ANCHOR.TOP):
@@ -794,41 +947,9 @@ def render_pptx(data: dict) -> bytes:
                 run.font.size = Pt(_fs(fs)); run.font.bold = bold; run.font.color.rgb = color
             return box
 
-        # La coche d'un jalon dit les trois etats demandes par le dessin et pas
-        # seulement par la couleur: **fait** = pastille pleine et cochee, **en
-        # cours** = anneau avec un point au centre, **pas commence** = anneau vide.
-        # Deux anneaux identiques ne distinguaient pas ce qui avance de ce qui
-        # dort, et une couleur seule ne se lit pas une fois la slide projetee.
-        CHECK = [(0.10, 0.50), (0.38, 0.80), (0.90, 0.18), (1.00, 0.30),
-                 (0.38, 1.00), (0.00, 0.62)]
 
         def status_tick(x, y, status):
-            ink = rgb(_RAG_BRAND[_status_rag(status)])
-            ring = s.shapes.add_shape(MSO_SHAPE.OVAL, Inches(x), Inches(y),
-                                      Inches(TICK), Inches(TICK))
-            ring.line.color.rgb = ink; ring.line.width = Pt(1.5)
-            ring.shadow.inherit = False
-            if status != "done":
-                ring.fill.background()
-                if status:                 # en cours, a risque, bloque
-                    d = TICK * 0.40
-                    dot = s.shapes.add_shape(MSO_SHAPE.OVAL,
-                                             Inches(x + (TICK - d) / 2),
-                                             Inches(y + (TICK - d) / 2),
-                                             Inches(d), Inches(d))
-                    dot.fill.solid(); dot.fill.fore_color.rgb = ink
-                    dot.line.fill.background(); dot.shadow.inherit = False
-                return
-            ring.fill.solid(); ring.fill.fore_color.rgb = ink
-            s_ = TICK * 0.62
-            ox, oy = x + TICK * 0.19, y + TICK * 0.16
-            pts = [(ox + px * s_, oy + py * s_) for px, py in CHECK]
-            builder = s.shapes.build_freeform(Inches(pts[0][0]), Inches(pts[0][1]))
-            builder.add_line_segments([(Inches(px), Inches(py)) for px, py in pts[1:]],
-                                      close=True)
-            mark = builder.convert_to_shape()
-            mark.fill.solid(); mark.fill.fore_color.rgb = B["white"]
-            mark.line.fill.background(); mark.shadow.inherit = False
+            _tick(s, x, y, status)
 
         quarters = {qd["q"]: qd for qd in det.get("quarters") or []}
         for i, q in enumerate((1, 2, 3, 4)):
@@ -852,10 +973,11 @@ def render_pptx(data: dict) -> bytes:
             occupied = any((o.get("month") or 0) // 3 == i for o in otds if o.get("month") is not None)                 or any(g["month"] // 3 == i for g in groups)
             empty_lbl = ("-" if occupied else
                          rt(lang, "q_na") if qd.get("na") else rt(lang, "q_nothing"))
-            place(qc, [(f'Q{q}    {_pct(pct, lang)}' if planned else f'Q{q}    {empty_lbl}',
+            place(qc, [(f'Q{q}    {_pct(pct, lang)}' if planned and qprog else f'Q{q}' if planned
+                        else f'Q{q}    {empty_lbl}',
                         Q_FS, B["navy"] if planned else B["muted"], True, PP_ALIGN.LEFT, 0)],
                   anchor=MSO_ANCHOR.TOP, ml=0.08, mt=Q_PAD, mr=0.08)
-            if planned:  # nothing planned: no empty bar that reads as 0 % delivered
+            if planned and qprog:  # nothing planned: no empty bar that reads as 0 % delivered
                 pbar(s, Inches(x + 0.08), Inches(QY + Q_BAR_Y), Inches(QIW - 0.16), pct, B["accent"])
 
         # Les mois, qui donnent la resolution de l'axe, juste sous les trimestres:
@@ -883,14 +1005,21 @@ def render_pptx(data: dict) -> bytes:
         # La case d'un engagement laisse un couloir libre a ses deux bords: c'est
         # par la que passent les traits des boites, en ligne droite, sans jamais
         # toucher un titre.
-        CELL_W = MIW - 0.14
+        # Dans un cadre etroit (une mise en page libre du Studio), une case de mois
+        # ne tient plus un mot: les titres d'engagement prennent alors la largeur
+        # de leur trimestre, ranges par mois, et les boites disent leur mois au lieu
+        # d'y etre reliees par un trait qui traverserait ces titres.
+        narrow = (not std) and MIW < 0.75
+        CELL_W = (QIW - 0.14) if narrow else MIW - 0.14
         # Une ligne de texte fait 1,2 fois le corps, soit fs/72*1,2 pouce. Sous-
         # estimee, elle laissait le titre d'un engagement mordre sur la gouttiere.
 
         by_month: dict[int, list] = {}
         for o in otds:
             if o.get("month") is not None:
-                by_month.setdefault(o["month"], []).append(o)
+                by_month.setdefault(o["month"] // 3 if narrow else o["month"], []).append(o)
+        if narrow:
+            by_month = {k: sorted(v, key=lambda o: o["month"]) for k, v in by_month.items()}
 
         def otd_band(fs: float, max_lines: int = OTD_MAX_LINES):
             """La hauteur de la bande a ce corps, et le nombre de lignes par titre.
@@ -950,13 +1079,16 @@ def render_pptx(data: dict) -> bytes:
             cy = OTD_Y
             mx = mx0(month) + MIW / 2
             for o in column:
+                if narrow:
+                    mx = mx0(o["month"]) + MIW / 2
+                tx = (qx(o["month"] // 3) + QIW / 2) if narrow else mx
                 ink = rgb(OTD_SCOPE_COLOR.get(o.get("scope") or "management", "#1E2761"))
                 star = s.shapes.add_shape(MSO_SHAPE.STAR_5_POINT, Inches(mx - STAR_S / 2),
                                           Inches(cy), Inches(STAR_S), Inches(STAR_S))
                 star.fill.solid(); star.fill.fore_color.rgb = ink
                 star.line.fill.background(); star.shadow.inherit = False
                 lines = otd_lines[id(o)]
-                textbox(s, Inches(mx - CELL_W / 2), Inches(cy + STAR_S + 0.02),
+                textbox(s, Inches(tx - CELL_W / 2), Inches(cy + STAR_S + 0.02),
                         Inches(CELL_W), Inches(lines * OTD_LINE),
                         _wrap_fit(o["title"], OTD_CPL, lines), OTD_FS,
                         bold=True, color=ink,
@@ -1015,7 +1147,7 @@ def render_pptx(data: dict) -> bytes:
                 """Les boites d'un trimestre sur ce nombre de colonnes, ou None."""
                 width = (QIW - (lanes - 1) * BOX_GAP) / lanes
                 cpl = max(8, int((width - TICK - 0.20) / (0.0071 * _fs(fs))))
-                tcpl = max(8, int((width - 0.14) / (0.0071 * _fs(fs + 1))))
+                tcpl = max(8, int((width - 0.14) / ((0.0071 if std else 0.0080) * _fs(fs + 1))))
                 # Une ligne de moins de 14 caracteres (16 serree) coupait les
                 # jalons a quatre lettres (« Durciss… ») ou empilait un mot par
                 # ligne: mieux vaut une colonne de moins, ou la boite comptee dans
@@ -1026,7 +1158,7 @@ def render_pptx(data: dict) -> bytes:
                 out = []
                 for rank, g in enumerate(boxes):
                     lane = rank % lanes
-                    first = rank < lanes          # la tete de pile porte le trait
+                    first = rank < lanes and not narrow   # la tete de pile porte le trait
                     title = g["title"] or ""
                     if not first:
                         when = months[g["month"]] if g.get("dated") else f'Q{(g["month"] - 1) // 3 + 1}'
@@ -1191,75 +1323,75 @@ def render_pptx(data: dict) -> bytes:
             textbox(s, Inches(LBL_X), Inches((SEP_Y + BOX_BOTTOM) / 2 - 0.15), Inches(AX1 - LBL_X),
                     Inches(0.3), rt(lang, "tl_empty"), 12, color=B["muted"], align=PP_ALIGN.CENTER)
 
-        for k, note in enumerate(notes[:2]):
+        for k, note in enumerate(notes[:2] if notes_on else []):
             textbox(s, Inches(LBL_X), Inches(BOX_BOTTOM + 0.01 + k * 0.2), Inches(AX1 - LBL_X),
                     Inches(0.2), _cut(note, 150), 10, color=B["muted"])
 
-        # ----- bas de slide: messages cles et budget -----
-        #
-        # Les deux cartes valent une ligne de titre et trois lignes de texte, et
-        # c'est la hauteur qu'on leur donne. Elles etaient plus courtes que leur
-        # contenu: la derniere ligne du budget, « Prevision », sortait par le bas
-        # et se lisait a moitie. La hauteur vient de la frise, qui en a de reste.
-        def list_card(x, y2, w, h, title, lines, empty, extra=None, fs=10):
-            sh = rrect(s, x, y2, w, h, B["white"], line=B["line"], radius=0.05)
-            paras = [(title, 12, B["navy"], True, PP_ALIGN.LEFT, 2)]
-            if lines:
-                paras += [(txt, fs, color, bold, PP_ALIGN.LEFT, 0) for (txt, color, bold) in lines]
-            else:
-                paras.append((empty, 10, B["muted"], False, PP_ALIGN.LEFT, 0))
-            place(sh, paras, anchor=MSO_ANCHOR.TOP, ml=0.16, mt=0.06, mr=0.16, mb=0.04)
-            if extra:
-                # Le reste se compte a cote du titre, ou il ne prend pas de ligne.
-                r_ = sh.text_frame.paragraphs[0].add_run()
-                r_.text = f'   {extra}'
-                r_.font.size = Pt(_fs(10)); r_.font.color.rgb = B["muted"]
 
-        # Jusqu'a quatre messages (le maximum qu'une squad peut saisir), un par
-        # ligne. Au-dela de deux, la police descend pour que les quatre tiennent
-        # dans la carte, qui garde sa hauteur: une ligne de plus passait sur la
-        # legende de la frise au lieu de rester dans son encadre.
+    # ----- bas de slide: messages cles, indicateurs et budget -----
+    #
+    # Les cartes valent une ligne de titre et trois lignes de texte, et c'est la
+    # hauteur qu'on leur donne. Elles etaient plus courtes que leur contenu: la
+    # derniere ligne du budget, « Prevision », sortait par le bas et se lisait a
+    # moitie. La hauteur vient de la frise, qui en a de reste.
+    def list_card(s, x, y2, w, h, title, lines, empty, extra=None, fs=10):
+        sh = rrect(s, x, y2, w, h, B["white"], line=B["line"], radius=0.05)
+        paras = [(title, 12, B["navy"], True, PP_ALIGN.LEFT, 2)]
+        if lines:
+            paras += [(txt, fs, color, bold, PP_ALIGN.LEFT, 0) for (txt, color, bold) in lines]
+        else:
+            paras.append((empty, 10, B["muted"], False, PP_ALIGN.LEFT, 0))
+        place(sh, paras, anchor=MSO_ANCHOR.TOP, ml=0.16, mt=0.06, mr=0.16, mb=0.04)
+        if extra:
+            # Le reste se compte a cote du titre, ou il ne prend pas de ligne.
+            r_ = sh.text_frame.paragraphs[0].add_run()
+            r_.text = f'   {extra}'
+            r_.font.size = Pt(_fs(10)); r_.font.color.rgb = B["muted"]
+
+    def squad_key_messages(s, r, X, Y=6.10, W=8.02, H=0.96, sec=None):
+        """Jusqu'a quatre messages (le maximum qu'une squad peut saisir), un par
+        ligne. Au-dela de deux, la police descend pour que les quatre tiennent dans
+        la carte, qui garde sa hauteur: une ligne de plus passait sur la legende de
+        la frise au lieu de rester dans son encadre."""
+        det = r.get("detail") or {}
         kms = det.get("key_messages") or []
         # The most serious first (risk, alert, success).
         kms = sorted(kms, key=lambda x: {"risk": 0, "alert": 1}.get(x.get("kind"), 2))
-        shown = kms[:KM_MAX]
+        limit = min(KM_MAX, int(bparam(sec, "key_messages", "max", KM_MAX) or KM_MAX))
+        shown = kms[:limit]
         km_fs = 10 if len(shown) <= 2 else 8
-        more = _pt(lang, "km_more", n=len(kms) - KM_MAX) if len(kms) > KM_MAX else None
+        more = _pt(lang, "km_more", n=len(kms) - limit) if len(kms) > limit else None
         km_rag = {"success": "green", "alert": "amber", "risk": "red"}
-
-        def km_lines(width):
-            # Un message, une ligne; un message seul peut en prendre deux.
-            cpl = int((width - 0.34) / ((0.0078 if km_fs >= 10 else 0.0066) * _fs(km_fs)))
-            per = cpl * 2 if len(shown) == 1 else cpl
-            return [(_cut(f'{rt(lang, "km_" + m["kind"])}{_sep(lang)}{m["text"]}', per),
-                     rgb(_RAG_BRAND[km_rag.get(m["kind"], "grey")]), False) for m in shown]
-
-        # The squad's KPIs take a card of their own, cut from the key messages'
-        # width: two KPIs, the rest counted.
-        kpis = det.get("kpis") or []
-        km_w = 8.02
-        if kpis:
-            km_w = 4.6
-            kx, kw = 0.4 + km_w + 0.19, 8.02 - km_w - 0.19
-            # Bold text is wider: measured on the bold width. The value is never
-            # cut ("Clusters en production : 9..." lost the figure), the name is.
-            k_cpl = int((kw - 0.34) / (0.0068 * _fs(10)))
-            kpi_rag = {"on_target": "green", "under_pressure": "amber", "missed": "red"}
-            from .report import _kpi_value
-
-            def kline(k):
-                val = _kpi_value(k, lang)
-                sep = _sep(lang)
-                name = _cut(k["name"], max(4, k_cpl - len(val) - len(sep)))
-                return (f"{name}{sep}{val}", rgb(_RAG_BRAND[kpi_rag.get(k["trend"], "grey")]), True)
-            k_lines = [kline(k) for k in kpis[:2]]
-            list_card(Inches(kx), Inches(6.10), Inches(kw), Inches(0.96), rt(lang, "h_kpis"), k_lines, "",
-                      extra=(f"+{len(kpis) - 2}" if len(kpis) > 2 else None))
-        list_card(Inches(0.4), Inches(6.10), Inches(km_w), Inches(0.96),
-                  rt(lang, "h_key_messages"), km_lines(km_w), rt(lang, "no_key_message"),
+        # Un message, une ligne; un message seul peut en prendre deux.
+        cpl = int((W - 0.34) / ((0.0078 if km_fs >= 10 else 0.0066) * _fs(km_fs)))
+        per = cpl * 2 if len(shown) == 1 else cpl
+        lines = [(_cut(f'{rt(lang, "km_" + m["kind"])}{_sep(lang)}{m["text"]}', per),
+                  rgb(_RAG_BRAND[km_rag.get(m["kind"], "grey")]), False) for m in shown]
+        list_card(s, Inches(X), Inches(Y), Inches(W), Inches(H),
+                  rt(lang, "h_key_messages"), lines, rt(lang, "no_key_message"),
                   extra=more, fs=km_fs)
 
-        bsh = rrect(s, Inches(8.61), Inches(6.10), Inches(4.32), Inches(0.96),
+    def squad_kpis(s, r, X, Y=6.10, W=3.23, H=0.96, sec=None):
+        """Les indicateurs de la squad: deux, le reste compte. Le gras est plus large:
+        mesure sur sa largeur. La valeur n'est jamais coupee, le nom l'est."""
+        kpis = (r.get("detail") or {}).get("kpis") or []
+        k_cpl = int((W - 0.34) / (0.0068 * _fs(10)))
+        kpi_rag = {"on_target": "green", "under_pressure": "amber", "missed": "red"}
+        from .report import _kpi_value
+
+        def kline(k):
+            val = _kpi_value(k, lang)
+            sep = _sep(lang)
+            name = _cut(k["name"], max(4, k_cpl - len(val) - len(sep)))
+            return (f"{name}{sep}{val}", rgb(_RAG_BRAND[kpi_rag.get(k["trend"], "grey")]), True)
+        k_lines = [kline(k) for k in kpis[:2]]
+        list_card(s, Inches(X), Inches(Y), Inches(W), Inches(H), rt(lang, "h_kpis"), k_lines, "",
+                  extra=(f"+{len(kpis) - 2}" if len(kpis) > 2 else None))
+
+    def squad_budget(s, r, X=8.61, Y=6.10, W=4.32, H=0.96, sec=None):
+        """Le budget: le total dans le titre, le consomme, la prevision, le commentaire."""
+        det = r.get("detail") or {}
+        bsh = rrect(s, Inches(X), Inches(Y), Inches(W), Inches(H),
                     B["white"], line=B["line"], radius=0.05)
         bud = det.get("budget")
         btf = bsh.text_frame
@@ -1295,7 +1427,7 @@ def render_pptx(data: dict) -> bytes:
             bline(rt(lang, "b_forecast"), f(bud["forecast"]) +
                   (f' ({_pct(bud["forecast_pct"], lang)})' if bud.get("forecast_pct") is not None else ""))
             if bud.get("comment"):
-                bline(None, _cut(bud["comment"], int((4.32 - 0.34) / (0.0078 * _fs(10)))),
+                bline(None, _cut(bud["comment"], int((W - 0.34) / (0.0078 * _fs(10)))),
                       muted=True, italic=True)
             # Pas de pastille sans montant a comparer: « Sur les rails » en vert
             # au-dessus de trois tirets affirmait ce que rien ne mesurait.
@@ -1303,21 +1435,51 @@ def render_pptx(data: dict) -> bytes:
                 st_color = {"on_track": "green", "at_risk": "amber", "over": "red"}[bud["status"]]
                 st_lbl = rt(lang, {"on_track": "b_on_track", "at_risk": "b_at_risk",
                                    "over": "b_over"}[bud["status"]])
-                cw = Inches(0.26 + 0.082 * FONT_SCALE * len(st_lbl))
-                chip(s, Emu(int(Inches(8.61)) + int(Inches(4.32)) - int(cw) - int(Inches(0.14))),
-                     Inches(6.16), st_lbl, rgb(_RAG_BRAND[st_color]))
+                cw = Inches(0.26 + 0.082 * pptxtpl.font_scale() * len(st_lbl))
+                chip(s, Emu(int(Inches(X)) + int(Inches(W)) - int(cw) - int(Inches(0.14))),
+                     Inches(6.16) if Y == 6.10 else Inches(Y + 0.06), st_lbl, rgb(_RAG_BRAND[st_color]))
 
-        # La legende: les couleurs de statut, puis les deux phases. Elle se lit une
-        # fois et sert pour toute la frise, donc elle tient sur une ligne discrete
-        # plutot que de repeter dans chaque boite ce qu'une couleur et deux lettres
-        # suffisent a dire. Elle est **dans la carte de la frise**, sous les boites:
-        # tout en bas de slide elle occupait la ligne dont les deux cartes avaient
-        # besoin, et leur texte lui passait dessus. Elle explique l'axe, sa place
-        # est avec lui.
-        # Le corps 7 etait illisible et la largeur estimee d'un caractere trop
-        # courte: le libelle revenait a la ligne et sa deuxieme ligne tombait hors
-        # de la slide. On estime large, et on interdit le retour a la ligne plutot
-        # que d'esperer que la police du modele soit etroite.
+    def squad_bottom(s, r, sec=None):
+        """La rangee du bas: messages cles, indicateurs (s'il y en a) et budget, dans
+        cet ordre; une carte retiree par le modele laisse sa largeur aux autres."""
+        det = r.get("detail") or {}
+        on = [b for b in ("key_messages", "kpis", "budget") if block_on(sec, b)]
+        if "kpis" in on and not det.get("kpis"):
+            on.remove("kpis")
+        if not on:
+            return
+        if on == ["key_messages", "kpis", "budget"]:
+            km_w = 4.6
+            kx, kw = 0.4 + km_w + 0.19, 8.02 - km_w - 0.19
+            squad_kpis(s, r, kx, 6.10, kw, 0.96, sec)
+            squad_key_messages(s, r, 0.4, 6.10, km_w, 0.96, sec)
+            squad_budget(s, r, 8.61, 6.10, 4.32, 0.96, sec)
+            return
+        if on == ["key_messages", "budget"]:
+            squad_key_messages(s, r, 0.4, 6.10, 8.02, 0.96, sec)
+            squad_budget(s, r, 8.61, 6.10, 4.32, 0.96, sec)
+            return
+        fixed = {"kpis": 3.23, "budget": 4.32}
+        gap, total = 0.19, 12.53
+        flex = on[0] if on[0] == "key_messages" else (on[0] if len(on) == 1 else None)
+        if flex is None:
+            flex = "kpis" if "kpis" in on else on[0]
+        widths = {b: fixed.get(b, 0.0) for b in on}
+        widths[flex] = total - gap * (len(on) - 1) - sum(w for b, w in widths.items() if b != flex)
+        x = 0.4
+        draw = {"key_messages": squad_key_messages, "kpis": squad_kpis, "budget": squad_budget}
+        for b in on:
+            draw[b](s, r, x, 6.10, widths[b], 0.96, sec)
+            x += widths[b] + gap
+
+    def squad_legend_row(s, legend=True, stamp_on=True):
+        """La legende: les deux portees d'engagement, les deux phases, et la date."""
+        # Elle se lit une fois et sert pour toute la frise, donc elle tient sur une
+        # ligne discrete plutot que de repeter dans chaque boite ce qu'une couleur
+        # et deux lettres suffisent a dire. Le corps 7 etait illisible et la largeur
+        # estimee d'un caractere trop courte: le libelle revenait a la ligne et sa
+        # deuxieme ligne tombait hors de la slide. On estime large, et on interdit le
+        # retour a la ligne plutot que d'esperer que la police du modele soit etroite.
         LEG_Y = 7.14                   # sous les cartes, avec une marge au bord bas
         scope_legs = [rt(lang, "otd_scope_" + sc) for sc in ("management", "squad")]
         stage_legs = [f'{c.upper()} {rt(lang, "stage_" + c)}' for c in ("ea", "ga")]
@@ -1343,38 +1505,41 @@ def render_pptx(data: dict) -> bytes:
             if leg_row(LEG_CW) <= LEG_W:
                 break
         lx = 0.4
-        # D'abord les deux portees d'engagement: le meme repere que sur l'axe,
-        # sinon la legende explique un signe qui ne s'y trouve pas.
-        for scope, leg in zip(("management", "squad"), scope_legs):
-            mk = s.shapes.add_shape(MSO_SHAPE.STAR_5_POINT, Inches(lx), Inches(LEG_Y),
-                                    Inches(0.17), Inches(0.17))
-            mk.fill.solid(); mk.fill.fore_color.rgb = rgb(OTD_SCOPE_COLOR[scope])
-            mk.line.fill.background(); mk.shadow.inherit = False
-            textbox(s, Inches(lx + 0.20), Inches(LEG_Y), Inches(LEG_CW * len(leg) + 0.06),
-                    Inches(0.19), leg, LEG_FS, color=B["muted"], wrap=False)
-            lx += 0.28 + LEG_CW * len(leg)
-        # EA et GA sont dans les boites: deux lettres qui ne veulent rien dire pour
-        # qui decouvre le document, et tout pour qui sait, d'ou la legende.
-        for leg in stage_legs:
-            textbox(s, Inches(lx), Inches(LEG_Y), Inches(LEG_CW * len(leg) + 0.06),
-                    Inches(0.19), leg, LEG_FS, color=B["muted"], wrap=False)
-            lx += 0.22 + LEG_CW * len(leg)
-        textbox(s, Inches(lx), Inches(LEG_Y), Inches(12.93 - lx), Inches(0.19), stamp, 9,
-                bold=bool(data.get("as_of")), color=B["orange"] if data.get("as_of") else B["muted"],
-                align=PP_ALIGN.RIGHT, wrap=False)
+        if legend:
+            # D'abord les deux portees d'engagement: le meme repere que sur l'axe,
+            # sinon la legende explique un signe qui ne s'y trouve pas.
+            for scope, leg in zip(("management", "squad"), scope_legs):
+                mk = s.shapes.add_shape(MSO_SHAPE.STAR_5_POINT, Inches(lx), Inches(LEG_Y),
+                                        Inches(0.17), Inches(0.17))
+                mk.fill.solid(); mk.fill.fore_color.rgb = rgb(OTD_SCOPE_COLOR[scope])
+                mk.line.fill.background(); mk.shadow.inherit = False
+                textbox(s, Inches(lx + 0.20), Inches(LEG_Y), Inches(LEG_CW * len(leg) + 0.06),
+                        Inches(0.19), leg, LEG_FS, color=B["muted"], wrap=False)
+                lx += 0.28 + LEG_CW * len(leg)
+            # EA et GA sont dans les boites: deux lettres qui ne veulent rien dire pour
+            # qui decouvre le document, et tout pour qui sait, d'ou la legende.
+            for leg in stage_legs:
+                textbox(s, Inches(lx), Inches(LEG_Y), Inches(LEG_CW * len(leg) + 0.06),
+                        Inches(0.19), leg, LEG_FS, color=B["muted"], wrap=False)
+                lx += 0.22 + LEG_CW * len(leg)
+        if stamp_on:
+            textbox(s, Inches(lx), Inches(LEG_Y), Inches(12.93 - lx), Inches(0.19), stamp, 9,
+                    bold=bool(data.get("as_of")), color=B["orange"] if data.get("as_of") else B["muted"],
+                    align=PP_ALIGN.RIGHT, wrap=False)
 
-        # Les etats d'un jalon, dessines comme dans les boites (coche, point,
-        # anneau) et le cadre rouge d'un engagement en retard, sur la ligne du
-        # titre de la frise: des carres de couleur n'expliquaient ni la coche, ni
-        # le point, ni le cadre plein.
+    def squad_status_legend(s, right=12.75, ty=1.08):
+        """Les etats d'un jalon, dessines comme dans les boites (coche, point, anneau)
+        et le cadre rouge d'un engagement en retard, sur la ligne du titre de la
+        frise: des carres de couleur n'expliquaient ni la coche, ni le point, ni le
+        cadre plein."""
         tick_legs = [("done", _status_label("done", lang)), ("on_track", _status_label("on_track", lang)),
                      ("at_risk", _status_label("at_risk", lang)), ("blocked", _status_label("blocked", lang))]
         late_leg = _pt(lang, "late_frame")
         TL_CW = 0.088 * _fs(9) / 10
         width = sum(TICK + 0.10 + TL_CW * len(t) + 0.22 for _, t in tick_legs) + 0.36 + TL_CW * len(late_leg)
-        tx, ty = 12.75 - width, 1.08
+        tx = right - width
         for st, leg in tick_legs:
-            status_tick(tx, ty + 0.02, st)
+            _tick(s, tx, ty + 0.02, st)
             textbox(s, Inches(tx + TICK + 0.08), Inches(ty), Inches(TL_CW * len(leg) + 0.06),
                     Inches(0.19), leg, 9, color=B["muted"], wrap=False)
             tx += TICK + 0.10 + TL_CW * len(leg) + 0.22
@@ -1384,31 +1549,88 @@ def render_pptx(data: dict) -> bytes:
         textbox(s, Inches(tx + 0.32), Inches(ty), Inches(TL_CW * len(late_leg) + 0.06),
                 Inches(0.19), late_leg, 9, color=B["muted"], wrap=False)
 
-    # --- Assemble the deck. Une squad, une slide, la meme dans les deux cas: un
-    # export d'une seule squad n'est que ce deck sans sa page de synthese.
-    if not data.get("squad_scoped"):
-        summary_slide()
-    for r in squads[:_MAX_DETAIL_SLIDES]:
-        if r.get("detail"):
-            squad_slide(r)
+    def squad_slide(r, sec=None):
+        """Une slide par squad: l'en-tete et le moral, la frise de l'annee, la rangee
+        des messages, indicateurs et budget, et la legende. Chaque partie est un bloc
+        que le modele peut retirer; la frise prend alors la place liberee."""
+        s = new_slide()
+        rect(s, Inches(0), Inches(0), prs.slide_width, prs.slide_height,
+             rgb(pptxtpl.color("background", "#F5F7FA")))
+        hdr_on, mood_on = block_on(sec, "header"), block_on(sec, "mood")
+        bottom_on = any(block_on(sec, b) for b in ("key_messages", "kpis", "budget"))
+        TY, TH = 0.96, 5.08
+        if not hdr_on and not mood_on:
+            TY, TH = 0.14, TH + 0.82
+        if not bottom_on:
+            TH += 1.02
+        # ----- entete: la squad, son responsable, et le moral a droite -----
+        # Tout le haut de la slide remonte: la marge au-dessus de l'entete etait
+        # plus large que tout le reste, et la legende, faute de place, finissait
+        # collee au bord bas de la slide.
+        if hdr_on:
+            squad_header(s, r, 0.4, 0.14, 10.72 if mood_on else 12.53, 0.74, sec)
+        # Le moral: trois niveaux, et la date qui les date.
+        if mood_on:
+            squad_mood(s, r, 11.20, 0.14, sec)
+        tl_on = block_on(sec, "timeline")
+        if tl_on:
+            squad_timeline(s, r, 0.4, TY, 12.53, TH, sec)
+        squad_bottom(s, r, sec)
+        legend_on, stamp_on = block_on(sec, "legend"), block_on(sec, "stamp")
+        if legend_on or stamp_on:
+            squad_legend_row(s, legend_on, stamp_on)
+        if tl_on and block_on(sec, "status_legend"):
+            if (TY, TH) == (0.96, 5.08):
+                squad_status_legend(s)
+            else:
+                squad_status_legend(s, 0.4 + 12.53 - 0.18, TY + 0.12)
+
+    # --- Les sections. Une squad, une slide, la meme dans les deux cas: un export
+    # d'une seule squad n'est que ce deck sans sa page de synthese.
+    def summary_section(sec):
+        if data.get("squad_scoped") and sparam(sec, "skip_when_single_squad", True):
+            return
+        summary_slide(sec)
+
+    def squads_section(sec, variant=None):
+        rows = select_squads(squads, sec)
+        for r in rows[:_MAX_DETAIL_SLIDES]:
+            if r.get("detail"):
+                squad_slide(r, (variant(r) if variant else None) or sec)
+        # Never silently drop squads the user explicitly selected: if the runaway
+        # guard is ever hit, say how many were omitted instead of losing them, on
+        # a notice slide that closes the deck (see finish).
+        pending["omitted"] += max(0, len(rows) - _MAX_DETAIL_SLIDES)
+
+    pending = {"omitted": 0}
+
+    def finish():
+        omitted = pending["omitted"]
+        if omitted > 0:
+            s = new_slide()
+            rect(s, Inches(0), Inches(0), prs.slide_width, Inches(0.92), B["navy"])
+            textbox(s, margin, Inches(3.2), prs.slide_width - margin * 2, Inches(1),
+                    rt(lang, "more_squads", n=omitted), 24, bold=True,
+                    color=B["navy"], align=PP_ALIGN.CENTER)
+
     # Les points d'attention ferment le deck hebdo, apres les squads: la synthese
     # et les slides de squad gardent leur place, et la derniere slide est celle
     # qu'on laisse a l'ecran pour la discussion.
-    if not data.get("squad_scoped") and data.get("doc") != "dashboard" and not data.get("as_of"):
-        attention_slide()
-    # Never silently drop squads the user explicitly selected: if the runaway
-    # guard is ever hit, say how many were omitted instead of losing them.
-    omitted = len(squads) - _MAX_DETAIL_SLIDES
-    if omitted > 0:
-        s = new_slide()
-        rect(s, Inches(0), Inches(0), prs.slide_width, Inches(0.92), B["navy"])
-        textbox(s, margin, Inches(3.2), prs.slide_width - margin * 2, Inches(1),
-                rt(lang, "more_squads", n=omitted), 24, bold=True,
-                color=B["navy"], align=PP_ALIGN.CENTER)
+    def attention_section(sec):
+        if data.get("squad_scoped") and sparam(sec, "skip_when_single_squad", True):
+            return
+        if data.get("as_of") and sparam(sec, "skip_when_dated", True):
+            return
+        attention_slide(sec)
 
-    buf = io.BytesIO()
-    prs.save(buf)
-    return buf.getvalue()
+    return {"summary": summary_section, "squad": squads_section, "attention": attention_section,
+            "finish": finish,
+            "parts": {"squad_header": squad_header, "squad_mood": squad_mood,
+                      "squad_timeline": squad_timeline, "squad_key_messages": squad_key_messages,
+                      "squad_kpis": squad_kpis, "squad_budget": squad_budget,
+                      "kpi_tiles": kpi_tiles, "squad_table": squad_table_in,
+                      "attention_list": attention_column, "tribe_otds": attention_column,
+                      "squads": squads, "rgb": rgb, "B": B}}
 
 
 # « +N » en fin de carte de roadmap: ce qui n'a pas tenu, dit en toutes lettres.
@@ -1432,12 +1654,25 @@ def render_roadmap_pptx(data: dict) -> bytes:
     """Roadmap swimlane deck (mirrors the reference layout): quarters in columns
     with month sub-headers, squads as swimlane rows, and one milestone card per
     (squad, quarter) with status-coloured bullets."""
+    prs = pptxtpl.new_deck()
+    roadmap_deck(prs, data)["roadmap"](None)
+    return pptxtpl.save_deck(prs)
+
+
+# Les couleurs de la roadmap que le theme du Studio remplace quand il en fixe.
+RM_MAP = {"dark": "primary", "muted": "muted"}
+
+
+def roadmap_deck(prs, data: dict) -> dict:
+    """The roadmap section drawer bound to one deck, and the swimlanes as a part a
+    free layout can place in any frame."""
     Presentation, Inches, Pt, Emu, RGBColor, PP_ALIGN, MSO_ANCHOR, MSO_SHAPE = _pptx_toolkit()
 
     def rgb(hexstr: str) -> RGBColor:
         return RGBColor.from_string(hexstr.lstrip("#").upper())
 
-    C = {k: rgb(v) for k, v in _RM.items()}
+    C = {k: rgb(v) for k, v in pptxtpl.palette(_RM, RM_MAP).items()}
+    _RAG_BRAND = pptxtpl.palette(globals()["_RAG_BRAND"], RAG_MAP)
     STAGE = {k: rgb(v) for k, v in STAGE_COLOR.items()}  # EA=gold, GA=green
     lang = _lang(data.get("lang", "fr"))
     year = data["year"]
@@ -1449,9 +1684,6 @@ def render_roadmap_pptx(data: dict) -> bytes:
     months = _MONTHS[lang]
 
     SLIDE_W, SLIDE_H = 13.333, 7.5
-    prs = pptxtpl.new_presentation()
-    prs.slide_width = Inches(SLIDE_W)
-    prs.slide_height = Inches(SLIDE_H)
 
     # Column geometry (4 quarters), after a column of squad names written
     # horizontally: couches a 270 degres dans la hauteur de leur bande, les noms se
@@ -1512,15 +1744,20 @@ def render_roadmap_pptx(data: dict) -> bytes:
             r.font.size = Pt(_fs(size)); r.font.bold = bold; r.font.color.rgb = color
         return box
 
-    def draw_header(s):
+    def draw_header(s, title_on=True, legend_on=True):
         title = f'{rt(lang, "roadmap_report")} | {data["scope_name"]}'
-        textbox(s, MARGIN, 0.22, 8.6, 0.5, [(title, C["dark"], True)],
-                22 if len(title) <= 55 else 18 if len(title) <= 70 else 15)
-        textbox(s, MARGIN, 0.66, 8.6, 0.25,
-                [(f'{rt(lang, "year")} {year}, {rt(lang, "generated_full", d=gen_str)}', C["muted"], False)], 10.5)
-        legend = [("EA  ", STAGE["EA"], True), (rt(lang, "stage_ea") + "      ", C["dark"], False),
-                  ("GA  ", STAGE["GA"], True), (rt(lang, "stage_ga"), C["dark"], False)]
-        textbox(s, SLIDE_W - 5.9, 0.34, 5.4, 0.3, legend, 10, align=PP_ALIGN.RIGHT)
+        if title_on:
+            textbox(s, MARGIN, 0.22, 8.6, 0.5, [(title, C["dark"], True)],
+                    22 if len(title) <= 55 else 18 if len(title) <= 70 else 15)
+            textbox(s, MARGIN, 0.66, 8.6, 0.25,
+                    [(f'{rt(lang, "year")} {year}, {rt(lang, "generated_full", d=gen_str)}', C["muted"], False)], 10.5)
+        if legend_on:
+            legend = [("EA  ", STAGE["EA"], True), (rt(lang, "stage_ea") + "      ", C["dark"], False),
+                      ("GA  ", STAGE["GA"], True), (rt(lang, "stage_ga"), C["dark"], False)]
+            textbox(s, SLIDE_W - 5.9, 0.34, 5.4, 0.3, legend, 10, align=PP_ALIGN.RIGHT)
+        draw_quarters(s)
+
+    def draw_quarters(s):
         for i, q in enumerate((1, 2, 3, 4)):
             x = col_x(i)
             set_text(shape(s, MSO_SHAPE.RECTANGLE, x, Y_Q, COL_W, H_Q, C["dark"]),
@@ -1531,7 +1768,7 @@ def render_roadmap_pptx(data: dict) -> bytes:
                 set_text(shape(s, MSO_SHAPE.RECTANGLE, mx, Y_M, mw, H_M, C["sub"]),
                          months[i * 3 + mi], 10, C["white"])
 
-    def draw_card(s, x, y, w, h, items, fs, line_h):
+    def draw_card(s, x, y, w, h, items, fs, line_h, themes="auto"):
         card = shape(s, MSO_SHAPE.ROUNDED_RECTANGLE, x, y, w, h, C["card"], round_adj=0.06)
         tf = card.text_frame
         tf.word_wrap = True
@@ -1551,7 +1788,7 @@ def render_roadmap_pptx(data: dict) -> bytes:
         # A thin lane (many squads on the one slide) keeps its lines for the
         # milestones themselves: with theme headers it showed "Theme +4..." and
         # not a single title.
-        with_themes = max_lines >= 4
+        with_themes = {"always": True, "never": False}.get(themes, max_lines >= 4)
         for theme, group in group_by_theme(items):
             if theme and with_themes:
                 specs.append(("theme", theme))
@@ -1612,7 +1849,7 @@ def render_roadmap_pptx(data: dict) -> bytes:
             r = p.add_run(); r.text = _RM_MORE_ONE[lang] if extra == 1 else _RM_MORE[lang].format(n=extra)
             r.font.size = Pt(_fs(max(7, item_fs - 0.5))); r.font.color.rgb = C["muted"]
 
-    def draw_swimlanes(s, lanes):
+    def draw_swimlanes(s, lanes, themes="auto"):
         # Everything fits on ONE slide: band height + fonts scale with the count,
         # but with a readable floor (small decks get a comfortably large font).
         n = max(1, len(lanes))
@@ -1649,15 +1886,37 @@ def render_roadmap_pptx(data: dict) -> bytes:
             set_text(lbl, name, label_fs, C["white"], bold=True, align=PP_ALIGN.LEFT)
             qmap = {qd["q"]: qd["items"] for qd in (sq.get("detail") or {}).get("quarters", [])}
             for i, q in enumerate((1, 2, 3, 4)):
-                draw_card(s, col_x(i), by + 0.04, COL_W, band_h - 0.08, qmap.get(q, []), card_fs, line_h)
+                draw_card(s, col_x(i), by + 0.04, COL_W, band_h - 0.08, qmap.get(q, []), card_fs, line_h,
+                          themes)
 
-    s = pptxtpl.add_slide(prs)  # single page, always
-    draw_header(s)
-    draw_swimlanes(s, squads)
+    def lanes_for(sec):
+        lanes = select_squads(squads, sec)
+        if not sparam(sec, "show_done", True):
+            lanes = [{**r, "detail": {**(r.get("detail") or {}), "quarters": [
+                {**qd, "items": [it for it in qd.get("items") or [] if it.get("status") != "done"]}
+                for qd in (r.get("detail") or {}).get("quarters") or []]}} for r in lanes]
+        return lanes
 
-    buf = io.BytesIO()
-    prs.save(buf)
-    return buf.getvalue()
+    def roadmap_section(sec):
+        s = pptxtpl.add_slide(prs)  # single page, always
+        draw_header(s, block_on(sec, "header"), block_on(sec, "legend"))
+        draw_swimlanes(s, lanes_for(sec), sparam(sec, "show_themes", "auto"))
+
+    def roadmap_in(s, X, Y, W, H, params=None):
+        """The quarters and the swimlanes in a frame (inches), for a free layout."""
+        nonlocal NAME_X, GRID_X, COL_W, Y_Q, Y_M, Y_TOP, Y_BOTTOM
+        saved = (NAME_X, GRID_X, COL_W, Y_Q, Y_M, Y_TOP, Y_BOTTOM)
+        NAME_X = X
+        GRID_X = X + NAME_W + 0.08
+        COL_W = (X + W - GRID_X - GAP * 3) / 4
+        Y_Q, Y_M, Y_TOP, Y_BOTTOM = Y, Y + 0.38, Y + 0.80, Y + H
+        try:
+            draw_quarters(s)
+            draw_swimlanes(s, lanes_for({"params": params or {}}), (params or {}).get("show_themes", "auto"))
+        finally:
+            NAME_X, GRID_X, COL_W, Y_Q, Y_M, Y_TOP, Y_BOTTOM = saved
+
+    return {"roadmap": roadmap_section, "parts": {"roadmap": roadmap_in}}
 
 
 _INIT_PT = {
@@ -1672,17 +1931,23 @@ def render_initiatives_pptx(data: dict, *, lang: str = "fr") -> bytes:
     Sorted by deadline, the closest first, and an overdue deadline is said in red:
     a committee reads this list for what is due, not in the order it was typed.
     Nothing is dropped any more: past a slide's worth, the table continues."""
+    prs = pptxtpl.new_deck()
+    initiatives_deck(prs, data, lang=lang)["initiatives"](None)
+    return pptxtpl.save_deck(prs)
+
+
+def initiatives_deck(prs, data: dict, *, lang: str = "fr") -> dict:
+    """The initiatives section drawer bound to one deck."""
     from datetime import date, timezone
     Presentation, Inches, Pt, Emu, RGBColor, PP_ALIGN, MSO_ANCHOR, MSO_SHAPE = _pptx_toolkit()
 
     def rgb(h):
         return RGBColor.from_string(h.lstrip("#").upper())
 
-    B = {k: rgb(v) for k, v in _BRAND.items()}
+    B = {k: rgb(v) for k, v in pptxtpl.palette(_BRAND, pptxtpl.BRAND_MAP).items()}
     lang = _lang(lang)
     T = _INIT_T[lang]
     P = _INIT_PT[lang]
-    prs = pptxtpl.new_presentation(); prs.slide_width = Inches(13.333); prs.slide_height = Inches(7.5)
     margin = Inches(0.5)
     today = date.today()
     gen = fmt_datetime(datetime.now(timezone.utc), lang)
@@ -1708,8 +1973,13 @@ def render_initiatives_pptx(data: dict, *, lang: str = "fr") -> bytes:
         if pp.runs:
             rr = pp.runs[0]; rr.font.size = Pt(_fs(size)); rr.font.bold = bold; rr.font.color.rgb = color
 
-    def page(rows, cont):
+    def page(rows, cont, cols=("owner", "squad", "deadline"), head_on=True):
         s = pptxtpl.add_slide(prs)
+        if head_on:
+            band(s, cont)
+        table(s, rows, cols)
+
+    def band(s, cont):
         head = s.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0), Inches(0), prs.slide_width, Inches(1.05))
         head.fill.solid(); head.fill.fore_color.rgb = B["navy"]; head.line.fill.background(); head.shadow.inherit = False
         tf = head.text_frame; tf.margin_left = Inches(0.5); tf.vertical_anchor = MSO_ANCHOR.MIDDLE
@@ -1720,11 +1990,17 @@ def render_initiatives_pptx(data: dict, *, lang: str = "fr") -> bytes:
         r2 = p2.add_run(); r2.text = P["sub"].format(year=data["year"], d=gen)
         r2.font.size = Pt(_fs(11)); r2.font.color.rgb = rgb("#C7D2FE")
 
-        headers = [T["h_init"], T["h_owner"], T["h_squad"], T["h_deadline"]]
-        wfrac = [0.42, 0.22, 0.20, 0.16]
+    def table(s, rows, cols):
+        keys = ["title"] + [c for c in ("owner", "squad", "deadline") if c in cols]
+        hmap = {"title": T["h_init"], "owner": T["h_owner"], "squad": T["h_squad"], "deadline": T["h_deadline"]}
+        fmap = {"title": 0.42, "owner": 0.22, "squad": 0.20, "deadline": 0.16}
+        headers = [hmap[k] for k in keys]
+        wfrac = [fmap[k] for k in keys]
+        if len(keys) < 4:
+            wfrac = [f / sum(wfrac) for f in wfrac]
         nrows = max(2, len(rows) + 1)
         table_w = int(prs.slide_width - margin * 2)
-        tbl = s.shapes.add_table(nrows, 4, margin, Inches(1.3), Emu(table_w),
+        tbl = s.shapes.add_table(nrows, len(keys), margin, Inches(1.3), Emu(table_w),
                                  Inches(0.34) + Inches(0.32) * (nrows - 1)).table
         for ci, f in enumerate(wfrac):
             tbl.columns[ci].width = Emu(int(table_w * f))
@@ -1732,7 +2008,7 @@ def render_initiatives_pptx(data: dict, *, lang: str = "fr") -> bytes:
             cell(tbl.cell(0, ci), h, 11, B["white"], bold=True, fill=B["navy"])
         if not rows:
             cell(tbl.cell(1, 0), T["none"], 10, B["muted"])
-            for ci in range(1, 4):
+            for ci in range(1, len(keys)):
                 cell(tbl.cell(1, ci), " ", 10, B["muted"])
         for ri, it in enumerate(rows, start=1):
             zebra = B["zebra"] if ri % 2 == 0 else B["white"]
@@ -1741,34 +2017,47 @@ def render_initiatives_pptx(data: dict, *, lang: str = "fr") -> bytes:
             when = fmt_date(it["deadline"], lang) if it["deadline"] else "-"
             if late:
                 when += f' ({P["overdue"]})'
-            cells = [(_cut(it["title"], 70), B["ink"], True), (_cut(it["owner"] or "-", 34), B["ink"], False),
-                     (_cut(it["squad_name"] or "-", 30), B["ink"], False),
-                     (when, B["red"] if late else B["ink"], late)]
-            for ci, (val, color, bold) in enumerate(cells):
+            cmap = {"title": (_cut(it["title"], 70), B["ink"], True),
+                    "owner": (_cut(it["owner"] or "-", 34), B["ink"], False),
+                    "squad": (_cut(it["squad_name"] or "-", 30), B["ink"], False),
+                    "deadline": (when, B["red"] if late else B["ink"], late)}
+            for ci, (val, color, bold) in enumerate(cmap[k] for k in keys):
                 cell(tbl.cell(ri, ci), val, 10, color, bold=bold, fill=zebra)
 
-    PER = 16
-    page(items[:PER], False)
-    for k in range(PER, len(items), PER):
-        page(items[k:k + PER], True)
-    buf = io.BytesIO(); prs.save(buf); return buf.getvalue()
+    def initiatives_section(sec):
+        PER = int(sparam(sec, "rows_per_slide", 16) or 16)
+        cols = tuple(sparam(sec, "columns", ["owner", "squad", "deadline"]))
+        rows = items
+        if sparam(sec, "hide_past", False):
+            rows = [it for it in rows if not (due(it) is not None and due(it) < today)]
+        head_on = block_on(sec, "header")
+        page(rows[:PER], False, cols, head_on)
+        for k in range(PER, len(rows), PER):
+            page(rows[k:k + PER], True, cols, head_on)
+
+    return {"initiatives": initiatives_section, "parts": {}}
 
 
 def render_dependencies_pptx(data: dict) -> bytes:
     """Paginated table deck of milestone dependencies, grouped by the entity waited
     on. Rows flow across slides so no dependency is ever dropped."""
+    prs = pptxtpl.new_deck()
+    dependencies_deck(prs, data)["dependencies"](None)
+    return pptxtpl.save_deck(prs)
+
+
+def dependencies_deck(prs, data: dict) -> dict:
+    """The dependencies section drawer bound to one deck."""
     Presentation, Inches, Pt, Emu, RGBColor, PP_ALIGN, MSO_ANCHOR, MSO_SHAPE = _pptx_toolkit()
 
     def rgb(hexstr: str) -> RGBColor:
         return RGBColor.from_string(hexstr.lstrip("#").upper())
 
-    B = {k: rgb(v) for k, v in _BRAND.items()}
+    B = {k: rgb(v) for k, v in pptxtpl.palette(_BRAND, pptxtpl.BRAND_MAP).items()}
+    _RAG_BRAND = pptxtpl.palette(globals()["_RAG_BRAND"], RAG_MAP)
     lang = _lang(data.get("lang", "fr"))
     T = _DEP_T[lang]
 
-    prs = pptxtpl.new_presentation()
-    prs.slide_width = Inches(13.333)
-    prs.slide_height = Inches(7.5)
     SW = prs.slide_width
     margin = int(Inches(0.5))
     content_w = int(SW) - 2 * margin
@@ -1794,12 +2083,12 @@ def render_dependencies_pptx(data: dict) -> bytes:
     # Le plus grave d'abord, dans chaque groupe et entre les groupes: une
     # dependance bloquee ne doit pas attendre la sixieme slide.
     SEV = {"blocked": 0, "at_risk": 1, "on_track": 2, "done": 3}
-    groups = []
+    all_groups = []
     for g in data["groups"]:
         its = sorted(g["items"], key=lambda it: (SEV.get(it.get("status"), 2), it.get("year") or 0,
                                                   it.get("quarter") or 0))
-        groups.append({**g, "items": its})
-    groups.sort(key=lambda g: min((SEV.get(it.get("status"), 2) for it in g["items"]), default=3))
+        all_groups.append({**g, "items": its})
+    all_groups.sort(key=lambda g: min((SEV.get(it.get("status"), 2) for it in g["items"]), default=3))
 
     gen = data["generated_at"]
     gen_str = fmt_datetime(gen, lang) if isinstance(gen, datetime) else str(gen)
@@ -1831,6 +2120,8 @@ def render_dependencies_pptx(data: dict) -> bytes:
         return sh
 
     def band(s, cont):
+        if not state["head"]:
+            return
         rect(s, 0, 0, SW, Inches(1.05), B["navy"])
         textbox(s, margin, Inches(0.14), Inches(9.2), Inches(0.5),
                 T["title"] + (T["suite"] if cont else ""), 22, bold=True, color=B["white"], anchor=MSO_ANCHOR.TOP)
@@ -1879,27 +2170,32 @@ def render_dependencies_pptx(data: dict) -> bytes:
             textbox(s, colx[i], y, colw[i], ROW_H, v, 9, bold=bolds[i], color=colors[i], align=aligns[i])
         return y + ROW_H
 
-    if data["total"] == 0:
-        s = new_slide(); band(s, False)
-        textbox(s, margin, Inches(3.2), content_w, Inches(0.6), T["none"], 18, bold=True,
-                color=B["muted"], align=PP_ALIGN.CENTER)
-        buf = io.BytesIO(); prs.save(buf); return buf.getvalue()
-
-    state = {"s": None, "y": 0}
+    state = {"s": None, "y": 0, "head": True}
 
     def open_slide(cont):
         s = new_slide(); band(s, cont)
         state["s"] = s; state["y"] = col_headers(s, TOP0)
 
-    open_slide(False)
-    for g in groups:
-        if state["y"] + GRP_H + ROW_H > BOTTOM:
-            open_slide(True)
-        state["y"] = group_header(state["s"], state["y"], g, False)
-        for idx, it in enumerate(g["items"]):
-            if state["y"] + ROW_H > BOTTOM:
+    def dependencies_section(sec):
+        state["head"] = block_on(sec, "header")
+        groups = all_groups
+        if sparam(sec, "hide_done", False):
+            groups = [{**g, "items": [it for it in g["items"] if it.get("status") != "done"]} for g in groups]
+            groups = [g for g in groups if g["items"]]
+        if data["total"] == 0 or not groups:
+            s = new_slide(); band(s, False)
+            textbox(s, margin, Inches(3.2), content_w, Inches(0.6), T["none"], 18, bold=True,
+                    color=B["muted"], align=PP_ALIGN.CENTER)
+            return
+        open_slide(False)
+        for g in groups:
+            if state["y"] + GRP_H + ROW_H > BOTTOM:
                 open_slide(True)
-                state["y"] = group_header(state["s"], state["y"], g, True)
-            state["y"] = data_row(state["s"], state["y"], it, idx % 2 == 1)
+            state["y"] = group_header(state["s"], state["y"], g, False)
+            for idx, it in enumerate(g["items"]):
+                if state["y"] + ROW_H > BOTTOM:
+                    open_slide(True)
+                    state["y"] = group_header(state["s"], state["y"], g, True)
+                state["y"] = data_row(state["s"], state["y"], it, idx % 2 == 1)
 
-    buf = io.BytesIO(); prs.save(buf); return buf.getvalue()
+    return {"dependencies": dependencies_section, "parts": {}}

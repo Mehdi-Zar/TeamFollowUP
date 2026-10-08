@@ -179,11 +179,12 @@ Three independent layers, all enforced **server-side** (the SPA only hides UI):
 1. **Role tiers** - `admin > tribe_leader > squad_leader > member` (+ custom persona keys).
    Coarse guards: `require_admin`, `require_tribe_or_admin`, `require_writer`.
 2. **Persona → capability matrix** (`personasconfig`) - section access (`dashboard, roadmap, org,
-   feed, reporting, mysquads, leaves`) per persona, admin-configurable in
+   feed, reporting, mysquads, leaves, exports`) per persona, admin-configurable in
    **Admin → Personas**. See [ADR-0005](adr/0005-persona-capability-model.md).
-   Six of the seven are enforced by `require_capability(cap)` on the router that serves the
+   Seven of the eight are enforced by `require_capability(cap)` on the router that serves the
    section: `dashboard` (dashboard + `/api/reports/*`), `roadmap`, `org` (org + org export),
-   `feed`, `reporting` (snapshots), `leaves`.
+   `feed`, `reporting` (snapshots), `leaves`, `exports` (every Studio route of `/api/exports`;
+   the slides of a document, `/api/exports/document.html`, follow the gates of that document).
    Une exception nommee: `GET /api/reports/versions`, l'index des versions, accepte
    `dashboard` **ou** `roadmap`, parce qu'il sert les deux documents; ce qu'il liste reste
    borne aux squads que l'appelant voit aujourd'hui.
@@ -211,6 +212,10 @@ posee a la creation et absente de `OtdUpdate`, sans quoi un squad leader se
 donnerait un droit d'ecriture sur un objet du tribe leader en rebaptisant le sien.
 Le rattachement des jalons suit la meme regle, et chaque portee ecrit sa propre
 colonne (`otd_id` contre `squad_otd_id`).
+
+**Studio des exports.** Concevoir un modele: l'admin partout; un tribe leader sur sa tribe, ses squads et ses plateformes; un squad leader sur une squad qu'il dirige, en mode simple (le serveur refuse un ajout de section, 403). Un modele ne decide que de la mise en page: l'apercu et le rendu passent par les gates de module, de capacite et de perimetre de l'export du document, et le budget reste filtre. Les specifications sont validees par forme (types connus, bornes, couleurs `#rrggbb`, polices d'une liste fermee, aucun HTML), les fichiers par leur contenu (PNG, JPEG, GIF, `.pptx` sans macros, archive controlee avant ouverture, 12 Mo). Un fichier d'une autre tribe n'est ni lu ni reference. Tout est audite.
+
+**Rattacher un jalon a un OTD depuis le jalon.** Meme lien que la fenetre de l'OTD; un squad leader rattache a l'OTD management fixe sur sa squad ou qui lui est assigne, pas a un engagement de toute la tribe, et ne detache pas un lien qu'il n'aurait pas pu poser.
 
 **Co-leaders.** A squad has one named leader (`leader_user_id`, the identity an OTD is
 committed on) and any number of **co-leaders** (`squad_coleaders`) holding exactly the

@@ -239,21 +239,31 @@ def squad_dependents(squad_id: int, year: int | None = Query(default=None),
     assert_can_read_squad(user, squad)
     if year is None:
         year = reference_year(db)
+    from ..models import RoadmapDependency
+    from ..serializers import dependency_entries
+    listed = select(RoadmapDependency.item_id).where(
+        (RoadmapDependency.squad_id == squad_id) | (RoadmapDependency.tribe_id == squad.tribe_id))
     stmt = select(RoadmapItem).where(
         RoadmapItem.year == year,
         RoadmapItem.squad_id != squad_id,
         ((RoadmapItem.dependency_kind == "squad") & (RoadmapItem.dependency_squad_id == squad_id))
-        | ((RoadmapItem.dependency_kind == "tribe") & (RoadmapItem.dependency_tribe_id == squad.tribe_id)),
+        | ((RoadmapItem.dependency_kind == "tribe") & (RoadmapItem.dependency_tribe_id == squad.tribe_id))
+        | RoadmapItem.id.in_(listed),
     )
     out: list[DependentItemOut] = []
     for r in db.scalars(stmt).all():
         src = r.squad
+        entries = dependency_entries(r)
+        direct = any(e["kind"] == "squad" and e["squad_id"] == squad_id for e in entries)
+        via_tribe = any(e["kind"] == "tribe" and e["tribe_id"] == squad.tribe_id for e in entries)
+        if not (direct or via_tribe):
+            continue
         out.append(DependentItemOut(
             squad_id=r.squad_id,
             squad_name=src.name if src else "-",
             tribe_name=src.tribe.name if src and src.tribe else None,
             year=r.year, quarter=r.quarter, title=r.title, status=r.status,
-            via="squad" if r.dependency_kind == "squad" else "tribe",
+            via="squad" if direct else "tribe",
         ))
     out.sort(key=lambda d: (d.quarter, d.squad_name, d.title))
     return out
@@ -283,13 +293,15 @@ def export_squad_roadmap_pptx(squad_id: int, year: int | None = Query(default=No
 
     Gated by the ``squad_content``/``roadmap`` module and tribe scope. Returns 501
     if python-pptx is not installed."""
-    from ..report import render_roadmap_pptx
+    from .. import exportstore
     data, year = _roadmap_data(db, user, squad_id, year, lang)
     try:
-        pptxtpl.use(pptxtpl.get(db))
-        payload = render_roadmap_pptx(data)
+        payload, _name, _m = exportstore.render(
+            db, user, "roadmap", {"report": lambda: data}, chain=exportstore.chain_for(db, squad_id=squad_id),
+            lang=data.get("lang", "fr"), scope_name=data.get("scope_name", ""), year=year)
     except ImportError:
         raise HTTPException(status_code=501, detail="Génération PPTX indisponible (python-pptx non installé)")
+    db.commit()
     # Buffered artifact → plain Response so Content-Length is set (not chunked),
     # so a truncated download is detectable instead of silently corrupt.
     return Response(
@@ -420,6 +432,9 @@ def delete_squad(squad_id: int, db: Session = Depends(get_db), user: User = Depe
     for item in db.scalars(select(RoadmapItem).where(RoadmapItem.dependency_squad_id == squad_id,
                                                      RoadmapItem.squad_id != squad_id)).all():
         item.dependency_to_text(squad.name)
+    from ..models import RoadmapDependency
+    for dep in db.scalars(select(RoadmapDependency).where(RoadmapDependency.squad_id == squad_id)).all():
+        dep.kind, dep.text, dep.squad_id = "text", squad.name, None
     db.execute(delete(ReportSubscription).where(ReportSubscription.squad_id == squad_id))
     # A management commitment set on this squad belongs to the tribe: it loses its
     # squad, it does not go with it (the squad's own commitments do).

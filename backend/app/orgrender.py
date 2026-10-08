@@ -162,17 +162,31 @@ def render_org_pptx(roots: list[dict], scope_name: str, *, lang: str = "fr") -> 
     Uses _layout to assign each node a leaf-slot x and a depth, then scales box
     size / row height to fit everything on one 13.33x7.5in slide. Connectors are
     drawn first so the boxes sit on top; squad-bound boxes are status-coloured."""
+    prs = pptxtpl.new_deck()
+    org_deck(prs, roots, scope_name, lang=lang)["org"](None)
+    return pptxtpl.save_deck(prs)
+
+
+def org_deck(prs, roots: list[dict], scope_name: str, *, lang: str = "fr") -> dict:
+    """The org-chart section drawer bound to one deck."""
+    from .exportspec import block_on
+
+    def org_section(sec):
+        _org_slide(prs, roots, scope_name, lang, block_on(sec, "legend"), block_on(sec, "stamp"))
+
+    return {"org": org_section, "parts": {}}
+
+
+def _org_slide(prs, roots, scope_name, lang, legend_on=True, stamp_on=True):
     Presentation, Inches, Pt, Emu, RGBColor, PP_ALIGN, MSO_ANCHOR, MSO_SHAPE = _pptx_toolkit()
     from pptx.enum.shapes import MSO_CONNECTOR
+    _NAVY = pptxtpl.color("primary", globals()["_NAVY"])
 
     def rgb(h):
         return RGBColor.from_string(h.lstrip("#").upper())
 
     lang = _lang(lang)
     SLIDE_W, SLIDE_H = 13.333, 7.5
-    prs = pptxtpl.new_presentation()
-    prs.slide_width = Inches(SLIDE_W)
-    prs.slide_height = Inches(SLIDE_H)
     s = pptxtpl.add_slide(prs)
 
     # Header band
@@ -191,7 +205,7 @@ def render_org_pptx(roots: list[dict], scope_name: str, *, lang: str = "fr") -> 
         pe = box.text_frame.paragraphs[0]; pe.alignment = PP_ALIGN.CENTER
         re_ = pe.add_run(); re_.text = _T[lang]["no_org"]
         re_.font.size = Pt(_fs(16)); re_.font.color.rgb = rgb(_MUTED)
-        buf = io.BytesIO(); prs.save(buf); return buf.getvalue()
+        return
 
     # La legende et la date, en bas: une bordure verte ou orange ne s'explique
     # pas d'elle-meme, et une slide d'organigramme circule seule.
@@ -200,11 +214,12 @@ def render_org_pptx(roots: list[dict], scope_name: str, *, lang: str = "fr") -> 
     T = _T[lang]
     ly = 7.14
     lx = 0.4
-    lg = s.shapes.add_textbox(Inches(lx), Inches(ly), Inches(4.2), Inches(0.22))
-    lr = lg.text_frame.paragraphs[0].add_run(); lr.text = T["legend"]
-    lr.font.size = Pt(9); lr.font.color.rgb = rgb(_MUTED)
-    lx += 3.9
-    for st in ("on_track", "at_risk", "blocked"):
+    if legend_on:
+        lg = s.shapes.add_textbox(Inches(lx), Inches(ly), Inches(4.2), Inches(0.22))
+        lr = lg.text_frame.paragraphs[0].add_run(); lr.text = T["legend"]
+        lr.font.size = Pt(9); lr.font.color.rgb = rgb(_MUTED)
+        lx += 3.9
+    for st in (("on_track", "at_risk", "blocked") if legend_on else ()):
         sw = s.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(lx), Inches(ly + 0.03),
                                 Inches(0.26), Inches(0.15))
         sw.fill.solid(); sw.fill.fore_color.rgb = rgb(_STATUS_BG[st])
@@ -213,10 +228,11 @@ def render_org_pptx(roots: list[dict], scope_name: str, *, lang: str = "fr") -> 
         tr = tb.text_frame.paragraphs[0].add_run(); tr.text = T[st]
         tr.font.size = Pt(9); tr.font.color.rgb = rgb(_MUTED)
         lx += 0.4 + 0.075 * len(T[st]) + 0.3
-    gb = s.shapes.add_textbox(Inches(SLIDE_W - 4.4), Inches(ly), Inches(4.0), Inches(0.22))
-    gp = gb.text_frame.paragraphs[0]; gp.alignment = PP_ALIGN.RIGHT
-    gr = gp.add_run(); gr.text = T["gen"].format(d=fmt_datetime(datetime.now(timezone.utc), lang))
-    gr.font.size = Pt(9); gr.font.color.rgb = rgb(_MUTED)
+    if stamp_on:
+        gb = s.shapes.add_textbox(Inches(SLIDE_W - 4.4), Inches(ly), Inches(4.0), Inches(0.22))
+        gp = gb.text_frame.paragraphs[0]; gp.alignment = PP_ALIGN.RIGHT
+        gr = gp.add_run(); gr.text = T["gen"].format(d=fmt_datetime(datetime.now(timezone.utc), lang))
+        gr.font.size = Pt(9); gr.font.color.rgb = rgb(_MUTED)
 
     top, bottom = 1.2, 7.0
     left_m, right_m = 0.4, 0.4
@@ -400,7 +416,3 @@ def render_org_pptx(roots: list[dict], scope_name: str, *, lang: str = "fr") -> 
             p2 = tf.add_paragraph(); p2.alignment = PP_ALIGN.CENTER
             r2 = p2.add_run(); r2.text = fit_person(node["person_name"], fs2, item["depth"])
             r2.font.size = Pt(fs2); r2.font.color.rgb = rgb(_MUTED)
-
-    buf = io.BytesIO()
-    prs.save(buf)
-    return buf.getvalue()

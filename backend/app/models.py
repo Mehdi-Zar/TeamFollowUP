@@ -439,6 +439,12 @@ class RoadmapItem(Base):
                                                    foreign_keys=[squad_otd_id])
     initiative: Mapped["Initiative | None"] = relationship(foreign_keys=[initiative_id])
 
+    # Every dependency of the milestone (several squads, several tribes, free
+    # text), in the order they were given. The dependency_* columns above keep the
+    # first one, for the frozen submissions and the older API that read only one.
+    deps: Mapped[list["RoadmapDependency"]] = relationship(
+        back_populates="item", cascade="all, delete-orphan", order_by="RoadmapDependency.position")
+
     def dependency_to_text(self, label: str) -> None:
         """Turn a squad or tribe dependency into free text under ``label``, for
         when the target is deleted: the milestone still depends on that work, the
@@ -447,6 +453,27 @@ class RoadmapItem(Base):
         self.dependencies = self.dependencies or label
         self.dependency_squad_id = None
         self.dependency_tribe_id = None
+
+
+class RoadmapDependency(Base):
+    """One dependency of a milestone: another squad, a tribe, or something outside
+    the app (free text). A milestone can wait on several of each."""
+    __tablename__ = "roadmap_dependencies"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    item_id: Mapped[int] = mapped_column(ForeignKey("roadmap_items.id", ondelete="CASCADE"),
+                                         nullable=False, index=True)
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    kind: Mapped[str] = mapped_column(String(10), nullable=False)  # squad|tribe|text
+    squad_id: Mapped[int | None] = mapped_column(ForeignKey("squads.id", ondelete="SET NULL"),
+                                                 nullable=True, index=True)
+    tribe_id: Mapped[int | None] = mapped_column(ForeignKey("tribes.id", ondelete="SET NULL"),
+                                                 nullable=True, index=True)
+    text: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    item: Mapped["RoadmapItem"] = relationship(back_populates="deps")
+    squad: Mapped["Squad | None"] = relationship(foreign_keys=[squad_id])
+    tribe: Mapped["Tribe | None"] = relationship(foreign_keys=[tribe_id])
 
 
 class QuarterProgress(Base):
@@ -933,6 +960,115 @@ class DataSnapshot(Base):
     payload: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
 
     created_by: Mapped["User | None"] = relationship(foreign_keys=[created_by_user_id])
+
+
+# --------------------------------------------------------------------------
+# Studio des exports (docs/35): themes, files, templates, assignments
+# --------------------------------------------------------------------------
+class ExportAsset(Base):
+    """A file a template uses: a PowerPoint master (``pptx``), an image for a cover
+    or a free layout, or a PowerPoint whose slide a template imports. Owned by the
+    organisation (``tribe_id`` null) or by one tribe."""
+    __tablename__ = "export_assets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    kind: Mapped[str] = mapped_column(String(10), nullable=False)          # pptx | image
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    mime: Mapped[str] = mapped_column(String(100), nullable=False)
+    size: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    data: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    tribe_id: Mapped[int | None] = mapped_column(ForeignKey("tribes.id", ondelete="CASCADE"),
+                                                 nullable=True, index=True)
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+
+class ExportTheme(Base):
+    """How documents look, apart from what they say: a master from the asset
+    library, colours that replace the renderers' own, a font and its scale.
+    ``config`` = {"palette": {key: "#rrggbb"}, "font": str|None, "font_scale": float}."""
+    __tablename__ = "export_themes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    config: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    master_asset_id: Mapped[int | None] = mapped_column(
+        ForeignKey("export_assets.id", ondelete="SET NULL"), nullable=True)
+    tribe_id: Mapped[int | None] = mapped_column(ForeignKey("tribes.id", ondelete="CASCADE"),
+                                                 nullable=True, index=True)
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+
+class ExportTemplate(Base):
+    """A document template of the Studio, for one kind of document.
+
+    ``scope_type``/``scope_id`` say whose it is (global, a tribe, a squad, a
+    platform). ``mode``: ``root`` holds a full specification, ``derived`` holds
+    only its differences with ``parent_id`` (and follows it), ``detached`` is a
+    full copy that no longer follows anyone. ``draft`` is what the editor saves;
+    ``published_version_id`` is what the exports use. ``system`` marks the shipped
+    Standard templates, which cannot be edited or deleted."""
+    __tablename__ = "export_templates"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    doc_kind: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    scope_type: Mapped[str] = mapped_column(String(10), nullable=False, default="global")
+    scope_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    parent_id: Mapped[int | None] = mapped_column(ForeignKey("export_templates.id", ondelete="SET NULL"),
+                                                  nullable=True)
+    mode: Mapped[str] = mapped_column(String(10), nullable=False, default="root")
+    system: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    shared: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    draft: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    draft_locks: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    published_version_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    updated_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    versions: Mapped[list["ExportTemplateVersion"]] = relationship(
+        back_populates="template", cascade="all, delete-orphan",
+        order_by="ExportTemplateVersion.number")
+
+
+class ExportTemplateVersion(Base):
+    """A published state of a template: what the exports used from then on. Kept to
+    compare two versions and to restore an earlier one."""
+    __tablename__ = "export_template_versions"
+    __table_args__ = (UniqueConstraint("template_id", "number", name="uq_export_template_version"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    template_id: Mapped[int] = mapped_column(ForeignKey("export_templates.id", ondelete="CASCADE"),
+                                             nullable=False, index=True)
+    number: Mapped[int] = mapped_column(Integer, nullable=False)
+    spec: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    locks: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    comment: Mapped[str] = mapped_column(String(300), nullable=False, default="")
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    template: Mapped["ExportTemplate"] = relationship(back_populates="versions")
+
+
+class ExportAssignment(Base):
+    """Which template a scope uses for a kind of document. ``scope_key`` is
+    ``global``, ``tribe:<id>``, ``squad:<id>`` or ``platform:<id>``; the most
+    specific assignment wins (squad, then tribe, then global, then Standard)."""
+    __tablename__ = "export_assignments"
+    __table_args__ = (UniqueConstraint("doc_kind", "scope_key", name="uq_export_assignment"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    doc_kind: Mapped[str] = mapped_column(String(20), nullable=False)
+    scope_key: Mapped[str] = mapped_column(String(32), nullable=False)
+    template_id: Mapped[int] = mapped_column(ForeignKey("export_templates.id", ondelete="CASCADE"),
+                                             nullable=False)
+    updated_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
 
 
 # A password, role or status change ends the account's existing sessions,

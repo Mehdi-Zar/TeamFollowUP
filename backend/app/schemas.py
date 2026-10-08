@@ -161,6 +161,18 @@ class TribeOut(ORMModel):
 
 
 # ---------- Roadmap item (jalon) ----------
+class DependencyIn(BaseModel):
+    """One dependency of a milestone: a squad, a tribe, or free text."""
+    kind: DependencyKind
+    squad_id: Optional[int] = None
+    tribe_id: Optional[int] = None
+    text: Optional[str] = Field(default=None, max_length=500)
+
+
+class DependencyOut(DependencyIn):
+    label: Optional[str] = None  # the squad or tribe name, or the text
+
+
 class RoadmapItemCreate(BaseModel):
     """Fields to create a roadmap milestone; theme and release_stage are mandatory here."""
     squad_id: int
@@ -181,14 +193,22 @@ class RoadmapItemCreate(BaseModel):
     owner: Optional[str] = None
     status: RoadmapStatus = "on_track"
     display_order: int = 0
+    # The OTD this milestone delivers, management and squad, picked on the milestone
+    # itself (see RoadmapItemUpdate).
+    otd_id: Optional[int] = None
+    squad_otd_id: Optional[int] = None
+    # Every dependency; when given it replaces the single dependency_* fields.
+    dependency_list: Optional[list[DependencyIn]] = None
 
 
 class RoadmapItemUpdate(BaseModel):
     """Partial edit of a roadmap milestone.
 
-    Ni ``otd_id`` ni ``initiative_id`` n'y figurent: ces deux liens se posent du
-    cote de l'engagement et du cote de l'initiative, chacun a un seul endroit. Deux
-    ecrans qui posent le meme lien finissent par se contredire."""
+    ``otd_id`` (engagement management) et ``squad_otd_id`` (engagement de la
+    squad) se choisissent aussi depuis le jalon. Ce n'est pas un second lien: le
+    jalon et l'ecran de l'OTD ecrivent la meme colonne, donc ils ne peuvent pas se
+    contredire, ils montrent la meme chose de deux cotes. ``initiative_id``, lui,
+    reste pose du seul cote de l'initiative."""
     title: Optional[str] = None
     theme: Optional[str] = Field(default=None, min_length=1, max_length=120)
     release_stage: Optional[ReleaseStage] = None
@@ -206,6 +226,9 @@ class RoadmapItemUpdate(BaseModel):
     quarter: Optional[Quarter] = None
     status: Optional[RoadmapStatus] = None
     display_order: Optional[int] = None
+    otd_id: Optional[int] = None
+    squad_otd_id: Optional[int] = None
+    dependency_list: Optional[list[DependencyIn]] = None
 
 
 class RoadmapItemOut(ORMModel):
@@ -226,13 +249,16 @@ class RoadmapItemOut(ORMModel):
     dependency_squad_id: Optional[int] = None
     dependency_tribe_id: Optional[int] = None
     dependency_label: Optional[str] = None  # resolved display label (squad/tribe name or free text)
+    dependency_list: list[DependencyOut] = []  # every dependency, the first one mirrored above
     risks: Optional[str] = None
     owner: Optional[str] = None
     status: RoadmapStatus
     display_order: int
     initiative_id: Optional[int] = None  # set from the initiative side (tribe/admin)
-    otd_id: Optional[int] = None  # set only from the OTD side (tribe/admin)
+    otd_id: Optional[int] = None  # the management commitment it delivers
     otd_label: Optional[str] = None  # resolved OTD title
+    squad_otd_id: Optional[int] = None  # the squad's own commitment it delivers
+    squad_otd_label: Optional[str] = None
 
 
 # ---------- Initiative (tribe-level) & OTD ----------

@@ -36,6 +36,7 @@ const RoadmapPage = lazy(() => import("./pages/RoadmapPage"));
 const InitiativesPage = lazy(() => import("./pages/InitiativesPage"));
 const LeavesPage = lazy(() => import("./pages/LeavesPage"));
 const AccessRequestsPage = lazy(() => import("./pages/AccessRequestsPage"));
+const StudioPage = lazy(() => import("./pages/StudioPage"));
 import { PageChromeProvider } from "./components/pageChrome";
 
 /**
@@ -150,6 +151,7 @@ export default function App() {
         <Route path="/organigramme" element={<Section module="org" cap="org"><OrgPage /></Section>} />
 
         <Route path="/mes-squads" element={<Section cap="mysquads"><MySquadsPage /></Section>} />
+        <Route path="/exports" element={<Section cap="exports"><StudioPage /></Section>} />
         <Route path="/admin" element={<Protected adminPage><AdminPage /></Protected>} />
       </Route>
 

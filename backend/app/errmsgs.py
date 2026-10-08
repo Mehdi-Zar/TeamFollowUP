@@ -15,6 +15,37 @@ has an entry, so a new message cannot be forgotten.
 import re
 
 EN: dict[str, str] = {
+    # Rattacher un jalon a un OTD depuis le jalon.
+    "Ce jalon est rattaché à un OTD que vous ne gérez pas": "This milestone is linked to an OTD you do not manage",
+    "Cet OTD n'est pas celui de cette squad": "This OTD is not this squad's",
+    "Cet OTD est géré par le tribe leader": "This OTD is managed by the tribe leader",
+    "20 dépendances au plus par jalon": "20 dependencies at most per milestone",
+    # Studio des exports (docs/35).
+    "Archive refusée (trop d'entrées ou trop compressée)": "Archive refused (too many entries or too compressed)",
+    "Ce fichier est le masque d'un thème": "This file is the master of a theme",
+    "Ce fichier n'est pas un modèle d'export": "This file is not an export template",
+    "Ce modèle est d'un autre type de document": "This template is for another kind of document",
+    "Comparaison invalide": "Invalid comparison",
+    "En mode simple, on règle et on masque, on n'ajoute rien": "In simple mode you adjust and hide, you add nothing",
+    "Fichier introuvable": "File not found",
+    "Fichier trop volumineux (12 Mo au plus)": "File too large (12 MB at most)",
+    "Format refusé : PowerPoint .pptx, PNG, JPEG ou GIF": "Format refused: PowerPoint .pptx, PNG, JPEG or GIF",
+    "Importer un modèle est réservé aux tribe leaders": "Importing a template is for tribe leaders",
+    "Le modèle Standard ne se modifie pas : dérivez-en un": "The Standard template cannot be changed: derive one",
+    "Le modèle source est d'un autre type de document": "The source template is for another kind of document",
+    "Les présentations avec macros sont refusées": "Presentations with macros are refused",
+    "Les thèmes se gèrent au niveau de la tribe": "Themes are managed at tribe level",
+    "Modèle introuvable": "Template not found",
+    "Pas de modèle parent": "No parent template",
+    "Portée introuvable": "Scope not found",
+    "Portée invalide": "Invalid scope",
+    "Publiez le modèle avant de l'assigner": "Publish the template before assigning it",
+    "Thème introuvable": "Theme not found",
+    "Type de document inconnu": "Unknown document type",
+    "Un modèle de squad suit toujours son parent": "A squad template always follows its parent",
+    "Un thème commun à toute l'organisation est réservé à l'administrateur": "A theme for the whole organisation is for the administrator",
+    "Version introuvable": "Version not found",
+    "Vous ne pouvez pas modifier les modèles de cette portée": "You cannot change the templates of this scope",
     # Pentest remediation (authorization).
     "Mot de passe trop court : 12 caractères au moins": "Password too short: 12 characters at least",
     "Vous ne pouvez pas modifier les onglets de votre propre persona": "You cannot change the tabs of your own persona",
@@ -243,6 +274,10 @@ def _label(m: re.Match) -> dict:
 
 # Messages built with values. Named groups are reused in the English template.
 PATTERNS: list[tuple[re.Pattern, str]] = [
+    (re.compile(r"^Fichier joint refusé \((?P<err>.*)\)$", re.S), "Attached file refused ({err})"),
+    (re.compile(r"^Paramètre invalide : (?P<name>.+)$"), "Invalid parameter: {name}"),
+    (re.compile(r"^D'autres modèles en dérivent : (?P<names>.*)$", re.S), "Other templates derive from it: {names}"),
+    (re.compile(r"^Thème utilisé par : (?P<names>.*)$", re.S), "Theme used by: {names}"),
     (re.compile(r"^(?P<name>.+) n'a pas encore d'accès validé dans une tribe$"),
      "{name} has no validated access in a tribe yet"),
     (re.compile(r"^Le champ « (?P<label>.+?) » dépasse (?P<max>\d+) caractères \((?P<len>\d+)\)\.$"),

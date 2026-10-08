@@ -24,6 +24,7 @@ Risks, Future Evolution**.
 | [0014](0014-platform-is-the-steerco-reporting-unit.md) | La plateforme est l'unite de reporting du Steerco | Accepted |
 | [0015](0015-otd-has-two-scopes.md) | Un engagement OTD a deux portees, et deux liens vers les jalons | Accepted |
 | [0016](0016-a-version-is-a-day-replayed-from-frozen-submissions.md) | Une version est une journee, rejouee depuis les saisies figees | Accepted |
+| [0017](0017-templates-drive-the-renderers-and-the-preview-reads-the-deck.md) | Les modeles pilotent les renderers, et l'apercu lit le deck | Accepted |
 
 ## Dependency map
 

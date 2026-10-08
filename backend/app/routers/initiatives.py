@@ -203,6 +203,7 @@ def initiatives_html(tribe_id: int | None = Query(default=None), year: int | Non
 @router.get("/report.pptx")
 def initiatives_pptx(tribe_id: int | None = Query(default=None), year: int | None = Query(default=None),
                      lang: str | None = Query(default=None),
+                     template_id: int | None = Query(default=None),
                      db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """GET /api/initiatives/report.pptx: flat initiatives list as a branded deck.
 
@@ -215,14 +216,20 @@ def initiatives_pptx(tribe_id: int | None = Query(default=None), year: int | Non
     from ..generalconfig import get_general
     lang = lang or get_general(db).get("default_lang") or "fr"
     data = build_initiative_list(db, scope, year, lang)
+    from .. import exportstore
     try:
-        pptxtpl.use(pptxtpl.get(db))
-        payload = render_initiatives_pptx(data, lang=lang)
+        payload, filename, _m = exportstore.render(
+            db, user, "initiatives", {"initiatives": lambda: data},
+            chain=exportstore.chain_for(db, tribe_id=scope), lang=lang,
+            scope_name=data.get("scope_name", ""), year=data["year"], template_id=template_id, legacy_name=f'initiatives_{data["year"]}.pptx')
     except ImportError:
         raise HTTPException(status_code=501, detail="Génération PPTX indisponible (python-pptx non installé)")
+    except LookupError:
+        raise HTTPException(status_code=404, detail="Modèle introuvable")
+    db.commit()
     # Buffered artifact → plain Response so Content-Length is set (not chunked).
     return Response(
         content=payload,
         media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-        headers={"Content-Disposition": f'attachment; filename="initiatives_{data["year"]}.pptx"'},
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

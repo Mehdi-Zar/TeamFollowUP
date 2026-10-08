@@ -76,6 +76,7 @@ def export_html(tribe_id: int | None = Query(default=None),
 def export_pptx(tribe_id: int | None = Query(default=None),
                 node_ids: list[int] | None = Query(default=None),
                 lang: str | None = Query(default=None),
+                template_id: int | None = Query(default=None),
                 db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Render the org chart as a single-slide PPTX download.
 
@@ -86,11 +87,18 @@ def export_pptx(tribe_id: int | None = Query(default=None),
     tid = _resolve_tribe(user, tribe_id, db)
     roots, name = _tree_dicts(db, tid) if tid is not None else ([], "-")
     roots = _prune(roots, set(node_ids or []))
-    pptxtpl.use(pptxtpl.get(db))
-    payload = render_org_pptx(roots, name, lang=lang or "fr")
+    from .. import exportstore
+    from fastapi import HTTPException
+    try:
+        payload, filename, _m = exportstore.render(
+            db, user, "org", {"org": lambda: (roots, name)}, chain=exportstore.chain_for(db, tribe_id=tid),
+            lang=lang or "fr", scope_name=name, template_id=template_id, legacy_name=f"organigramme_{name}.pptx")
+    except LookupError:
+        raise HTTPException(status_code=404, detail="Modèle introuvable")
+    db.commit()
     # Buffered artifact → plain Response so Content-Length is set (not chunked).
     return Response(
         content=payload,
         media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-        headers={"Content-Disposition": f'attachment; filename="organigramme_{name}.pptx"'},
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

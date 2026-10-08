@@ -525,7 +525,7 @@ def test_report_config(payload: dict = Body(default=None), tribe_id: int | None 
     from ..mailbody import instance_lang
     from ..reportconfig import get_report
     from ..reportcommon import rt
-    from ..report import _file_base, build_report_data, local_now, render_pptx, report_mail
+    from ..report import _file_base, _studio_deck, build_report_data, local_now, render_pptx, report_mail
 
     tid = _report_tribe(db, user, tribe_id)
     to = (payload or {}).get("to") or user.email
@@ -547,7 +547,7 @@ def test_report_config(payload: dict = Body(default=None), tribe_id: int | None 
 
     def send(data: dict, scope: str) -> bool:
         try:
-            pptx_bytes = render_pptx(data) or b""
+            pptx_bytes = _studio_deck(db, data) or b""
         except Exception:
             pptx_bytes = b""
         subject = rt(lang, "subject", scope=scope, w=week) + " (test)"
@@ -616,7 +616,7 @@ def test_change_notify_config(payload: dict = Body(default=None), db: Session = 
     from ..models import Squad
     from ..changenotify import _notice, _EVENT_LABEL
     from ..mailbody import instance_lang
-    from ..report import _file_base, build_report_data, local_now, render_pptx, report_mail
+    from ..report import _file_base, _studio_deck, build_report_data, local_now, render_pptx, report_mail
 
     to = (payload or {}).get("to") or admin.email
     squad_id = (payload or {}).get("squad_id")
@@ -632,7 +632,7 @@ def test_change_notify_config(payload: dict = Body(default=None), db: Session = 
     pptx_bytes = b""
     try:
         pptxtpl.use(pptxtpl.get(db))
-        pptx_bytes = render_pptx(data) or b""
+        pptx_bytes = _studio_deck(db, data) or b""
     except Exception:
         pass
     now = utcnow()

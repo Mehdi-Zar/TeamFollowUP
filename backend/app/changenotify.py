@@ -290,8 +290,9 @@ def _send(db, squad, batch: dict, now: datetime) -> bool | None:
     pptx = b""
     if cfg.get("attach_pptx"):
         try:
+            from .exportstore import render_report
             pptxtpl.use(pptxtpl.get(db))
-            pptx = render_pptx(data) or b""
+            pptx = render_report(db, data) or b""
         except Exception:
             pptx = b""
     tribe = squad.tribe.name if squad.tribe else None

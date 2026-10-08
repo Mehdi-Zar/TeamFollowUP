@@ -34,6 +34,7 @@ import {
   IconLeave,
   IconOrg,
   IconRoadmap,
+  IconStudio,
   IconTribes,
 } from "./icons";
 
@@ -63,6 +64,10 @@ const NAV: NavItem[] = [
   { to: "/conges", labelKey: "nav.leaves", titleKey: "nav.leaves", Icon: IconLeave, visible: () => true, module: "leaves", cap: "leaves" },
   { to: "/mes-squads", labelKey: "nav.mysquads", titleKey: "mysquads.title", Icon: IconTribes, visible: () => true, cap: "mysquads" },
   { to: "/acces", labelKey: "nav.access", titleKey: "access.title", Icon: IconAccess, visible: () => true },
+  // Studio des exports: opened per persona (capability "exports", on by default for
+  // the administrator and tribe leaders). The server says what each may change.
+  { to: "/exports", labelKey: "nav.studio", titleKey: "studio.title", Icon: IconStudio,
+    visible: () => true, cap: "exports" },
   { to: "/admin", labelKey: "nav.admin", titleKey: "nav.admin", Icon: IconAdmin, visible: canSeeAdmin },
 ];
 

@@ -53,7 +53,8 @@ isolation beyond tribe scoping, mobile native apps.
 | Comitologie (committees) | `committees` (off by default) | via reporting | squad leaders declare recurring governance meetings; tribe-leader oversight |
 | Steerco (steering committee) | `steerco` (off by default) | via reporting / `dashboard` | one slide per **platform**, fed by one or more squads, each item owned by one of them; monthly snapshot → auto-built KPI one-pager (HTML/PPTX), see [15](15-steerco.md) |
 | My squads | - | `mysquads` (navigation only, see [05](05-security.md)) | management for tribe/squad leaders; the actions are guarded by role and ownership, not by the capability |
-| Exports (HTML/PPTX) | via section modules | via section gates | dashboard, weekly, roadmap & dependencies decks (`/api/reports/*`) |
+| Exports (HTML/PPTX) | via section modules | via section gates | dashboard, weekly, roadmap & dependencies decks (`/api/reports/*`); each deck laid out by its scope's template |
+| Studio des exports | - | `exports` (on by default for admin and tribe leader) | templates per scope (organisation, tribe, squad, platform) with live preview, versions, locks, themes and files; what one changes follows the role (squad leader: simple mode), see [35](35-studio-des-exports.md) |
 | Weekly report (HTML/PPTX/email) | `review.weekly_report` | - | scheduled + on-demand |
 | Notifications | `notifications` (inapp/email) | - | bell + preferences |
 | Leave / absences | `leaves` (+overlap_alert) | `leaves` | team calendar, per-tribe approval, CSV; visible to all (tribe-scoped) |

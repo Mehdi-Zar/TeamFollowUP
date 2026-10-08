@@ -35,12 +35,60 @@ FONT_SCALE = 1.15
 
 
 def font_size(size: float) -> float:
-    """Une taille de police, apres le facteur commun a tous les decks."""
-    return round(float(size) * FONT_SCALE, 1)
+    """Une taille de police, apres le facteur du theme actif (FONT_SCALE par defaut)."""
+    return round(float(size) * font_scale(), 1)
 
 
 # The template bytes to build the current request's decks on (None = default deck).
 _current: ContextVar[bytes | None] = ContextVar("pptx_template_current", default=None)
+
+# Le theme du Studio des exports pour la requete en cours: couleurs qui remplacent
+# celles des renderers, echelle et nom de police. Vide = le rendu livre, a l'octet pres.
+_theme: ContextVar[dict] = ContextVar("pptx_theme_current", default={})
+
+
+def use_theme(theme: dict | None) -> None:
+    """Pose le theme des decks de la requete en cours (None ou {} = rendu livre)."""
+    _theme.set(dict(theme or {}))
+
+
+def theme() -> dict:
+    """Le theme actif (copie)."""
+    return dict(_theme.get())
+
+
+def font_scale() -> float:
+    """Le facteur de police du theme actif, FONT_SCALE sans theme."""
+    try:
+        v = float(_theme.get().get("font_scale") or FONT_SCALE)
+    except (TypeError, ValueError):
+        v = FONT_SCALE
+    return max(0.7, min(1.6, v))
+
+
+def font_name() -> str | None:
+    """La police imposee par le theme, ou None pour garder celle du masque."""
+    return _theme.get().get("font") or None
+
+
+def color(key: str, default: str) -> str:
+    """Une couleur du theme (``#rrggbb``) ou ``default`` quand le theme n'en dit rien."""
+    v = (_theme.get().get("palette") or {}).get(key)
+    return v if isinstance(v, str) and len(v) == 7 and v.startswith("#") else default
+
+
+def palette(base: dict[str, str], mapping: dict[str, str]) -> dict[str, str]:
+    """``base`` (les couleurs d'un renderer) avec, pour chaque cle de ``mapping``,
+    la couleur du theme qui la remplace quand le theme en fixe une."""
+    return {k: (color(mapping[k], v) if k in mapping else v) for k, v in base.items()}
+
+
+# Les cles de palette d'un theme, et ce qu'elles remplacent dans les renderers.
+THEME_KEYS = ("primary", "primary_deep", "accent", "green", "orange", "red",
+              "ink", "muted", "line", "card", "background", "zebra")
+BRAND_MAP = {"navy": "primary", "navy_deep": "primary_deep", "accent": "accent",
+             "green": "green", "orange": "orange", "red": "red", "ink": "ink",
+             "muted": "muted", "card": "card", "line": "line", "zebra": "zebra"}
 
 
 # --------------------------------------------------------------------------
@@ -182,3 +230,51 @@ def add_slide(prs):
         el = ph._element
         el.getparent().remove(el)
     return slide
+
+
+# --------------------------------------------------------------------------
+# Deck lifecycle shared by every renderer and by the Studio engine
+# --------------------------------------------------------------------------
+SLIDE_W_IN, SLIDE_H_IN = 13.333, 7.5
+
+
+def new_deck():
+    """Un deck 16:9 vide sur le masque actif: le point de depart de tous les exports."""
+    from pptx.util import Inches
+    prs = new_presentation()
+    prs.slide_width = Inches(SLIDE_W_IN)
+    prs.slide_height = Inches(SLIDE_H_IN)
+    return prs
+
+
+def _runs(shapes):
+    """Every text run of these shapes, inside groups and table cells too."""
+    for sh in shapes:
+        if getattr(sh, "shape_type", None) == 6:          # MSO_SHAPE_TYPE.GROUP
+            yield from _runs(sh.shapes)
+            continue
+        if getattr(sh, "has_text_frame", False) and sh.has_text_frame:
+            for p in sh.text_frame.paragraphs:
+                yield from p.runs
+        if getattr(sh, "has_table", False) and sh.has_table:
+            for row in sh.table.rows:
+                for c in row.cells:
+                    for p in c.text_frame.paragraphs:
+                        yield from p.runs
+
+
+def apply_font(prs, name: str | None) -> None:
+    """Impose une police a tout le texte du deck (le theme du Studio en choisit une)."""
+    if not name:
+        return
+    for slide in prs.slides:
+        for r in _runs(slide.shapes):
+            r.font.name = name
+
+
+def save_deck(prs) -> bytes:
+    """Le deck en octets, apres la police du theme actif."""
+    apply_font(prs, font_name())
+    buf = io.BytesIO()
+    prs.save(buf)
+    return buf.getvalue()

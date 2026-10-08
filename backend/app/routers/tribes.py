@@ -211,6 +211,9 @@ def delete_tribe(tribe_id: int, db: Session = Depends(get_db), admin: User = Dep
         lv.tribe_id = None
     for item in db.scalars(select(RoadmapItem).where(RoadmapItem.dependency_tribe_id == tribe_id)).all():
         item.dependency_to_text(tribe.name)
+    from ..models import RoadmapDependency
+    for dep in db.scalars(select(RoadmapDependency).where(RoadmapDependency.tribe_id == tribe_id)).all():
+        dep.kind, dep.text, dep.tribe_id = "text", tribe.name, None
     # Org boxes point at their parent: unlink them first, the delete has no order.
     db.execute(update(OrgNode).where(OrgNode.tribe_id == tribe_id).values(parent_id=None))
     for row in db.scalars(select(OrgNode).where(OrgNode.tribe_id == tribe_id)).all():

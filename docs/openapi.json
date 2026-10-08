@@ -3,7 +3,7 @@
   "info": {
     "title": "TeamFollowUP",
     "description": "Outil de pilotage de tribe : consolidation, drill-down, saisie, organigramme, exports.",
-    "version": "2.6.0"
+    "version": "3.0.0"
   },
   "paths": {
     "/api/auth/config": {
@@ -1800,6 +1800,22 @@
                 }
               ],
               "title": "Lang"
+            }
+          },
+          {
+            "name": "template_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Template Id"
             }
           }
         ],
@@ -5280,6 +5296,22 @@
               ],
               "title": "As Of"
             }
+          },
+          {
+            "name": "template_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Template Id"
+            }
           }
         ],
         "responses": {
@@ -5568,6 +5600,22 @@
               ],
               "title": "As Of"
             }
+          },
+          {
+            "name": "template_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Template Id"
+            }
           }
         ],
         "responses": {
@@ -5855,6 +5903,22 @@
                 }
               ],
               "title": "As Of"
+            }
+          },
+          {
+            "name": "template_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Template Id"
             }
           }
         ],
@@ -6174,6 +6238,22 @@
               "type": "string",
               "default": "all",
               "title": "Mode"
+            }
+          },
+          {
+            "name": "template_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Template Id"
             }
           }
         ],
@@ -6814,6 +6894,22 @@
                 }
               ],
               "title": "Lang"
+            }
+          },
+          {
+            "name": "template_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Template Id"
             }
           }
         ],
@@ -9131,6 +9227,22 @@
               ],
               "title": "Chart Kpis"
             }
+          },
+          {
+            "name": "template_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Template Id"
+            }
           }
         ],
         "responses": {
@@ -10280,6 +10392,1347 @@
         }
       }
     },
+    "/api/exports/catalog": {
+      "get": {
+        "tags": [
+          "exports"
+        ],
+        "summary": "Catalog",
+        "description": "GET /api/exports/catalog: sections, blocks, widgets, parameters, fonts, and\nwhere the caller may design.",
+        "operationId": "catalog_api_exports_catalog_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/exports/templates": {
+      "get": {
+        "tags": [
+          "exports"
+        ],
+        "summary": "List Templates",
+        "description": "GET /api/exports/templates: the templates the caller can read (Standard,\nshared ones, and those of their scopes), newest first within each kind.",
+        "operationId": "list_templates_api_exports_templates_get",
+        "parameters": [
+          {
+            "name": "doc_kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Doc Kind"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "exports"
+        ],
+        "summary": "Create Template",
+        "description": "POST /api/exports/templates: a new template at a scope, derived from (or\ncopied from) an existing one, or from Standard. A squad leader may only derive.",
+        "operationId": "create_template_api_exports_templates_post",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/exports/templates/{tid}": {
+      "get": {
+        "tags": [
+          "exports"
+        ],
+        "summary": "Get Template",
+        "description": "GET /api/exports/templates/{id}: the template, its draft and published\nspecifications, its parent's, what of it is locked or orphaned, its versions.",
+        "operationId": "get_template_api_exports_templates__tid__get",
+        "parameters": [
+          {
+            "name": "tid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Tid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "exports"
+        ],
+        "summary": "Save Template",
+        "description": "PUT /api/exports/templates/{id}: save the draft (the full specification; a\nderived template keeps only its differences). Exports keep the published version.",
+        "operationId": "save_template_api_exports_templates__tid__put",
+        "parameters": [
+          {
+            "name": "tid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Tid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "exports"
+        ],
+        "summary": "Delete Template",
+        "description": "DELETE /api/exports/templates/{id}: refused while other templates derive from\nit; its assignments go with it (those scopes fall back to the next one).",
+        "operationId": "delete_template_api_exports_templates__tid__delete",
+        "parameters": [
+          {
+            "name": "tid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Tid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/exports/templates/{tid}/publish": {
+      "post": {
+        "tags": [
+          "exports"
+        ],
+        "summary": "Publish Template",
+        "description": "POST /api/exports/templates/{id}/publish: the draft becomes the version the\nexports use, and the templates derived from this one follow it.",
+        "operationId": "publish_template_api_exports_templates__tid__publish_post",
+        "parameters": [
+          {
+            "name": "tid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Tid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "default": {},
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/exports/templates/{tid}/detach": {
+      "post": {
+        "tags": [
+          "exports"
+        ],
+        "summary": "Detach Template",
+        "description": "POST /api/exports/templates/{id}/detach: stop following the parent; the\ntemplate keeps its current look as a full copy.",
+        "operationId": "detach_template_api_exports_templates__tid__detach_post",
+        "parameters": [
+          {
+            "name": "tid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Tid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/exports/templates/{tid}/restore": {
+      "post": {
+        "tags": [
+          "exports"
+        ],
+        "summary": "Restore Version",
+        "description": "POST /api/exports/templates/{id}/restore {version_id}: the draft goes back to\nthat version (publish it to make it the exported one).",
+        "operationId": "restore_version_api_exports_templates__tid__restore_post",
+        "parameters": [
+          {
+            "name": "tid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Tid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/exports/templates/{tid}/compare": {
+      "get": {
+        "tags": [
+          "exports"
+        ],
+        "summary": "Compare",
+        "description": "GET /api/exports/templates/{id}/compare?a=&b=: two states of a template\n(``draft``, ``published``, ``parent`` or a version id) and what differs.",
+        "operationId": "compare_api_exports_templates__tid__compare_get",
+        "parameters": [
+          {
+            "name": "tid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Tid"
+            }
+          },
+          {
+            "name": "a",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "published",
+              "title": "A"
+            }
+          },
+          {
+            "name": "b",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "draft",
+              "title": "B"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/exports/templates/{tid}/file": {
+      "get": {
+        "tags": [
+          "exports"
+        ],
+        "summary": "Export Template File",
+        "description": "GET /api/exports/templates/{id}/file: the published template as one JSON file\n(its specification, its theme and every file it uses), to load in another\ninstance (test, then production).",
+        "operationId": "export_template_file_api_exports_templates__tid__file_get",
+        "parameters": [
+          {
+            "name": "tid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Tid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/exports/templates/import": {
+      "post": {
+        "tags": [
+          "exports"
+        ],
+        "summary": "Import Template File",
+        "description": "POST /api/exports/templates/import {scope_type, scope_id, file}: create a\ntemplate (and its theme and files) from an exported file. Everything is\nvalidated as if typed in the editor.",
+        "operationId": "import_template_file_api_exports_templates_import_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "type": "object",
+                "title": "Payload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/exports/assignments": {
+      "get": {
+        "tags": [
+          "exports"
+        ],
+        "summary": "List Assignments",
+        "description": "GET /api/exports/assignments: which template each scope uses.",
+        "operationId": "list_assignments_api_exports_assignments_get",
+        "parameters": [
+          {
+            "name": "doc_kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Doc Kind"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "exports"
+        ],
+        "summary": "Set Assignment",
+        "description": "PUT /api/exports/assignments {doc_kind, scope_type, scope_id, template_id|null}:\nthe template a scope uses (null: back to the next scope up).",
+        "operationId": "set_assignment_api_exports_assignments_put",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/exports/effective": {
+      "get": {
+        "tags": [
+          "exports"
+        ],
+        "summary": "Effective Spec",
+        "description": "GET /api/exports/effective: the layout a document of this scope uses (the\npublished specification of its template), the starting point of a one-off\nadjustment from the Export menu. A layout, never data: open to everyone.",
+        "operationId": "effective_spec_api_exports_effective_get",
+        "parameters": [
+          {
+            "name": "doc_kind",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Doc Kind"
+            }
+          },
+          {
+            "name": "tribe_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tribe Id"
+            }
+          },
+          {
+            "name": "squad_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Squad Id"
+            }
+          },
+          {
+            "name": "platform_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Platform Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/exports/themes": {
+      "get": {
+        "tags": [
+          "exports"
+        ],
+        "summary": "List Themes",
+        "description": "GET /api/exports/themes: the organisation's themes and the caller's tribe's.",
+        "operationId": "list_themes_api_exports_themes_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "exports"
+        ],
+        "summary": "Create Theme",
+        "operationId": "create_theme_api_exports_themes_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "type": "object",
+                "title": "Payload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/exports/themes/{theme_id}": {
+      "put": {
+        "tags": [
+          "exports"
+        ],
+        "summary": "Update Theme",
+        "operationId": "update_theme_api_exports_themes__theme_id__put",
+        "parameters": [
+          {
+            "name": "theme_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Theme Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "exports"
+        ],
+        "summary": "Delete Theme",
+        "operationId": "delete_theme_api_exports_themes__theme_id__delete",
+        "parameters": [
+          {
+            "name": "theme_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Theme Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/exports/assets": {
+      "get": {
+        "tags": [
+          "exports"
+        ],
+        "summary": "List Assets",
+        "description": "GET /api/exports/assets: the files the caller's templates may use.",
+        "operationId": "list_assets_api_exports_assets_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "exports"
+        ],
+        "summary": "Upload Asset",
+        "description": "POST /api/exports/assets: a PowerPoint (master or slide to import) or an\nimage (PNG, JPEG, GIF), 12 MB at most, checked by content not by name.",
+        "operationId": "upload_asset_api_exports_assets_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_asset_api_exports_assets_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/exports/assets/{asset_id}/raw": {
+      "get": {
+        "tags": [
+          "exports"
+        ],
+        "summary": "Asset Raw",
+        "operationId": "asset_raw_api_exports_assets__asset_id__raw_get",
+        "parameters": [
+          {
+            "name": "asset_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Asset Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/exports/assets/{asset_id}/slides": {
+      "get": {
+        "tags": [
+          "exports"
+        ],
+        "summary": "Asset Slides",
+        "description": "GET /api/exports/assets/{id}/slides: the slides of a PowerPoint file, with\ntheir first words, to pick the one a template imports.",
+        "operationId": "asset_slides_api_exports_assets__asset_id__slides_get",
+        "parameters": [
+          {
+            "name": "asset_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Asset Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/exports/assets/{asset_id}": {
+      "delete": {
+        "tags": [
+          "exports"
+        ],
+        "summary": "Delete Asset",
+        "operationId": "delete_asset_api_exports_assets__asset_id__delete",
+        "parameters": [
+          {
+            "name": "asset_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Asset Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/exports/preview": {
+      "post": {
+        "tags": [
+          "exports"
+        ],
+        "summary": "Preview",
+        "description": "POST /api/exports/preview {doc_kind, context, spec | template_id [+draft]}: the document as HTML slides, drawn from the very deck the export\nwould save, with the readability checks and what the render had to say.",
+        "operationId": "preview_api_exports_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "type": "object",
+                "title": "Payload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/exports/render": {
+      "post": {
+        "tags": [
+          "exports"
+        ],
+        "summary": "Render Document",
+        "description": "POST /api/exports/render?fmt=pptx|html: the document itself, laid out by the\ngiven specification or template.",
+        "operationId": "render_document_api_exports_render_post",
+        "parameters": [
+          {
+            "name": "fmt",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "pptx",
+              "title": "Fmt"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/exports/document.html": {
+      "get": {
+        "tags": [
+          "exports"
+        ],
+        "summary": "Document Html",
+        "description": "GET /api/exports/document.html: the document's slides as a web page (the\nsame deck as the PowerPoint, drawn in the browser), through its template.",
+        "operationId": "document_html_api_exports_document_html_get",
+        "parameters": [
+          {
+            "name": "doc_kind",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Doc Kind"
+            }
+          },
+          {
+            "name": "template_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Template Id"
+            }
+          },
+          {
+            "name": "tribe_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tribe Id"
+            }
+          },
+          {
+            "name": "squad_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Squad Id"
+            }
+          },
+          {
+            "name": "squad_ids",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Squad Ids"
+            }
+          },
+          {
+            "name": "platform_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Platform Id"
+            }
+          },
+          {
+            "name": "year",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Year"
+            }
+          },
+          {
+            "name": "lang",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Lang"
+            }
+          },
+          {
+            "name": "as_of",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "As Of"
+            }
+          },
+          {
+            "name": "period",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Period"
+            }
+          },
+          {
+            "name": "mode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Mode"
+            }
+          },
+          {
+            "name": "node_ids",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Node Ids"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/health": {
       "get": {
         "tags": [
@@ -10655,6 +12108,31 @@
         },
         "type": "object",
         "title": "Body_trust_add_ca_api_admin_trust_store_ca_post"
+      },
+      "Body_upload_asset_api_exports_assets_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "format": "binary",
+            "title": "File"
+          },
+          "tribe_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tribe Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_asset_api_exports_assets_post"
       },
       "Body_upsert_history_api_steerco_platform__platform_id__history_put": {
         "properties": {
@@ -11122,6 +12600,122 @@
         ],
         "title": "DashboardSummary",
         "description": "Aggregate headline figures across all squads in scope."
+      },
+      "DependencyIn": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "text",
+              "squad",
+              "tribe"
+            ],
+            "title": "Kind"
+          },
+          "squad_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Squad Id"
+          },
+          "tribe_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tribe Id"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "title": "DependencyIn",
+        "description": "One dependency of a milestone: a squad, a tribe, or free text."
+      },
+      "DependencyOut": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "text",
+              "squad",
+              "tribe"
+            ],
+            "title": "Kind"
+          },
+          "squad_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Squad Id"
+          },
+          "tribe_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tribe Id"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "title": "DependencyOut"
       },
       "DependentItemOut": {
         "properties": {
@@ -13948,6 +15542,42 @@
             "type": "integer",
             "title": "Display Order",
             "default": 0
+          },
+          "otd_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Otd Id"
+          },
+          "squad_otd_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Squad Otd Id"
+          },
+          "dependency_list": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/DependencyIn"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dependency List"
           }
         },
         "type": "object",
@@ -14109,6 +15739,14 @@
             ],
             "title": "Dependency Label"
           },
+          "dependency_list": {
+            "items": {
+              "$ref": "#/components/schemas/DependencyOut"
+            },
+            "type": "array",
+            "title": "Dependency List",
+            "default": []
+          },
           "risks": {
             "anyOf": [
               {
@@ -14177,6 +15815,28 @@
               }
             ],
             "title": "Otd Label"
+          },
+          "squad_otd_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Squad Otd Id"
+          },
+          "squad_otd_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Squad Otd Label"
           }
         },
         "type": "object",
@@ -14407,11 +16067,47 @@
               }
             ],
             "title": "Display Order"
+          },
+          "otd_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Otd Id"
+          },
+          "squad_otd_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Squad Otd Id"
+          },
+          "dependency_list": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/DependencyIn"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dependency List"
           }
         },
         "type": "object",
         "title": "RoadmapItemUpdate",
-        "description": "Partial edit of a roadmap milestone.\n\nNi ``otd_id`` ni ``initiative_id`` n'y figurent: ces deux liens se posent du\ncote de l'engagement et du cote de l'initiative, chacun a un seul endroit. Deux\necrans qui posent le meme lien finissent par se contredire."
+        "description": "Partial edit of a roadmap milestone.\n\n``otd_id`` (engagement management) et ``squad_otd_id`` (engagement de la\nsquad) se choisissent aussi depuis le jalon. Ce n'est pas un second lien: le\njalon et l'ecran de l'OTD ecrivent la meme colonne, donc ils ne peuvent pas se\ncontredire, ils montrent la meme chose de deux cotes. ``initiative_id``, lui,\nreste pose du seul cote de l'initiative."
       },
       "SnapshotMeta": {
         "properties": {

@@ -1484,6 +1484,16 @@ def _render_pptx(squads: list[dict], period: str, L: dict) -> bytes:
     right KPI chart over incidents chart, bottom events). Built on the uploaded export
     template when one is configured (Admin), so slides carry the org's branding."""
     from .. import pptxtpl
+    prs = pptxtpl.new_deck()
+    steerco_deck(prs, squads, period, L)["platform"](None)
+    return pptxtpl.save_deck(prs)
+
+
+def steerco_deck(prs, squads: list[dict], period: str, L: dict) -> dict:
+    """The platform section drawer bound to one deck (one slide per platform), and
+    each panel of the one-pager as a part a free layout can place in any frame."""
+    from .. import pptxtpl
+    from ..exportspec import block_on, sparam
     from pptx.chart.data import CategoryChartData
     from pptx.dml.color import RGBColor
     from pptx.enum.chart import XL_CHART_TYPE
@@ -1494,6 +1504,8 @@ def _render_pptx(squads: list[dict], period: str, L: dict) -> bytes:
     def rgb(h):
         h = (h or "#000000").lstrip("#")
         return RGBColor(int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
+
+    NAVY = pptxtpl.color("primary", globals()["NAVY"])
 
     def add_text(slide, x, y, w, h, text, size=12, bold=False, color="#1B2A3D"):
         tf = slide.shapes.add_textbox(x, y, w, h).text_frame
@@ -1951,9 +1963,6 @@ def _render_pptx(squads: list[dict], period: str, L: dict) -> bytes:
             r2.text = L["expected_from"].format(names=", ".join(d["missing"]))
             r2.font.size = Pt(_fs(11)); r2.font.bold = True; r2.font.color.rgb = rgb("#9C7212")
 
-    prs = pptxtpl.new_presentation()
-    prs.slide_width = Inches(13.333)
-    prs.slide_height = Inches(7.5)
     # Leave the uploaded template's footer band (logo, page number) uncovered so it
     # actually shows through the one-pager. 0 for the plain default deck (full slide).
     foot = _footer_reserve(prs)
@@ -1966,37 +1975,11 @@ def _render_pptx(squads: list[dict], period: str, L: dict) -> bytes:
     year = period.split("-")[0]
     kpi_sub = L["kpi_chart_sub"].format(year=year)
     inc_sub = L["inc_chart_sub"].format(year=year)
-    for s in squads:
-        slide = pptxtpl.add_slide(prs)
-        d = s["data"] or {}
-        # Compact, discreet header: navy name (left) + muted period (right).
-        # Le corps descend d'un cran pour un nom long avant de le couper: la
-        # place existe, le nom etait coupe vers 50 caracteres.
-        pname = s["squad_name"] or ""
-        for t_fs in (19, 17, 15):
-            t_cpl = int(8.8 / (0.0068 * _fs(t_fs)))
-            if len(pname) <= t_cpl:
-                break
-        add_text(slide, Inches(LM), Inches(0.26), Inches(8.8), Inches(0.4),
-                 _cut(pname, t_cpl), size=t_fs, bold=True, color=NAVY)
-        pmeta = slide.shapes.add_textbox(Inches(13.333 - LM - 4), Inches(0.32), Inches(4), Inches(0.3)).text_frame
-        pp = pmeta.paragraphs[0]; pp.alignment = PP_ALIGN.RIGHT
-        rp = pp.add_run(); rp.text = _period_long(period, L); rp.font.size = Pt(_fs(12)); rp.font.bold = True; rp.font.color.rgb = rgb("#6B7C90")
 
-        # 2x2 grid: row 1 = KPIs | KPI chart, row 2 = SLA | incidents chart. When a
-        # template reserves a footer, compress the grid + events to sit above it.
-        gy, vg = 0.92, 0.18
-        if foot:
-            eh = 1.15
-            ey = 7.5 - foot - 0.08 - eh
-            gb = ey - 0.16
-        else:
-            gb, ey, eh = 5.9, 6.06, 1.28
-        row_h = (gb - gy - vg) / 2
-        r1y, r2y = gy, gy + row_h + vg
-
-        # Row 1 left: KPI panel. Users (hero) centred on top, the rest in a row below.
-        bx, by, bw, bh = titled_panel(slide, LX, r1y, COLW, row_h, L["key_figures"])
+    # ----- the panels, each in a frame (inches) ------------------------------------
+    def panel_kpis(slide, d, x, y, w, h):
+        """Row 1 left: KPI panel. Users (hero) centred on top, the rest in a row below."""
+        bx, by, bw, bh = titled_panel(slide, x, y, w, h, L["key_figures"])
         kpis = d.get("kpis") or []
         if not kpis:
             not_filled(slide, bx, by, bw, d)
@@ -2024,36 +2007,111 @@ def _render_pptx(squads: list[dict], period: str, L: dict) -> bytes:
                 cw = (bw - cg * (len(rest) - 1)) / len(rest)
                 for i, k in enumerate(rest):
                     kpi_card(slide, Inches(bx + i * (cw + cg)), Inches(ry), Inches(cw), Inches(rh), k)
-        # Row 1 right: KPI chart.
-        bx, by, bw, bh = titled_panel(slide, RX, r1y, COLW, row_h, L["kpi_chart"], kpi_sub)
+
+    def panel_kpi_chart(slide, d, x, y, w, h):
+        """Row 1 right: KPI chart."""
+        bx, by, bw, bh = titled_panel(slide, x, y, w, h, L["kpi_chart"], kpi_sub)
         kpi_chart(slide, Inches(bx), Inches(by), Inches(bw), Inches(bh), d.get("kpi_chart") or {})
 
-        # Row 2 left: SLA table.
-        bx, by, bw, bh = titled_panel(slide, LX, r2y, COLW, row_h, L["sla"])
+    def panel_sla(slide, d, x, y, w, h):
+        """Row 2 left: SLA table."""
+        bx, by, bw, bh = titled_panel(slide, x, y, w, h, L["sla"])
         if (d.get("sla") or {}).get("services"):
             sla_table(slide, Inches(bx), Inches(by), Inches(bw), bh, d.get("sla") or {})
         else:
             add_text(slide, Inches(bx), Inches(by), Inches(bw), Inches(0.3), L["no_sla"], size=11,
                      color="#6B7C90")
-        # Row 2 right: incidents chart.
-        bx, by, bw, bh = titled_panel(slide, RX, r2y, COLW, row_h, L["inc_chart"], inc_sub)
+
+    def panel_incidents(slide, d, x, y, w, h):
+        """Row 2 right: incidents chart."""
+        bx, by, bw, bh = titled_panel(slide, x, y, w, h, L["inc_chart"], inc_sub)
         line_chart(slide, Inches(bx), Inches(by), Inches(bw), Inches(bh), d.get("incidents_chart") or {})
 
-        # Bottom: events row, same two columns (ey/eh set above with the footer reserve).
-        bx, by, bw, bh = titled_panel(slide, LX, ey, COLW, eh, L["last_events"])
+    def panel_last_events(slide, d, x, y, w, h):
+        bx, by, bw, bh = titled_panel(slide, x, y, w, h, L["last_events"])
         events(slide, Inches(bx), Inches(by), Inches(bw), Inches(bh), d.get("last_events") or [])
-        bx, by, bw, bh = titled_panel(slide, RX, ey, COLW, eh, L["next_events"])
+
+    def panel_next_events(slide, d, x, y, w, h):
+        bx, by, bw, bh = titled_panel(slide, x, y, w, h, L["next_events"])
         events(slide, Inches(bx), Inches(by), Inches(bw), Inches(bh), d.get("next_events") or [])
 
-    if not squads:
-        slide = pptxtpl.add_slide(prs)
-        add_text(slide, Inches(0.5), Inches(0.5), Inches(9), Inches(0.6), f"Steerco {_period_long(period, L)}",
-                 size=24, bold=True, color=NAVY)
-        add_text(slide, Inches(0.5), Inches(1.3), Inches(9), Inches(0.5), L["no_squads"], size=12, color="#6B7C90")
+    PANELS = {"kpis": panel_kpis, "kpi_chart": panel_kpi_chart, "sla": panel_sla,
+              "incidents": panel_incidents, "last_events": panel_last_events,
+              "next_events": panel_next_events}
 
-    buf = io.BytesIO()
-    prs.save(buf)
-    return buf.getvalue()
+    def platform_header(slide, s):
+        # Compact, discreet header: navy name (left) + muted period (right).
+        # Le corps descend d'un cran pour un nom long avant de le couper: la
+        # place existe, le nom etait coupe vers 50 caracteres.
+        pname = s["squad_name"] or ""
+        for t_fs in (19, 17, 15):
+            t_cpl = int(8.8 / (0.0068 * _fs(t_fs)))
+            if len(pname) <= t_cpl:
+                break
+        add_text(slide, Inches(LM), Inches(0.26), Inches(8.8), Inches(0.4),
+                 _cut(pname, t_cpl), size=t_fs, bold=True, color=NAVY)
+        pmeta = slide.shapes.add_textbox(Inches(13.333 - LM - 4), Inches(0.32), Inches(4), Inches(0.3)).text_frame
+        pp = pmeta.paragraphs[0]; pp.alignment = PP_ALIGN.RIGHT
+        rp = pp.add_run(); rp.text = _period_long(period, L); rp.font.size = Pt(_fs(12)); rp.font.bold = True; rp.font.color.rgb = rgb("#6B7C90")
+
+    def platform_slide(s, sec=None):
+        slide = pptxtpl.add_slide(prs)
+        d = s["data"] or {}
+        head_on = block_on(sec, "header")
+        if head_on:
+            platform_header(slide, s)
+        # 2x2 grid: row 1 = KPIs | KPI chart, row 2 = SLA | incidents chart. When a
+        # template reserves a footer, compress the grid + events to sit above it.
+        gy, vg = 0.92, 0.18
+        if foot:
+            eh = 1.15
+            ey = 7.5 - foot - 0.08 - eh
+            gb = ey - 0.16
+        else:
+            gb, ey, eh = 5.9, 6.06, 1.28
+        swap = sparam(sec, "swap_columns", False)
+        rows = [[b for b in pair if block_on(sec, b)]
+                for pair in (("kpis", "kpi_chart"), ("sla", "incidents"))]
+        ev = [b for b in ("last_events", "next_events") if block_on(sec, b)]
+        if not head_on:
+            gy = 0.30
+        if not ev:
+            gb = ey + eh
+        rows = [r for r in rows if r]
+        full_w = 13.333 - 2 * LM
+
+        def lay(row, y, h):
+            order = list(reversed(row)) if swap else row
+            if len(order) == 1:
+                PANELS[order[0]](slide, d, LX, y, full_w, h)
+                return
+            PANELS[order[0]](slide, d, LX, y, COLW, h)
+            PANELS[order[1]](slide, d, RX, y, COLW, h)
+
+        if rows:
+            row_h = (gb - gy - vg * (len(rows) - 1)) / len(rows)
+            y = gy
+            for row in rows:
+                lay(row, y, row_h)
+                y = y + row_h + vg
+        # Bottom: events row, same two columns (ey/eh set above with the footer reserve).
+        if ev:
+            if not rows:
+                ey, eh = gy, ey + eh - gy
+            lay(ev, ey, eh)
+
+    def platform_section(sec, variant=None):
+        for s in squads:
+            platform_slide(s, (variant(s) if variant else None) or sec)
+        if not squads:
+            slide = pptxtpl.add_slide(prs)
+            add_text(slide, Inches(0.5), Inches(0.5), Inches(9), Inches(0.6), f"Steerco {_period_long(period, L)}",
+                     size=24, bold=True, color=NAVY)
+            add_text(slide, Inches(0.5), Inches(1.3), Inches(9), Inches(0.5), L["no_squads"], size=12, color="#6B7C90")
+
+    return {"platform": platform_section,
+            "parts": {f"platform_{k}": (lambda f: (lambda slide, s, X, Y, W, H: f(slide, s["data"] or {}, X, Y, W, H)))(f)
+                      for k, f in PANELS.items()}}
 
 
 # --------------------------------------------------------------------------
@@ -2123,25 +2181,34 @@ def _fname(name: str) -> str:
 @router.get("/document.pptx")
 def document_pptx(period: str = PERIOD, lang: str | None = Query(None),
                   platform_id: int | None = Query(None), chart: str | None = Query(None),
-                  chart_kpis: list[str] | None = Query(None), db: Session = Depends(get_db),
-                  user: User = Depends(get_current_user)):
+                  chart_kpis: list[str] | None = Query(None),
+                  template_id: int | None = Query(None),
+                  db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Consolidated steerco as PPTX, one slide per platform (or only the chosen
     one, as the HTML one-pager). With ``platform_id``, ``chart`` / ``chart_kpis``
     export the rendering being previewed. 501 without python-pptx."""
     from .. import pptxtpl
     L = I18N[_lang(lang)]
     tried = _display_override(chart, chart_kpis) if platform_id is not None else None
-    squads = [{"squad_name": p.name, "data": _aggregate(db, p.id, period, display=tried)}
+    squads = [{"squad_name": p.name, "platform_id": p.id, "data": _aggregate(db, p.id, period, display=tried)}
               for p in _enabled_platforms(db, user)
               if platform_id is None or p.id == platform_id]
-    pptxtpl.use(pptxtpl.get(db))
+    from .. import exportstore
+    legacy = "steerco_{}{}.pptx".format(
+        period, f"_{_fname(squads[0]['squad_name'])}" if platform_id is not None and squads else "")
     try:
-        payload = _render_pptx(squads, period, L)
+        payload, filename, _m = exportstore.render(
+            db, user, "steerco", {"steerco": lambda: (squads, period, L)},
+            chain=exportstore.chain_for(db, platform_id=platform_id, tribe_id=visible_tribe_id(user)),
+            lang=_lang(lang), scope_name=squads[0]["squad_name"] if platform_id is not None and squads else "Steerco",
+            year=int(period[:4]), period=period, template_id=template_id, legacy_name=legacy)
     except ModuleNotFoundError:
         raise HTTPException(status_code=501, detail="Generation PPTX indisponible (python-pptx non installe)")
+    except LookupError:
+        raise HTTPException(status_code=404, detail="Modèle introuvable")
+    db.commit()
     return Response(
         content=payload,
         media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-        headers={"Content-Disposition": 'attachment; filename="steerco_{}{}.pptx"'.format(
-            period, f"_{_fname(squads[0]['squad_name'])}" if platform_id is not None and squads else "")},
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
