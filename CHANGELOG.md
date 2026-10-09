@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- **Mode sombre** : bouton soleil / lune dans la barre du haut, et choix Clair, Sombre ou Suivre le systeme dans
+  les Preferences (retenu par navigateur, applique avant le premier affichage). Les couleurs de la marque restent ;
+  les apercus de documents restent clairs.
+- **Simulation en deux modes** (admin) : « Lecture seule », par defaut, voit l'application exactement comme la
+  personne, et le serveur refuse toute modification ; « Agir en tant que » modifie a sa place, trace dans
+  l'audit avec l'admin reel. Le mode se choisit a cote de « Voir en tant que » et se change depuis le bandeau.
+- Correction : en mode clair, le fond des cartes et des champs (dont la page de connexion) et les bordures
+  avaient disparu apres l'ajout du mode sombre.
+
 ## 3.1.0 (2026-10-09)
 
 - **Rapports par mail**, menu refondu et **reserve a l'admin** (Administration), en trois onglets : Tribes,

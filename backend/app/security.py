@@ -82,14 +82,16 @@ def bump_session(user) -> None:
 
 
 def create_session_token(user_id: int, impersonator_id: int | None = None,
-                         session_version: int = 0, impersonator_version: int = 0) -> str:
+                         session_version: int = 0, impersonator_version: int = 0,
+                         read_only: bool = False) -> str:
     """Mint a signed JWT session token identifying ``user_id``.
 
     The token carries issued-at (iat), expiry (exp) and the account's session
     version (sv). When set, ``impersonator_id`` is embedded as the "imp" claim
     (with the admin's own version as "isv") to record that an admin is acting as
     this user; ``sub`` remains the impersonated user so the app behaves as them.
-    An impersonation token lasts one hour at most.
+    An impersonation token lasts one hour at most. ``read_only`` (the "view as"
+    mode, claim "ro") makes the server refuse every write of that session.
     """
     now = datetime.now(timezone.utc)
     max_age = settings.session_max_age_seconds
@@ -104,6 +106,8 @@ def create_session_token(user_id: int, impersonator_id: int | None = None,
     if impersonator_id is not None:
         payload["imp"] = str(impersonator_id)
         payload["isv"] = int(impersonator_version or 0)
+        if read_only:
+            payload["ro"] = 1
     return jwt.encode(payload, settings.secret_key, algorithm="HS256")
 
 
@@ -121,8 +125,8 @@ def decode_session_token(token: str) -> int | None:
 
 
 def decode_session_claims(token: str) -> dict | None:
-    """Verify a session token and return its claims (sub, imp, sv, isv as ints),
-    or None on any failure. Missing "sv"/"isv" read as 0 (tokens issued before
+    """Verify a session token and return its claims (sub, imp, sv, isv as ints,
+    ro as a bool: a read-only impersonation), or None on any failure. Missing "sv"/"isv" read as 0 (tokens issued before
     session versions existed stay valid once)."""
     try:
         payload = jwt.decode(token, settings.secret_key, algorithms=["HS256"])
@@ -130,7 +134,8 @@ def decode_session_claims(token: str) -> dict | None:
         return {"sub": int(payload["sub"]),
                 "imp": int(imp) if imp is not None else None,
                 "sv": int(payload.get("sv", 0) or 0),
-                "isv": int(payload.get("isv", 0) or 0)}
+                "isv": int(payload.get("isv", 0) or 0),
+                "ro": imp is not None and bool(payload.get("ro"))}
     except Exception:
         return None
 

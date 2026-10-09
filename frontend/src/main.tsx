@@ -16,9 +16,12 @@ import { I18nProvider } from "./i18n";
 import { ConfigProvider } from "./config";
 import "./theme.css";
 import { installDraggableWindows } from "./components/dragWindows";
+import { installColorMode } from "./colorMode";
 
 // Every window can be moved by its title bar (see dragWindows).
 installDraggableWindows();
+// Light or dark, before the first render (no white flash on a dark screen).
+installColorMode();
 
 // Non-null assertion: index.html always ships the #root element.
 ReactDOM.createRoot(document.getElementById("root")!).render(

@@ -293,7 +293,7 @@ export default function SteercoConsolidation({ period, setPeriod, platformId, se
                           className={`squad-card squad-card-lg${String(e.platform_id) === platformId ? " s-open" : ""}`}
                           aria-expanded={String(e.platform_id) === platformId}
                           onClick={() => toggle(e)}>
-                    <div className="strong sc-name" style={{ color: "var(--navy)" }}>{e.platform_name}</div>
+                    <div className="strong sc-name" style={{ color: "var(--title)" }}>{e.platform_name}</div>
                     <div className="inline" style={{ gap: 8, marginTop: 8, flexWrap: "wrap" }}>{state(e)}</div>
                   </button>
                 ))}

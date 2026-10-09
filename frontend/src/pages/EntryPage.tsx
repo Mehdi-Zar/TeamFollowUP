@@ -688,7 +688,7 @@ function QuarterEditor({ squad, year, quarter, readonly, t, roadmap, onAdd, onEd
     <section className={`q-row${isCurrent ? " current" : ""}`}>
       <div className="q-head">
         <span className="q-pill">Q{quarter}</span>
-        <span className="strong" style={{ color: "var(--navy)" }}>{year}</span>
+        <span className="strong" style={{ color: "var(--title)" }}>{year}</span>
         {isCurrent && <span className="badge badge-navy">{t("entry.q_current")}</span>}
         {total > 0 ? (
           <span className="q-progress" title={t("entry.progress_auto")}>

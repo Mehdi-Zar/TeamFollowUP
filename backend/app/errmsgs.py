@@ -70,6 +70,8 @@ EN: dict[str, str] = {
     "Votre compte n'a pas d'adresse mail": "Your account has no email address",
     "Aucun mail à prévisualiser": "No mail to preview",
     "Personne hors de cette tribe": "Person outside this tribe",
+    "Lecture seule : passez en mode « Agir en tant que » pour modifier": "Read only: switch to \"Act as\" to make changes",
+    "Mode inconnu": "Unknown mode",
     "Aucun annuaire n'est configuré": "No directory is configured",
     "Hôte manquant": "Missing host",
     "Persona inconnu ou non autorisé pour le provisioning": "Unknown persona, or not allowed for provisioning",

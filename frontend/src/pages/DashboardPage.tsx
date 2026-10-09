@@ -368,7 +368,7 @@ function Card({ card, showTribe, year }: { card: SquadCard; showTribe?: boolean;
         <div className="inline" style={{ gap: 8, alignItems: "flex-start" }}>
           {h === "empty" ? <span className="dot dot-grey" aria-hidden /> : <Dot status={statusDot} />}
           <div>
-            <div className="strong sc-name" style={{ color: "var(--navy)" }}>{card.name}</div>
+            <div className="strong sc-name" style={{ color: "var(--title)" }}>{card.name}</div>
             <div className="muted small" style={{ marginTop: 2 }}>
               {card.leader?.display_name || t("card.no_leader")}, {t("card.members_n", { n: card.members_count })}
             </div>
@@ -385,7 +385,7 @@ function Card({ card, showTribe, year }: { card: SquadCard; showTribe?: boolean;
       {/* Annual progress */}
       <div style={{ marginTop: 12 }}>
         <div className="between" style={{ marginBottom: 4 }}>
-          <span className="small strong" style={{ color: "var(--navy)" }}>{t("dash.annual")}</span>
+          <span className="small strong" style={{ color: "var(--title)" }}>{t("dash.annual")}</span>
           <span className="small muted">{card.annual_progress}%</span>
         </div>
         <ProgressBar pct={card.annual_progress} />

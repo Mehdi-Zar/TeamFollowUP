@@ -13,6 +13,7 @@ import ErrorBoundary from "./ErrorBoundary";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { useAuth } from "../auth";
+import { useColorMode } from "../colorMode";
 import { useI18n } from "../i18n";
 import { useConfig, moduleOn } from "../config";
 import { Capability, ModuleKey, Role } from "../types";
@@ -31,6 +32,8 @@ import {
   IconExpand,
   IconFeed,
   IconHelp,
+  IconMoon,
+  IconSun,
   IconLeave,
   IconOrg,
   IconRoadmap,
@@ -78,7 +81,7 @@ const COLLAPSE_KEY = "sidebar.collapsed";
  *  hosts the current page through <Outlet/>. Owns cross-page UI state (sidebar
  *  collapse, mobile drawer, admin impersonation picker, first-login welcome). */
 export default function Layout() {
-  const { user, logout, effectiveRole, isPreview, impersonate, stopImpersonation, can, pendingAccessCount, adminTabs, canReviewAccess } = useAuth();
+  const { user, logout, effectiveRole, isPreview, impersonate, stopImpersonation, impersonationMode, can, pendingAccessCount, adminTabs, canReviewAccess } = useAuth();
   const { t, role: roleLabel, lang, setLang } = useI18n();
   // A save that failed after its field was left (see api.reportSaveError).
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -91,6 +94,8 @@ export default function Layout() {
   const [people, setPeople] = useState<{ id: number; display_name: string; role: string }[]>([]);
   // Only a real admin (not already impersonating) may pick someone to view as.
   const canImpersonate = user?.role === "admin" && !isPreview;
+  // The mode the next simulation starts in: read only unless asked otherwise.
+  const [impMode, setImpMode] = useState<"read" | "act">("read");
   useEffect(() => {
     if (canImpersonate) api.get<any[]>("/api/admin/users").then(setPeople).catch(() => {});
   }, [canImpersonate]);
@@ -253,7 +258,7 @@ export default function Layout() {
                   <span style={{ fontSize: 12, color: "var(--grey)" }}>{t("preview.as")}</span>
                   <select
                     value=""
-                    onChange={(e) => e.target.value && impersonate(Number(e.target.value))}
+                    onChange={(e) => e.target.value && impersonate(Number(e.target.value), impMode)}
                     className="w-auto" aria-label={t("preview.as")}
                   >
                     <option value="">{t("preview.pick")}</option>
@@ -265,6 +270,15 @@ export default function Layout() {
                         </option>
                       ))}
                   </select>
+                  <div className="seg imp-mode" role="radiogroup" aria-label={t("preview.mode")}>
+                    {(["read", "act"] as const).map((m) => (
+                      <button key={m} type="button" role="radio" aria-checked={impMode === m}
+                              className={impMode === m ? "active" : ""} title={t(`preview.mode_${m}_hint`)}
+                              onClick={() => setImpMode(m)}>
+                        {t(`preview.mode_${m}`)}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
 
@@ -274,6 +288,7 @@ export default function Layout() {
                   <IconHelp size={18} />
                 </button>
               )}
+              <ModeToggle />
               <NotificationBell />
 
               {lang_switch !== false && (
@@ -323,14 +338,24 @@ export default function Layout() {
           </div>
         )}
         {isPreview && (
-          <div className="no-print preview-banner">
+          <div className={`no-print preview-banner${impersonationMode === "read" ? " preview-read" : ""}`}>
             <span>
+              <span className="preview-mode-tag">{t(`preview.mode_${impersonationMode ?? "act"}`)}</span>{" "}
               {t("preview.viewing_as")} <strong>{user?.display_name}</strong>
-              {" "}({user ? roleLabel(user.role) : ""}). {t("preview.banner")}
+              {" "}({user ? roleLabel(user.role) : ""}).{" "}
+              {t(impersonationMode === "read" ? "preview.banner_read" : "preview.banner")}
             </span>
-            <button className="btn-secondary btn-sm" onClick={() => stopImpersonation()}>
-              {t("preview.back")}
-            </button>
+            <span className="inline" style={{ gap: 6 }}>
+              {user && (
+                <button className="btn-secondary btn-sm"
+                        onClick={() => impersonate(user.id, impersonationMode === "read" ? "act" : "read")}>
+                  {t(impersonationMode === "read" ? "preview.switch_act" : "preview.switch_read")}
+                </button>
+              )}
+              <button className="btn-secondary btn-sm" onClick={() => stopImpersonation()}>
+                {t("preview.back")}
+              </button>
+            </span>
           </div>
         )}
 
@@ -371,5 +396,19 @@ export default function Layout() {
         { to: "/preferences", label: t("prefs.title") },
       ]} />
     </div>
+  );
+}
+
+/** Light or dark, one click from anywhere (Preferences also offers "follow the
+ *  system"). The icon shows what a click gives. */
+function ModeToggle() {
+  const { t } = useI18n();
+  const { resolved, set } = useColorMode();
+  const next = resolved === "dark" ? "light" : "dark";
+  return (
+    <button type="button" className="btn-ghost btn-sm topbar-help mode-toggle" onClick={() => set(next)}
+            title={t(`mode.to_${next}`)} aria-label={t(`mode.to_${next}`)}>
+      {resolved === "dark" ? <IconSun size={18} /> : <IconMoon size={18} />}
+    </button>
   );
 }

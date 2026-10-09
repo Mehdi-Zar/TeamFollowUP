@@ -108,7 +108,7 @@ export function BackfillGrid({ platformId, period, template, editable }:
   return (
     <div className="card stack" style={{ gap: 10, padding: 14, borderLeft: "3px solid var(--ice, #8DA9C4)" }}>
       <div className="between" style={{ alignItems: "center" }}>
-        <span className="strong" style={{ color: "var(--navy)" }}>{t("steerco.f.backfill")}</span>
+        <span className="strong" style={{ color: "var(--title)" }}>{t("steerco.f.backfill")}</span>
         <button type="button" className="btn-secondary btn-sm" onClick={() => setOpen((o) => !o)}>{open ? "▾" : "▸"} {open ? t("action.close") : t("steerco.f.backfill_open")}</button>
       </div>
       <div className="small muted">{t("steerco.f.backfill_hint")}</div>

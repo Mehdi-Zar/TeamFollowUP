@@ -193,7 +193,7 @@ export default function InitiativesPage() {
             <div className="squad-grid-2">
               {rows.map((i) => (
                 <div key={i.id} className="card stack" style={{ gap: 8 }}>
-                  <div className="strong" style={{ fontSize: 16, color: "var(--navy)" }}>{i.title}</div>
+                  <div className="strong" style={{ fontSize: 16, color: "var(--title)" }}>{i.title}</div>
                   <div className="small muted">
                     {t("init.h_owner")}{t("common.colon")}{i.owner || "-"}, {t("init.h_squad")}{t("common.colon")}{i.squad_name || "-"}
                   </div>

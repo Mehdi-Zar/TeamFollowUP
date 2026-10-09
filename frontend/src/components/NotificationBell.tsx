@@ -78,7 +78,7 @@ export default function NotificationBell() {
     <div ref={ref} style={{ position: "relative" }}>
       <button
         className="btn-ghost"
-        style={{ color: "var(--navy)", borderColor: "var(--line)", position: "relative", padding: "8px 10px" }}
+        style={{ color: "var(--title)", borderColor: "var(--line)", position: "relative", padding: "8px 10px" }}
         onClick={() => setOpen((o) => !o)}
         title={t("notif.title")}
         aria-label={data.unread_count > 0 ? `${t("notif.title")} (${data.unread_count})` : t("notif.title")}

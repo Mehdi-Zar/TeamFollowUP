@@ -99,8 +99,27 @@ def get_current_user_any_status(request: Request, db: Session = Depends(get_db))
     # Surface impersonation context (admin viewing the app as another user) on
     # request.state, and on the DB session so record_audit names the real actor.
     request.state.impersonator_id = impersonator_id
+    request.state.read_only = claims["ro"]
     db.info["impersonator_id"] = impersonator_id
+    # "View as" (read-only impersonation): the admin sees the app exactly as the
+    # person does, and nothing is written in their name. Only the reads that go
+    # through a POST (previews, renders) and leaving the simulation pass.
+    if claims["ro"] and request.method not in ("GET", "HEAD", "OPTIONS") \
+            and not _read_only_allowed(request.url.path):
+        raise HTTPException(status_code=403,
+                            detail="Lecture seule : passez en mode « Agir en tant que » pour modifier")
     return user
+
+
+# What a read-only impersonation may still POST: leaving or switching the
+# simulation, and the routes that only compute something to look at.
+_RO_EXACT = {"/api/auth/stop-impersonation", "/api/auth/impersonate", "/api/auth/logout",
+             "/api/exports/preview", "/api/exports/render",
+             "/api/admin/report-config/plan", "/api/admin/report-config/preview"}
+
+
+def _read_only_allowed(path: str) -> bool:
+    return path in _RO_EXACT or (path.startswith("/api/steerco/") and path.endswith("/preview.html"))
 
 
 def get_current_user(user: User = Depends(get_current_user_any_status)) -> User:

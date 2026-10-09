@@ -9,6 +9,7 @@ import { useI18n } from "../i18n";
 import { useConfig, useModule } from "../config";
 import { Preferences } from "../types";
 import { Spinner } from "../components/ui";
+import { ColorMode, useColorMode } from "../colorMode";
 
 /**
  * "My preferences" page. Renders a small set of notification switches bound to
@@ -31,6 +32,7 @@ export default function PreferencesPage() {
   const emailNotifOn = moduleOn("notifications", "email");
   // The feed's notifications only mean something while the feed is on.
   const feedOn = moduleOn("feed");
+  const colorMode = useColorMode();
   const [prefs, setPrefs] = useState<Preferences | null>(null);
   const [saved, setSaved] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -69,6 +71,18 @@ export default function PreferencesPage() {
 
   return (
     <div className="stack" style={{ gap: 16, maxWidth: 560 }}>
+      <div className="card stack" style={{ gap: 10 }}>
+        <h3 style={{ margin: 0 }}>{t("mode.title")}</h3>
+        <div className="seg" role="radiogroup" aria-label={t("mode.title")} style={{ alignSelf: "flex-start" }}>
+          {(["light", "dark", "system"] as ColorMode[]).map((m) => (
+            <button key={m} type="button" role="radio" aria-checked={colorMode.mode === m}
+                    className={colorMode.mode === m ? "active" : ""} onClick={() => colorMode.set(m)}>
+              {t(`mode.${m}`)}
+            </button>
+          ))}
+        </div>
+        <div className="small muted">{t("mode.hint")}</div>
+      </div>
       <div className="card stack" style={{ gap: 14 }}>
         <h3 style={{ margin: 0 }}>{t("prefs.notifs")}</h3>
         {/* Said once, above everything it concerns. */}

@@ -165,7 +165,7 @@
           "auth"
         ],
         "summary": "Impersonate",
-        "description": "Admin starts viewing the whole app as another user (full simulation).",
+        "description": "Admin starts viewing the whole app as another user.\n\nTwo modes (body ``mode``): ``read`` (\"view as\") shows the app exactly as the\nperson sees it and the server refuses every write; ``act`` (\"act as\") also\nwrites in their name, each change audited with the real admin. Without a\nmode, ``act`` (what the route always did). Called again while simulating, it\nswitches person or mode.",
         "operationId": "impersonate_api_auth_impersonate_post",
         "requestBody": {
           "content": {

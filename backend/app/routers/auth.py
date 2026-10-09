@@ -26,7 +26,7 @@ from ..authconfig import (email_domain_allowed, get_auth_config, login_screen,
                           role_from_groups)
 from ..config import settings
 from ..database import get_db
-from ..deps import get_current_user_any_status, record_audit, require_strict_admin
+from ..deps import get_current_user, get_current_user_any_status, record_audit
 from ..memberlink import link_members_to
 from ..models import User, utcnow
 from ..schemas import AuthConfig, LoginIn, UserOut
@@ -36,7 +36,8 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 log = logging.getLogger("trt.auth")
 
 
-def _set_session(response: Response, user: User, impersonator: User | None = None) -> None:
+def _set_session(response: Response, user: User, impersonator: User | None = None,
+                 read_only: bool = False) -> None:
     """Issue the signed session cookie for ``user``.
 
     The token carries the account's session version (revoked by logout and by a
@@ -49,7 +50,8 @@ def _set_session(response: Response, user: User, impersonator: User | None = Non
     token = create_session_token(
         user.id, impersonator.id if impersonator else None,
         session_version=user.session_version or 0,
-        impersonator_version=(impersonator.session_version or 0) if impersonator else 0)
+        impersonator_version=(impersonator.session_version or 0) if impersonator else 0,
+        read_only=read_only and impersonator is not None)
     from ..security import IMPERSONATION_MAX_AGE_SECONDS
     max_age = settings.session_max_age_seconds
     if impersonator is not None:
@@ -261,16 +263,34 @@ def my_permissions(request: Request, db: Session = Depends(get_db), user: User =
     # Impersonation context, so the SPA can show the "viewing as" banner.
     payload["impersonating"] = imp_id is not None
     payload["viewing_as"] = user.display_name if imp_id is not None else None
+    # "read": view as (nothing written), "act": act as (writes under their name).
+    payload["impersonation_mode"] = (("read" if getattr(request.state, "read_only", False) else "act")
+                                     if imp_id is not None else None)
     if imp_id is not None:
         admin = db.get(User, imp_id)
         payload["impersonator_name"] = admin.display_name if admin else None
     return payload
 
 
+def _admin_or_simulating(request: Request, user: User = Depends(get_current_user)) -> User:
+    """An administrator, or a simulation in progress: the real admin behind it was
+    checked (still an active admin, same session) when the session was read, so
+    they may switch the person or the mode without leaving first."""
+    if user.role == "admin" or getattr(request.state, "impersonator_id", None) is not None:
+        return user
+    raise HTTPException(status_code=403, detail="Accès réservé aux administrateurs")
+
+
 @router.post("/impersonate", response_model=UserOut)
 def impersonate(payload: dict, response: Response, request: Request,
-                db: Session = Depends(get_db), admin: User = Depends(require_strict_admin)):
-    """Admin starts viewing the whole app as another user (full simulation)."""
+                db: Session = Depends(get_db), admin: User = Depends(_admin_or_simulating)):
+    """Admin starts viewing the whole app as another user.
+
+    Two modes (body ``mode``): ``read`` ("view as") shows the app exactly as the
+    person sees it and the server refuses every write; ``act`` ("act as") also
+    writes in their name, each change audited with the real admin. Without a
+    mode, ``act`` (what the route always did). Called again while simulating, it
+    switches person or mode."""
     # If already impersonating, the real admin is the impersonator in the token.
     imp_id = getattr(request.state, "impersonator_id", None)
     real_admin_id = imp_id if imp_id is not None else admin.id
@@ -283,10 +303,13 @@ def impersonate(payload: dict, response: Response, request: Request,
         # "viewing as myself" → just stop impersonating.
         _set_session(response, real_admin)
         return real_admin
+    mode = (payload or {}).get("mode") or "act"
+    if mode not in ("read", "act"):
+        raise HTTPException(status_code=422, detail="Mode inconnu")
     record_audit(db, real_admin_id, "impersonate.start", entity="user", entity_id=target.id,
-                 detail={"email": target.email})
+                 detail={"email": target.email, "mode": mode})
     db.commit()
-    _set_session(response, target, impersonator=real_admin)
+    _set_session(response, target, impersonator=real_admin, read_only=mode == "read")
     return target
 
 

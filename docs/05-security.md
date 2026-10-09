@@ -10,8 +10,13 @@
 | Break-glass admin | Bootstrapped on first boot (`bootstrap.ensure_breakglass`); password from `BREAKGLASS_PASSWORD` or random (logged once) |
 
 Session = Starlette `SessionMiddleware` (itsdangerous-signed cookie), `same_site=lax`,
-`max_age = session_max_age_seconds` (12h). Impersonation ("view as") is admin-only and stamps the
-session with `impersonator_id`.
+`max_age = session_max_age_seconds` (12h). Impersonation is admin-only and stamps the
+session with `impersonator_id`. Two modes: **read only** ("Voir en tant que", claim `ro`), where
+the server refuses every write of the session (`deps._read_only_allowed` lists the few POSTs that
+only compute a preview, plus leaving or switching the simulation), and **act as** ("Agir en tant
+que"), where writes go through under the person's name, each audited with the real admin
+(`detail.impersonator_id`). The screen starts read only; the mode is in the `impersonate.start`
+audit row and can be switched from the banner without leaving the simulation.
 
 ## Public URL and SSO callback URLs
 

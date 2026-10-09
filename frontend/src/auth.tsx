@@ -14,6 +14,9 @@ import { api, ApiError } from "./api";
 import { AuthConfig, Capability, Role, User } from "./types";
 
 /** Everything the auth context exposes to the app (session, permissions, actions). */
+/** The two ways an admin sees the app as someone: look only, or act. */
+export type ImpersonationMode = "read" | "act";
+
 interface AuthState {
   user: User | null;
   loading: boolean;
@@ -24,6 +27,8 @@ interface AuthState {
   isPreview: boolean; // true while an admin views the app as another user
   impersonating: boolean;
   impersonatorName: string | null;
+  /** "read": view as (nothing can be written), "act": act as. Null outside a simulation. */
+  impersonationMode: ImpersonationMode | null;
   /** Persona section-access capabilities for the current (effective) user. */
   capabilities: Record<string, boolean> | null;
   /** The Administration tabs this user holds (Admin > Personas); none = no admin. */
@@ -32,7 +37,7 @@ interface AuthState {
   canReviewAccess: boolean;
   pendingAccessCount: number;
   can: (cap: Capability | string) => boolean;
-  impersonate: (userId: number) => Promise<void>;
+  impersonate: (userId: number, mode?: ImpersonationMode) => Promise<void>;
   stopImpersonation: () => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -52,6 +57,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [config, setConfig] = useState<AuthConfig>({ oidc_enabled: false, saml_enabled: false });
   const [impersonating, setImpersonating] = useState(false);
   const [impersonatorName, setImpersonatorName] = useState<string | null>(null);
+  const [impersonationMode, setImpersonationMode] = useState<ImpersonationMode | null>(null);
   const [capabilities, setCapabilities] = useState<Record<string, boolean> | null>(null);
   const [adminTabs, setAdminTabs] = useState<string[]>([]);
   const [canReviewAccess, setCanReviewAccess] = useState(false);
@@ -67,6 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const p = await api.get<any>("/api/auth/me/permissions");
       setImpersonating(!!p.impersonating);
       setImpersonatorName(p.impersonator_name ?? null);
+      setImpersonationMode(p.impersonation_mode ?? null);
       setCapabilities(p.capabilities ?? null);
       setCustomRoleLabels(p.persona_labels);
       setAdminTabs(p.admin_tabs ?? []);
@@ -178,9 +185,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (window.location.pathname === "/") window.location.reload();
     else window.location.assign("/");
   }
-  /** Admin action: start viewing the app as `userId`, then hard-reload as them. */
-  async function impersonate(userId: number) {
-    await api.post("/api/auth/impersonate", { user_id: userId });
+  /** Admin action: start viewing the app as `userId` (read only by default, or
+   *  acting as them), then hard-reload as them. Called while simulating, it
+   *  switches the person or the mode. */
+  async function impersonate(userId: number, mode: ImpersonationMode = "read") {
+    await api.post("/api/auth/impersonate", { user_id: userId, mode });
     broadcast("switched");
     reloadHome();
   }
@@ -211,6 +220,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isPreview: impersonating,
         impersonating,
         impersonatorName,
+        impersonationMode,
         capabilities,
         adminTabs,
         canReviewAccess,

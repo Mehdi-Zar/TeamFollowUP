@@ -66,6 +66,23 @@ L'apparence voyage avec la configuration publique plutot que dans un appel a par
 l'ecran de connexion en a besoin **avant** toute authentification, et un second
 appel ferait clignoter le theme par defaut a chaque ouverture.
 
+### Mode sombre
+
+Chacun choisit, dans les Preferences, **Clair**, **Sombre** ou **Suivre le
+systeme** (le defaut) ; le bouton soleil / lune de la barre du haut bascule entre
+clair et sombre. Le choix est garde dans le navigateur (`localStorage`,
+`tfu.colorMode`) : c'est une preference d'affichage, comme le tri d'un tableau.
+`frontend/src/colorMode.ts` ecrit le mode sur `<html data-theme>` avant le premier
+affichage, et suit le systeme tant que le choix est « Suivre le systeme ».
+
+`theme.css` porte les surfaces et la couleur des titres dans leurs propres
+variables (`--surface`, `--surface-2`, `--surface-3`, `--title`, `--line-strong`) ;
+le bloc `:root[data-theme="dark"]` les redefinit, avec le fond, le texte, les
+lignes, les liens et les couleurs d'etat. Ces variables y sont en `!important` :
+elles l'emportent sur les couleurs claires qu'une apparence ecrit sur l'element
+racine. Les couleurs sombres de la marque (barre laterale, boutons) restent ; les
+apercus de documents (iframes) restent clairs, comme le document imprime.
+
 ## 4. Ou est le code
 
 | Role | Fichier |
@@ -74,6 +91,7 @@ appel ferait clignoter le theme par defaut a chaque ouverture.
 | Publication dans `/api/config` | `backend/app/generalconfig.py` (`public_config`) |
 | API `/api/admin/branding` | `backend/app/routers/admin.py` |
 | Application du theme | `frontend/src/config.tsx` (`applyBranding`) |
+| Mode clair / sombre | `frontend/src/colorMode.ts`, `frontend/src/theme.css` (bloc `data-theme="dark"`) |
 | Ecran d'administration | `frontend/src/pages/admin/branding.tsx` |
 | Pied de page des emails | `backend/app/smtpconfig.py`, `backend/app/mail.py` |
 | Tests | `backend/tests/test_branding.py` |
