@@ -57,7 +57,7 @@ export function ReportsMailPanel({ initialTab = "tribe" }: { initialTab?: TabKey
 
 function ScheduleTab({ kind }: { kind: "tribe" | "direction" }) {
   const { t } = useI18n();
-  const [tribes, setTribes] = useState<Tribe[]>([]);
+  const [tribes, setTribes] = useState<Tribe[] | null>(null);
   const [tribeId, setTribeId] = useState<number | null>(null);
   const [cfg, setCfg] = useState<any | null>(null);
   const [saved, setSaved] = useState<any | null>(null);
@@ -94,6 +94,10 @@ function ScheduleTab({ kind }: { kind: "tribe" | "direction" }) {
   }, [q, draftKey]);
 
   if (err && !cfg) return <ErrorBanner message={err} />;
+  // No tribe yet: nothing to set up here (the spinner used to turn forever).
+  if (kind === "tribe" && tribes !== null && tribes.length === 0) {
+    return <div className="small muted">{t("mailrep.no_tribe")}</div>;
+  }
   if (!cfg) return <Spinner />;
   const choices: Choices = cfg._choices ?? {};
   const dirty = JSON.stringify(strip(cfg)) !== JSON.stringify(strip(saved));
@@ -118,7 +122,7 @@ function ScheduleTab({ kind }: { kind: "tribe" | "direction" }) {
         <div style={{ maxWidth: 320 }}>
           <label htmlFor="mr-tribe">{t("mailrep.tribe_pick")}</label>
           <select id="mr-tribe" value={tribeId ?? ""} onChange={(e) => setTribeId(Number(e.target.value))}>
-            {tribes.map((tr) => <option key={tr.id} value={tr.id}>{tr.name}</option>)}
+            {(tribes ?? []).map((tr) => <option key={tr.id} value={tr.id}>{tr.name}</option>)}
           </select>
         </div>
       )}
