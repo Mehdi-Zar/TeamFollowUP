@@ -18,7 +18,6 @@ from ..report import (build_dependencies_data, build_report_data, render_depende
                       render_dependencies_pptx, render_html, render_pptx, render_roadmap_html,
                       render_roadmap_pptx, rt)
 from ..reportasof import freeze_report_data, list_versions
-from ..schemas import ReportSubscriptionIn, ReportSubscriptionOut
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 
@@ -322,74 +321,6 @@ def dependencies_pptx(request: Request, tribe_id: int | None = Query(default=Non
         media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
-
-
-def _sub_out(db: Session, sub, squad_id: int | None) -> ReportSubscriptionOut:
-    """Serialize a subscription row into its API form, resolving the squad name and
-    supplying sensible defaults (interval 0 = unsubscribed) when `sub` is None."""
-    from ..models import Squad
-    name = None
-    if squad_id is not None:
-        sq = db.get(Squad, squad_id)
-        name = sq.name if sq else None
-    return ReportSubscriptionOut(
-        squad_id=squad_id, squad_name=name,
-        interval_days=sub.interval_days if sub else 0,
-        weekdays=(sub.weekdays or []) if sub else [],
-        hour=sub.hour if sub else 8,
-        last_sent_at=sub.last_sent_at if sub else None,
-    )
-
-
-@router.get("/subscriptions", response_model=list[ReportSubscriptionOut], dependencies=[_report_gate, _report_cap])
-def list_my_subscriptions(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """List the caller's report subscriptions (dashboard + any per-squad ones).
-
-    GET /api/reports/subscriptions
-    Access: cookie user with the `dashboard` capability; gated by `review >
-    weekly_report`. Personal, so no API-key surface.
-    """
-    from ..subscriptions import list_subscriptions
-    return [_sub_out(db, s, s.squad_id) for s in list_subscriptions(db, user)]
-
-
-@router.get("/subscription", response_model=ReportSubscriptionOut, dependencies=[_report_gate, _report_cap])
-def get_my_subscription(squad_id: int | None = Query(default=None),
-                        db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """Return the caller's subscription for a given squad (or the global dashboard
-    one when squad_id is omitted).
-
-    GET /api/reports/subscription?squad_id=...
-    Access: cookie user with `dashboard`; gated by `review > weekly_report`.
-    """
-    from ..subscriptions import get_subscription
-    return _sub_out(db, get_subscription(db, user.id, squad_id), squad_id)
-
-
-@router.put("/subscription", response_model=ReportSubscriptionOut, dependencies=[_report_gate, _report_cap])
-def set_my_subscription(payload: ReportSubscriptionIn, db: Session = Depends(get_db),
-                        user: User = Depends(get_current_user)):
-    """Create or update the caller's report subscription (cadence/weekdays/hour).
-
-    PUT /api/reports/subscription
-    Access: cookie user with `dashboard`; gated by `review > weekly_report`.
-    Business rules: a per-squad subscription requires visibility of that squad
-    (404 otherwise); for the global (squad_id=None) subscription the legacy
-    User.report_* flags are kept in sync with the new schedule.
-    """
-    from ..subscriptions import set_subscription, user_can_see_squad
-    if payload.squad_id is not None and not user_can_see_squad(db, user, payload.squad_id):
-        raise HTTPException(status_code=404, detail="Squad introuvable")
-    sub = set_subscription(db, user, payload.squad_id, payload.interval_days, payload.weekdays, payload.hour)
-    # Keep the legacy global flags in sync (dashboard subscription only).
-    if payload.squad_id is None:
-        active = bool(payload.weekdays) or payload.interval_days > 0
-        user.report_interval_days = payload.interval_days
-        user.subscribe_weekly_report = active
-        if not active:
-            user.report_last_sent_at = None
-    db.commit()
-    return _sub_out(db, sub, payload.squad_id)
 
 
 def assert_allowed_recipient(db: Session, user: User, to: str) -> None:

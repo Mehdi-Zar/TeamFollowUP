@@ -1,7 +1,9 @@
 """OTD (On-Time Delivery) commitments, en deux portees.
 
 Un OTD est une promesse datee et les jalons qui la rendent vraie. Son statut est
-derive de ces jalons, jamais saisi.
+derive de ces jalons et de sa date (``status.otd_state``), sauf trois faits
+ecrits sur l'OTD lui-meme : une annulation, un statut declare a la main (pour un
+engagement anterieur a l'outil) et le report sur l'annee suivante.
 
   * portee ``management`` : l'engagement fixe par le haut. Seuls le tribe leader
     et l'admin l'ecrivent, et eux seuls y rattachent des jalons. C'est le
@@ -15,6 +17,8 @@ Les deux portees ne partagent pas le meme lien vers les jalons
 a la fois, et avec un lien unique le dernier qui rattache defaisait le travail de
 l'autre sans le lui dire.
 """
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, selectinload
@@ -67,24 +71,54 @@ def _assert_can_write(db: Session, user: User, otd: Otd) -> None:
 
 def _jalon_brief(j) -> dict:
     """Compact milestone view embedded in an OTD payload."""
-    return {"id": j.id, "title": j.title, "quarter": j.quarter, "stage": stage_tag(j.release_stage),
-            "status": j.status, "squad_id": j.squad_id, "squad_name": j.squad.name if j.squad else ""}
+    return {"id": j.id, "title": j.title, "year": j.year, "quarter": j.quarter,
+            "stage": stage_tag(j.release_stage), "status": j.status,
+            "squad_id": j.squad_id, "squad_name": j.squad.name if j.squad else ""}
 
 
-def _otd_payload(otd: Otd) -> dict:
-    """Serialize an OTD with its derived on-time status, member-milestone counts,
-    and the milestone briefs. The status is computed from the milestones and the
-    committed date (``st.otd_status``), not stored."""
-    jalons = sorted(otd.members, key=lambda x: (x.squad_id, x.quarter, x.id))
+def _overdue(j, today) -> bool:
+    """A milestone not done whose quarter has ended."""
+    return j.status != "done" and st.quarter_end(j.year, j.quarter) < today
+
+
+def _otd_payload(otd: Otd, now: datetime | None = None) -> dict:
+    """Serialize an OTD with its status and why (``st.otd_state``), its counts,
+    the share of each squad, and what the screen has to point out: a replanned
+    date, milestones planned after the date, milestones moved to another year,
+    and the link with the previous or next year's copy."""
+    now = now or datetime.now(timezone.utc)
+    today = now.date()
+    jalons = sorted(otd.members, key=lambda x: (x.squad_id, x.year, x.quarter, x.id))
+    state = st.otd_state(jalons, otd.committed_date, now, otd)
+    committed = st.day_of(otd.committed_date)
+    initial = st.day_of(otd.initial_committed_date)
+    shares: dict[int, dict] = {}
+    for j in jalons:
+        sh = shares.setdefault(j.squad_id, {"squad_id": j.squad_id, "squad_name": j.squad.name if j.squad else "",
+                                            "total": 0, "done": 0, "late": 0})
+        sh["total"] += 1
+        sh["done"] += j.status == "done"
+        sh["late"] += _overdue(j, today)
+    beyond = [j.title for j in jalons if committed is not None and j.status != "done"
+              and st.quarter_end(j.year, j.quarter) > committed]
+    src, dst = otd.carried_from, otd.carried_to
     return {
         **OtdOut.model_validate(otd).model_dump(),
         "owner_name": otd.owner.display_name if otd.owner else None,
         "squad_name": otd.squad.name if otd.squad else None,
-        "status": st.otd_status(jalons, otd.committed_date),
+        "status": state["status"],
+        "reasons": state["reasons"],
+        "replanned_days": (committed - initial).days if committed and initial and committed != initial else 0,
         "counts": {"total": len(jalons),
                    "done": sum(1 for j in jalons if j.status == "done"),
                    "blocked": sum(1 for j in jalons if j.status == "blocked"),
-                   "at_risk": sum(1 for j in jalons if j.status == "at_risk")},
+                   "at_risk": sum(1 for j in jalons if j.status == "at_risk"),
+                   "late": sum(1 for j in jalons if _overdue(j, today))},
+        "by_squad": sorted(shares.values(), key=lambda x: x["squad_name"].lower()),
+        "beyond_date": beyond,
+        "slipped": [{"id": j.id, "title": j.title, "year": j.year} for j in jalons if j.year != otd.year],
+        "carried_from": {"id": src.id, "year": src.year, "title": src.title} if src else None,
+        "carried_to": {"id": dst.id, "year": dst.year, "title": dst.title} if dst else None,
         "jalons": [_jalon_brief(j) for j in jalons],
     }
 
@@ -258,6 +292,9 @@ def create_otd(payload: OtdCreate, db: Session = Depends(get_db),
         data["squad_id"] = target.id if target else None
 
     _check_month_quota(db, data.get("squad_id"), data.get("committed_date"))
+    data["initial_committed_date"] = data.get("committed_date")
+    if not data.get("declared_status"):
+        data["declared_on"] = data["declared_note"] = None
     otd = Otd(**data)
     db.add(otd)
     db.flush()
@@ -289,6 +326,24 @@ def update_otd(otd_id: int, payload: OtdUpdate, db: Session = Depends(get_db),
             _validate_owner(db, otd.tribe_id, data["owner_user_id"])
     if data.get("committed_date") is not None:
         _check_month_quota(db, otd.squad_id, data["committed_date"], exclude_id=otd.id)
+        # The first date is kept: moving it is a replanning, shown with its gap.
+        if otd.initial_committed_date is None:
+            otd.initial_committed_date = otd.committed_date or data["committed_date"]
+    cancel = data.pop("cancelled", None)
+    if cancel is True:
+        reason = (data.get("cancel_reason") or otd.cancel_reason or "").strip()
+        if not reason:
+            raise HTTPException(status_code=422, detail="Indiquez le motif de l'annulation")
+        data["cancel_reason"] = reason
+        if otd.cancelled_at is None:
+            data["cancelled_at"] = datetime.now(timezone.utc)
+    elif cancel is False:
+        data["cancelled_at"] = data["cancel_reason"] = None
+    elif "cancel_reason" in data and otd.cancelled_at is None:
+        data.pop("cancel_reason")
+    if "declared_status" in data and not data["declared_status"]:
+        # Back to the computed status: what was declared goes with it.
+        data["declared_on"] = data["declared_note"] = None
     for k, v in data.items():
         setattr(otd, k, v)
     record_audit(db, user.id, "otd.update", entity="otd", entity_id=otd.id, detail=list(data.keys()))
@@ -326,13 +381,20 @@ def set_otd_jalons(otd_id: int, payload: OtdMembers, db: Session = Depends(get_d
         found = db.execute(q).scalars().all()
         if len(found) != len(wanted):
             raise HTTPException(status_code=400, detail=refus)
-        if any(j.year != otd.year for j in found):
+        current = {j.id for j in otd.members}
+        # A milestone already linked stays linked when it moved to another year
+        # (the OTD still needs it); a new one must be of the OTD's year.
+        if any(j.year != otd.year and j.id not in current for j in found):
             raise HTTPException(status_code=400, detail="Un jalon n'est pas de l'année de cet engagement")
         if otd.scope == SQUAD_SCOPE and any(j.squad_otd_id not in (None, otd.id) for j in found):
             raise HTTPException(status_code=409, detail="Un jalon tient déjà un autre engagement de la squad")
 
     link = "squad_otd_id" if otd.scope == SQUAD_SCOPE else "otd_id"
     for j in list(otd.members):
+        # The screen lists the milestones of the OTD's year: one that moved to
+        # another year is not in its list, and is unlinked from its own window.
+        if j.year != otd.year and j.id not in wanted:
+            continue
         setattr(j, link, None)
     for j in db.scalars(select(RoadmapItem).where(RoadmapItem.id.in_(wanted))).all() if wanted else []:
         setattr(j, link, otd.id)

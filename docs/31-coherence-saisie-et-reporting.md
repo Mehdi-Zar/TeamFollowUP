@@ -10,8 +10,7 @@ vers cet endroit qui ouvre la bonne squad, la bonne annee et la bonne etape.
 | Jalons, OTD de la squad, messages cles, moral, valeurs des KPI, commentaire d'avancement, chiffres Steerco, soumission | Reporting (saisie) | leader, co-leaders, contributeurs, admin |
 | Fiche de la squad, OTD, equipe, budget, comites | Mes squads | leader et co-leaders (leurs squads seulement), tribe leader, admin |
 | Squad leader, co-leaders, contributeurs, ordre, options (KPI, budget), initiatives | Mes squads, et le tableau Administration > Squads | tribe leader, admin (le leader nomme aussi ses contributeurs) |
-| Envois programmes et e-mail a chaque modification | Administration > Rapport | tribe leader (programme de sa tribe), admin |
-| Abonnement personnel | fenetre « Abonnement au rapport » | chacun |
+| Envois programmes et e-mail a chaque modification | Administration > Rapports par mail | admin |
 
 La page d'une squad lit tout cela et renvoie, section par section, vers l'endroit
 ou la section se modifie.

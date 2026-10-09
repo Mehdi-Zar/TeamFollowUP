@@ -168,7 +168,7 @@ def otds_of_squad(sq, otd_rows, year: int, now: datetime) -> list[dict]:
             # Le rang du mois est ce qui pose l'engagement sur l'axe; une date
             # d'une autre annee n'a pas de place sur cette frise.
             "month": (d.month - 1) if d is not None and d.year == year else None,
-            "status": st.otd_status(members, o.committed_date, now),
+            "status": st.otd_status(members, o.committed_date, now, o),
             "owner": o.owner.display_name if o.owner else None,
         })
     # Le management d'abord, la squad ensuite: la frise se lit de l'engagement
@@ -379,7 +379,7 @@ def build_report_data(db: Session, scope_tribe: int | None, year: int | None = N
                 continue
             d = _aware(o.committed_date)
             tribe_otds.append({"id": o.id, "title": o.title, "date": d.date().isoformat() if d else None,
-                               "status": st.otd_status(o.roadmap_items, o.committed_date, now)})
+                               "status": st.otd_status(o.roadmap_items, o.committed_date, now, o)})
     avg = round(totals["progress_sum"] / totals["planned"]) if totals.get("planned") else 0
     if squad_id is not None:
         sq = db.get(Squad, squad_id)
@@ -1007,9 +1007,8 @@ def _ms_lbl(status: str, lang: str) -> str:
 
 def _otd_lbl(status: str | None, lang: str) -> str:
     """Localized OTD status label for the changelog (passes unknown values through)."""
-    key = {"on_track": "otd_on_track", "at_risk": "otd_at_risk", "late": "otd_late",
-           "delivered": "otd_delivered"}.get(status or "")
-    return rt(lang, key) if key else (status or "-")
+    from .status import OTD_STATUSES
+    return rt(lang, "otd_" + status) if status in OTD_STATUSES else (status or "-")
 
 
 def report_signature(data: dict) -> dict:
@@ -1495,15 +1494,16 @@ _PPTX_MIME = ("application", "vnd.openxmlformats-officedocument.presentationml.p
 def report_mail(db: Session, smtp: dict, to: str, subject: str, data: dict, *, why: str,
                 file_base: str, changes: dict | None = None, pptx: bytes = b"",
                 cc: list[str] | None = None, notice_html: str = "", week: int | None = None,
-                attach_pptx: bool = True) -> bool:
+                attach_pptx: bool = True, decks: list[tuple[str, bytes]] | None = None) -> bool:
     """Send one report mail: a summary every mail client renders, the full HTML
-    document attached (it needs a browser), the PPTX next to it."""
+    document attached (it needs a browser), the PPTX next to it. ``decks`` (file
+    name, bytes) replaces that single PPTX by the documents a schedule chose."""
     from .mail import send_email
     from .mailbody import app_link, footer, render_email
     lang = data.get("lang", "fr")
     rows = [r for blk in data.get("tribes") or [] for r in blk.get("squads") or []]
     path = f"/squads/{rows[0]['squad_id']}" if data.get("squad_scoped") and rows else "/"
-    has_pptx = bool(pptx) and attach_pptx
+    has_pptx = bool(decks) if decks is not None else (bool(pptx) and attach_pptx)
     link = app_link(db, path)
     body = render_email(data, changes=changes, notice_html=notice_html, link=link,
                         footer=footer(lang, why), has_pptx=has_pptx, week=week)
@@ -1511,7 +1511,9 @@ def report_mail(db: Session, smtp: dict, to: str, subject: str, data: dict, *, w
     if not link:
         atts.append((f"{file_base}.html", render_html(data, standalone=True, changes=changes).encode("utf-8"),
                      "text", "html"))
-    if has_pptx:
+    if decks is not None:
+        atts += [(name, blob, *_PPTX_MIME) for name, blob in decks]
+    elif has_pptx:
         atts.append((f"{file_base}.pptx", pptx, *_PPTX_MIME))
     return send_email(smtp, to, subject, body, attachment=atts, html=True, cc=cc, lang=lang)
 
@@ -1569,13 +1571,13 @@ def send_squad_docs_to_leaders(db: Session, squads: list, now: datetime | None =
 
 
 def send_due_weekly_reports(db: Session, now: datetime | None = None) -> int:
-    """Send every scheduled report that is due: the admin's (all tribes), then each
-    tribe's own (set by its tribe leader). Returns the number of emails sent.
+    """Send every scheduled report that is due: the Direction's (all tribes), then
+    each tribe's. Returns the number of emails sent.
 
     Each schedule is idempotent within a day (its own last_sent_day). Safe to call
     repeatedly from the scheduler.
     """
-    from .reportconfig import get_report, tribe_schedules
+    from .reportconfig import ensure_v2, get_report, tribe_schedules
     from .smtpconfig import get_smtp
     from .modulesconfig import get_modules, is_active
 
@@ -1585,6 +1587,8 @@ def send_due_weekly_reports(db: Session, now: datetime | None = None) -> int:
     smtp = get_smtp(db)
     if not smtp.get("enabled"):
         return 0
+    if ensure_v2(db):
+        db.commit()
     pptxtpl.use(pptxtpl.get(db))
     sent = _send_schedule(db, smtp, get_report(db), None, now)
     for tid in tribe_schedules(db):
@@ -1593,24 +1597,94 @@ def send_due_weekly_reports(db: Session, now: datetime | None = None) -> int:
     return sent
 
 
+# The file name of each kind of document a scheduled mail carries.
+DOC_FILE = {
+    "fr": {"weekly": "Rapport_hebdomadaire", "dashboard": "Tableau_de_bord", "roadmap": "Roadmap",
+           "dependencies": "Dependances"},
+    "en": {"weekly": "Weekly_report", "dashboard": "Dashboard", "roadmap": "Roadmap",
+           "dependencies": "Dependencies"},
+}
+
+
+class _Sender:
+    """Builds each document once and sends the mails of a plan (app/mailplan.py)."""
+
+    def __init__(self, db: Session, smtp: dict, cfg: dict, now: datetime):
+        self.db, self.smtp, self.cfg, self.now = db, smtp, cfg, now
+        self.local = local_now(now)
+        self.week = self.local.isocalendar()[1]
+        self.today = self.local.date().isoformat()
+        self.year = reference_year(db)
+        self.lang = _lang(get_general(db).get("default_lang"))
+        self.docs: dict[str, dict] = {}
+
+    def deck(self, kind: str, mail: dict, data: dict) -> bytes:
+        """One PowerPoint a mail carries, through its scope's template."""
+        from .exportstore import chain_for, render, render_report
+        if kind == "weekly":
+            return _studio_deck(self.db, data)
+        if kind == "dashboard":
+            return render_report(self.db, {**data, "doc": "dashboard"}, "dashboard")
+        if kind == "roadmap":
+            return render_report(self.db, data, "roadmap")
+        tribe = mail["tribe_id"]
+        dd = build_dependencies_data(self.db, tribe, self.year,
+                                     squad_ids=[mail["squad_id"]] if mail["squad_id"] else None, lang=self.lang)
+        blob, _n, _m = render(self.db, None, "dependencies", {"dependencies": lambda: dd},
+                              chain=chain_for(self.db, tribe_id=tribe, squad_id=mail["squad_id"]),
+                              lang=self.lang, scope_name=mail["label"], year=self.year)
+        return blob
+
+    def doc(self, mail: dict, *, with_pptx: bool = True) -> dict:
+        """The document of a mail: data, "what's new" against its baseline, and the
+        PowerPoints its kind of mail carries (``mail["docs"]``)."""
+        key = mail["key"]
+        if key not in self.docs:
+            scope = mail["tribe_id"] if mail["kind"] == "tribe" else None
+            data = build_report_data(self.db, scope, self.year, self.cfg.get("since_days", 7), self.now,
+                                     lang=self.lang, squad_id=mail["squad_id"])
+            sig = report_signature(data)
+            changes = diff_report(get_baseline(self.db, key), sig, self.lang)
+            decks = []
+            for kind in (mail.get("docs") or []) if with_pptx else []:
+                try:
+                    blob = self.deck(kind, mail, data)
+                except Exception:
+                    blob = b""
+                if blob:
+                    decks.append((f"{DOC_FILE[self.lang][kind]}_{_file_slug(mail['label'])}_{self.today}.pptx", blob))
+            self.docs[key] = {"data": data, "sig": sig, "changes": changes, "decks": decks,
+                              "subject": subject_prefix(changes, self.lang)
+                              + rt(self.lang, "subject", scope=mail["label"], w=self.week),
+                              "file": _file_base(self.lang, mail["label"], self.today)}
+        return self.docs[key]
+
+    def send(self, mail: dict, *, why: str = "tribe", to: list[str] | None = None,
+             subject_suffix: str = "") -> bool:
+        d = self.doc(mail)
+        if to is None:
+            to = [r["email"] for r in mail["recipients"] if r["role"] == "to"]
+            cc = [r["email"] for r in mail["recipients"] if r["role"] == "cc"]
+        else:
+            cc = []
+        if not to:
+            return False
+        return report_mail(self.db, self.smtp, ", ".join(to), d["subject"] + subject_suffix, d["data"],
+                           why=why, file_base=d["file"], changes=d["changes"], cc=cc,
+                           week=self.week, decks=d["decks"])
+
+
 def _send_schedule(db: Session, smtp: dict, cfg: dict, tribe_id: int | None, now: datetime) -> int:
-    """One schedule (the admin's when tribe_id is None, else a tribe's).
+    """One schedule (the Direction's when tribe_id is None, else a tribe's), when due.
 
-    What goes out, each part switched on in the config:
-      * global_doc: the fixed recipients get the whole document of the scope;
-      * per_squad: the fixed recipients get one mail per squad, that squad only;
-      * squad_leaders: each squad's leaders get their own squad's document;
-      * tribe_leader_digest (admin schedule only): each tribe leader gets their
-        tribe's document, the tribe's squad leaders in CC.
-    ``squad_ids`` narrows the squads of the per-squad parts (empty = all).
-
-    The day, the weekday and the hour are Paris time. A document reaches an
-    address once, whatever the parts that include it. When the mail server
-    refuses every mail, nothing is marked as done: the next tick tries again, and
-    the "what's new" baseline does not move past what nobody received.
+    Each mail of the plan is its own document with its own "what's new" baseline:
+    with "only when there is something new", a squad that did not move sends
+    nothing while the others go out. The day, the weekday and the hour are Paris
+    time. When the mail server refuses every mail, nothing is marked as done: the
+    next tick tries again, and no baseline moves past what nobody received.
     """
+    from .mailplan import plan_for
     from .reportconfig import set_report
-    from .models import User
 
     if not cfg.get("enabled"):
         return 0
@@ -1620,118 +1694,20 @@ def _send_schedule(db: Session, smtp: dict, cfg: dict, tribe_id: int | None, now
     today = local.date().isoformat()
     if cfg.get("last_sent_day") == today:
         return 0
-
-    since = cfg.get("since_days", 7)
-    year = reference_year(db)
-    lang = _lang(get_general(db).get("default_lang"))
+    sender = _Sender(db, smtp, cfg, now)
     only_changes = bool(cfg.get("only_when_changes"))
-    week = local.isocalendar()[1]
-    # Baselines are per schedule: the admin's and a tribe's must not consume each
-    # other's "what's new".
-    prefix = "" if tribe_id is None else f"t{tribe_id}:"
-    sent = 0
-    attempted = 0
-    prepared: dict[str, dict] = {}
-    delivered: set[tuple[str, str]] = set()
+    sent = attempted = 0
     baselines: list[tuple[str, dict]] = []
-
-    def prepare(scope, scope_key: str, scope_label: str, squad_id=None) -> dict:
-        """Build a document once: data, changelog (vs baseline), PPTX and subject."""
-        if scope_key not in prepared:
-            data = build_report_data(db, scope, year, since, now, lang=lang, squad_id=squad_id)
-            sig = report_signature(data)
-            changes = diff_report(get_baseline(db, scope_key), sig, lang)
-            try:
-                pptx_bytes = _studio_deck(db, data)
-            except Exception:
-                pptx_bytes = b""
-            subject = subject_prefix(changes, lang) + rt(lang, "subject", scope=scope_label, w=week)
-            prepared[scope_key] = {"data": data, "sig": sig, "changes": changes, "pptx": pptx_bytes,
-                                   "subject": subject, "file": _file_base(lang, scope_label, today)}
-        return prepared[scope_key]
-
-    def deliver(p: dict, key: str, addrs: list[str], why: str, cc: list[str] | None = None) -> None:
-        """One mail To ``addrs`` (skipping those who already got this document)."""
-        nonlocal sent, attempted
-        todo = [a for a in addrs if (key, a.lower()) not in delivered]
-        if not todo:
-            return
-        cc = [c for c in (cc or []) if (key, c.lower()) not in delivered]
-        attempted += 1
-        if report_mail(db, smtp, ", ".join(todo), p["subject"], p["data"], why=why, file_base=p["file"],
-                       changes=p["changes"], pptx=p["pptx"], cc=cc, week=week,
-                       attach_pptx=cfg.get("attach_pptx", True)):
-            sent += 1
-            delivered.update((key, a.lower()) for a in todo + cc)
-
-    def worth_sending(p: dict) -> bool:
-        c = p["changes"]
-        # Always send the very first report (establishes the baseline); otherwise
-        # honour the "only when changes" policy.
-        return c.get("first") or not (only_changes and c["count"] == 0)
-
-    recipients = list(dict.fromkeys(a for a in (cfg.get("recipients") or []) if a))
-
-    # 1. The whole document of the scope, to the fixed recipients.
-    if recipients and cfg.get("global_doc", True):
-        if tribe_id is None:
-            key = "global"
-            p = prepare(None, key, rt(lang, "all_tribes"))
-        else:
-            tribe = db.get(Tribe, tribe_id)
-            key = f"{prefix}tribe"
-            p = prepare(tribe_id, key, tribe.name if tribe else "")
-        if worth_sending(p):
-            for addr in recipients:
-                deliver(p, key, [addr], "schedule")
-        baselines.append((key, p["sig"]))
-
-    # 2. and 3. One document per squad: to the fixed recipients (per_squad) and/or
-    # to the squad's own leaders (squad_leaders).
-    if (recipients and cfg.get("per_squad")) or cfg.get("squad_leaders"):
-        q = select(Squad).order_by(Squad.display_order, Squad.id)
-        if tribe_id is not None:
-            q = q.where(Squad.tribe_id == tribe_id)
-        if cfg.get("squad_ids"):
-            q = q.where(Squad.id.in_(cfg["squad_ids"]))
-        for squad in db.scalars(q).all():
-            key = f"{prefix}squad:{squad.id}"
-            p = prepare(None, key, squad.name, squad_id=squad.id)
-            if worth_sending(p):
-                if recipients and cfg.get("per_squad"):
-                    for addr in recipients:
-                        deliver(p, key, [addr], "schedule")
-                if cfg.get("squad_leaders"):
-                    deliver(p, key, _squad_leader_emails(squad), "leaders")
-            baselines.append((key, p["sig"]))
-
-    # 4. Admin schedule only: each tribe leader receives their OWN tribe-scoped
-    # report, with that tribe's squad leaders (co-leaders included) in CC.
-    if tribe_id is None and cfg.get("tribe_leader_digest"):
-        for tribe in db.scalars(select(Tribe).order_by(Tribe.display_order, Tribe.id)).all():
-            leaders = [u for u in db.scalars(
-                select(User).where(User.role == "tribe_leader", User.tribe_id == tribe.id)).all()
-                if (u.email or "").strip() and u.status == "active"]
-            if not leaders:
-                continue
-            to = list(dict.fromkeys(l.email.strip() for l in leaders))
-            leader_emails = {a.lower() for a in to}
-            cc, seen_cc = [], set()
-            for sq in db.scalars(select(Squad).where(Squad.tribe_id == tribe.id)).all():
-                for e in _squad_leader_emails(sq):
-                    el = e.lower()
-                    if el not in leader_emails and el not in seen_cc:
-                        seen_cc.add(el)
-                        cc.append(e)
-            scope_key = f"tribe:{tribe.id}"
-            p = prepare(tribe.id, scope_key, tribe.name)
-            if worth_sending(p):
-                deliver(p, scope_key, to, "schedule", cc=cc)
-            baselines.append((scope_key, p["sig"]))
-
+    for mail in plan_for(db, tribe_id, cfg):
+        d = sender.doc(mail)
+        c = d["changes"]
+        if c.get("first") or not (only_changes and c["count"] == 0):
+            if any(r["role"] == "to" for r in mail["recipients"]):
+                attempted += 1
+                if sender.send(mail, why="schedule" if tribe_id is None else "tribe"):
+                    sent += 1
+        baselines.append((mail["key"], d["sig"]))
     if attempted and not sent:
-        # The mail server refused everything (down, wrong credentials): keep the
-        # day open and the baselines where they were, the next tick retries.
         import logging
         logging.getLogger("trt.report").warning(
             "scheduled report%s: every mail failed, retrying at the next tick",
@@ -1745,113 +1721,79 @@ def _send_schedule(db: Session, smtp: dict, cfg: dict, tribe_id: int | None, now
     return sent
 
 
-def send_personal_subscriptions(db: Session, now: datetime | None = None) -> int:
-    """Send the report to each subscription (global or per-squad) that is due.
-
-    A global subscription (squad_id NULL) follows the user's visibility (admin →
-    all tribes, others → their tribe); a per-squad subscription targets that squad.
-    Returns the number of emails sent. Safe to call repeatedly from the scheduler.
-    Weekday and hour are Paris time; a failed mail is retried at the next tick.
-    """
+def send_plan_now(db: Session, tribe_id: int | None, line: str | None = None,
+                  now: datetime | None = None) -> dict:
+    """Send a schedule's mails now, out of its calendar (all of them, or those of
+    one line of the settings). Always sends, and moves no baseline: it is not the
+    scheduled send. Returns {"sent", "failed": [labels], "missing": [names], "smtp"}."""
+    from .mailplan import only_line, plan_for
+    from .reportconfig import get_report
     from .smtpconfig import get_smtp
-    from .models import ReportSubscription, Squad, Tribe, User
-    from .modulesconfig import get_modules, is_active
-
-    now = now or utcnow()
-    if not is_active(get_modules(db), "review", "weekly_report"):
-        return 0
     smtp = get_smtp(db)
     if not smtp.get("enabled"):
-        return 0
-
-    from .reportconfig import get_report
-    year = reference_year(db)
-    lang = _lang(get_general(db).get("default_lang"))
-    only_changes = bool(get_report(db).get("only_when_changes"))
-    local = local_now(now)
-    week = local.isocalendar()[1]
-    # Cache report data + PPTX per (scope_tribe, squad_id, since); the "what's
-    # new" part is per-recipient baseline.
-    rendered: dict[tuple, tuple[dict, bytes]] = {}
-
-    def render(scope_tribe: int | None, squad_id: int | None, since: int) -> tuple[dict, bytes]:
-        key = (scope_tribe, squad_id, since)
-        if key not in rendered:
-            data = build_report_data(db, scope_tribe, year, since, now, squad_id=squad_id, lang=lang)
-            try:
-                pptx_bytes = _studio_deck(db, data)
-            except Exception:
-                pptx_bytes = b""
-            rendered[key] = (data, pptx_bytes)
-        return rendered[key]
-
-    sent = 0
-    for sub in db.scalars(select(ReportSubscription)).all():
-        wd = sub.weekdays or []
-        if not wd and sub.interval_days <= 0:
-            continue  # inactive subscription
-        user = db.get(User, sub.user_id)
-        if user is None or not user.email:
+        return {"sent": 0, "failed": [], "missing": [], "smtp": False}
+    pptxtpl.use(pptxtpl.get(db))
+    sender = _Sender(db, smtp, get_report(db, tribe_id), now or utcnow())
+    sent, failed, missing = 0, [], []
+    for mail in only_line(plan_for(db, tribe_id), line):
+        missing += [m["name"] for m in mail["missing"] if m["name"] not in missing]
+        if not mail["recipients"]:
             continue
-        # A revoked account stops receiving the report, and a squad subscription
-        # follows the account's current reach (it may have changed tribe since).
-        if user.status != "active":
-            continue
-        if sub.squad_id is not None:
-            from .subscriptions import user_can_see_squad
-            if not user_can_see_squad(db, user, sub.squad_id):
-                continue
-        last = _aware(sub.last_sent_at)
-        if wd:
-            # Weekday schedule: fire on a chosen day, past the hour, once per day.
-            if local.weekday() not in wd or local.hour < sub.hour:
-                continue
-            if last is not None and local_now(last).date() == local.date():
-                continue
-            since = 7
-        else:
-            # Legacy "every N days" cadence.
-            if last is not None and (now - last) < timedelta(days=sub.interval_days):
-                continue
-            since = max(sub.interval_days, 7)
-        if sub.squad_id is not None:
-            data, pptx_bytes = render(None, sub.squad_id, since)
-        else:
-            from .deps import scoped_tribe_id
-            scope_tribe = scoped_tribe_id(user)
-            data, pptx_bytes = render(scope_tribe, None, since)
-
-        scope_key = f"sub:{sub.id}"
-        sig = report_signature(data)
-        changes = diff_report(get_baseline(db, scope_key), sig, lang)
-
-        def _mark_done():
-            set_baseline(db, scope_key, sig)
-            sub.last_sent_at = now
-            if sub.squad_id is None:
-                user.report_last_sent_at = now
-
-        # "Only when changes": skip the email but still advance the cadence/baseline.
-        if only_changes and not changes.get("first") and changes["count"] == 0:
-            _mark_done()
-            continue
-
-        if sub.squad_id is not None:
-            sq = db.get(Squad, sub.squad_id)
-            scope_lbl = sq.name if sq else rt(lang, "h_squad")
-        elif user.role == "admin":
-            scope_lbl = rt(lang, "all_tribes")
-        else:
-            tr = db.get(Tribe, user.tribe_id) if user.tribe_id else None
-            scope_lbl = tr.name if tr else rt(lang, "all_tribes")
-        subject = subject_prefix(changes, lang) + rt(lang, "subject_personal", scope=scope_lbl, w=week)
-        if report_mail(db, smtp, user.email, subject, data, why="subscription",
-                       file_base=_file_base(lang, scope_lbl, local.date().isoformat()),
-                       changes=changes, pptx=pptx_bytes, week=week):
-            _mark_done()
+        if sender.send(mail, why="schedule" if tribe_id is None else "tribe"):
             sent += 1
-    db.commit()  # persist baselines / last_sent even when only skips occurred
-    return sent
+        else:
+            failed.append(mail["label"])
+    return {"sent": sent, "failed": failed, "missing": missing, "smtp": True}
+
+
+def _line_sample(mails: list[dict], line: str | None) -> dict | None:
+    from .mailplan import only_line
+    # The first mail this line takes part in, with ALL its recipients: the
+    # preview shows who else is on it.
+    picked = only_line(mails, line)
+    if picked:
+        return next(m for m in mails if m["key"] == picked[0]["key"])
+    return mails[0] if mails else None
+
+
+def plan_preview(db: Session, tribe_id: int | None, line: str | None = None,
+                 cfg: dict | None = None) -> dict | None:
+    """The mail one line of the settings sends, as it will look (the first one of
+    that line): its subject, recipients and HTML body. None when it sends nothing."""
+    from .mailbody import app_link, footer, render_email
+    from .mailplan import plan_for
+    from .reportconfig import get_report
+    cfg = cfg or get_report(db, tribe_id)
+    mail = _line_sample(plan_for(db, tribe_id, cfg), line)
+    if mail is None:
+        return None
+    sender = _Sender(db, {}, cfg, utcnow())
+    d = sender.doc(mail, with_pptx=False)
+    rows = [r for blk in d["data"].get("tribes") or [] for r in blk.get("squads") or []]
+    path = f"/squads/{rows[0]['squad_id']}" if d["data"].get("squad_scoped") and rows else "/"
+    html = render_email(d["data"], changes=d["changes"], link=app_link(db, path),
+                        footer=footer(sender.lang, "schedule" if tribe_id is None else "tribe"),
+                        has_pptx=bool(mail.get("docs")), week=sender.week)
+    return {"subject": d["subject"], "label": mail["label"], "html": html, "docs": mail.get("docs") or [],
+            "to": [r["email"] for r in mail["recipients"] if r["role"] == "to"],
+            "cc": [r["email"] for r in mail["recipients"] if r["role"] == "cc"]}
+
+
+def plan_test(db: Session, tribe_id: int | None, to: str, line: str | None = None) -> dict:
+    """The mail one line sends (the first of that line), to one address, now."""
+    from .mailplan import plan_for
+    from .reportconfig import get_report
+    from .smtpconfig import get_smtp
+    smtp = get_smtp(db)
+    if not smtp.get("enabled"):
+        return {"ok": False, "smtp": False}
+    mail = _line_sample(plan_for(db, tribe_id), line)
+    if mail is None:
+        return {"ok": False, "smtp": True, "empty": True}
+    pptxtpl.use(pptxtpl.get(db))
+    sender = _Sender(db, smtp, get_report(db, tribe_id), utcnow())
+    return {"ok": sender.send(mail, why="test", to=[to], subject_suffix=" (test)"), "smtp": True,
+            "label": mail["label"], "to": to}
 
 
 def build_dependencies_data(db: Session, scope_tribe: int | None, year: int | None = None,

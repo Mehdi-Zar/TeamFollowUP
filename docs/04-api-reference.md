@@ -157,7 +157,7 @@ removes the taxonomy instead of only hiding its selector.
 ### reports (`/api/reports`) - module `review.weekly_report`
 `GET /weekly.html`; `GET /weekly.pptx`; `GET /roadmap.html`; `GET /roadmap.pptx` (supports `squad_ids`);
 `GET /dependencies.html`; `GET /dependencies.pptx` (milestone dependencies grouped by the entity waited on; `mode=all` **par defaut**, `mode=cross_tribe` ne garde que celles qui pointent hors de la tribu de la squad source et le document le dit alors en sous-titre. Le defaut valait `cross_tribe`, et une installation d'une seule tribu n'en a aucune: l'export s'ouvrait sur « Aucune dependance » alors que les jalons en portaient. Supporte `tribe_id`/`squad_ids`/`year`; module `squad_content.roadmap`);
-`POST /weekly/email`; `GET /subscriptions`; `GET /subscription`; `PUT /subscription`;
+`POST /weekly/email`;
 `GET /versions` (les journees ou une squad du perimetre a fige sa saisie, avec le nombre de
 squads concernees; capability `dashboard` **ou** `roadmap`, module `reporting`, puisque c'est
 lui qui produit les saisies figees)
@@ -206,8 +206,9 @@ Users: `GET/POST /users`, `PUT/DELETE /users/{id}`; Settings: `GET/PUT /settings
 config?: {...}}`; `config` layers unsaved form values over the stored ones so a change can be checked
 before it is committed, returns `{ok, checks[], hint}`, read-only);
 Modules: `GET/PUT /modules-config`; **Personas: `GET/PUT /personas`**;
-SMTP: `GET/PUT /smtp-config`, `POST /smtp-config/test`; Report: `GET/PUT /report-config`,
-`POST /report-config/test`; Log export: `GET/PUT /log-export-config`,
+SMTP: `GET/PUT /smtp-config`, `POST /smtp-config/test`; Report (admin): `GET/PUT /report-config` (`?tribe_id=` pour une tribe, sinon la Direction),
+`POST /report-config/plan` et `/preview` (sur les reglages en cours, sans ecrire), `POST /report-config/test`,
+`/send-now`, `/send-squad-leaders`; Log export: `GET/PUT /log-export-config`,
 `POST /log-export-config/test`, `POST /log-export-config/flush` (syslog / GCS / BigQuery; GCP auth is
 keyless by default - ADC/WIF/impersonation, JSON key last - see [ADR-0012](adr/0012-gcp-auth-keyless.md));
 Imports: `GET /import-org/template`, `POST /import-org` ([14](14-import-organisation.md)),

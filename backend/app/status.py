@@ -4,7 +4,7 @@ Statuses (jalons): on_track | at_risk | blocked | done.
 There is no single all-time status for a whole squad - health is scoped to a
 quarter (the current quarter by default), which is far less ambiguous.
 """
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from .config import settings
 from .models import Squad
@@ -204,21 +204,93 @@ def rollup_progress(jalons) -> int:
     return round(100 * sum(1 for j in jalons if j.status == "done") / len(jalons))
 
 
-def otd_status(jalons, committed_date, now: datetime | None = None) -> str:
-    """On-time delivery status of an OTD from its milestones + committed date:
+# How many days before its committed date an unfinished OTD turns "at risk",
+# even with no milestone blocked: the last fortnight is too late to recover.
+OTD_DUE_SOON_DAYS = 15
 
-      delivered : every milestone is done.
-      late      : the committed date has passed and not everything is done.
-      at_risk   : a milestone is blocked or at risk (and not yet late).
-      on_track  : otherwise.
+# The statuses an OTD can have. The first four are computed, "unscoped" too; the
+# others are facts: a delivery declared by hand, a cancellation, a carry-over.
+OTD_STATUSES = ("on_track", "at_risk", "late", "delivered", "delivered_late",
+                "not_delivered", "cancelled", "unscoped")
+
+
+def quarter_end(year: int, quarter: int) -> date:
+    """The last day of a quarter."""
+    return date(year, 3 * quarter, 31 if quarter in (1, 4) else 30)
+
+
+def day_of(dt) -> date | None:
+    """The calendar day of a datetime (UTC) or a date."""
+    if dt is None:
+        return None
+    if isinstance(dt, datetime):
+        return _aware(dt).date()
+    return dt
+
+
+def otd_state(jalons, committed_date, now: datetime | None = None, otd=None) -> dict:
+    """The status of an OTD and why, as ``{"status", "reasons"}``.
+
+    Facts written on the OTD come first, in this order:
+
+      cancelled      : the OTD was cancelled (with a reason). Out of every count.
+      declared       : a status declared by hand (delivered, delivered_late,
+                       not_delivered), for an OTD whose story happened before the
+                       tool: it wins over the milestones as long as it exists.
+      not_delivered  : the OTD was not delivered by the end of its year and was
+                       carried over to the next one, where its copy lives on.
+
+    Otherwise the status is computed from the milestones linked to it and its
+    committed date, first rule that matches:
+
+      no milestone   : late once the date has passed, else unscoped (nothing to
+                       judge it on yet).
+      all done       : delivered, or delivered_late when the last milestone was
+                       finished after the committed date.
+      date passed    : late, from the day after the committed date.
+      at_risk        : a milestone is blocked or at risk, the date is less than
+                       OTD_DUE_SOON_DAYS days away, or an unfinished milestone is
+                       planned in a quarter that ends after the date.
+      on_track       : otherwise.
     """
+    if otd is not None:
+        if getattr(otd, "cancelled_at", None) is not None:
+            return {"status": "cancelled", "reasons": ["cancelled"]}
+        declared = getattr(otd, "declared_status", None)
+        if declared:
+            return {"status": declared, "reasons": ["declared"]}
+        if getattr(otd, "carried_to", None):
+            return {"status": "not_delivered", "reasons": ["carried_over"]}
     jalons = list(jalons)
-    now = _aware(now) or datetime.now(timezone.utc)
-    if jalons and all(j.status == "done" for j in jalons):
-        return "delivered"
-    committed = _aware(committed_date)
-    if committed is not None and now > committed:
-        return "late"
-    if any(j.status in ("blocked", "at_risk") for j in jalons):
-        return "at_risk"
-    return "on_track"
+    today = (_aware(now) or datetime.now(timezone.utc)).date()
+    committed = day_of(committed_date)
+    passed = committed is not None and today > committed
+    if not jalons:
+        return {"status": "late" if passed else "unscoped",
+                "reasons": ["date_passed", "no_milestone"] if passed else ["no_milestone"]}
+    if all(j.status == "done" for j in jalons):
+        ends = [day_of(getattr(j, "done_at", None)) for j in jalons]
+        last = max((d for d in ends if d is not None), default=None)
+        if committed is not None and last is not None and last > committed:
+            return {"status": "delivered_late", "reasons": ["done_after_date"]}
+        return {"status": "delivered", "reasons": ["all_done"]}
+    if passed:
+        return {"status": "late", "reasons": ["date_passed"]}
+    reasons = []
+    if any(j.status == "blocked" for j in jalons):
+        reasons.append("milestone_blocked")
+    if any(j.status == "at_risk" for j in jalons):
+        reasons.append("milestone_at_risk")
+    if committed is not None and (committed - today).days <= OTD_DUE_SOON_DAYS:
+        reasons.append("due_soon")
+    if committed is not None and any(j.status != "done" and quarter_end(j.year, j.quarter) > committed
+                                     for j in jalons):
+        reasons.append("milestone_beyond_date")
+    if reasons:
+        return {"status": "at_risk", "reasons": reasons}
+    return {"status": "on_track", "reasons": []}
+
+
+def otd_status(jalons, committed_date, now: datetime | None = None, otd=None) -> str:
+    """The status of an OTD (see ``otd_state`` for the rules)."""
+    return otd_state(jalons, committed_date, now, otd)["status"]

@@ -31,13 +31,13 @@ ADMIN_TAB_OPTIONS = ["tribes", "tribe", "squads", "platforms", "users", "persona
                      "modules", "report", "leaves", "settings", "branding",
                      "auth", "directory", "api", "smtp", "trust",
                      "audit", "moderation", "logs", "data", "ops"]
-_DEFAULT_TABS = {"tribe_leader": ["tribe", "platforms", "users", "leaves", "report"]}
+_DEFAULT_TABS = {"tribe_leader": ["tribe", "platforms", "users", "leaves"]}
 # Tabs that are, by nature, the whole administration: the SSO configuration
 # (point the login at another identity provider, map a group to the admin role)
 # the trusted authorities (accept any certificate) and the directory (its SCIM
 # token creates accounts). Handing one out handed
 # out admin; they stay the administrator's and cannot be ticked for a persona.
-ADMIN_ONLY_TABS = ["auth", "directory", "trust"]
+ADMIN_ONLY_TABS = ["auth", "directory", "trust", "report"]
 
 
 def _clean_tabs(raw) -> list[str]:

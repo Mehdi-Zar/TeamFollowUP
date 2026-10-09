@@ -749,7 +749,7 @@ function QuarterEditor({ squad, year, quarter, readonly, t, roadmap, onAdd, onEd
  */
 /** An OTD as the milestone window lists it (GET /api/otds). */
 type OtdChoice = { id: number; tribe_id: number; year: number; title: string; scope?: "management" | "squad";
-  squad_id?: number | null; owner_user_id?: number | null; committed_date?: string | null };
+  squad_id?: number | null; owner_user_id?: number | null; committed_date?: string | null; cancelled_at?: string | null };
 
 /**
  * The two commitments a milestone can deliver, picked from two lists: the
@@ -778,12 +778,18 @@ function JalonOtdLinks({ f, set, squadId, tribeId, t }: {
   const mayManagement = (o: OtdChoice) => user?.role === "admin"
     || (user?.role === "tribe_leader" && user?.tribe_id === o.tribe_id)
     || o.squad_id === squadId || (o.owner_user_id != null && o.owner_user_id === user?.id);
+  // A cancelled OTD is not offered, unless it is the one already linked.
+  const live = (o: OtdChoice) => !o.cancelled_at || o.id === f.otd_id || o.id === f.squad_otd_id;
   const mgmt = otds.filter((o) => (o.scope ?? "management") === "management" && (!tribeId || o.tribe_id === tribeId));
-  const mgmtOptions = mgmt.filter(mayManagement);
+  const mgmtOptions = mgmt.filter(mayManagement).filter(live);
   const current = mgmt.find((o) => o.id === f.otd_id);
+  // A milestone moved to another year keeps its OTD, which is not in this
+  // year's list: it is shown as it is, and can be unlinked.
+  const otherYear = (id?: number | null, label?: string | null) =>
+    id && !otds.some((o) => o.id === id) ? <option value={id}>{t("jalon.otd_other_year", { label: label ?? `#${id}` })}</option> : null;
   // Linked by the tribe leader to a commitment of the whole tribe: shown, not changeable here.
   const mgmtLocked = !!current && !mayManagement(current);
-  const own = otds.filter((o) => o.scope === "squad" && o.squad_id === squadId);
+  const own = otds.filter((o) => o.scope === "squad" && o.squad_id === squadId).filter(live);
   return (
     <div className="stack" style={{ gap: 8 }}>
       <div className="small strong">{t("jalon.otd_section")}</div>
@@ -794,6 +800,7 @@ function JalonOtdLinks({ f, set, squadId, tribeId, t }: {
                   onChange={(e) => set("otd_id", e.target.value ? Number(e.target.value) : null)}>
             <option value="">{mgmtOptions.length || current ? t("jalon.otd_none") : t("jalon.otd_no_management")}</option>
             {mgmtLocked && current && <option value={current.id}>{label(current)}</option>}
+            {otherYear(f.otd_id, f.otd_label)}
             {mgmtOptions.map((o) => <option key={o.id} value={o.id}>{label(o)}</option>)}
           </select>
           {mgmtLocked && <div className="small muted" style={{ marginTop: 4 }}>{t("jalon.otd_locked")}</div>}
@@ -803,6 +810,7 @@ function JalonOtdLinks({ f, set, squadId, tribeId, t }: {
           <select id="jalon-squad-otd" value={f.squad_otd_id ?? ""} disabled={!own.length && !f.squad_otd_id}
                   onChange={(e) => set("squad_otd_id", e.target.value ? Number(e.target.value) : null)}>
             <option value="">{own.length ? t("jalon.otd_none") : t("jalon.otd_no_squad")}</option>
+            {otherYear(f.squad_otd_id, f.squad_otd_label)}
             {own.map((o) => <option key={o.id} value={o.id}>{label(o)}</option>)}
           </select>
         </div>

@@ -337,28 +337,31 @@ def test_from_the_reporting_to_the_inbox(client, db, seeded, inbox, monkeypatch)
     for french in ("Engagements en retard", "Jalons à surveiller", "Ouvrir dans"):
         assert french not in en["visible"], f"French left in the English mail: {french!r}"
 
-    # 2. The scheduled weekly report: whole document + one per squad + the leaders.
+    # 2. The scheduled reports: the Direction's whole document, and the tribe's
+    # (its leader the tribe's document, each squad leader their squad's).
     login(client, "admin@test")
     now = dt.datetime(YEAR, 6, 15, 9, 0, tzinfo=dt.timezone.utc)
-    set_report(db, {"enabled": True, "recipients": ["copil@example.org"], "weekdays": [now.weekday()],
-                    "hour": 8, "global_doc": True, "per_squad": True, "squad_leaders": True})
+    set_report(db, {"enabled": True, "recipients": ["copil@example.org"], "weekdays": [now.weekday()], "hour": 8})
+    set_report(db, {"enabled": True, "weekdays": [now.weekday()], "hour": 8, "copy_leader": True,
+                    "leader_mode": "per_squad"}, seeded["t1"])
     db.commit()
     report_mod.send_due_weekly_reports(db, now=now)
     got = inbox.take()
     to_copil = [g for g in got if "copil@example.org" in str(g["To"])]
-    to_leader = [g for g in got if "sl_a@test" in str(g["To"])]
-    assert len(to_copil) >= 2, [str(g["Subject"]) for g in got]    # whole document + per squad
+    # One mail per squad: the tribe leader in To, the squad leader in copy.
+    to_leader = [g for g in got if "sl_a@test" in str(g["Cc"]) and "tribe@test" in str(g["To"])]
+    assert len(to_copil) == 1, [str(g["Subject"]) for g in got]
     assert to_leader, [str(g["To"]) for g in got]
     for i, g in enumerate(got):
         mails[f"scheduled_{i}"] = _read_mail(g, f"scheduled {i} {g['To']}")
     squad_mail = next(v for k, v in mails.items() if k.startswith("scheduled") and "Squad A" in v["subject"])
     assert MILESTONE_BLOCKED in squad_mail["visible"]
 
-    # 3. The Test button sends what the schedule would.
-    r = client.post("/api/admin/report-config/test", json={"to": "admin@test"})
+    # 3. The Test button sends a line's mail to the caller.
+    r = client.post(f"/api/admin/report-config/test?tribe_id={seeded['t1']}", json={"line": "roles"})
     assert r.status_code == 200 and r.json()["ok"], r.text
     got = inbox.take()
-    assert len(got) == r.json()["count"] and len(got) >= 2
+    assert len(got) == 1
     for i, g in enumerate(got):
         _read_mail(g, f"test button {i}")
         assert "(test)" in str(g["Subject"])
@@ -369,17 +372,7 @@ def test_from_the_reporting_to_the_inbox(client, db, seeded, inbox, monkeypatch)
     for i, g in enumerate(inbox.take()):
         _read_mail(g, f"to leaders {i}")
 
-    # 5. A personal subscription comes due.
-    login(client, seeded["member"])
-    r = client.put("/api/reports/subscription", json={"squad_id": sa, "weekdays": list(range(7)), "hour": 0})
-    assert r.status_code == 200, r.text
-    report_mod.send_personal_subscriptions(db, now=dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=1))
-    got = inbox.take()
-    assert got, "the subscription sent nothing"
-    sub = _read_mail(got[0], "subscription")
-    assert MILESTONE_BLOCKED in sub["visible"]
-
-    # 6. A change notification after the leader edits the reporting.
+    # 5. A change notification after the leader edits the reporting.
     login(client, "admin@test")
     set_change_notify(db, {"enabled": True, "recipients": ["copil@example.org"], "events": list(ALL_EVENTS),
                            "attach_pptx": True, "min_interval_minutes": 0})

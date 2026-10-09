@@ -35,7 +35,10 @@ OtdScope = Literal["management", "squad"]
 # Open-ended: "product" (roadmap) and "transverse" (initiatives/OTD) ship today, but
 # any custom type key is accepted so new squad types can be added without a schema change.
 SquadType = str
-OtdStatus = Literal["on_track", "at_risk", "late", "delivered"]
+OtdStatus = Literal["on_track", "at_risk", "late", "delivered", "delivered_late",
+                    "not_delivered", "cancelled", "unscoped"]
+# What can be declared by hand for an OTD whose story happened before the tool.
+OtdDeclared = Literal["delivered", "delivered_late", "not_delivered"]
 
 
 class ORMModel(BaseModel):
@@ -323,6 +326,9 @@ class OtdCreate(BaseModel):
     display_order: int = 0
     scope: OtdScope = "management"
     squad_id: Optional[int] = None
+    declared_status: Optional[OtdDeclared] = None
+    declared_on: Optional[datetime] = None
+    declared_note: Optional[str] = None
 
 
 class OtdUpdate(BaseModel):
@@ -338,6 +344,13 @@ class OtdUpdate(BaseModel):
     owner_user_id: Optional[int] = None
     year: Optional[int] = None
     display_order: Optional[int] = None
+    # A status declared by hand; null goes back to the computed one.
+    declared_status: Optional[OtdDeclared] = None
+    declared_on: Optional[datetime] = None
+    declared_note: Optional[str] = None
+    # true cancels the OTD (a reason is required), false restores it.
+    cancelled: Optional[bool] = None
+    cancel_reason: Optional[str] = None
 
 
 class OtdOut(ORMModel):
@@ -352,6 +365,13 @@ class OtdOut(ORMModel):
     display_order: int
     scope: OtdScope = "management"
     squad_id: Optional[int] = None
+    initial_committed_date: Optional[datetime] = None
+    declared_status: Optional[str] = None
+    declared_on: Optional[datetime] = None
+    declared_note: Optional[str] = None
+    cancelled_at: Optional[datetime] = None
+    cancel_reason: Optional[str] = None
+    carried_from_id: Optional[int] = None
 
 
 class InitiativeMembers(BaseModel):
@@ -899,7 +919,6 @@ class PreferencesOut(BaseModel):
     notify_tweets: bool
     notify_replies: bool
     email_notifications: bool
-    subscribe_weekly_report: bool
 
 
 class PreferencesUpdate(BaseModel):
@@ -907,7 +926,6 @@ class PreferencesUpdate(BaseModel):
     notify_tweets: Optional[bool] = None
     notify_replies: Optional[bool] = None
     email_notifications: Optional[bool] = None
-    subscribe_weekly_report: Optional[bool] = None
 
 
 class EmailExportIn(BaseModel):
@@ -916,25 +934,6 @@ class EmailExportIn(BaseModel):
     year: Optional[int] = None
 
 
-class ReportSubscriptionOut(BaseModel):
-    """A user's report email subscription and its schedule, as returned."""
-    squad_id: Optional[int] = None
-    squad_name: Optional[str] = None
-    interval_days: int
-    weekdays: list[int] = []
-    hour: int = 8
-    last_sent_at: Optional[datetime] = None
-
-
-class ReportSubscriptionIn(BaseModel):
-    """Create/update a report subscription; empty weekdays unsubscribes."""
-    squad_id: Optional[int] = None  # None = dashboard (user's visibility scope)
-    interval_days: int = Field(default=0, ge=0, le=90)  # legacy; 0 = ignore
-    weekdays: Optional[list[int]] = None   # 0=Mon..6=Sun; empty/None = unsubscribe
-    hour: Optional[int] = None             # 0..23 (UTC)
-
-
-# ---------- Audit ----------
 class AuditOut(ORMModel):
     """An audit-log entry as returned by the API.
 

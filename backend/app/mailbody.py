@@ -320,9 +320,9 @@ def text_of(html_body: str) -> str:
 
 _WHY = {
     "fr": {
-        "schedule": "Vous recevez ce mail car l'envoi programmé du rapport vous inclut. Il se règle dans Administration.",
+        "schedule": "Vous recevez ce mail car l'envoi programmé du rapport vous inclut. Il se règle dans le menu Rapports par mail.",
         "leaders": "Vous recevez ce document car vous dirigez cette squad.",
-        "subscription": "Vous recevez ce rapport car vous y êtes abonné. L'abonnement se règle depuis le tableau de bord, bouton du rapport.",
+        "tribe": "Vous recevez ce mail car le rapport programmé de votre tribe vous inclut. Il se règle dans le menu Rapports par mail.",
         "change": "Vous recevez ce mail car les avis de modification vous incluent. Ils se règlent dans Administration.",
         "manual": "Envoyé à la demande d'un utilisateur depuis l'application.",
         "feed": "Vous recevez ce mail car vous suivez le fil. Cela se règle dans vos Préférences.",
@@ -331,9 +331,9 @@ _WHY = {
         "test": "Mail de test envoyé depuis Administration.",
     },
     "en": {
-        "schedule": "You receive this mail because the scheduled report includes you. It is set in Administration.",
+        "schedule": "You receive this mail because the scheduled report includes you. It is set in the Reports by email menu.",
         "leaders": "You receive this document because you lead this squad.",
-        "subscription": "You receive this report because you subscribed to it. Manage it from the dashboard, report button.",
+        "tribe": "You receive this mail because your tribe's scheduled report includes you. It is set in the Reports by email menu.",
         "change": "You receive this mail because the change notices include you. They are set in Administration.",
         "manual": "Sent at a user's request from the app.",
         "feed": "You receive this mail because you follow the feed. Change it in your Preferences.",

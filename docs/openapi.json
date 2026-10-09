@@ -3102,7 +3102,7 @@
           "notifications"
         ],
         "summary": "Update Preferences",
-        "description": "Update the caller's notification preferences.\n\nPUT /api/me/preferences\nAccess: any authenticated user (own settings). No module gate.\nSide effect: toggling `subscribe_weekly_report` also (un)registers the global\ndashboard report subscription so every representation stays in sync.",
+        "description": "Update the caller's notification preferences.\n\nPUT /api/me/preferences\nAccess: any authenticated user (own settings). No module gate.",
         "operationId": "update_preferences_api_me_preferences_put",
         "requestBody": {
           "content": {
@@ -3681,7 +3681,7 @@
           "admin"
         ],
         "summary": "Read Report Config",
-        "description": "GET /api/admin/report-config: the scheduled report of a scope.\n\nAdmin: the all-tribes schedule, or a tribe's with ``?tribe_id=``. Tribe\nleader: their own tribe's (tab \"report\" required). ``_tribe_id`` in the\nanswer says which one it is.",
+        "description": "GET /api/admin/report-config: the scheduled report of a scope.\n\nAdmin: the Direction's (every tribe, fixed addresses), or a tribe's with\n``?tribe_id=``. Tribe leader: their own tribe's (tab \"report\" required).\n``_tribe_id`` says which one it is, ``_choices`` what the screen can pick\n(squads, people and personas of the tribe). Settings of the first shape are\nconverted on the way (reportconfig.ensure_v2).",
         "operationId": "read_report_config_api_admin_report_config_get",
         "parameters": [
           {
@@ -3727,7 +3727,7 @@
           "admin"
         ],
         "summary": "Update Report Config",
-        "description": "PUT /api/admin/report-config: update a scheduled report (same scopes as the\nGET). Audited. ``last_sent_day`` / ``last_sent_week`` are scheduler bookkeeping\nand are stripped from the payload so the UI can never overwrite them.",
+        "description": "PUT /api/admin/report-config: update a scheduled report (same scopes as the\nGET). Audited. ``last_sent_day`` is scheduler bookkeeping, stripped from the\npayload so the UI can never overwrite it. In a tribe's schedule, the squads and\nthe people named are those of the tribe.",
         "operationId": "update_report_config_api_admin_report_config_put",
         "parameters": [
           {
@@ -3781,14 +3781,73 @@
         }
       }
     },
-    "/api/admin/report-config/send-squad-leaders": {
+    "/api/admin/report-config/plan": {
       "post": {
         "tags": [
           "admin"
         ],
-        "summary": "Send To Squad Leaders",
-        "description": "POST /api/admin/report-config/send-squad-leaders: now, each squad's own\ndocument to its leader and co-leaders, one mail per squad.\n\nBody ``{\"squad_ids\": [...]}`` (empty = every squad of the scope). A tribe\nleader only reaches their tribe's squads. 400 when SMTP is off. Audited.",
-        "operationId": "send_to_squad_leaders_api_admin_report_config_send_squad_leaders_post",
+        "summary": "Report Plan",
+        "description": "POST /api/admin/report-config/plan: who receives which mail, for the\nsettings being edited (body ``{\"cfg\": {...}}``, not saved) or the saved ones:\none row per mail, the documents it carries, its \"To\" and copies (each tagged\nwith the line of the settings that put them there), and the people named\nwithout an address. Reads only.",
+        "operationId": "report_plan_api_admin_report_config_plan_post",
+        "parameters": [
+          {
+            "name": "tribe_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tribe Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/report-config/preview": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Report Preview",
+        "description": "POST /api/admin/report-config/preview: the mail one line of the settings\n(``{\"line\": ..., \"cfg\": {...}}``, the settings being edited) sends, its first\none, as it will look: subject, recipients, documents and HTML body. Reads\nonly. 404 when that line sends nothing.",
+        "operationId": "report_preview_api_admin_report_config_preview_post",
         "parameters": [
           {
             "name": "tribe_id",
@@ -3846,8 +3905,126 @@
           "admin"
         ],
         "summary": "Test Report Config",
-        "description": "POST /api/admin/report-config/test: send now to the caller (or a chosen\naddress) what the schedule would send to its fixed recipients: the whole\ndocument if it is on, and one mail per squad if \"one mail per squad\" (or the\nsquad leaders' mail) is on. It used to send the whole document only, so the\nper-squad option looked broken. Fails with 400 if SMTP is disabled. Audited.",
+        "description": "POST /api/admin/report-config/test: the mail one line of the settings\nsends (body ``{\"line\": ...}``, its first mail), to the caller, now. 400 when\nSMTP is off. Audited.",
         "operationId": "test_report_config_api_admin_report_config_test_post",
+        "parameters": [
+          {
+            "name": "tribe_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tribe Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/report-config/send-now": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Send Report Now",
+        "description": "POST /api/admin/report-config/send-now: the schedule's mails now, out of\nits calendar (all of them, or those of one line with ``{\"line\": ...}``). 400\nwhen SMTP is off. Audited.",
+        "operationId": "send_report_now_api_admin_report_config_send_now_post",
+        "parameters": [
+          {
+            "name": "tribe_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tribe Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/report-config/send-squad-leaders": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Send To Squad Leaders",
+        "description": "POST /api/admin/report-config/send-squad-leaders: now, each squad's own\ndocument to its leader and co-leaders, one mail per squad (the squad page's\nbutton).\n\nBody ``{\"squad_ids\": [...]}`` (empty = every squad of the scope). A tribe\nleader only reaches their tribe's squads. 400 when SMTP is off. Audited.",
+        "operationId": "send_to_squad_leaders_api_admin_report_config_send_squad_leaders_post",
         "parameters": [
           {
             "name": "tribe_id",
@@ -6263,122 +6440,6 @@
             "content": {
               "application/json": {
                 "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/reports/subscriptions": {
-      "get": {
-        "tags": [
-          "reports"
-        ],
-        "summary": "List My Subscriptions",
-        "description": "List the caller's report subscriptions (dashboard + any per-squad ones).\n\nGET /api/reports/subscriptions\nAccess: cookie user with the `dashboard` capability; gated by `review >\nweekly_report`. Personal, so no API-key surface.",
-        "operationId": "list_my_subscriptions_api_reports_subscriptions_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/ReportSubscriptionOut"
-                  },
-                  "type": "array",
-                  "title": "Response List My Subscriptions Api Reports Subscriptions Get"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/reports/subscription": {
-      "get": {
-        "tags": [
-          "reports"
-        ],
-        "summary": "Get My Subscription",
-        "description": "Return the caller's subscription for a given squad (or the global dashboard\none when squad_id is omitted).\n\nGET /api/reports/subscription?squad_id=...\nAccess: cookie user with `dashboard`; gated by `review > weekly_report`.",
-        "operationId": "get_my_subscription_api_reports_subscription_get",
-        "parameters": [
-          {
-            "name": "squad_id",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Squad Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ReportSubscriptionOut"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      },
-      "put": {
-        "tags": [
-          "reports"
-        ],
-        "summary": "Set My Subscription",
-        "description": "Create or update the caller's report subscription (cadence/weekdays/hour).\n\nPUT /api/reports/subscription\nAccess: cookie user with `dashboard`; gated by `review > weekly_report`.\nBusiness rules: a per-squad subscription requires visibility of that squad\n(404 otherwise); for the global (squad_id=None) subscription the legacy\nUser.report_* flags are kept in sync with the new schedule.",
-        "operationId": "set_my_subscription_api_reports_subscription_put",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ReportSubscriptionIn"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ReportSubscriptionOut"
-                }
               }
             }
           },
@@ -14936,6 +14997,45 @@
               }
             ],
             "title": "Squad Id"
+          },
+          "declared_status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "delivered",
+                  "delivered_late",
+                  "not_delivered"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Declared Status"
+          },
+          "declared_on": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Declared On"
+          },
+          "declared_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Declared Note"
           }
         },
         "type": "object",
@@ -15032,6 +15132,67 @@
               }
             ],
             "title": "Display Order"
+          },
+          "declared_status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "delivered",
+                  "delivered_late",
+                  "not_delivered"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Declared Status"
+          },
+          "declared_on": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Declared On"
+          },
+          "declared_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Declared Note"
+          },
+          "cancelled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancelled"
+          },
+          "cancel_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancel Reason"
           }
         },
         "type": "object",
@@ -15065,18 +15226,13 @@
           "email_notifications": {
             "type": "boolean",
             "title": "Email Notifications"
-          },
-          "subscribe_weekly_report": {
-            "type": "boolean",
-            "title": "Subscribe Weekly Report"
           }
         },
         "type": "object",
         "required": [
           "notify_tweets",
           "notify_replies",
-          "email_notifications",
-          "subscribe_weekly_report"
+          "email_notifications"
         ],
         "title": "PreferencesOut",
         "description": "The user's current notification preferences."
@@ -15115,17 +15271,6 @@
               }
             ],
             "title": "Email Notifications"
-          },
-          "subscribe_weekly_report": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Subscribe Weekly Report"
           }
         },
         "type": "object",
@@ -15257,117 +15402,6 @@
         "type": "object",
         "title": "ReactionIn",
         "description": "Body to add/toggle a reaction on a feed post."
-      },
-      "ReportSubscriptionIn": {
-        "properties": {
-          "squad_id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Squad Id"
-          },
-          "interval_days": {
-            "type": "integer",
-            "maximum": 90.0,
-            "minimum": 0.0,
-            "title": "Interval Days",
-            "default": 0
-          },
-          "weekdays": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "integer"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Weekdays"
-          },
-          "hour": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Hour"
-          }
-        },
-        "type": "object",
-        "title": "ReportSubscriptionIn",
-        "description": "Create/update a report subscription; empty weekdays unsubscribes."
-      },
-      "ReportSubscriptionOut": {
-        "properties": {
-          "squad_id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Squad Id"
-          },
-          "squad_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Squad Name"
-          },
-          "interval_days": {
-            "type": "integer",
-            "title": "Interval Days"
-          },
-          "weekdays": {
-            "items": {
-              "type": "integer"
-            },
-            "type": "array",
-            "title": "Weekdays",
-            "default": []
-          },
-          "hour": {
-            "type": "integer",
-            "title": "Hour",
-            "default": 8
-          },
-          "last_sent_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Sent At"
-          }
-        },
-        "type": "object",
-        "required": [
-          "interval_days"
-        ],
-        "title": "ReportSubscriptionOut",
-        "description": "A user's report email subscription and its schedule, as returned."
       },
       "RoadmapItemCreate": {
         "properties": {

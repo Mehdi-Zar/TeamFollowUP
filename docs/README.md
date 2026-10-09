@@ -45,6 +45,7 @@ understand, run, operate and extend the product **without further explanation**.
 | 33 | [Sécurité : pentest et durcissement](33-securite-et-pentest.md) | Admins / Ops |
 | 34 | [Annuaire d'entreprise et provisioning SCIM](34-annuaire-et-scim.md) | Admins |
 | 35 | [Studio des exports : mettre en page les documents](35-studio-des-exports.md) | Tribe leaders, squad leaders, admins |
+| 36 | [Statut des OTD : règles et cas particuliers](36-statut-des-otd.md) | Tribe leaders, squad leaders |
 | - | [Guide des menus (captures, regenerable)](Guide-des-menus.html) | Tout le monde |
 | - | [Architecture Decision Records (ADR)](adr/README.md) | Engineers / Architects |
 

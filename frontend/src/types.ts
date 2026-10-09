@@ -72,7 +72,10 @@ export const stageTag = (s?: string | null) => (s === "EA" || s === "GA" ? s : n
 // "product" and "transverse" ship today; any custom key is allowed (extensible).
 export type SquadType = "product" | "transverse" | (string & {});
 /** Delivery status of an OTD commitment. */
-export type OtdStatus = "on_track" | "at_risk" | "late" | "delivered";
+export type OtdStatus = "on_track" | "at_risk" | "late" | "delivered" | "delivered_late"
+  | "not_delivered" | "cancelled" | "unscoped";
+/** A status declared by hand, for an OTD whose story happened before the tool. */
+export type OtdDeclared = "delivered" | "delivered_late" | "not_delivered";
 
 /** A tribe-level Initiative: the top of the reporting chain, set by the tribe
  *  leader and answered by squad objectives/milestones. */
@@ -107,6 +110,13 @@ export interface Otd {
   display_order: number;
   scope?: OtdScope;
   squad_id?: number | null;
+  initial_committed_date?: string | null;
+  declared_status?: OtdDeclared | null;
+  declared_on?: string | null;
+  declared_note?: string | null;
+  cancelled_at?: string | null;
+  cancel_reason?: string | null;
+  carried_from_id?: number | null;
 }
 
 // Reporting (read) shapes returned by the report endpoints.
@@ -138,8 +148,20 @@ export interface OtdReport extends Otd {
   owner_name?: string | null;
   squad_name?: string | null;
   status: OtdStatus;
-  counts: { total: number; done: number; blocked: number; at_risk: number };
-  jalons: { id: number; title: string; quarter: number; stage?: string | null; status: RoadmapStatus; squad_id: number; squad_name: string }[];
+  /** Why it has this status (keys of otd.reason.*). */
+  reasons: string[];
+  /** Days between the first committed date and the current one (0 if unchanged). */
+  replanned_days: number;
+  counts: { total: number; done: number; blocked: number; at_risk: number; late: number };
+  /** The part of each squad whose milestones hold it. */
+  by_squad: { squad_id: number; squad_name: string; total: number; done: number; late: number }[];
+  /** Unfinished milestones planned in a quarter ending after the date. */
+  beyond_date: string[];
+  /** Linked milestones moved to another year. */
+  slipped: { id: number; title: string; year: number }[];
+  carried_from?: { id: number; year: number; title: string } | null;
+  carried_to?: { id: number; year: number; title: string } | null;
+  jalons: { id: number; title: string; year: number; quarter: number; stage?: string | null; status: RoadmapStatus; squad_id: number; squad_name: string }[];
 }
 /** Un jalon proposable a une initiative: son trimestre, et l'initiative qui le
  *  prend deja s'il y en a une. */
@@ -576,7 +598,7 @@ export interface PublicConfig {
 /** A single in-app notification (new feed post or a reply to the user). */
 export interface Notif {
   id: number;
-  kind: "tweet" | "reply";
+  kind: "tweet" | "reply" | "otd_carry";
   actor_name?: string | null;
   excerpt?: string | null;
   link?: string | null;
@@ -595,7 +617,6 @@ export interface Preferences {
   notify_tweets: boolean;
   notify_replies: boolean;
   email_notifications: boolean;
-  subscribe_weekly_report: boolean;
 }
 
 /** Top-line dashboard KPIs across the visible scope. */

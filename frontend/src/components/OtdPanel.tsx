@@ -17,6 +17,67 @@ import { CandidateJalon, OtdReport, OtdScope, SquadDetail } from "../types";
 import { Collapsible, ErrorBanner, Modal, PickItem } from "./ui";
 import { Sorted, SortTh } from "./tableView";
 
+/** The colour of a status: green kept, orange to watch, red missed, grey out of play. */
+const STATUS_TONE: Record<string, string> = {
+  on_track: "badge-navy", at_risk: "badge-orange", late: "badge-red", delivered: "badge-green",
+  delivered_late: "badge-orange", not_delivered: "badge-red", cancelled: "badge-grey", unscoped: "badge-grey",
+};
+
+/** The status of an OTD, with why in its tooltip. */
+export function OtdStatusBadge({ o }: { o: OtdReport }) {
+  const { t } = useI18n();
+  return (
+    <span className={`badge ${STATUS_TONE[o.status] ?? "badge-navy"}`}
+          title={(o.reasons ?? []).map((r) => t(`otd.reason.${r}`)).join(". ")}>
+      {t(`otd.status.${o.status}`)}
+    </span>
+  );
+}
+
+/** What there is to know about an OTD besides its status: a moved date, a
+ *  carry-over, a cancellation, milestones planned after the date or moved to
+ *  another year, and the part of this squad. */
+function otdNotes(o: OtdReport, t: any, fmtDate: (d?: string | null) => string, squadId?: number): string[] {
+  const out: string[] = [];
+  if (o.cancelled_at) out.push(t("otd.note_cancelled", { reason: o.cancel_reason ?? "" }));
+  if (o.declared_status) out.push(t("otd.note_declared") + (o.declared_note ? `${t("common.colon")}${o.declared_note}` : ""));
+  if (o.replanned_days) {
+    out.push(t("otd.note_replanned", { d: fmtDate(o.initial_committed_date),
+                                       n: `${o.replanned_days > 0 ? "+" : ""}${o.replanned_days}` }));
+  }
+  if (o.carried_from) out.push(t("otd.note_carried_from", { year: o.carried_from.year }));
+  if (o.carried_from && !o.committed_date) out.push(t("otd.note_no_date"));
+  if (o.carried_to) out.push(t("otd.note_carried_to", { year: o.carried_to.year }));
+  if (o.beyond_date?.length) out.push(t("otd.note_beyond", { list: o.beyond_date.join(", ") }));
+  if (o.slipped?.length) out.push(t("otd.note_slipped", { list: o.slipped.map((j) => `${j.title} (${j.year})`).join(", ") }));
+  const share = squadId != null && (o.by_squad?.length ?? 0) > 1 ? o.by_squad.find((s) => s.squad_id === squadId) : undefined;
+  if (share) out.push(t("otd.note_share", { done: share.done, total: share.total, late: share.late }));
+  return out;
+}
+
+/** The status block of the OTD window: the status, why, what to know, and the
+ *  rules, one click away. */
+function OtdStatusBlock({ o, squadId }: { o: OtdReport; squadId?: number }) {
+  const { t, formatDate } = useI18n();
+  const notes = otdNotes(o, t, formatDate, squadId);
+  return (
+    <div className="otd-status-block">
+      <div className="inline" style={{ gap: 8, flexWrap: "wrap" }}>
+        <span className="field-label" style={{ margin: 0 }}>{t("otd.status_section")}</span>
+        <OtdStatusBadge o={o} />
+        <span className="small muted">{(o.reasons ?? []).map((r) => t(`otd.reason.${r}`)).join(". ")}</span>
+      </div>
+      {notes.length > 0 && (
+        <ul className="otd-notes small">{notes.map((n, i) => <li key={i}>{n}</li>)}</ul>
+      )}
+      <details className="otd-how small">
+        <summary>{t("otd.how")}</summary>
+        <ol>{[1, 2, 3, 4, 5, 6, 7].map((n) => <li key={n}>{t(`otd.how_${n}`)}</li>)}</ol>
+      </details>
+    </div>
+  );
+}
+
 /** Longueur maximale d'un titre d'OTD, la meme que cote API (schemas.OTD_TITLE_MAX). */
 const OTD_TITLE_MAX = 30;
 
@@ -108,16 +169,29 @@ export function OtdPanel({ squad, canManage, canOwn, onChange, editTo, editLabel
                     {t(`otd.scope_${scope}`)}
                   </span>
                 </td>
-                <td>{fmtDate(o.committed_date)}</td>
                 <td>
-                  {/* Une seule couleur pour le statut, comme dans les documents:
-                      la teinte de la ligne dit deja la portee, et deux codes
-                      couleur sur la meme ligne ne se distinguent plus. */}
-                  <span className="badge badge-navy">{t(`otd.status.${o.status}`)}</span>
+                  {fmtDate(o.committed_date)}
+                  {o.replanned_days !== 0 && o.replanned_days != null && (
+                    <div className="small muted" title={t("otd.initial_date", { d: fmtDate(o.initial_committed_date) })}>
+                      {t("otd.replanned_short", { n: `${o.replanned_days > 0 ? "+" : ""}${o.replanned_days}` })}
+                    </div>
+                  )}
+                </td>
+                <td>
+                  {/* The status says whether the promise holds: its colour is
+                      what the eye looks for first (the bar on the left says the
+                      scope). Why is in its tooltip and in the window. */}
+                  <OtdStatusBadge o={o} />
+                  {o.carried_from && <div className="small muted">{t("otd.note_carried_from", { year: o.carried_from.year })}</div>}
+                  {o.carried_to && <div className="small muted">{t("otd.note_carried_to", { year: o.carried_to.year })}</div>}
                 </td>
                 <td className="small muted">
                   {t("otd.counts", { total: o.counts.total, done: o.counts.done,
                                      blocked: o.counts.blocked, at_risk: o.counts.at_risk })}
+                  {(o.by_squad?.length ?? 0) > 1 && (() => {
+                    const sh = o.by_squad.find((s) => s.squad_id === squad.id);
+                    return sh ? <div>{t("otd.note_share", { done: sh.done, total: sh.total, late: sh.late })}</div> : null;
+                  })()}
                 </td>
                 <td>
                   {writable && (
@@ -190,12 +264,15 @@ export function OtdPanel({ squad, canManage, canOwn, onChange, editTo, editLabel
               <span className={`badge otd-scope-badge otd-scope-${scopeOf(viewing)}`}>{t(`otd.scope_${scopeOf(viewing)}`)}</span>{" "}
               {t("otd.committed")}{t("common.colon")}<span className="strong">{fmtDate(viewing.committed_date)}</span>
             </div>
+            <OtdStatusBlock o={viewing} squadId={squad.id} />
             {viewing.description && <div className="small">{viewing.description}</div>}
             <div className="small strong">{t("otd.jalons_section")}</div>
             {viewing.jalons.length === 0 ? <div className="small muted">{t("otd.pick_empty")}</div> : (
               <div className="stack" style={{ gap: 4 }}>
                 {viewing.jalons.map((j) => (
-                  <div key={j.id} className="small">Q{j.quarter}, {j.title} <span className="muted">({j.squad_name})</span></div>
+                  <div key={j.id} className="small">
+                    {j.year !== viewing.year ? `${j.year} ` : ""}Q{j.quarter}, {j.title} <span className="muted">({j.squad_name})</span>
+                  </div>
                 ))}
               </div>
             )}
@@ -214,12 +291,18 @@ export function OtdPanel({ squad, canManage, canOwn, onChange, editTo, editLabel
  *  et ne change plus ensuite, parce que changer la portee d'un engagement change
  *  qui a le droit de l'ecrire. */
 function OtdDetailModal({ otd, squad, onClose, onSaved, t }: any) {
+  const { formatDate: fmtDate } = useI18n();
   const [f, setF] = useState<Partial<OtdReport>>(otd);
   const [cands, setCands] = useState<CandidateJalon[] | null>(null);
   const [sel, setSel] = useState<Set<number>>(new Set());
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const set = (k: string, v: any) => setF((p: any) => ({ ...p, [k]: v }));
+  // Cancelling asks for a reason: the OTD stays in the reports, and the reason
+  // is what a reader of the document will want to know.
+  const [cancelled, setCancelled] = useState<boolean>(!!otd.cancelled_at);
+  const needsReason = cancelled && !(f.cancel_reason ?? "").trim();
+  const day = (d?: string | null) => (d ? `${String(d).slice(0, 10)}T00:00:00Z` : null);
   // Un titre saisi avant la limite peut la depasser: il faut le raccourcir pour enregistrer.
   const tooLong = (f.title ?? "").trim().length > OTD_TITLE_MAX;
   const scope: OtdScope = scopeOf(otd);
@@ -247,18 +330,21 @@ function OtdDetailModal({ otd, squad, onClose, onSaved, t }: any) {
   });
 
   async function save() {
-    if (!f.title?.trim() || tooLong || !f.committed_date || busy) return;
+    if (!f.title?.trim() || tooLong || !f.committed_date || needsReason || busy) return;
     setBusy(true);
     setErr(null);
     try {
       const body: any = {
         title: f.title.trim(),
         description: f.description?.trim() || null,
-        committed_date: f.committed_date ? `${String(f.committed_date).slice(0, 10)}T00:00:00Z` : null,
+        committed_date: day(f.committed_date),
         owner_user_id: squad.leader_user_id ?? null,
+        declared_status: f.declared_status || null,
+        declared_on: f.declared_status ? day(f.declared_on) : null,
+        declared_note: f.declared_status ? (f.declared_note?.trim() || null) : null,
       };
       let id = f.id;
-      if (id) await api.put(`/api/otds/${id}`, body);
+      if (id) await api.put(`/api/otds/${id}`, { ...body, cancelled, cancel_reason: cancelled ? f.cancel_reason?.trim() : null });
       else {
         id = (await api.post<any>("/api/otds", {
           ...body, tribe_id: squad.tribe_id, year: squad.year,
@@ -285,7 +371,7 @@ function OtdDetailModal({ otd, squad, onClose, onSaved, t }: any) {
     <Modal width={640} title={f.id ? t("otd.edit") : t(`otd.scope_${scope}`)} onClose={onClose}
       footer={<>
         <button className="btn-secondary" onClick={onClose}>{t("action.cancel")}</button>
-        <button onClick={save} disabled={!f.title?.trim() || tooLong || !f.committed_date || busy}>{busy ? t("common.saving") : t("action.save")}</button>
+        <button onClick={save} disabled={!f.title?.trim() || tooLong || !f.committed_date || needsReason || busy}>{busy ? t("common.saving") : t("action.save")}</button>
       </>}>
       <div className="stack" style={{ gap: 16 }}>
         {err && <ErrorBanner message={err} />}
@@ -296,6 +382,8 @@ function OtdDetailModal({ otd, squad, onClose, onSaved, t }: any) {
         <div className="small muted">
           {t("otd.owner")}{t("common.colon")}<span className="strong">{squad.leader?.display_name ?? "-"}</span>
         </div>
+
+        {otd.id && otd.status && <OtdStatusBlock o={otd as OtdReport} squadId={squad.id} />}
 
         <div className="stack" style={{ gap: 4 }}>
           <label className="field-label">{t("otd.title_field")} *</label>
@@ -310,12 +398,59 @@ function OtdDetailModal({ otd, squad, onClose, onSaved, t }: any) {
           <label className="field-label">{t("otd.committed")} *</label>
           <input type="date" value={f.committed_date ? String(f.committed_date).slice(0, 10) : ""}
                  onChange={(e) => set("committed_date", e.target.value)} />
-          <span className="small muted">{t("otd.committed_hint")}</span>
+          <span className="small muted">
+            {t("otd.committed_hint")}
+            {f.initial_committed_date && String(f.initial_committed_date).slice(0, 10) !== String(f.committed_date ?? "").slice(0, 10)
+              ? ` ${t("otd.initial_date", { d: fmtDate(f.initial_committed_date) })}` : ""}
+          </span>
         </div>
 
         <div className="stack" style={{ gap: 4 }}>
           <label className="field-label">{t("otd.description")}</label>
           <textarea rows={2} value={f.description ?? ""} onChange={(e) => set("description", e.target.value)} />
+        </div>
+
+        <div className="otd-facts">
+          <div className="stack" style={{ gap: 4 }}>
+            <label className="field-label" htmlFor="otd-declared">{t("otd.declared_label")}</label>
+            <select id="otd-declared" value={f.declared_status ?? ""}
+                    onChange={(e) => set("declared_status", e.target.value || null)}>
+              <option value="">{t("otd.declared_none")}</option>
+              {(["delivered", "delivered_late", "not_delivered"] as const).map((s) => (
+                <option key={s} value={s}>{t(`otd.status.${s}`)}</option>
+              ))}
+            </select>
+            <span className="small muted">{t("otd.declared_hint")}</span>
+          </div>
+          {f.declared_status && (
+            <div className="row">
+              <div className="col" style={{ maxWidth: 220 }}>
+                <label htmlFor="otd-declared-on">{t("otd.declared_on")}</label>
+                <input id="otd-declared-on" type="date" value={f.declared_on ? String(f.declared_on).slice(0, 10) : ""}
+                       onChange={(e) => set("declared_on", e.target.value || null)} />
+              </div>
+              <div className="col">
+                <label htmlFor="otd-declared-note">{t("otd.declared_note")}</label>
+                <input id="otd-declared-note" value={f.declared_note ?? ""} onChange={(e) => set("declared_note", e.target.value)} />
+              </div>
+            </div>
+          )}
+          {f.id && (
+            <div className="stack" style={{ gap: 4 }}>
+              <label className="inline" style={{ gap: 8, cursor: "pointer" }}>
+                <input type="checkbox" checked={cancelled} onChange={(e) => setCancelled(e.target.checked)} />
+                <span className="strong">{t("otd.cancel_label")}</span>
+              </label>
+              <span className="small muted">{t("otd.cancel_hint")}</span>
+              {cancelled && (
+                <>
+                  <label htmlFor="otd-cancel-reason">{t("otd.cancel_reason")} *</label>
+                  <textarea id="otd-cancel-reason" rows={2} value={f.cancel_reason ?? ""}
+                            onChange={(e) => set("cancel_reason", e.target.value)} />
+                </>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="stack" style={{ gap: 6 }}>

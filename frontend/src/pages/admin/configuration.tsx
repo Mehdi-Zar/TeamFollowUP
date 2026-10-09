@@ -1,16 +1,15 @@
 /**
- * Administration > Configuration: modules, weekly report, leave, general settings.
+ * Administration > Configuration: modules, leave, general settings.
  *
- * What the product DOES, as opposed to who is in it. ReportingAdmin is also
- * mounted outside this screen, by the reporting modal, which is why it is
- * exported rather than local.
+ * What the product DOES, as opposed to who is in it. The mails (scheduled
+ * reports, change notices, subscriptions) are the "Reports by email" menu,
+ * components/ReportsMail.tsx, which reuses ChangeNotifyAdmin and RecipientList.
  */
 import { useEffect, useState } from "react";
 import { api } from "../../api";
 import { useI18n } from "../../i18n";
 import { usePeople } from "../../components/usePeople";
 import { useReloadConfig } from "../../config";
-import { useAuth } from "../../auth";
 import { LeaveConfig, LeaveType, ModuleKey, Permissions, Squad, Tribe } from "../../types";
 import { ErrorBanner } from "../../components/ui";
 
@@ -267,18 +266,13 @@ export const WEEKDAYS_FR = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "
 export const WEEKDAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 
 
-/** Admin > Report: the two ways a report is mailed, each in its own card with
- *  its own recipients. The scheduled report (days, hour, what is sent), and, for
- *  the admin, a mail at every change of a squad's reporting: what triggers it,
- *  for which squads, to whom (addresses, plus the squad's tribe leader or leaders
- *  added by a button), how often, then the whole setting in one sentence. */
-export function ReportingAdmin() {
+/** The mail sent at every change of a squad's reporting (admin, one setting
+ *  for the whole application): what triggers it, for which squads, to whom
+ *  (addresses, plus the squad's tribe leader or leaders added by a button), how
+ *  often, then the whole setting in one sentence. A tab of the "Reports by
+ *  email" menu (components/ReportsMail.tsx). */
+export function ChangeNotifyAdmin() {
   const { t } = useI18n();
-  // The admin runs the all-tribes schedule and the change mails; a tribe leader
-  // runs their own tribe's schedule (the server pins it), and nothing else.
-  const { user } = useAuth();
-  const isAdmin = user?.role === "admin";
-  const [rep, setRep] = useState<any | null>(null);
   const [chg, setChg] = useState<any | null>(null);
   const [squads, setSquads] = useState<Squad[]>([]);
   const [saved, setSaved] = useState(false);
@@ -287,143 +281,43 @@ export function ReportingAdmin() {
   const { error, wrap } = useErr();
 
   useEffect(() => {
-    api.get<any>("/api/admin/report-config").then(setRep).catch((e) => setLoadErr(e?.message || t("common.error")));
-    if (isAdmin) api.get<any>("/api/admin/change-notify-config").then(setChg).catch((e) => setLoadErr(e?.message || t("common.error")));
-    else setChg({});
+    api.get<any>("/api/admin/change-notify-config").then(setChg).catch((e) => setLoadErr(e?.message || t("common.error")));
     api.get<Squad[]>("/api/squads").then(setSquads).catch(() => {});
-  }, [isAdmin]);
-  // A refused load is said: the spinner used to turn forever.
-  if (loadErr && (!rep || !chg)) return <ErrorBanner message={loadErr} />;
-  if (!rep || !chg) return <div className="spinner">{t("common.loading")}</div>;
+  }, []);
+  if (loadErr && !chg) return <ErrorBanner message={loadErr} />;
+  if (!chg) return <div className="spinner">{t("common.loading")}</div>;
 
-  const setR = (k: string, v: any) => setRep((p: any) => ({ ...p, [k]: v }));
   const setC = (k: string, v: any) => setChg((p: any) => ({ ...p, [k]: v }));
-  const weekdays: number[] = rep.weekdays ?? [rep.weekday ?? 0];
-  const toggleWeekday = (i: number) => setR("weekdays", weekdays.includes(i) ? weekdays.filter((x) => x !== i) : [...weekdays, i].sort());
   const events: string[] = (chg._all_events ?? ["progress", "roadmap", "budget", "key_message"]);
   const toggleEvent = (e: string) => setC("events", (chg.events ?? []).includes(e) ? chg.events.filter((x: string) => x !== e) : [...(chg.events ?? []), e]);
   const toggleSquad = (id: number) => setC("scope_squads", (chg.scope_squads ?? []).includes(id) ? chg.scope_squads.filter((x: number) => x !== id) : [...(chg.scope_squads ?? []), id]);
-  const toggleRepSquad = (id: number) => setR("squad_ids", (rep.squad_ids ?? []).includes(id) ? rep.squad_ids.filter((x: number) => x !== id) : [...(rep.squad_ids ?? []), id]);
   const Chip = ({ on, onClick, children }: any) => (
     <label className={`rm-pick-chip${on ? " on" : ""}`} onClick={(e) => { e.preventDefault(); onClick(); }}>
       <input type="checkbox" checked={on} readOnly /><span className="rm-pick-name">{children}</span>
     </label>
   );
-
   async function save() {
     await wrap(async () => {
-      const [r, c] = await Promise.all([
-        api.put<any>("/api/admin/report-config", rep),
-        isAdmin ? api.put<any>("/api/admin/change-notify-config", chg) : Promise.resolve({}),
-      ]);
-      setRep(r); setChg({ ...c, _all_events: chg._all_events });
+      const c = await api.put<any>("/api/admin/change-notify-config", chg);
+      setChg({ ...c, _all_events: chg._all_events });
       setSaved(true); setTimeout(() => setSaved(false), 2000);
     });
-  }
-  async function testWeekly() {
-    setTestMsg(null);
-    try { const r = await api.post<any>("/api/admin/report-config/test", {}); setTestMsg(r.ok ? t("report.test_ok", { to: r.to, n: r.count ?? 1 }) : t("report.test_fail") + (r.error ? ` (${r.error})` : "")); }
-    catch (e: any) { setTestMsg(e.message); }
-  }
-  // Now, each squad's own document to its leaders (the chosen squads, else all).
-  async function sendLeadersNow() {
-    setTestMsg(null);
-    try {
-      const r = await api.post<any>("/api/admin/report-config/send-squad-leaders", { squad_ids: rep.squad_ids ?? [] });
-      setTestMsg(t("reporting.send_leaders_done", { n: r.sent }) +
-        (r.skipped?.length ? `, ${t("reporting.send_leaders_skipped", { names: r.skipped.join(", ") })}` : "") +
-        (r.failed?.length ? `, ${t("reporting.send_leaders_failed", { names: r.failed.join(", ") })}` : ""));
-    } catch (e: any) { setTestMsg(e.message); }
   }
   async function testChange() {
     setTestMsg(null);
     try { const r = await api.post<any>("/api/admin/change-notify-config/test", {}); setTestMsg(r.ok ? t("changenotify.test_ok", { to: r.to, squad: r.squad }) : t("changenotify.test_fail") + (r.error ? ` (${r.error})` : "")); }
     catch (e: any) { setTestMsg(e.message); }
   }
-
-  // Each trigger has its own recipients: a weekly digest and a mail at every
-  // change do not go to the same people, and one shared box hid that.
-  const repList: string[] = (Array.isArray(rep.recipients) ? rep.recipients : String(rep.recipients ?? "").split("\n"))
-    .map((x: string) => x.trim()).filter(Boolean);
   const chgList: string[] = (Array.isArray(chg.recipients) ? chg.recipients : String(chg.recipients ?? "").split("\n"))
     .map((x: string) => x.trim()).filter(Boolean);
-  const Switch = ({ k, label }: { k: string; label: string }) => (
-    <label className="switch">
-      <input type="checkbox" checked={!!rep[k]} onChange={(e) => setR(k, e.target.checked)} />
-      <span className="track"><span className="knob" /></span>
-      <span className="strong">{label}</span>
-    </label>
-  );
   const sep = { borderTop: "1px solid var(--line)", paddingTop: 12 } as const;
   const chosenEvents: string[] = (chg.events ?? []).filter((e: string) => events.includes(e));
   const chosenSquads: number[] = chg.scope_squads ?? [];
 
   return (
-    <div className="stack" style={{ maxWidth: 760, gap: 18 }}>
+    <div className="stack" style={{ gap: 18 }}>
       {error && <ErrorBanner message={error} />}
-      <h2 style={{ margin: 0 }}>{isAdmin ? t("reporting.admin_title") : t("reporting.tribe_scope")}</h2>
-
-      {/* 1. The scheduled report */}
-      <div className="card stack" style={{ gap: 12 }}>
-        <label className="switch">
-          <input type="checkbox" checked={!!rep.enabled} onChange={(e) => setR("enabled", e.target.checked)} />
-          <span className="track"><span className="knob" /></span>
-          <span className="strong">{t("reporting.sched_enabled")}</span>
-        </label>
-        <div className="small muted" style={{ marginTop: -6 }}>{t("reporting.sched_hint")}</div>
-        {rep.enabled && (
-          <>
-            <div>
-              <label>{t("reporting.days")}</label>
-              <div className="inline" style={{ gap: 8, flexWrap: "wrap" }}>
-                {WEEKDAY_KEYS.map((k, i) => <Chip key={i} on={weekdays.includes(i)} onClick={() => toggleWeekday(i)}>{t(`reporting.day.${k}`)}</Chip>)}
-              </div>
-            </div>
-            <div className="row" style={{ gap: 12 }}>
-              <div style={{ width: 120 }}><label htmlFor="rep-hour">{t("report.hour")}</label>
-                <input id="rep-hour" type="number" min={0} max={23} value={rep.hour ?? 8} onChange={(e) => setR("hour", Number(e.target.value))} /></div>
-              <div style={{ width: 150 }}><label htmlFor="rep-since">{t("report.since_days")}</label>
-                <input id="rep-since" type="number" min={1} max={120} value={rep.since_days ?? 7} onChange={(e) => setR("since_days", Number(e.target.value))} /></div>
-            </div>
-            <RecipientList label={t("changenotify.recipients")} list={repList}
-                           onChange={(l) => setR("recipients", l)} t={t} />
-            <div className="strong" style={sep}>{t("reporting.what")}</div>
-            <Switch k="global_doc" label={t("reporting.global_doc")} />
-            <Switch k="per_squad" label={t("reporting.per_squad")} />
-            <Switch k="squad_leaders" label={t("reporting.squad_leaders")} />
-            {(rep.per_squad || rep.squad_leaders) && (
-              <div>
-                <label>{t("reporting.squads")}</label>
-                <div className="small muted" style={{ marginBottom: 4 }}>{t("reporting.squads_all_hint")}</div>
-                <div className="inline" style={{ gap: 8, flexWrap: "wrap" }}>
-                  {squads.map((s) => <Chip key={s.id} on={(rep.squad_ids ?? []).includes(s.id)} onClick={() => toggleRepSquad(s.id)}>{s.name}</Chip>)}
-                </div>
-              </div>
-            )}
-            {isAdmin && (
-              <>
-                <Switch k="tribe_leader_digest" label={t("reporting.tribe_digest")} />
-                <div className="small muted" style={{ marginTop: -4 }}>{t("reporting.tribe_digest_hint")}</div>
-              </>
-            )}
-            <Switch k="only_when_changes" label={t("reporting.only_when_changes")} />
-            <div className="small muted" style={{ marginTop: -4 }}>{t("reporting.only_when_changes_hint")}</div>
-            <label className="switch">
-              <input type="checkbox" checked={rep.attach_pptx !== false} onChange={(e) => setR("attach_pptx", e.target.checked)} />
-              <span className="track"><span className="knob" /></span>
-              <span className="strong">{t("reporting.attach_pptx")}</span>
-            </label>
-            <div className="inline" style={{ flexWrap: "wrap" }}>
-              <button className="btn-secondary btn-sm" onClick={testWeekly}>{t("reporting.test_sched")}</button>
-              <button className="btn-secondary btn-sm" onClick={sendLeadersNow}>{t("reporting.send_leaders_now")}</button>
-              {rep.last_sent_day && <span className="small muted">{t("reporting.last_sent_day", { date: rep.last_sent_day })}</span>}
-            </div>
-          </>
-        )}
-      </div>
-
       {/* 2. A mail at every change (admin: one setting for the whole application) */}
-      {isAdmin && (
         <div className="card stack" style={{ gap: 12 }}>
           <label className="switch">
             <input type="checkbox" checked={!!chg.enabled} onChange={(e) => setC("enabled", e.target.checked)} />
@@ -502,8 +396,6 @@ export function ReportingAdmin() {
             </>
           )}
         </div>
-      )}
-
       <div className="inline">
         <button onClick={save}>{t("action.save")}</button>
         {saved && <span style={{ color: "var(--green)" }}>{t("admin.saved")}</span>}
@@ -533,7 +425,7 @@ function changeSummary(t: (k: string, v?: any) => string, events: string[], squa
 
 /** A list of recipients as removable chips, an input to add an address, and
  *  (optional) automatic recipients added by a button and listed with the rest. */
-function RecipientList({ label, list, onChange, autos = [], onAuto, t }: {
+export function RecipientList({ label, list, onChange, autos = [], onAuto, t }: {
   label: string; list: string[]; onChange: (l: string[]) => void;
   autos?: { key: string; on: boolean; label: string }[]; onAuto?: (key: string, on: boolean) => void;
   t: (k: string, v?: any) => string;

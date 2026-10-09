@@ -438,14 +438,36 @@ def update_modules_config(payload: dict = Body(...), db: Session = Depends(get_d
 
 
 def _report_tribe(db: Session, user: User, tribe_id: int | None) -> int | None:
-    """Which schedule a caller works on: an admin picks (None = the all-tribes
-    one, or a tribe's); a tribe leader always gets their own tribe's, and only if
-    the "report" tab is theirs (Admin > Personas)."""
-    if user.role == ADMIN:
-        if tribe_id is not None and db.get(Tribe, tribe_id) is None:
-            raise HTTPException(status_code=404, detail="Tribe introuvable")
-        return tribe_id
-    return acting_manager(db, user, "report").tribe_id
+    """Which schedule the admin works on: None = the Direction's, or a tribe's.
+    The reports by email are the admin's alone (the "report" tab is admin-only)."""
+    if user.role != ADMIN:
+        raise HTTPException(status_code=403, detail="Accès réservé aux administrateurs")
+    if tribe_id is not None and db.get(Tribe, tribe_id) is None:
+        raise HTTPException(status_code=404, detail="Tribe introuvable")
+    return tribe_id
+
+
+def _report_choices(db: Session, tid: int | None) -> dict:
+    """What the settings screen offers to pick: the tribe's squads and people,
+    and the personas (for the copies)."""
+    if tid is None:
+        return {}
+    from ..personasconfig import get_personas
+    from ..mailplan import tribe_leaders
+    squads = db.scalars(select(Squad).where(Squad.tribe_id == tid).order_by(Squad.display_order, Squad.id)).all()
+    people = db.scalars(select(User).where(User.tribe_id == tid, User.status == "active")
+                        .order_by(User.display_name)).all()
+    return {
+        "squads": [{"id": q.id, "name": q.name} for q in squads],
+        "users": [{"id": u.id, "name": u.display_name, "email": u.email} for u in people],
+        "personas": [{"key": p["key"], "label": p.get("label") or p["key"]} for p in get_personas(db)],
+        "tribe_leaders": [{"id": u.id, "name": u.display_name, "email": u.email} for u in tribe_leaders(db, tid)],
+    }
+
+
+def _report_out(db: Session, tid: int | None) -> dict:
+    from ..reportconfig import get_report
+    return {**get_report(db, tid), "_tribe_id": tid, "_choices": _report_choices(db, tid)}
 
 
 @router.get("/report-config")
@@ -453,44 +475,150 @@ def read_report_config(tribe_id: int | None = Query(default=None), db: Session =
                        user: User = Depends(get_current_user)):
     """GET /api/admin/report-config: the scheduled report of a scope.
 
-    Admin: the all-tribes schedule, or a tribe's with ``?tribe_id=``. Tribe
-    leader: their own tribe's (tab "report" required). ``_tribe_id`` in the
-    answer says which one it is."""
-    from ..reportconfig import get_report
+    Admin: the Direction's (every tribe, fixed addresses), or a tribe's with
+    ``?tribe_id=``. Tribe leader: their own tribe's (tab "report" required).
+    ``_tribe_id`` says which one it is, ``_choices`` what the screen can pick
+    (squads, people and personas of the tribe). Settings of the first shape are
+    converted on the way (reportconfig.ensure_v2)."""
+    from ..reportconfig import ensure_v2
     tid = _report_tribe(db, user, tribe_id)
-    return {**get_report(db, tid), "_tribe_id": tid}
+    if ensure_v2(db):
+        db.commit()
+    return _report_out(db, tid)
 
 
 @router.put("/report-config")
 def update_report_config(payload: dict = Body(...), tribe_id: int | None = Query(default=None),
                          db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """PUT /api/admin/report-config: update a scheduled report (same scopes as the
-    GET). Audited. ``last_sent_day`` / ``last_sent_week`` are scheduler bookkeeping
-    and are stripped from the payload so the UI can never overwrite them."""
-    from ..reportconfig import set_report
+    GET). Audited. ``last_sent_day`` is scheduler bookkeeping, stripped from the
+    payload so the UI can never overwrite it. In a tribe's schedule, the squads and
+    the people named are those of the tribe."""
+    from ..reportconfig import ensure_v2, set_report
     tid = _report_tribe(db, user, tribe_id)
-    # Bookkeeping owned by the scheduler. The screen sends back the whole object it
-    # loaded: a page opened before the send and saved after it reset the day and
-    # the report went out a second time.
-    payload = {k: v for k, v in (payload or {}).items()
-               if k not in ("last_sent_day", "last_sent_week") and not k.startswith("_")}
-    if tid is not None:
-        # A tribe's schedule only covers that tribe's squads.
-        own = set(db.scalars(select(Squad.id).where(Squad.tribe_id == tid)).all())
-        payload["squad_ids"] = [i for i in (payload.get("squad_ids") or []) if int(i) in own]
-    cfg = set_report(db, payload, tid)
+    ensure_v2(db)
+    cfg = set_report(db, _report_payload(db, tid, payload), tid)
     record_audit(db, user.id, "report_config.update", entity="weekly_report",
                  detail={"tribe_id": tid, "enabled": cfg["enabled"], "weekdays": cfg["weekdays"],
-                         "hour": cfg["hour"], "recipients": len(cfg["recipients"])})
+                         "hour": cfg["hour"], "recipients": len(cfg.get("recipients") or []),
+                         "copies": len(cfg.get("copies") or []), "docs": cfg.get("docs")})
     db.commit()
-    return {**cfg, "_tribe_id": tid}
+    return _report_out(db, tid)
+
+
+def _report_payload(db: Session, tid: int | None, payload: dict | None) -> dict:
+    """What the screen sends, kept to what a scope may set: the scheduler's
+    bookkeeping goes, and in a tribe's schedule the squads and the people named
+    are those of the tribe."""
+    payload = {k: v for k, v in (payload or {}).items()
+               if k not in ("last_sent_day", "last_sent_week", "v") and not k.startswith("_")}
+    if tid is not None:
+        own = set(db.scalars(select(Squad.id).where(Squad.tribe_id == tid)).all())
+        people = set(db.scalars(select(User.id).where(User.tribe_id == tid)).all())
+
+        def _own(ids):
+            return [int(i) for i in (ids or []) if str(i).lstrip("-").isdigit() and int(i) in own]
+        payload["squad_ids"] = _own(payload.get("squad_ids"))
+        copies = []
+        for c in payload.get("copies") or []:
+            if not isinstance(c, dict):
+                continue
+            if c.get("type") == "user":
+                try:
+                    if int(c.get("value")) not in people:
+                        raise HTTPException(status_code=400, detail="Personne hors de cette tribe")
+                except (TypeError, ValueError):
+                    continue
+            copies.append({**c, "squad_ids": _own(c.get("squad_ids"))})
+        payload["copies"] = copies
+    else:
+        for k in ("leader_mode", "squad_ids", "copies", "copy_leader", "copy_co_leaders", "copy_contributors"):
+            payload.pop(k, None)
+    return payload
+
+
+def _draft(db: Session, tid: int | None, payload: dict | None) -> dict:
+    """The settings being edited (``payload["cfg"]``), checked but not saved; the
+    saved ones when the screen sends none."""
+    from ..reportconfig import get_report, normalize
+    raw = (payload or {}).get("cfg")
+    return normalize(db, _report_payload(db, tid, raw), tid) if isinstance(raw, dict) else get_report(db, tid)
+
+
+@router.post("/report-config/plan")
+def report_plan(payload: dict = Body(default=None), tribe_id: int | None = Query(default=None),
+                db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """POST /api/admin/report-config/plan: who receives which mail, for the
+    settings being edited (body ``{"cfg": {...}}``, not saved) or the saved ones:
+    one row per mail, the documents it carries, its "To" and copies (each tagged
+    with the line of the settings that put them there), and the people named
+    without an address. Reads only."""
+    from ..mailplan import plan_for
+    tid = _report_tribe(db, user, tribe_id)
+    return {"mails": [{k: m.get(k) for k in ("key", "kind", "label", "squad_id", "recipients", "missing", "docs")}
+                      for m in plan_for(db, tid, _draft(db, tid, payload))]}
+
+
+@router.post("/report-config/preview")
+def report_preview(payload: dict = Body(default=None), tribe_id: int | None = Query(default=None),
+                   db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """POST /api/admin/report-config/preview: the mail one line of the settings
+    (``{"line": ..., "cfg": {...}}``, the settings being edited) sends, its first
+    one, as it will look: subject, recipients, documents and HTML body. Reads
+    only. 404 when that line sends nothing."""
+    from ..report import plan_preview
+    tid = _report_tribe(db, user, tribe_id)
+    out = plan_preview(db, tid, (payload or {}).get("line"), _draft(db, tid, payload))
+    if out is None:
+        raise HTTPException(status_code=404, detail="Aucun mail à prévisualiser")
+    return out
+
+
+@router.post("/report-config/test")
+def test_report_config(payload: dict = Body(default=None), tribe_id: int | None = Query(default=None),
+                       db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """POST /api/admin/report-config/test: the mail one line of the settings
+    sends (body ``{"line": ...}``, its first mail), to the caller, now. 400 when
+    SMTP is off. Audited."""
+    from ..mail import last_error
+    from ..report import plan_test
+    tid = _report_tribe(db, user, tribe_id)
+    to = user.email or ""
+    if not to:
+        raise HTTPException(status_code=400, detail="Votre compte n'a pas d'adresse mail")
+    res = plan_test(db, tid, to, (payload or {}).get("line"))
+    if not res["smtp"]:
+        raise HTTPException(status_code=400, detail="SMTP désactivé")
+    record_audit(db, user.id, "report_config.test", entity="weekly_report",
+                 detail={"tribe_id": tid, "ok": res["ok"], "line": (payload or {}).get("line")})
+    db.commit()
+    return {**res, "error": None if res["ok"] else last_error()}
+
+
+@router.post("/report-config/send-now")
+def send_report_now(payload: dict = Body(default=None), tribe_id: int | None = Query(default=None),
+                    db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """POST /api/admin/report-config/send-now: the schedule's mails now, out of
+    its calendar (all of them, or those of one line with ``{"line": ...}``). 400
+    when SMTP is off. Audited."""
+    from ..report import send_plan_now
+    tid = _report_tribe(db, user, tribe_id)
+    line = (payload or {}).get("line")
+    res = send_plan_now(db, tid, line)
+    if not res["smtp"]:
+        raise HTTPException(status_code=400, detail="SMTP désactivé")
+    record_audit(db, user.id, "report.send_now", entity="weekly_report",
+                 detail={"tribe_id": tid, "line": line, "sent": res["sent"]})
+    db.commit()
+    return res
 
 
 @router.post("/report-config/send-squad-leaders")
 def send_to_squad_leaders(payload: dict = Body(default=None), tribe_id: int | None = Query(default=None),
                           db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """POST /api/admin/report-config/send-squad-leaders: now, each squad's own
-    document to its leader and co-leaders, one mail per squad.
+    document to its leader and co-leaders, one mail per squad (the squad page's
+    button).
 
     Body ``{"squad_ids": [...]}`` (empty = every squad of the scope). A tribe
     leader only reaches their tribe's squads. 400 when SMTP is off. Audited."""
@@ -510,68 +638,6 @@ def send_to_squad_leaders(payload: dict = Body(default=None), tribe_id: int | No
                  detail={"tribe_id": tid, "squads": [q.id for q in squads], "sent": res["sent"]})
     db.commit()
     return res
-
-
-@router.post("/report-config/test")
-def test_report_config(payload: dict = Body(default=None), tribe_id: int | None = Query(default=None),
-                       db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """POST /api/admin/report-config/test: send now to the caller (or a chosen
-    address) what the schedule would send to its fixed recipients: the whole
-    document if it is on, and one mail per squad if "one mail per squad" (or the
-    squad leaders' mail) is on. It used to send the whole document only, so the
-    per-squad option looked broken. Fails with 400 if SMTP is disabled. Audited."""
-    from ..smtpconfig import get_smtp
-    from ..mail import last_error
-    from ..mailbody import instance_lang
-    from ..reportconfig import get_report
-    from ..reportcommon import rt
-    from ..report import _file_base, _studio_deck, build_report_data, local_now, render_pptx, report_mail
-
-    tid = _report_tribe(db, user, tribe_id)
-    to = (payload or {}).get("to") or user.email
-    from .reports import assert_allowed_recipient
-    assert_allowed_recipient(db, user, to or "")
-    cfg = get_smtp(db)
-    if not cfg.get("enabled"):
-        raise HTTPException(status_code=400, detail="SMTP désactivé")
-    rep = get_report(db, tid)
-    year = reference_year(db)
-    lang = instance_lang(db)
-    try:
-        pptxtpl.use(pptxtpl.get(db))
-    except Exception:
-        pass
-    local = local_now(utcnow())
-    week = local.isocalendar()[1]
-    day = local.date().isoformat()
-
-    def send(data: dict, scope: str) -> bool:
-        try:
-            pptx_bytes = _studio_deck(db, data) or b""
-        except Exception:
-            pptx_bytes = b""
-        subject = rt(lang, "subject", scope=scope, w=week) + " (test)"
-        return report_mail(db, cfg, to, subject, data, why="test", week=week, pptx=pptx_bytes,
-                           file_base=_file_base(lang, scope, day))
-
-    results: list[bool] = []
-    per_squad = bool(rep.get("per_squad") or rep.get("squad_leaders"))
-    if rep.get("global_doc", True) or not per_squad:
-        data = build_report_data(db, tid, year, 7, lang=lang)
-        results.append(send(data, data["scope_name"]))
-    if per_squad:
-        q = select(Squad).order_by(Squad.display_order, Squad.id)
-        if tid is not None:
-            q = q.where(Squad.tribe_id == tid)
-        if rep.get("squad_ids"):
-            q = q.where(Squad.id.in_(rep["squad_ids"]))
-        for squad in db.scalars(q).all():
-            results.append(send(build_report_data(db, None, year, 7, lang=lang, squad_id=squad.id), squad.name))
-    ok = bool(results) and all(results)
-    record_audit(db, user.id, "report_config.test", entity="weekly_report",
-                 detail={"ok": ok, "to": to, "count": len(results)})
-    db.commit()
-    return {"ok": ok, "to": to, "count": sum(results), "error": None if ok else last_error()}
 
 
 # ---------- Change-notification emails (on modification) ----------

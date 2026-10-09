@@ -250,11 +250,12 @@ def update_item(item_id: int, payload: RoadmapItemUpdate, db: Session = Depends(
         _normalize_dependency(item)
         _check_dependency_target(db, item)
         set_dependencies(db, item, _single_to_list(item))
-    # Moved to another year: the commitments and the initiative of the old year
-    # no longer count it (set_otd_jalons refuses a milestone of another year).
+    # Moved to another year: the initiative of the old year no longer counts it.
+    # Its OTDs keep it: a milestone that slips to next year still has to be done
+    # for the promise to be kept, and the OTD screen shows it as slipped.
     if "year" in data:
-        from ..models import Initiative, Otd
-        for col, model in (("otd_id", Otd), ("squad_otd_id", Otd), ("initiative_id", Initiative)):
+        from ..models import Initiative
+        for col, model in (("initiative_id", Initiative),):
             ref = getattr(item, col)
             if ref is None or col in data:
                 continue

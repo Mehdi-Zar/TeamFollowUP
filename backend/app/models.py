@@ -29,6 +29,7 @@ from sqlalchemy import (
     Text,
     JSON,
     UniqueConstraint,
+    func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -331,11 +332,37 @@ class Otd(Base):
     # et par ses jalons, comme avant.
     squad_id: Mapped[int | None] = mapped_column(
         ForeignKey("squads.id", ondelete="CASCADE"), nullable=True, index=True)
+    # The first committed date, kept when the date is moved: the OTD is judged on
+    # the current date, and the shift stays visible.
+    initial_committed_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # A status declared by hand (delivered | delivered_late | not_delivered), for
+    # an OTD whose story happened before the tool. It wins over the milestones as
+    # long as it exists; clearing it goes back to the computed status.
+    declared_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    declared_on: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    declared_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Cancelled (dropped or descoped): still shown, dated, out of every count.
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancel_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # The OTD of the previous year this one carries over (see app/otdcarry.py).
+    carried_from_id: Mapped[int | None] = mapped_column(
+        ForeignKey("otds.id", ondelete="SET NULL"), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow,
+                                                 server_default=func.now(), nullable=False)
 
     roadmap_items: Mapped[list["RoadmapItem"]] = relationship(back_populates="otd",
                                                               foreign_keys="RoadmapItem.otd_id")
     squad_items: Mapped[list["RoadmapItem"]] = relationship(back_populates="squad_otd",
                                                             foreign_keys="RoadmapItem.squad_otd_id")
+    carried_from: Mapped["Otd | None"] = relationship(remote_side="Otd.id", foreign_keys=[carried_from_id],
+                                                      back_populates="carried_copies")
+    carried_copies: Mapped[list["Otd"]] = relationship(foreign_keys=[carried_from_id],
+                                                       back_populates="carried_from")
+
+    @property
+    def carried_to(self) -> "Otd | None":
+        """The copy of this OTD in the next year, when it was carried over."""
+        return self.carried_copies[0] if self.carried_copies else None
     owner: Mapped["User | None"] = relationship(foreign_keys=[owner_user_id])
     squad: Mapped["Squad | None"] = relationship(back_populates="otds", foreign_keys=[squad_id])
 
@@ -410,6 +437,9 @@ class RoadmapItem(Base):
     risks: Mapped[str | None] = mapped_column(Text, nullable=True)
     owner: Mapped[str | None] = mapped_column(String(255), nullable=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="on_track")  # on_track|at_risk|blocked|done
+    # When the milestone was last marked done (set by a listener on ``status``):
+    # an OTD finished after its date is "delivered late", not "delivered".
+    done_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     display_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     # Which squad objective this milestone answers (objective → tribe initiative).
     objective_id: Mapped[int | None] = mapped_column(
@@ -1086,3 +1116,13 @@ def _bump_session_on_sensitive_change(session, flush_context, instances):
         if any(state.attrs[a].history.has_changes() for a in _SESSION_SENSITIVE):
             if not state.attrs["session_version"].history.has_changes():
                 obj.session_version = int(obj.session_version or 0) + 1
+
+
+# A milestone remembers when it was finished: an OTD whose last milestone was
+# finished after its committed date was delivered late. Leaving "done" forgets it.
+@event.listens_for(RoadmapItem.status, "set")
+def _stamp_done_at(target, value, oldvalue, initiator):
+    if value == "done" and oldvalue != "done":
+        target.done_at = utcnow()
+    elif value != "done":
+        target.done_at = None

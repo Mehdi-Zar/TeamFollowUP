@@ -274,12 +274,11 @@ def test_report_config_sanitizes(db, seeded):
     cfg = set_report(db, {
         "enabled": True,
         "recipients": "a@x.com\nbad\nb@y.com; a@x.com",  # dedup + drop invalid
-        "weekday": 99, "hour": -3, "since_days": 999,
-        "last_sent_week": "hack",
+        "weekdays": [99, 2, "x", 2], "hour": -3, "since_days": 999,
     })
     db.commit()
     assert cfg["recipients"] == ["a@x.com", "b@y.com"]
-    assert cfg["weekday"] == 6 and cfg["hour"] == 0 and cfg["since_days"] == 120
+    assert cfg["weekdays"] == [2] and cfg["hour"] == 0 and cfg["since_days"] == 120
     assert get_report(db)["enabled"] is True
 
 
@@ -345,9 +344,9 @@ def test_report_config_admin_roundtrip(client, seeded):
     login(client, seeded["admin"])
     assert client.get("/api/admin/report-config").json()["enabled"] is False
     out = client.put("/api/admin/report-config", json={
-        "enabled": True, "recipients": ["dir@x.com"], "weekday": 2, "hour": 9,
+        "enabled": True, "recipients": ["dir@x.com"], "weekdays": [2], "hour": 9,
     }).json()
-    assert out["enabled"] is True and out["weekday"] == 2 and out["recipients"] == ["dir@x.com"]
+    assert out["enabled"] is True and out["weekdays"] == [2] and out["recipients"] == ["dir@x.com"]
 
 
 def test_report_config_forbidden_for_member(client, seeded):
@@ -358,108 +357,6 @@ def test_report_config_forbidden_for_member(client, seeded):
 def test_report_test_requires_smtp(client, seeded):
     login(client, seeded["admin"])
     assert client.post("/api/admin/report-config/test", json={}).status_code == 400
-
-
-def test_preferences_expose_weekly_subscription(client, seeded):
-    login(client, seeded["member"])
-    assert client.get("/api/me/preferences").json()["subscribe_weekly_report"] is False
-    out = client.put("/api/me/preferences", json={"subscribe_weekly_report": True}).json()
-    assert out["subscribe_weekly_report"] is True
-
-
-# ---- personal subscription (every N days) --------------------------------------
-
-def test_subscription_roundtrip(client, seeded):
-    login(client, seeded["member"])
-    assert client.get("/api/reports/subscription").json()["interval_days"] == 0
-    out = client.put("/api/reports/subscription", json={"interval_days": 14}).json()
-    assert out["interval_days"] == 14
-    # preferences boolean reflects the subscription
-    assert client.get("/api/me/preferences").json()["subscribe_weekly_report"] is True
-    assert client.put("/api/reports/subscription", json={"interval_days": 0}).json()["interval_days"] == 0
-
-
-def test_preferences_toggle_drives_interval(client, seeded):
-    login(client, seeded["member"])
-    client.put("/api/me/preferences", json={"subscribe_weekly_report": True})
-    assert client.get("/api/reports/subscription").json()["interval_days"] == 7
-    client.put("/api/me/preferences", json={"subscribe_weekly_report": False})
-    assert client.get("/api/reports/subscription").json()["interval_days"] == 0
-
-
-def test_send_personal_subscriptions(db, seeded, monkeypatch):
-    from app import report as report_mod
-    from app.smtpconfig import set_smtp
-    from app.models import User
-    from app.subscriptions import set_subscription
-    from sqlalchemy import select
-
-    set_smtp(db, {"enabled": True, "host": "smtp.local"})
-    user = db.scalar(select(User).where(User.email == "member@test"))
-    set_subscription(db, user, None, 7)  # global subscription
-    db.commit()
-
-    sent_to = []
-    monkeypatch.setattr(report_mod, "render_pptx", lambda data: b"")  # skip pptx
-    monkeypatch.setattr("app.mail.send_email",
-                        lambda *a, **k: (sent_to.append(a[1]) or True))
-
-    n = report_mod.send_personal_subscriptions(db)
-    assert n == 1 and "member@test" in sent_to
-    # Not due again immediately.
-    assert report_mod.send_personal_subscriptions(db) == 0
-
-
-def test_send_per_squad_subscription(db, seeded, monkeypatch):
-    from app import report as report_mod
-    from app.smtpconfig import set_smtp
-    from app.models import User
-    from app.subscriptions import set_subscription
-    from sqlalchemy import select
-
-    set_smtp(db, {"enabled": True, "host": "smtp.local"})
-    tl = db.scalar(select(User).where(User.email == "tribe@test"))
-    set_subscription(db, tl, seeded["squad_a"], 14)  # per-squad subscription
-    db.commit()
-
-    captured = {}
-    monkeypatch.setattr(report_mod, "render_pptx", lambda data: b"")
-    monkeypatch.setattr("app.mail.send_email",
-                        lambda *a, **k: (captured.setdefault("body", a[3]) or True))
-    assert report_mod.send_personal_subscriptions(db) == 1
-    assert "Squad A" in captured["body"]  # report narrowed to that squad
-
-
-def test_tribe_leader_digest_ccs_squad_leaders(db, seeded, monkeypatch):
-    """Each tribe leader gets their tribe-scoped report with that tribe's squad
-    leaders in CC."""
-    import datetime as dt
-    from app import report as report_mod
-    from app.smtpconfig import set_smtp
-
-    set_smtp(db, {"enabled": True, "host": "smtp.local"})
-    now = dt.datetime(2026, 1, 5, 9, 0, tzinfo=dt.timezone.utc)  # a Monday
-    set_report(db, {"enabled": True, "tribe_leader_digest": True,
-                    "weekdays": [now.weekday()], "hour": 0, "recipients": []})
-    db.commit()
-
-    calls = []
-    monkeypatch.setattr(report_mod, "render_pptx", lambda data: b"")  # skip pptx
-    monkeypatch.setattr(
-        "app.mail.send_email",
-        lambda cfg, to, subject, body, attachment=None, html=False, cc=None, **k:
-            (calls.append({"to": to, "cc": [c.lower() for c in (cc or [])]}) or True))
-
-    sent = report_mod.send_due_weekly_reports(db, now=now)
-    assert sent >= 2
-    by_to = {c["to"]: c for c in calls}
-
-    # Tribe 1 leader → their tribe, squad leaders (sl_a, sl_b) in CC.
-    assert "tribe@test" in by_to
-    assert {"sl_a@test", "sl_b@test"} <= set(by_to["tribe@test"]["cc"])
-    # Tribe 2 leader → their tribe; Squad C has no leader → empty CC.
-    assert "tribe2@test" in by_to
-    assert by_to["tribe2@test"]["cc"] == []
 
 
 def test_whats_new_since_last_report(db, seeded, monkeypatch):
@@ -509,17 +406,6 @@ def test_whats_new_since_last_report(db, seeded, monkeypatch):
     assert caps == []
 
 
-def test_send_personal_subscriptions_needs_smtp(db, seeded):
-    from app.report import send_personal_subscriptions
-    from app.models import User
-    from app.subscriptions import set_subscription
-    from sqlalchemy import select
-    u = db.scalar(select(User).where(User.email == "member@test"))
-    set_subscription(db, u, None, 7)
-    db.commit()
-    assert send_personal_subscriptions(db) == 0  # SMTP disabled
-
-
 def _mailbox(db, monkeypatch):
     from app import report as report_mod
     from app.smtpconfig import set_smtp
@@ -532,38 +418,12 @@ def _mailbox(db, monkeypatch):
     return report_mod, sent
 
 
-def test_scheduled_report_one_mail_per_squad_and_to_each_squad_leader(db, seeded, monkeypatch):
-    """The granularity: no all-in-one document, one mail per chosen squad to the
-    fixed list, and each squad leader gets their own squad's document only."""
-    from datetime import datetime, timezone
-    from app.reportconfig import set_report
-    report_mod, sent = _mailbox(db, monkeypatch)
-    set_report(db, {"enabled": True, "recipients": ["copil@test"], "weekdays": [0, 1, 2, 3, 4, 5, 6],
-                    "hour": 0, "global_doc": False, "per_squad": True, "squad_leaders": True,
-                    "squad_ids": [seeded["squad_a"], seeded["squad_b"]]})
-    db.commit()
-    assert report_mod.send_due_weekly_reports(db, datetime(2026, 9, 21, 9, tzinfo=timezone.utc)) == 4
-    copil = [s for s in sent if s[0] == "copil@test"]
-    assert len(copil) == 2 and all("Squad C" not in s[2] for s in copil)
-    to_sl_a = [s for s in sent if s[0] == "sl_a@test"]
-    assert len(to_sl_a) == 1 and "Squad A" in to_sl_a[0][1] and "Squad B" not in to_sl_a[0][2]
-
-
-def test_a_tribe_schedule_runs_beside_the_admin_one(db, seeded, monkeypatch):
-    from datetime import datetime, timezone
-    from app.reportconfig import set_report
-    report_mod, sent = _mailbox(db, monkeypatch)
-    set_report(db, {"enabled": True, "recipients": ["tl@test"], "weekdays": [0], "hour": 0},
-               tribe_id=seeded["t2"])
-    db.commit()
-    assert report_mod.send_due_weekly_reports(db, datetime(2026, 9, 21, 9, tzinfo=timezone.utc)) == 1
-    assert sent[0][0] == "tl@test" and "Squad C" in sent[0][2] and "Squad A" not in sent[0][2]
-
-
 def test_send_now_to_squad_leaders(client, db, seeded, monkeypatch):
     report_mod, sent = _mailbox(db, monkeypatch)
     login(client, seeded["tribe"])
-    r = client.post("/api/admin/report-config/send-squad-leaders", json={"squad_ids": []})
+    assert client.post("/api/admin/report-config/send-squad-leaders", json={}).status_code == 403
+    login(client, seeded["admin"])
+    r = client.post(f"/api/admin/report-config/send-squad-leaders?tribe_id={seeded['t1']}", json={"squad_ids": []})
     assert r.status_code == 200, r.text
     assert r.json()["sent"] == 2                       # Squad A and B, tribe 1 only
     assert sorted(s[0] for s in sent) == ["sl_a@test", "sl_b@test"]

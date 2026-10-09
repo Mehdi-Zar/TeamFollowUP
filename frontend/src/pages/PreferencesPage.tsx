@@ -9,7 +9,6 @@ import { useI18n } from "../i18n";
 import { useConfig, useModule } from "../config";
 import { Preferences } from "../types";
 import { Spinner } from "../components/ui";
-import { ReportingButton } from "../components/ReportingModal";
 
 /**
  * "My preferences" page. Renders a small set of notification switches bound to
@@ -30,7 +29,6 @@ export default function PreferencesPage() {
   const { smtp_enabled } = useConfig();
   const moduleOn = useModule();
   const emailNotifOn = moduleOn("notifications", "email");
-  const weeklyReportOn = moduleOn("review", "weekly_report");
   // The feed's notifications only mean something while the feed is on.
   const feedOn = moduleOn("feed");
   const [prefs, setPrefs] = useState<Preferences | null>(null);
@@ -58,7 +56,7 @@ export default function PreferencesPage() {
       setErr(e instanceof Error && e.message ? e.message : t("common.error"));
     }
   }
-  const mailing = emailNotifOn || weeklyReportOn;
+  const mailing = emailNotifOn;
 
   /** Small controlled switch used for every preference row (label + toggle). */
   const Toggle = ({ checked, onChange, label, disabled }: any) => (
@@ -83,17 +81,6 @@ export default function PreferencesPage() {
         {emailNotifOn && feedOn && (
           <div style={{ borderTop: "1px solid var(--line)", paddingTop: 14 }}>
             <Toggle checked={prefs.email_notifications} disabled={!smtp_enabled} label={t("prefs.email")} onChange={(v: boolean) => update({ email_notifications: v })} />
-          </div>
-        )}
-        {weeklyReportOn && (
-          <div style={{ borderTop: "1px solid var(--line)", paddingTop: 14 }}>
-            {/* One place to choose what is mailed and when: the subscription window.
-                A switch here set "every 7 days" and overwrote the days chosen there. */}
-            <div className="between" style={{ alignItems: "center", gap: 10 }}>
-              <span>{t("prefs.weekly_report")}</span>
-              <ReportingButton />
-            </div>
-            {smtp_enabled && <div className="small muted" style={{ marginTop: 6 }}>{t("prefs.weekly_report_hint")}</div>}
           </div>
         )}
         {saved && <div className="small" style={{ color: "var(--green)" }}>{t("prefs.saved")}</div>}

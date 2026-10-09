@@ -55,7 +55,8 @@ _RT = {
         "more_items": "+{n} autres, dans la version HTML",
         "tl_dropped": "Non affichés faute de place ({n})",
         "otd_on_track": "Dans les temps", "otd_at_risk": "À risque", "otd_late": "En retard",
-        "otd_delivered": "Livré",
+        "otd_delivered": "Livré", "otd_delivered_late": "Livré en retard",
+        "otd_not_delivered": "Non livré", "otd_cancelled": "Annulé", "otd_unscoped": "À cadrer",
         # --- Moral de l'equipe ---
         "h_mood": "Moral de l'équipe", "mood_l1": "Moral", "mood_l2": "équipe",
         "mood_good": "Ça va bien", "mood_mixed": "Moyen",
@@ -125,7 +126,8 @@ _RT = {
         "more_items": "+{n} more, in the HTML version",
         "tl_dropped": "Not shown for lack of room ({n})",
         "otd_on_track": "On time", "otd_at_risk": "At risk", "otd_late": "Late",
-        "otd_delivered": "Delivered",
+        "otd_delivered": "Delivered", "otd_delivered_late": "Delivered late",
+        "otd_not_delivered": "Not delivered", "otd_cancelled": "Cancelled", "otd_unscoped": "To be scoped",
         # --- Team mood ---
         "h_mood": "Team mood", "mood_l1": "Team", "mood_l2": "Mood",
         "mood_good": "Good", "mood_mixed": "Mixed",

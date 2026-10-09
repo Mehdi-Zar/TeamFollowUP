@@ -68,7 +68,9 @@ export default function NotificationBell() {
     setTimeout(load, 300);
   }
   const label = (n: Notif) =>
-    n.kind === "reply" ? t("notif.reply", { actor: n.actor_name || "?" }) : t("notif.tweet", { actor: n.actor_name || "?" });
+    n.kind === "reply" ? t("notif.reply", { actor: n.actor_name || "?" })
+      : n.kind === "otd_carry" ? t("notif.otd_carry", { actor: n.actor_name || "?" })
+      : t("notif.tweet", { actor: n.actor_name || "?" });
 
   if (!inappOn) return null;
 

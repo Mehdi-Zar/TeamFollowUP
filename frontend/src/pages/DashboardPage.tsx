@@ -16,7 +16,6 @@ import { useAuth } from "../auth";
 import { DashboardOut, SquadCard, Tribe } from "../types";
 import { Dot, FreshnessBadge, ProgressBar, Spinner, ErrorBanner, EmptyState } from "../components/ui";
 import ExportMenu from "../components/ExportMenu";
-import { ReportingButton } from "../components/ReportingModal";
 import AbsencesWidget from "../components/AbsencesWidget";
 import { MoodBadge } from "../components/TeamMood";
 import SteercoConsolidation from "../components/SteercoConsolidation";
@@ -181,7 +180,6 @@ export default function DashboardPage() {
                   <button key={y} className={y === chromeYear ? "active" : ""} aria-pressed={y === chromeYear} onClick={() => setYear(y)}>{y}</button>
                 ))}
               </div>
-              <ReportingButton />
               <ExportMenu year={chromeYear} docs={["dashboard", "report"]} />
             </>
           ) : null,

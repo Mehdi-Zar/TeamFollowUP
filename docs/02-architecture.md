@@ -91,7 +91,7 @@ flowchart TB
   routers --> schemas[schemas.py\nPydantic DTOs]
   serializers --> status[status.py\nhealth/progress/derived status]
   serializers --> models[models.py\nSQLAlchemy ORM]
-  routers --> domain[Domain services\nreport.py, status.py,\nsubscriptions.py, notify.py]
+  routers --> domain[Domain services\nreport.py, status.py,\nmailplan.py, notify.py]
   routers --> studio[Studio des exports\nexportspec, exportengine, exportblocks,\nexportstore, pptxhtml]
   studio --> domain
   config[Config stores in app_settings\ngeneralconfig, modulesconfig, personasconfig,\nsmtpconfig, reportconfig, authconfig] --> deps
@@ -117,7 +117,7 @@ sequenceDiagram
   loop hourly
     L->>DB: ensure_weekly() (weekly progress points)
     L->>DB: send_due_weekly_reports() (scheduled email, idempotent per ISO week)
-    L->>DB: send_personal_subscriptions() (per-user cadence)
+    L->>DB: carry_over_otds() (January 1st only)
     L->>L: sleep 3600s
   end
 ```

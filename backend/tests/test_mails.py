@@ -72,16 +72,6 @@ def test_the_hour_is_paris_time(db, seeded, monkeypatch):
     assert len(sent) == 1
 
 
-def test_a_leader_also_on_the_fixed_list_gets_the_squad_document_once(db, seeded, monkeypatch):
-    now = dt.datetime(2026, 1, 5, 9, 0, tzinfo=dt.timezone.utc)
-    _schedule(db, now, recipients=["sl_a@test"], global_doc=False, per_squad=True, squad_leaders=True)
-    monkeypatch.setattr(report_mod, "render_pptx", lambda d: b"")
-    sent = _capture(monkeypatch)
-    report_mod.send_due_weekly_reports(db, now=now)
-    squad_a = [m for m in sent if "Squad A" in m["subject"]]
-    assert [m["to"] for m in squad_a] == ["sl_a@test"], squad_a
-
-
 def test_plural_forms_replace_parentheses():
     assert rt("fr", "subj_changes", n=1) == "[1 nouveauté]"
     assert rt("fr", "subj_changes", n=3) == "[3 nouveautés]"
@@ -162,45 +152,3 @@ def test_a_past_version_mail_says_it_is_a_version(db, seeded):
     body = render_email(data)
     assert "version du 23/08/2026" in body
     assert "Dernière saisie" not in body and "aujourd'hui" not in body
-
-
-def test_one_mail_per_squad_really_sends_one_mail_per_squad(db, seeded, monkeypatch):
-    """« Un mail par squad » : la liste fixe recoit un mail par squad, plus le
-    document complet s'il est coche aussi."""
-    from sqlalchemy import func, select
-    from app.models import Squad
-    now = dt.datetime(2026, 1, 5, 9, 0, tzinfo=dt.timezone.utc)
-    n = db.scalar(select(func.count()).select_from(Squad))
-    _schedule(db, now, global_doc=True, per_squad=True)
-    monkeypatch.setattr(report_mod, "render_pptx", lambda d: b"")
-    sent = _capture(monkeypatch)
-    report_mod.send_due_weekly_reports(db, now=now)
-    assert len(sent) == n + 1
-    assert all(m["to"] == "copil@test" for m in sent)
-
-
-def test_the_test_button_sends_what_the_schedule_would(client, db, seeded, monkeypatch):
-    """Le bouton Tester n'envoyait que le document complet, meme en « un mail par
-    squad » : on croyait l'option cassee."""
-    from sqlalchemy import func, select
-    from app.models import Squad
-    from .conftest import login
-    now = dt.datetime(2026, 1, 5, 9, 0, tzinfo=dt.timezone.utc)
-    n = db.scalar(select(func.count()).select_from(Squad))
-    monkeypatch.setattr(report_mod, "render_pptx", lambda d: b"")
-    login(client, seeded["admin"])
-
-    _schedule(db, now, global_doc=False, per_squad=True)
-    sent = _capture(monkeypatch)
-    r = client.post("/api/admin/report-config/test", json={}).json()
-    assert r["ok"] and r["count"] == n and len(sent) == n
-    assert all("(test)" in m["subject"] for m in sent)
-    assert any("Squad A" in m["subject"] for m in sent)
-
-    _schedule(db, now, global_doc=True, per_squad=True)
-    sent = _capture(monkeypatch)
-    assert client.post("/api/admin/report-config/test", json={}).json()["count"] == n + 1
-
-    _schedule(db, now, global_doc=True, per_squad=False)
-    sent = _capture(monkeypatch)
-    assert client.post("/api/admin/report-config/test", json={}).json()["count"] == 1

@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+- **Rapports par mail**, menu refondu et **reserve a l'admin** (Administration), en trois onglets : Tribes,
+  Direction, A chaque modification. Pour une tribe, le **tribe leader est le destinataire** (document de la tribe ou
+  un mail par squad) ; les responsables de squad (leader, co-leaders, contributeurs) sont **en copie du meme mail**,
+  jamais dans un second ; on ajoute aussi des personas, des personnes ou des adresses, chacun avec ce qu'il recoit.
+  **Pieces jointes au choix par sorte de mail** : rapport hebdomadaire, tableau de bord, roadmap, dependances (ou
+  le resume seul). La liste des destinataires et l'apercu suivent les reglages en direct, avant d'enregistrer ;
+  test et envoi immediat par ligne. « Seulement s'il y a du nouveau » se decide mail par mail. Les anciens reglages
+  sont convertis.
+- Les **abonnements personnels** sont retires (bouton « S'abonner au rapport » du tableau de bord, de la page
+  d'une squad et des preferences) : les envois se reglent par l'admin seul.
+- **Statut des OTD**, regles completees (voir docs/36) : nouveaux statuts « Livre en retard » (le dernier jalon
+  termine apres la date), « A cadrer » (aucun jalon), « Non livre » et « Annule » (motif obligatoire) ;
+  « A risque » des 15 jours avant la date ou quand un jalon est prevu apres la date ; « En retard » des le
+  lendemain de la date. Le statut s'affiche en couleur avec ses raisons, et la fenetre de l'OTD explique le calcul.
+- Demarrage en cours d'annee : un OTD peut recevoir un **statut declare** (livre, livre en retard, non livre, avec
+  date et commentaire), qui l'emporte sur les jalons tant qu'il existe.
+- Replanification : la date initiale est conservee, l'ecart est affiche.
+- Un jalon qui glisse sur l'annee suivante **reste rattache** a son OTD, signale comme glisse.
+- **Report automatique au 1er janvier** : un OTD pas livre passe « Non livre » et une copie est creee sur l'annee
+  suivante avec ses jalons non termines ; le tribe leader ou le squad leader est notifie.
+- OTD de la tribe tenu par plusieurs squads : la page d'une squad montre sa part (termines, en retard).
+
 - Favicon par defaut (barres montantes sur fond bleu nuit) ; le reglage d'Apparence s'appelle « Favicon (icone
   d'onglet) », dit les formats acceptes, et supprimer un favicon televerse revient a celui par defaut.
 - Liste des jalons : etiquette pour les phases « Autre » (le libelle saisi) et « Hors produit ».

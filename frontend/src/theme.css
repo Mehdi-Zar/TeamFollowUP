@@ -1594,3 +1594,61 @@ th.sort-th.on .sort-th-mark { opacity: 1; color: var(--accent); }
 .sort-th-btn { white-space: nowrap; }
 
 .stage-other { font-size: 10px; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; vertical-align: middle; }
+
+/* OTD window: the status, why, what to know, and the rules on demand. */
+.otd-status-block { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px;
+  background: #F8FAFC; border: 1px solid var(--line); border-radius: 10px; }
+.otd-notes { margin: 0; padding-left: 18px; color: var(--text); }
+.otd-notes li { margin: 2px 0; }
+.otd-how summary { cursor: pointer; color: var(--accent); }
+.otd-how ol { margin: 6px 0 0; padding-left: 18px; }
+.otd-how li { margin: 3px 0; }
+.otd-facts { display: flex; flex-direction: column; gap: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+
+/* Reports by email (components/ReportsMail.tsx). */
+.mr-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.mr-tabs button { background: none; border: 0; border-bottom: 2px solid transparent; border-radius: 0;
+  color: var(--grey); font-weight: 600; padding: 8px 12px; margin-bottom: -1px; }
+.mr-tabs button:hover { color: var(--navy); background: none; }
+.mr-tabs button.on { color: var(--navy); border-bottom-color: var(--accent); }
+.mr-card { gap: 14px; }
+.mr-title { font-size: 15px; color: var(--navy); }
+.mr-when { display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-end; }
+.mr-check { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; margin: 0; }
+.mr-check input { margin-top: 3px; width: auto; }
+.mr-line { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; border: 1px solid var(--line);
+  border-radius: 10px; background: #F8FAFC; }
+.mr-line-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; flex-wrap: wrap; }
+.mr-radio { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px; }
+.mr-option { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--line);
+  border-radius: 8px; background: #fff; cursor: pointer; margin: 0; }
+.mr-option.on { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(23, 92, 211, .12); }
+.mr-option input { margin-top: 3px; width: auto; }
+.mr-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.mr-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid var(--line);
+  border-radius: 999px; background: #fff; font-size: 13px; cursor: pointer; margin: 0; }
+.mr-chip input { width: auto; margin: 0; }
+.mr-chip.on { border-color: var(--accent); color: var(--navy); background: var(--ice-soft); }
+.mr-copy { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border: 1px solid var(--line);
+  border-radius: 8px; background: #fff; }
+.mr-copy-what { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.mr-add { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; padding-top: 4px; }
+.mr-actions { display: flex; flex-wrap: wrap; gap: 2px; align-items: center; justify-content: flex-end; }
+.mr-note, .mr-who { flex-basis: 100%; text-align: right; }
+.mr-who { text-align: left; background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px;
+  display: flex; flex-direction: column; gap: 4px; }
+.mr-summary { background: var(--ice-soft); }
+.mr-save { position: sticky; bottom: 0; background: var(--bg, #fff); padding: 8px 0; z-index: 1; }
+.mr-plan { width: 100%; }
+.mr-plan td { vertical-align: top; }
+.mr-preview { width: 100%; height: 540px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+/* The admin card's "label is a block" rule must not undo the rows above. */
+.admin-content .card label.mr-check, .admin-content .card label.mr-option { display: flex; margin-bottom: 0; }
+.admin-content .card label.mr-chip { display: inline-flex; margin-bottom: 0; }
+.mr-check .small, .mr-option .small { font-weight: 400; }
+.mr-check, .mr-option { color: var(--text); }
+.admin-content .card .mr-copy-what label, .mr-copy-what label { margin: 0; }
+.mr-doc-row { display: grid; grid-template-columns: minmax(200px, 1fr) 2fr; gap: 8px 16px; align-items: center;
+  padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: #F8FAFC; }
+.mr-doc-row > .small.muted:last-child { grid-column: 2; }
+@media (max-width: 760px) { .mr-doc-row { grid-template-columns: 1fr; } .mr-doc-row > .small.muted:last-child { grid-column: 1; } }

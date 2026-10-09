@@ -28,7 +28,6 @@ import ExportMenu from "../components/ExportMenu";
 import { useSetPageChrome } from "../components/pageChrome";
 import { roadmapRag, trendRag } from "../labels";
 import { contributesTo, leadsSquad } from "../perms";
-import { ReportingButton } from "../components/ReportingModal";
 import { Sorted, SortTh } from "../components/tableView";
 
 /**
@@ -119,7 +118,6 @@ export default function SquadDetailPage() {
               {leadsIt && (
                 <Link to={`/saisie?squad=${squadId}&year=${squad.year}`} className="btn btn-sm">{t("squad.update_in_reporting")}</Link>
               )}
-              <ReportingButton squadId={squadId} />
               <ExportMenu year={squad.year} squadId={squadId} />
               {canSendToLeader && (
                 <button className="btn-secondary btn-sm" onClick={sendToLeader}>{t("squad.send_leader")}</button>

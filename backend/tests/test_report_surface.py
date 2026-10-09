@@ -125,9 +125,8 @@ def test_baseline_round_trip(db, data):
 # ---- delivery ------------------------------------------------------------------
 
 def test_the_schedulers_entry_points_are_callable(db, seeded):
-    """Nothing is configured to be sent, so both must return 0 rather than raise."""
+    """Nothing is configured to be sent, so it must return 0 rather than raise."""
     assert report_mod.send_due_weekly_reports(db) == 0
-    assert report_mod.send_personal_subscriptions(db) == 0
 
 
 # ---- helpers used from outside --------------------------------------------------

@@ -224,7 +224,7 @@ async def _start_weekly_progress_scheduler():
     """Lightweight in-process scheduler.
 
     Runs hourly and, when due, sends the weekly HTML/PPTX report by email on the
-    configured weekday/hour and the personal subscriptions, then purges old
+    configured weekday/hour, then purges old
     records. All steps are idempotent and self-healing. Disabled in tests via
     DISABLE_SCHEDULER=1.
     """
@@ -236,7 +236,7 @@ async def _start_weekly_progress_scheduler():
 
     from .database import SessionLocal, engine
     from .maintenance import purge_old_records
-    from .report import send_due_weekly_reports, send_personal_subscriptions
+    from .report import send_due_weekly_reports
 
     _LOCK_KEY = 911001  # advisory-lock id: only one replica runs the tick
 
@@ -282,13 +282,16 @@ async def _start_weekly_progress_scheduler():
                             sent = send_due_weekly_reports(db)
                             if sent:
                                 logging.getLogger("trt.report").info("Weekly reports emailed: %s", sent)
-                            subs = send_personal_subscriptions(db)
-                            if subs:
-                                logging.getLogger("trt.report").info("Personal report subscriptions emailed: %s", subs)
                             # Change notices still waiting (a restart lost their timer).
                             from .changenotify import flush_pending
                             flush_pending()
                             purge_old_records(db)
+                            # OTDs not delivered by the end of their year move on
+                            # to the next one (does nothing but in January).
+                            from .otdcarry import carry_over_otds
+                            carried = carry_over_otds(db)
+                            if carried:
+                                logging.getLogger("trt.otd").info("OTDs carried over: %s", carried)
                             # Automatic data snapshot when one is due (off by
                             # default, see app/datasnapshots.py).
                             from .datasnapshots import run_due_snapshot

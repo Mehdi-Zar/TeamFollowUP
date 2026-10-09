@@ -2,7 +2,7 @@
 
 The /notifications/* routes serve the current user's own notification inbox and are
 gated by the `notifications > inapp` sub-module. The /me/preferences routes let a
-user tune what they get notified about and their weekly-report subscription; they
+user tune what they get notified about; they
 are always available (no module gate) since they are personal settings.
 """
 from fastapi import APIRouter, Depends, HTTPException
@@ -73,8 +73,7 @@ def get_preferences(user: User = Depends(get_current_user)):
     Access: any authenticated user (own settings). No module gate.
     """
     return PreferencesOut(notify_tweets=user.notify_tweets, notify_replies=user.notify_replies,
-                          email_notifications=user.email_notifications,
-                          subscribe_weekly_report=user.subscribe_weekly_report)
+                          email_notifications=user.email_notifications)
 
 
 @router.put("/me/preferences", response_model=PreferencesOut)
@@ -83,23 +82,10 @@ def update_preferences(payload: PreferencesUpdate, db: Session = Depends(get_db)
 
     PUT /api/me/preferences
     Access: any authenticated user (own settings). No module gate.
-    Side effect: toggling `subscribe_weekly_report` also (un)registers the global
-    dashboard report subscription so every representation stays in sync.
     """
     data = update_data(payload, User)
-    # The weekly-report toggle drives the global (dashboard) subscription cadence
-    # (on = weekly / 7 days, off = unsubscribed); keep all representations aligned.
-    if "subscribe_weekly_report" in data:
-        from ..subscriptions import set_subscription
-        on = bool(data["subscribe_weekly_report"])
-        interval = 7 if on else 0
-        set_subscription(db, user, None, interval)
-        user.report_interval_days = interval
-        if not on:
-            user.report_last_sent_at = None
     for k, v in data.items():
         setattr(user, k, v)
     db.commit()
     return PreferencesOut(notify_tweets=user.notify_tweets, notify_replies=user.notify_replies,
-                          email_notifications=user.email_notifications,
-                          subscribe_weekly_report=user.subscribe_weekly_report)
+                          email_notifications=user.email_notifications)

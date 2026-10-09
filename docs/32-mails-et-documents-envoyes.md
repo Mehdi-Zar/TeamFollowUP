@@ -54,8 +54,8 @@ parasite (None, undefined, NaN, « {x} »), ni tiret cadratin ni point median.
 
 | Mail | Declencheur | Destinataires |
 |---|---|---|
-| Rapport programme | le jour et l'heure choisis, **heure de Paris** | liste fixe, un mail par squad, leaders de chaque squad, recapitulatif de tribu (leaders de squad en copie) : chaque adresse recoit un document une seule fois |
-| Abonnement personnel | le jour et l'heure choisis, heure de Paris | l'abonne ; objet « Rapport \| perimetre \| semaine 39 » |
+| Rapport de la tribe | le jour et l'heure choisis, **heure de Paris** | le tribe leader (document de la tribe ou un mail par squad), et en copie du meme mail qui le reglage nomme : responsables de squad, personas, personnes, adresses ; pieces jointes choisies par sorte de mail (voir [30](30-rapports-notifications-et-droits.md)) |
+| Rapport de la direction | le jour et l'heure choisis, heure de Paris | les adresses fixes : le document complet, toutes les tribes |
 | Envoi immediat | bouton d'export | l'adresse saisie ; une version passee porte sa date dans l'objet, le fichier et le corps |
 | Avis de modification | **la soumission du reporting** (par defaut), et au choix chaque type de modification | liste fixe, tribe leader, leaders de la squad ; **jamais l'auteur** |
 | Fil | nouveau message, reponse | qui suit le fil (Preferences) |
