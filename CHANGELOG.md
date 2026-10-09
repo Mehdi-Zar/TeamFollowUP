@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 3.1.0 (2026-10-09)
 
 - **Rapports par mail**, menu refondu et **reserve a l'admin** (Administration), en trois onglets : Tribes,
   Direction, A chaque modification. Pour une tribe, le **tribe leader est le destinataire** (document de la tribe ou
