@@ -95,6 +95,8 @@ class UserOut(ORMModel):
     auth_subject: Optional[str] = None
     created_at: Optional[datetime] = None
     last_login_at: Optional[datetime] = None
+    # The caller's "don't show the getting-started guide at startup" choice.
+    hide_getting_started: bool = False
 
 
 # ---------- Access approval (SSO provisioning) ----------
@@ -915,17 +917,19 @@ class NotificationsResponse(BaseModel):
 
 
 class PreferencesOut(BaseModel):
-    """The user's current notification preferences."""
+    """The user's current preferences (notifications, getting-started guide)."""
     notify_tweets: bool
     notify_replies: bool
     email_notifications: bool
+    hide_getting_started: bool = False
 
 
 class PreferencesUpdate(BaseModel):
-    """Partial update of notification preferences."""
+    """Partial update of the preferences."""
     notify_tweets: Optional[bool] = None
     notify_replies: Optional[bool] = None
     email_notifications: Optional[bool] = None
+    hide_getting_started: Optional[bool] = None
 
 
 class EmailExportIn(BaseModel):

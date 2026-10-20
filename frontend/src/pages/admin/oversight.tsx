@@ -402,7 +402,7 @@ export function LogsPanel() {
   const [lastAt, setLastAt] = useState<string>("");
   const { error, wrap } = useErr();
 
-  const load = () => api.get<LogsData>(`/api/admin/logs?limit=1000${filter ? `&level=${filter}` : ""}`)
+  const load = (background = false) => (background ? api.poll<LogsData> : api.get<LogsData>)(`/api/admin/logs?limit=1000${filter ? `&level=${filter}` : ""}`)
     .then((d) => { setData(d); setPendingLevel((p) => p || d.level); setLastAt(new Date().toLocaleTimeString(lang === "en" ? "en-GB" : "fr-FR")); })
     .catch((e) => { if (!data) wrap(() => Promise.reject(e)); });
 
@@ -414,7 +414,7 @@ export function LogsPanel() {
     const id = setInterval(() => {
       if (inFlight || document.visibilityState !== "visible") return;
       inFlight = true;
-      load().finally(() => { inFlight = false; });
+      load(true).finally(() => { inFlight = false; });
     }, 3000);
     return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -483,7 +483,7 @@ export function LogsPanel() {
           <span className="track"><span className="knob" /></span>
           <span className="small">{t("ops.logs_auto")}</span>
         </label>
-        <button className="btn-secondary btn-sm" onClick={load}>{t("ops.refresh")}</button>
+        <button className="btn-secondary btn-sm" onClick={() => load()}>{t("ops.refresh")}</button>
         <a className="btn-secondary btn-sm" href={dl("txt")}>{t("ops.logs_dl_txt")}</a>
         <a className="btn-secondary btn-sm" href={dl("json")}>{t("ops.logs_dl_json")}</a>
         <button className="btn-ghost btn-sm" onClick={clearBuf}>{t("ops.logs_clear")}</button>

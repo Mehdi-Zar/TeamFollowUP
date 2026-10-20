@@ -13,8 +13,8 @@ chaque cas, y compris le démarrage de l'outil en cours d'année.
 | Dans les temps | bleu | rien ne menace la date |
 | À risque | orange | la date est menacée (voir les raisons ci-dessous) |
 | En retard | rouge | la date est dépassée et tout n'est pas terminé |
-| Livré | vert | tous les jalons sont terminés, au plus tard le jour de la date |
-| Livré en retard | orange | tous les jalons sont terminés, le dernier après la date |
+| Livré | vert | tous les jalons sont terminés, au plus tard dans le trimestre de la date |
+| Livré en retard | orange | tous les jalons sont terminés, le dernier dans un trimestre après la date |
 | À cadrer | gris | aucun jalon rattaché : rien ne permet de juger |
 | Non livré | rouge | reporté sur l'année suivante, ou déclaré tel à la main |
 | Annulé | gris | abandonné ou déscopé, avec un motif |
@@ -29,7 +29,11 @@ La première règle qui s'applique donne le statut.
 3. **Reporté** : un OTD reporté sur l'année suivante est « Non livré » dans son année.
 4. **Sans jalon** : « À cadrer », puis « En retard » une fois la date passée.
 5. **Tous les jalons terminés** : « Livré », ou « Livré en retard » si le dernier
-   jalon a été terminé après la date d'engagement.
+   jalon a été terminé dans un trimestre postérieur à celui de la date
+   d'engagement. La comparaison se fait au trimestre, pas au jour : un jalon se
+   planifie par trimestre, et sa date de fin est le jour où quelqu'un l'a coché,
+   souvent quelques jours après les faits. Un OTD engagé au 15 mai dont le dernier
+   jalon est coché le 3 juin est livré ; coché le 3 juillet, il est livré en retard.
 6. **Date dépassée** : « En retard », dès le lendemain de la date (aucune tolérance).
 7. **À risque** si au moins une de ces raisons est vraie :
    - un jalon est bloqué ;

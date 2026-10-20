@@ -104,6 +104,32 @@ _CSRF_EXEMPT = ("/api/auth/saml/acs",)
 
 
 @app.middleware("http")
+async def _renew_session(request, call_next):
+    """Write a session cookie with a fresh activity time when the request was
+    activity (deps._check_idle). Its issue and expiry times are kept: activity
+    resets the inactivity clock, never the session's maximum length. A response
+    that already sets the session (login, logout, impersonation) wins."""
+    response = await call_next(request)
+    claims = getattr(request.state, "renew_session", None)
+    if claims is None or response.status_code >= 400:
+        return response
+    cookie_name = settings.session_cookie
+    if any(h.startswith(f"{cookie_name}=") for h in response.headers.getlist("set-cookie")):
+        return response
+    import time
+    from .security import create_session_token
+    remaining = claims["exp"] - int(time.time())
+    if remaining <= 0:
+        return response
+    token = create_session_token(claims["sub"], claims["imp"], session_version=claims["sv"],
+                                 impersonator_version=claims["isv"], read_only=claims["ro"],
+                                 expires_at=claims["exp"], issued_at=claims["iat"])
+    response.set_cookie(key=cookie_name, value=token, max_age=remaining, httponly=True,
+                        samesite=settings.cookie_samesite, secure=settings.cookie_secure)
+    return response
+
+
+@app.middleware("http")
 async def _csrf_guard(request, call_next):
     if (request.method in ("POST", "PUT", "PATCH", "DELETE") and request.url.path.startswith("/api/")
             and request.url.path not in _CSRF_EXEMPT and not request.headers.get("authorization")):

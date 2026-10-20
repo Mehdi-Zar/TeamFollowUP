@@ -132,7 +132,8 @@ def test_dashboard_pptx_never_silently_drops_squads(db, seeded):
     # The summary table continues over as many slides as it needs (14 squads on
     # the first, 20 on each next one), then exactly one detail slide per squad.
     summary = 1 + max(0, -(-(n - 14) // 20))
-    assert len(prs.slides) == summary + n + 1   # + the attention points slide
+    # + the attention points, which continue over more slides when the list is long.
+    assert len(prs.slides) >= summary + n + 1
     # Every squad appears somewhere in the deck (its own detail slide header).
     all_text = "\n".join(_slide_texts(prs))
     names = {r["name"] for blk in data["tribes"] for r in blk["squads"]}
@@ -158,8 +159,8 @@ def test_dashboard_pptx_marks_omitted_squads_when_cap_hit(db, seeded, monkeypatc
     data = build_report_data(db, None, year, 7)
     n = sum(len(blk["squads"]) for blk in data["tribes"])
     prs = pptx.Presentation(io.BytesIO(render_pptx(data)))
-    # 1 summary + 4 detail + the attention points + 1 notice slide.
-    assert len(prs.slides) == 1 + 4 + 1 + 1
+    # 1 summary + 4 detail + the attention points (one slide or more) + 1 notice slide.
+    assert len(prs.slides) >= 1 + 4 + 1 + 1
     notice = " ".join(sh.text_frame.text for sh in prs.slides[-1].shapes if sh.has_text_frame)
     assert str(n - 4) in notice and "autres squads" in notice
 
@@ -171,7 +172,7 @@ def test_render_roadmap_swimlane_pptx(db, seeded):
     year = st.current_year_quarter()[0]
     data = build_report_data(db, None, year, 7)
     prs = pptx.Presentation(io.BytesIO(render_roadmap_pptx(data)))
-    # The roadmap export always fits on a single page (one slide), whatever the count.
+    # A light roadmap still fits on a single page.
     assert len(prs.slides) == 1
     texts = [sh.text_frame.text for sh in prs.slides[0].shapes if sh.has_text_frame]
     # Quarter headers (Q1..Q4 with the year) and the swimlane labels (squad names) are present.
@@ -180,19 +181,55 @@ def test_render_roadmap_swimlane_pptx(db, seeded):
     assert names & set(texts)
 
 
-def test_roadmap_pptx_single_page_even_with_many_squads(db, seeded):
+def test_roadmap_pptx_many_squads_paginate_readably(db, seeded):
+    """Past what one slide shows at a readable size, the roadmap continues on
+    more slides: every squad and every milestone is there, nothing is counted
+    away in "+N", and no text is smaller than 9 points."""
     pptx = pytest.importorskip("pptx")
     from app.report import render_roadmap_pptx
-    from app.models import Squad
+    from app.models import RoadmapItem, Squad
     import io
-    # Add many squads; the deck must still be exactly one slide.
-    for i in range(20):
-        db.add(Squad(name=f"Extra {i}", tribe_id=seeded["t1"], display_order=10 + i))
-    db.commit()
     year = st.current_year_quarter()[0]
+    for i in range(20):
+        s = Squad(name=f"Extra {i}", tribe_id=seeded["t1"], display_order=10 + i)
+        db.add(s)
+        db.flush()
+        for k in range(12):
+            db.add(RoadmapItem(squad_id=s.id, year=year, quarter=1 + k % 4, title=f"Jalon {i}-{k} de la squad",
+                               theme=f"Theme {k % 3}", status="on_track"))
+    db.commit()
     data = build_report_data(db, None, year, 7)
     prs = pptx.Presentation(io.BytesIO(render_roadmap_pptx(data)))
-    assert len(prs.slides) == 1
+    assert len(prs.slides) > 1
+    texts = " ".join(sh.text_frame.text for sl in prs.slides for sh in sl.shapes if sh.has_text_frame)
+    for i in range(20):
+        assert f"Extra {i}" in texts
+        for k in range(12):
+            assert f"Jalon {i}-{k} de la squad" in texts
+    assert "autres" not in texts
+    sizes = [r.font.size.pt for sl in prs.slides for sh in sl.shapes if sh.has_text_frame
+             for p in sh.text_frame.paragraphs for r in p.runs if r.font.size is not None]
+    assert min(sizes) >= 9, min(sizes)
+
+
+def test_attention_points_continue_instead_of_counting_away(db, seeded):
+    """Every squad in the attention list is named, on the slide or its sequels."""
+    pptx = pytest.importorskip("pptx")
+    from app.report import render_pptx
+    from app.models import RoadmapItem, Squad
+    import io
+    year = st.current_year_quarter()[0]
+    for i in range(30):
+        s = Squad(name=f"Attention {i}", tribe_id=seeded["t1"], display_order=10 + i)
+        db.add(s)
+        db.flush()
+        db.add(RoadmapItem(squad_id=s.id, year=year, quarter=1, title="Bloque", status="blocked"))
+    db.commit()
+    data = build_report_data(db, None, year, 7)
+    prs = pptx.Presentation(io.BytesIO(render_pptx({**data, "doc": "weekly"})))
+    texts = " ".join(sh.text_frame.text for sl in prs.slides for sh in sl.shapes if sh.has_text_frame)
+    for i in range(30):
+        assert f"Attention {i}" in texts, i
 
 
 def test_dependencies_cross_tribe_only_and_no_drop(db, seeded):

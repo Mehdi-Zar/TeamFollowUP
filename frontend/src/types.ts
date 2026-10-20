@@ -183,6 +183,8 @@ export interface User {
   is_break_glass: boolean;
   last_login_at?: string | null;
   created_at?: string | null;
+  /** "Don't show the getting-started guide at startup", kept on the account. */
+  hide_getting_started?: boolean;
 }
 
 /** A pending SSO access request awaiting a manager's approval. */

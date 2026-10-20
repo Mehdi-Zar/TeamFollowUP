@@ -52,7 +52,6 @@ from ..deps import (
 from ..models import (
     utcnow,
     FeedPost,
-    KEY_MESSAGES_MAX,
     KeyMessage,
     Member,
     OrgNode,
@@ -611,20 +610,14 @@ def create_key_message(squad_id: int, payload: KeyMessageCreate, year: int | Non
 
     Squad leader (or admin) only. Audited, then ``notify_change(..., "key_message",
     ...)``. ``year`` defaults to the current one. 409 once the squad already has
-    ``KEY_MESSAGES_MAX`` (4) messages in the reporting in progress."""
+    No limit: past ``KEY_MESSAGES_MAX`` (4), the PowerPoint shows the others on
+    a detail slide after the squad's."""
     squad = db.get(Squad, squad_id)
     if squad is None:
         raise HTTPException(status_code=404, detail="Squad introuvable")
     assert_reports_for_squad(db, user, squad_id)   # key messages: leadership + contributors
     if year is None:
         year = reference_year(db)
-    # Counted on the reporting in progress: each reporting starts with none.
-    count = db.scalar(select(func.count()).select_from(KeyMessage)
-                      .where(KeyMessage.squad_id == squad_id, KeyMessage.year == year,
-                             KeyMessage.snapshot_id.is_(None)))
-    if count >= KEY_MESSAGES_MAX:
-        raise HTTPException(status_code=409,
-                            detail=f"{KEY_MESSAGES_MAX} messages clés au plus par reporting")
     km = KeyMessage(squad_id=squad_id, year=year, kind=payload.kind, text=payload.text,
                     display_order=payload.display_order, created_by_user_id=user.id)
     db.add(km)

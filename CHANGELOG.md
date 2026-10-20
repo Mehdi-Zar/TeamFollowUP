@@ -2,12 +2,36 @@
 
 ## Unreleased
 
+- **Deconnexion pour inactivite**, reglable dans Administration > Reglages generaux (minutes, 0 = jamais) :
+  avertissement une minute avant avec « Rester connecte », activite partagee entre les onglets, message sur la
+  page de connexion. Le serveur refuse aussi une session inactive ; les rafraichissements automatiques
+  (notifications, fil, journaux) ne comptent pas comme de l'activite, et l'activite ne prolonge jamais la duree
+  maximale de session.
 - **Mode sombre** : bouton soleil / lune dans la barre du haut, et choix Clair, Sombre ou Suivre le systeme dans
   les Preferences (retenu par navigateur, applique avant le premier affichage). Les couleurs de la marque restent ;
   les apercus de documents restent clairs.
 - **Simulation en deux modes** (admin) : « Lecture seule », par defaut, voit l'application exactement comme la
   personne, et le serveur refuse toute modification ; « Agir en tant que » modifie a sa place, trace dans
   l'audit avec l'admin reel. Le mode se choisit a cote de « Voir en tant que » et se change depuis le bandeau.
+- **Steerco** : la periode se choisit dans une liste de mois au lieu d'etre tapee ; une plateforme passe
+  Dans le pack / Hors pack d'un clic depuis Administration > Plateformes ; l'etape evenements peut
+  **reprendre les messages cles du reporting** (liste filtrable par type, a cocher, deja repris signales).
+- **Export PowerPoint sans limite de saisie** : une squad saisit autant de jalons et de messages cles qu'elle
+  veut (le plafond de 4 messages par reporting est retire). La slide de la squad garde son dessin et un texte
+  lisible (plus de corps minuscule ni de jalons coupes a une ligne), chaque trimestre garde ce qu'il peut tenir,
+  et ce qui ne tient pas part sur une **slide de detail** juste apres, en tableau (jalons par engagement avec
+  statut, messages en entier), sur autant de pages qu'il faut. Desactivable dans le Studio.
+- **Tous les exports PowerPoint restent lisibles quel que soit le volume** : un export leger ne change pas ;
+  au-dela, l'export ajoute des slides au lieu de rapetisser le texte ou de compter en « +N ». Roadmap paginee
+  (corps fixe, chaque squad a sa hauteur, suites equilibrees), points d'attention continues, initiatives sur
+  deux lignes, Steerco avec slides de detail (KPI, SLA, evenements en entier) et SLA en liste quand il est large,
+  organigramme en vue d'ensemble puis par branche.
+- **Statut des OTD** : « Livre en retard » se juge au trimestre, plus au jour. Un jalon se planifie par trimestre
+  et se coche souvent quelques jours apres les faits : coche dans le trimestre de la date d'engagement, il est
+  a l'heure.
+- Correction : « Ne plus afficher au demarrage » du guide de prise en main est retenu **sur le compte** et non
+  plus dans le navigateur, qui pouvait l'effacer a la fermeture (le guide revenait a chaque connexion). Une
+  coche deja faite dans le navigateur est reprise automatiquement.
 - Correction : en mode clair, le fond des cartes et des champs (dont la page de connexion) et les bordures
   avaient disparu apres l'ajout du mode sombre.
 

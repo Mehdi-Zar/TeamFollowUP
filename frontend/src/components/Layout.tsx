@@ -14,6 +14,7 @@ import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-do
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { useColorMode } from "../colorMode";
+import { IdleLogout } from "./IdleLogout";
 import { useI18n } from "../i18n";
 import { useConfig, moduleOn } from "../config";
 import { Capability, ModuleKey, Role } from "../types";
@@ -115,25 +116,34 @@ export default function Layout() {
 
   // The getting-started guide: a window when the app opens (once per session),
   // unless the person ticked "don't show at startup", and at any time from the
-  // "?" button of the top bar. Both choices are kept in this browser, per user.
+  // "?" button of the top bar. "Don't show at startup" is kept on the account
+  // (a browser that clears its storage would bring the guide back); only "already
+  // shown in this session" stays in the browser.
   const guideOn = moduleOn(modules, "getting_started");
-  const hideKey = user ? `gs_hide_on_start_${user.id}` : "";
+  const legacyHideKey = user ? `gs_hide_on_start_${user.id}` : "";
   const [guide, setGuide] = useState(false);
   const [hideOnStart, setHideOnStart] = useState(false);
   useEffect(() => {
     if (!user || isPreview || !guideOn) return;
-    let hidden = false, shown = false;
+    let hidden = !!user.hide_getting_started, shown = false;
     try {
-      hidden = localStorage.getItem(hideKey) === "1";
+      // The choice used to live in this browser: carry it over to the account once.
+      if (localStorage.getItem(legacyHideKey) === "1") {
+        localStorage.removeItem(legacyHideKey);
+        if (!hidden) { hidden = true; saveHideOnStart(true); }
+      }
       shown = sessionStorage.getItem(`gs_shown_${user.id}`) === "1";
       sessionStorage.setItem(`gs_shown_${user.id}`, "1");
-    } catch { /* storage blocked: just show nothing automatically */ shown = true; }
+    } catch { /* storage blocked: rely on the account alone */ }
     setHideOnStart(hidden);
     if (!hidden && !shown) setGuide(true);
   }, [user?.id, isPreview, guideOn]);
+  function saveHideOnStart(v: boolean) {
+    api.put("/api/me/preferences", { hide_getting_started: v }).catch(() => {});
+  }
   function toggleHideOnStart(v: boolean) {
     setHideOnStart(v);
-    try { v ? localStorage.setItem(hideKey, "1") : localStorage.removeItem(hideKey); } catch { /* ignore */ }
+    saveHideOnStart(v);
   }
   // Administration shows for whoever holds at least one tab (Admin > Personas),
   // whatever their role; the role table only drives the admin's "preview as".
@@ -337,6 +347,7 @@ export default function Layout() {
             <button className="btn-ghost btn-sm" onClick={() => setSaveError(null)} aria-label={t("action.close")}>✕</button>
           </div>
         )}
+        <IdleLogout />
         {isPreview && (
           <div className={`no-print preview-banner${impersonationMode === "read" ? " preview-read" : ""}`}>
             <span>

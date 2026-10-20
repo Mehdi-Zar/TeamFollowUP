@@ -45,8 +45,13 @@ def test_no_milestone_is_to_be_scoped_then_late():
 def test_all_done_on_time_or_late():
     on_time = [j("done", done_at=at(2026, 5, 2)), j("done", done_at=at(2026, 5, 20))]
     assert state(on_time, at(2026, 5, 31))["status"] == "delivered"
-    late = [j("done", done_at=at(2026, 5, 2)), j("done", done_at=at(2026, 6, 3))]
+    # Ticked after the date but in the same quarter: on time (a milestone is
+    # planned by quarter, and ticked when someone gets to the reporting).
+    same_q = [j("done", done_at=at(2026, 5, 2)), j("done", done_at=at(2026, 6, 3))]
+    assert state(same_q, at(2026, 5, 31))["status"] == "delivered"
+    late = [j("done", done_at=at(2026, 5, 2)), j("done", done_at=at(2026, 7, 3))]
     assert state(late, at(2026, 5, 31))["status"] == "delivered_late"
+    assert state(late, at(2026, 5, 31))["reasons"] == ["done_after_date"]
     # Done on the committed day itself is on time.
     assert state([j("done", done_at=at(2026, 5, 31))], at(2026, 5, 31))["status"] == "delivered"
     # A milestone finished before the tool kept no date: taken as on time.

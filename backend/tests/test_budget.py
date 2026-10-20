@@ -117,10 +117,17 @@ def _slide_text(client, sa):
     r = client.get(f"/api/reports/dashboard.pptx?squad_id={sa}&year={YEAR}")
     assert r.status_code == 200, r.text
     prs = Presentation(io.BytesIO(r.content))
-    return "\n".join(sh.text_frame.text for sl in prs.slides for sh in sl.shapes if sh.has_text_frame)
+    out = []
+    for sl in prs.slides:
+        for sh in sl.shapes:
+            if sh.has_text_frame:
+                out.append(sh.text_frame.text)
+            elif sh.has_table:   # the detail slide is a table
+                out += [c.text for row in sh.table.rows for c in row.cells]
+    return "\n".join(out)
 
 
-def test_key_messages_four_per_reporting_and_each_reporting_starts_afresh(seeded, client):
+def test_key_messages_unlimited_per_reporting_and_each_reporting_starts_afresh(seeded, client):
     sa = seeded["squad_a"]
     base = f"/api/squads/{sa}/key-messages?year={YEAR}"
     login(client, seeded["sl_a"])
@@ -128,8 +135,6 @@ def test_key_messages_four_per_reporting_and_each_reporting_starts_afresh(seeded
     for i, txt in enumerate(texts):
         r = client.post(base, json={"kind": ["success", "alert", "risk", "success"][i], "text": txt})
         assert r.status_code == 201, r.text
-    # A fifth is refused: four is what a reader takes in, and what the slide holds.
-    assert client.post(base, json={"kind": "risk", "text": "Cinquieme"}).status_code == 409
     slide = _slide_text(client, sa)
     for txt in texts:
         assert txt in slide, txt
@@ -151,11 +156,18 @@ def test_key_messages_four_per_reporting_and_each_reporting_starts_afresh(seeded
     # and they replace the old ones everywhere.
     for i in range(1, 5):
         assert client.post(base, json={"kind": "success", "text": f"Nouveau {i}"}).status_code == 201
-    assert client.post(base, json={"kind": "risk", "text": "Cinquieme"}).status_code == 409
     kms = client.get(f"/api/squads/{sa}?year={YEAR}").json()["key_messages"]
     assert [m["text"] for m in kms] == [f"Nouveau {i}" for i in range(1, 5)]
     slide = _slide_text(client, sa)
     assert "Nouveau 4" in slide and "Message numero 1" not in slide
+
+    # No cap any more: a fifth and a sixth are accepted, the squad slide keeps
+    # four and says where the rest went, and the detail slide carries them all.
+    for txt in ("Cinquieme", "Sixieme"):
+        assert client.post(base, json={"kind": "risk", "text": txt}).status_code == 201
+    slide = _slide_text(client, sa)
+    assert "+2 autres messages en slide suivante" in slide
+    assert "Cinquieme" in slide and "Sixieme" in slide and "Nouveau 4" in slide
 
 
 def test_a_contributor_neither_sees_nor_manages_the_budget(seeded, client):
@@ -171,3 +183,24 @@ def test_a_contributor_neither_sees_nor_manages_the_budget(seeded, client):
     login(client, seeded["member"])
     assert client.put(f"/api/squads/{sa}/budget?year={YEAR}", json={"spent": 200}).status_code == 403
     assert client.get(f"/api/squads/{sa}?year={YEAR}").json()["budget"] is None
+
+
+def test_milestones_that_do_not_fit_go_to_a_detail_slide(seeded, client, db):
+    """A squad may plan as many milestones as it wants: the boxes the timeline
+    cannot hold at a readable size are listed in full on a detail slide."""
+    from app.models import RoadmapItem
+    sa = seeded["squad_a"]
+    for q in (1, 2, 3, 4):
+        for k in range(10):
+            for j in range(3):
+                db.add(RoadmapItem(squad_id=sa, year=YEAR, quarter=q, theme=f"Chantier {q}-{k} de modernisation",
+                                   title=f"Jalon {q}-{k}-{j} avec un intitule assez long", status="on_track"))
+    db.commit()
+    login(client, seeded["sl_a"])
+    slide = _slide_text(client, sa)
+    assert "en slide suivante" in slide
+    assert "Squad A : détail" in slide
+    # Nothing is lost: every milestone is on the squad slide or its detail slide.
+    for q in (1, 2, 3, 4):
+        for k in range(10):
+            assert f"Jalon {q}-{k}-2" in slide, (q, k)

@@ -96,6 +96,7 @@ def get_current_user_any_status(request: Request, db: Session = Depends(get_db))
         if (admin is None or admin.role != ADMIN or admin.status != "active"
                 or claims["isv"] != int(admin.session_version or 0)):
             raise HTTPException(status_code=401, detail="Session expirée")
+    _check_idle(request, db, claims)
     # Surface impersonation context (admin viewing the app as another user) on
     # request.state, and on the DB session so record_audit names the real actor.
     request.state.impersonator_id = impersonator_id
@@ -109,6 +110,31 @@ def get_current_user_any_status(request: Request, db: Session = Depends(get_db))
         raise HTTPException(status_code=403,
                             detail="Lecture seule : passez en mode « Agir en tant que » pour modifier")
     return user
+
+
+# Activity refreshes the session at most this often (seconds): a new cookie on
+# every request would be needless churn.
+ACTIVITY_RENEW_SECONDS = 60
+# The page pings the server while its user is active (frontend IdleLogout), at
+# most every two minutes: the server waits that long more before refusing.
+IDLE_GRACE_SECONDS = 150
+
+
+def _check_idle(request: Request, db: Session, claims: dict) -> None:
+    """Refuse a session idle for longer than the admin's setting, and mark an
+    active one for renewal (main._renew_session writes the cookie).
+
+    A request carrying ``X-Background: 1`` (the page's automatic refreshes:
+    notifications, feed, logs) is not activity: a tab left open would otherwise
+    keep its session alive forever."""
+    import time
+    from .generalconfig import get_general
+    idle = int(get_general(db).get("idle_timeout_minutes") or 0) * 60
+    now = int(time.time())
+    if idle and now - claims["act"] > idle + IDLE_GRACE_SECONDS:
+        raise HTTPException(status_code=401, detail="Session expirée après une période d'inactivité")
+    if request.headers.get("x-background") != "1" and now - claims["act"] >= ACTIVITY_RENEW_SECONDS:
+        request.state.renew_session = claims
 
 
 # What a read-only impersonation may still POST: leaving or switching the

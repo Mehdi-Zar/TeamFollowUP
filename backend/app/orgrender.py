@@ -1,5 +1,6 @@
 """Org-chart export: a tribe's editable org tree rendered to a printable HTML page
-and a single-slide PPTX, both laid out to fit one page. Mirrors the brand palette.
+and a PPTX: one slide while its cards read, an overview and one slide per branch
+beyond. Mirrors the brand palette.
 
 A node is {id, title, person_name, squad_id, squad_status, children:[...]}. Status
 colours (derived squad health) are applied when a node maps to a squad.
@@ -110,14 +111,58 @@ def render_org_html(roots: list[dict], scope_name: str, *, lang: str = "fr",
 
 
 # ----- PPTX --------------------------------------------------------------------
+#
+# Un organigramme tient sur une slide tant que ses cartes se lisent. Au-dela, il
+# passe sur plusieurs: une vue d'ensemble (la racine et ses branches, chacune avec
+# le nombre de ses elements), puis une slide par branche, coupee en « (suite) » si
+# une branche est elle-meme trop large. Une slide unique a quarante equipes
+# donnait des cartes d'un demi-pouce et des noms reduits a une lettre (« P… »).
 
-def _layout(roots: list[dict], compact: bool = False) -> tuple[list[dict], int, int]:
+_SLIDE_W = 13.333
+_TOP, _BOTTOM = 1.2, 7.0
+_LEFT_M = _RIGHT_M = 0.4
+_CHAR_W = 0.0080            # largeur d'un caractere gras, par point de corps
+
+# Le seuil de lisibilite d'une carte: en dessous, l'arbre change de slide.
+_MIN_W = 1.2                # plus etroite, une carte coupait chaque titre
+_MIN_H = 0.42               # un titre et un nom a 9 points, marges comprises
+_MIN_TITLE_FS = 9.0
+_MIN_PERSON_FS = 8.5
+_HEADER_CHARS = 78          # ce que le bandeau du haut tient a 22 points
+
+_T_MORE = {
+    "fr": {"one": "1 élément", "many": "{n} éléments", "cont": "suite", "sep": " : ",
+           "and_one": " et 1 autre", "and_more": " et {n} autres"},
+    "en": {"one": "1 item", "many": "{n} items", "cont": "cont.", "sep": ": ",
+           "and_one": " and 1 more", "and_more": " and {n} more"},
+}
+
+
+def _clone(node: dict, depth: int | None = None) -> dict:
+    """Une copie de l'arbre, coupee sous ``depth`` niveaux: la mise en page ecrit
+    sa position dans les noeuds, et chaque essai doit partir d'un arbre propre."""
+    kids = node.get("children") or []
+    out = {k: v for k, v in node.items()
+           if (not k.startswith("_") or k == "_note") and k != "children"}
+    out["children"] = [] if depth == 0 else [_clone(k, None if depth is None else depth - 1) for k in kids]
+    return out
+
+
+def _count(node: dict) -> int:
+    """Le nombre d'elements sous un noeud, a tous les niveaux."""
+    return sum(1 + _count(k) for k in node.get("children") or [])
+
+
+def _layout(roots: list[dict], compact: bool = False,
+            per_col: int | None = None) -> tuple[list[dict], int, int]:
     """Tidy top-down layout. Returns (placed_nodes, n_leaf_slots, max_depth).
     Each placed node gets x (leaf-slot centre, float) and depth (int).
 
     ``compact``: the leaves of one parent are stacked in a single column under it
     (``_stack`` = their rank) instead of taking one slot each. With twenty leaves
-    side by side, each card was half an inch wide and every title read « Plate… »."""
+    side by side, each card was half an inch wide and every title read « Plate… ».
+    ``per_col`` caps a stack: past it, the leaves continue in a second column, a
+    third, so that forty leaves do not shrink to forty slivers of a column."""
     placed: list[dict] = []
     counter = {"leaf": 0}
 
@@ -125,11 +170,17 @@ def _layout(roots: list[dict], compact: bool = False) -> tuple[list[dict], int, 
         kids = node.get("children") or []
         node["_stack"] = None
         if compact and len(kids) > 1 and all(not (k.get("children") or []) for k in kids):
-            x = counter["leaf"] + 0.5
-            counter["leaf"] += 1
-            for i, k in enumerate(kids):
-                k["_x"], k["_depth"], k["_stack"] = x, depth + 1, i
-                placed.append({"node": k, "x": x, "depth": depth + 1, "parent_x": None})
+            cols = 1 if not per_col else -(-len(kids) // per_col)
+            size = -(-len(kids) // cols)
+            xs = []
+            for c in range(cols):
+                x = counter["leaf"] + 0.5
+                counter["leaf"] += 1
+                xs.append(x)
+                for i, k in enumerate(kids[c * size:(c + 1) * size]):
+                    k["_x"], k["_depth"], k["_stack"] = x, depth + 1, i
+                    placed.append({"node": k, "x": x, "depth": depth + 1, "parent_x": None})
+            x = sum(xs) / len(xs)
         elif not kids:
             x = counter["leaf"] + 0.5
             counter["leaf"] += 1
@@ -156,8 +207,224 @@ def _layout(roots: list[dict], compact: bool = False) -> tuple[list[dict], int, 
     return placed, max(1, counter["leaf"]), max_depth
 
 
+# Le texte suit la carte. PowerPoint passe un titre a la ligne, mais il ne coupe
+# pas un mot: « Management » plus large que sa carte en sortait des deux cotes et
+# s'ecrivait sur la voisine. On descend donc d'un demi-point tant que le mot le
+# plus long ne rentre pas, et on coupe en dernier ressort plutot que de deborder.
+def _fit_size(text: str, base: float, width: float, floor: float = 8.0) -> float:
+    inner = width - 0.12      # la largeur utile, marges deduites
+    longest = max((len(w) for w in (text or "").split()), default=1)
+    size = base
+    while size > floor and longest * _CHAR_W * size > inner:
+        size -= 0.5
+    return size
+
+
+def _fit_text(text: str, size: float, lines: int, width: float) -> str:
+    """Le titre entier tient sur ses lignes, coupe a la fin avec « … » et non
+    plus mot par mot (« Platefo… de moderni… » ne se lisait plus)."""
+    chars = max(3, int((width - 0.12) / (_CHAR_W * size)))
+    words = (text or "").split()
+    out, cur, used = [], "", 0
+    for w in words:
+        if len(w) > chars:
+            w = w[:max(1, chars - 1)] + "…"
+        cand = f"{cur} {w}" if cur else w
+        if len(cand) <= chars:
+            cur = cand
+            continue
+        out.append(cur)
+        used += 1
+        cur = w
+        if used >= lines:
+            break
+    else:
+        out.append(cur)
+        return " ".join(x for x in out if x)
+    kept = " ".join(x for x in out if x).rstrip(" ,;:.")
+    return (kept[:-1] if kept.endswith("…") else kept) + "…"
+
+
+def _fit_person(name: str, size: float, width: float) -> str:
+    """Un nom sur une ligne: entier s'il tient, sinon l'initiale du prenom et
+    le nom (« C. Dubois »), et non plus le seul prenom (« Camille… »)."""
+    chars = max(3, int((width - 0.12) / (_CHAR_W * size)))
+    name = (name or "").strip()
+    if len(name) <= chars:
+        return name
+    parts = name.split()
+    if len(parts) > 1:
+        short = f"{parts[0][0]}. {' '.join(parts[1:])}"
+        if len(short) <= chars:
+            return short
+        return _fit_text(short, size, 1, width)
+    return _fit_text(name, size, 1, width)
+
+
+def _geometry(roots: list[dict], compact: bool = False, per_col: int | None = None,
+              pack: bool = False) -> dict | None:
+    """Ou va chaque carte, a quelle taille, en quel corps: tout ce que le dessin
+    lit, calcule sur une copie de l'arbre. None pour un arbre vide."""
+    roots = [_clone(r) for r in roots]
+    placed, n_leaf, max_depth = _layout(roots, compact, per_col)
+    if not placed:
+        return None
+    avail_w = _SLIDE_W - _LEFT_M - _RIGHT_M
+    col_w = avail_w / n_leaf                       # width per leaf slot
+    # Peu de colonnes: elles se resserrent au centre au lieu de partager toute la
+    # largeur, ou deux piles se regardaient d'un bord a l'autre de la slide.
+    x0 = _LEFT_M
+    if pack and col_w > 2.6:
+        col_w = 2.6
+        x0 = _LEFT_M + (avail_w - col_w * n_leaf) / 2
+    row_h = (_BOTTOM - _TOP) / (max_depth + 1)
+    if any(it["node"].get("_stack") is not None for it in placed):
+        # The rows above a stack give it their spare height.
+        row_h = min(row_h, 1.3)
+    # Une carte ne depasse jamais son emplacement. Un plancher de 1,1 pouce la
+    # gardait large quand la tribu compte quatorze feuilles: l'emplacement n'en
+    # fait plus que 0,9, et les cartes se chevauchaient deux a deux, chacune
+    # mordant sur sa voisine.
+    # A card is as wide as the gap to its nearest neighbour on the same row
+    # allows: the root, alone on its row, no longer shrinks to a leaf's width.
+    xs_by_depth: dict[int, set] = {}
+    for it in placed:
+        xs_by_depth.setdefault(it["depth"], set()).add(it["x"])
+    widths = {}
+    for d, xs_ in xs_by_depth.items():
+        xs = sorted(xs_)
+        gap = min((b - a for a, b in zip(xs, xs[1:])), default=n_leaf)
+        widths[d] = min(2.2, gap * col_w * 0.92)
+        # Seule sur sa rangee, une carte au bord de l'arbre debordait de la slide:
+        # elle ne s'etend pas plus loin que le bord.
+        edge = min(min(x0 + x * col_w - 0.2, _SLIDE_W - 0.2 - (x0 + x * col_w)) for x in xs)
+        widths[d] = min(widths[d], 2 * edge)
+
+    box_h = min(0.8, max(0.5, row_h * 0.62))
+    # Stacked leaves share the space from their row down to the bottom.
+    max_stack = 1 + max((it["node"].get("_stack") or 0 for it in placed), default=0)
+    stack_top = {it["depth"] for it in placed if it["node"].get("_stack") is not None}
+    if max_stack > 1:
+        d0 = min(stack_top)
+        room = _BOTTOM - (_TOP + d0 * row_h + 0.1)
+        stack_h = min(box_h, room / max_stack - 0.08)
+    else:
+        stack_h = box_h
+
+    # Un meme corps pour toutes les cartes d'un meme niveau: d'une carte a sa
+    # voisine, le titre changeait de taille selon la longueur de ses mots.
+    fs1: dict[int, float] = {}
+    fs2: dict[int, float] = {}
+    for item in placed:
+        n_, d_ = item["node"], item["depth"]
+        fs1[d_] = min(fs1.get(d_, 99), _fit_size(n_["title"], 10.5 if max_depth <= 3 else 9, widths[d_]))
+        if n_.get("person_name"):
+            fs2[d_] = min(fs2.get(d_, 99), _fit_size(n_["person_name"], 8.5, widths[d_]))
+    return {"roots": roots, "placed": placed, "n_leaf": n_leaf, "max_depth": max_depth,
+            "row_h": row_h, "box_h": box_h, "stack_h": stack_h, "max_stack": max_stack,
+            "widths": widths, "fs1": fs1, "fs2": fs2, "col_w": col_w, "x0": x0}
+
+
+def _card_text(g: dict, item: dict) -> tuple[str, str | None, str | None, float]:
+    """Ce qu'une carte ecrit, deja ajuste a sa taille: titre, nom, note (le
+    nombre d'elements d'une branche de la vue d'ensemble), et sa hauteur."""
+    node, depth = item["node"], item["depth"]
+    stacked = node.get("_stack") is not None
+    bh_ = g["stack_h"] if stacked else g["box_h"]
+    width = g["widths"][depth]
+    fs1 = g["fs1"][depth]
+    extra = (0.16 if node.get("person_name") else 0.02) + (0.15 if node.get("_note") else 0)
+    lines1 = max(1, int((bh_ - extra) / (fs1 * 1.2 / 72)))
+    title = _fit_text(node["title"], fs1, lines1, width)
+    person = (_fit_person(node["person_name"], g["fs2"].get(depth, 8.5), width)
+              if node.get("person_name") else None)
+    return title, person, node.get("_note"), bh_
+
+
+def _legible(g: dict) -> bool:
+    """Toutes les cartes se lisent: assez larges, assez hautes, un corps d'au
+    moins neuf points, et aucun titre ni nom ampute de sa fin."""
+    if min(g["widths"].values()) < _MIN_W:
+        return False
+    if min(g["box_h"], g["stack_h"] if g["max_stack"] > 1 else g["box_h"]) < _MIN_H:
+        return False
+    # Une rangee doit laisser passer ses traits entre deux cartes.
+    if g["max_depth"] and g["box_h"] > g["row_h"] - 0.2:
+        return False
+    if min(g["fs1"].values()) < _MIN_TITLE_FS or min(g["fs2"].values(), default=99) < _MIN_PERSON_FS:
+        return False
+    for item in g["placed"]:
+        title, person, note, bh_ = _card_text(g, item)
+        if title.endswith("…") and not item["node"]["title"].rstrip().endswith("…"):
+            return False
+        if person is not None and person.endswith("…"):
+            return False
+        lines = (1 if person else 0) + (1 if note else 0)
+        if bh_ < 0.18 + lines * 0.15:
+            return False
+    return True
+
+
+def _fit(roots: list[dict], pack: bool = False) -> tuple[dict | None, bool]:
+    """La mise en page d'un arbre sur une slide, et si elle se lit.
+
+    D'abord celle d'avant (une colonne par feuille, ou une pile par parent des
+    qu'il y a plus de dix feuilles): un organigramme qui se lisait ne change pas.
+    Ensuite des piles plus courtes, sur plusieurs colonnes."""
+    g = _geometry(roots, pack=pack)
+    if g is None:
+        return None, True
+    if g["n_leaf"] > 10:
+        g = _geometry(roots, compact=True, pack=pack)
+    if _legible(g):
+        return g, True
+    groups = []
+
+    def leaf_groups(n):
+        kids = n.get("children") or []
+        if len(kids) > 1 and all(not (k.get("children") or []) for k in kids):
+            groups.append(len(kids))
+        for k in kids:
+            leaf_groups(k)
+    for r in roots:
+        leaf_groups(r)
+    last = g
+    for per_col in range(max(groups, default=1) - 1, 0, -1):
+        g2 = _geometry(roots, compact=True, per_col=per_col, pack=pack)
+        last = g2
+        if _legible(g2):
+            return g2, True
+    return last, False
+
+
+def _pages(node: dict, path: list[str]) -> list[tuple[list[str], dict, bool]]:
+    """Les slides d'une branche: (chemin, mise en page, suite?). Une branche qui
+    ne tient pas est coupee en groupes d'enfants, chacun sous son parent, et un
+    enfant trop grand a lui seul prend ses propres slides."""
+    g, ok = _fit([node], pack=True)
+    if ok:
+        return [(path, g, False)]
+    kids = node.get("children") or []
+    for size in range(len(kids) - 1, 0, -1):
+        chunks = [kids[i:i + size] for i in range(0, len(kids), size)]
+        fits = [_fit([{**node, "children": c}], pack=True) for c in chunks]
+        if all(ok_ for _, ok_ in fits):
+            return [(path, g_, i > 0) for i, (g_, _) in enumerate(fits)]
+    # Un enfant a la fois ne tient toujours pas: la branche est montree sans
+    # ses petits-enfants, et chaque enfant trop large a ses slides.
+    out = []
+    head = _clone(node, 1)
+    g, _ = _fit([head], pack=True)
+    out.append((path, g, False))
+    for k in kids:
+        if k.get("children"):
+            out += _pages(k, path + [k["title"]])
+    return out
+
+
 def render_org_pptx(roots: list[dict], scope_name: str, *, lang: str = "fr") -> bytes:
-    """Render the org tree as a single-slide PPTX.
+    """Render the org tree as a PPTX: one slide while the cards read, an overview
+    and one slide per branch beyond.
 
     Uses _layout to assign each node a leaf-slot x and a depth, then scales box
     size / row height to fit everything on one 13.33x7.5in slide. Connectors are
@@ -172,12 +439,86 @@ def org_deck(prs, roots: list[dict], scope_name: str, *, lang: str = "fr") -> di
     from .exportspec import block_on
 
     def org_section(sec):
-        _org_slide(prs, roots, scope_name, lang, block_on(sec, "legend"), block_on(sec, "stamp"))
+        _org_slides(prs, roots, scope_name, lang, block_on(sec, "legend"), block_on(sec, "stamp"))
 
     return {"org": org_section, "parts": {}}
 
 
-def _org_slide(prs, roots, scope_name, lang, legend_on=True, stamp_on=True):
+def _org_slides(prs, roots, scope_name, lang, legend_on=True, stamp_on=True):
+    """Les slides de l'organigramme: une seule tant que l'arbre se lit, sinon une
+    vue d'ensemble puis une slide par branche."""
+    lang = _lang(lang)
+    M = _T_MORE[lang]
+    base = f'{_T[lang]["org"]} | {scope_name}'
+    g, ok = _fit(roots)
+    if g is None or ok:
+        _org_slide(prs, g, base, lang, legend_on, stamp_on)
+        return
+    # La vue d'ensemble: la racine et ses branches, chacune avec ce qu'elle porte.
+    overview = []
+    for r in roots:
+        top = _clone(r, 1)
+        for k, src in zip(top["children"], r.get("children") or []):
+            n = _count(src)
+            if n:
+                k["_note"] = M["one"] if n == 1 else M["many"].format(n=n)
+        overview.append(top)
+    slides: list[tuple[list[str], dict, bool]] = []
+    g_over, ok_over = _fit(overview, pack=True)
+    if ok_over:
+        slides.append(([], g_over, False))
+    else:
+        for top in overview:
+            slides += [([], g_, cont) for _, g_, cont in _pages(top, [])]
+    # Une slide par branche, mais les petites branches voisines partagent la leur
+    # tant qu'elles s'y lisent: quarante branches de deux equipes ne font pas
+    # quarante slides presque vides.
+    group: list[dict] = []
+
+    def group_title(names: list[str]) -> str:
+        """« A, B et 4 autres »: les premieres branches nommees, les suivantes
+        comptees, dans la place que le bandeau laisse."""
+        room = _HEADER_CHARS - len(base) - len(M["sep"])
+        for k in range(len(names), 0, -1):
+            rest = len(names) - k
+            tail = "" if not rest else (M["and_one"] if rest == 1 else M["and_more"].format(n=rest))
+            text = ", ".join(names[:k]) + tail
+            if len(text) <= room:
+                return text
+        return names[0]
+
+    def flush():
+        if group:
+            g_, _ = _fit(group, pack=True)
+            slides.append(([group_title([b["title"] for b in group])], g_, False))
+            group.clear()
+    for r in roots:
+        for k in r.get("children") or []:
+            if not k.get("children"):
+                continue
+            pages = _pages(k, [k["title"]])
+            if len(pages) > 1:
+                flush()
+                slides += pages
+                continue
+            if group and not _fit(group + [k], pack=True)[1]:
+                flush()
+            group.append(k)
+    flush()
+    for path, g_, cont in slides:
+        title = base
+        if path:
+            room = _HEADER_CHARS - len(base) - len(M["sep"])
+            tail = " / ".join(path)
+            if len(tail) > room:
+                tail = tail[:max(8, room - 1)].rstrip() + "…"
+            title += M["sep"] + tail
+        if cont:
+            title += f' ({M["cont"]})'
+        _org_slide(prs, g_, title, lang, legend_on, stamp_on)
+
+
+def _org_slide(prs, g, title, lang, legend_on=True, stamp_on=True):
     Presentation, Inches, Pt, Emu, RGBColor, PP_ALIGN, MSO_ANCHOR, MSO_SHAPE = _pptx_toolkit()
     from pptx.enum.shapes import MSO_CONNECTOR
     _NAVY = pptxtpl.color("primary", globals()["_NAVY"])
@@ -185,21 +526,17 @@ def _org_slide(prs, roots, scope_name, lang, legend_on=True, stamp_on=True):
     def rgb(h):
         return RGBColor.from_string(h.lstrip("#").upper())
 
-    lang = _lang(lang)
-    SLIDE_W, SLIDE_H = 13.333, 7.5
+    SLIDE_W = _SLIDE_W
     s = pptxtpl.add_slide(prs)
 
     # Header band
     head = s.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0), Inches(0), Inches(SLIDE_W), Inches(0.9))
     head.fill.solid(); head.fill.fore_color.rgb = rgb(_NAVY); head.line.fill.background(); head.shadow.inherit = False
     tf = head.text_frame; tf.margin_left = Inches(0.5); tf.vertical_anchor = MSO_ANCHOR.MIDDLE
-    p = tf.paragraphs[0]; r = p.add_run(); r.text = f'{_T[lang]["org"]} | {scope_name}'
+    p = tf.paragraphs[0]; r = p.add_run(); r.text = title
     r.font.size = Pt(_fs(22)); r.font.bold = True; r.font.color.rgb = rgb("#FFFFFF")
 
-    placed, n_leaf, max_depth = _layout(roots)
-    if n_leaf > 10:
-        placed, n_leaf, max_depth = _layout(roots, compact=True)
-    if not placed:
+    if g is None:
         # Une slide avec son seul titre se lisait comme un export rate.
         box = s.shapes.add_textbox(Inches(0.5), Inches(3.3), Inches(SLIDE_W - 1), Inches(0.6))
         pe = box.text_frame.paragraphs[0]; pe.alignment = PP_ALIGN.CENTER
@@ -234,105 +571,16 @@ def _org_slide(prs, roots, scope_name, lang, legend_on=True, stamp_on=True):
         gr = gp.add_run(); gr.text = T["gen"].format(d=fmt_datetime(datetime.now(timezone.utc), lang))
         gr.font.size = Pt(9); gr.font.color.rgb = rgb(_MUTED)
 
-    top, bottom = 1.2, 7.0
-    left_m, right_m = 0.4, 0.4
-    avail_w = SLIDE_W - left_m - right_m
-    col_w = avail_w / n_leaf                       # width per leaf slot
-    row_h = (bottom - top) / (max_depth + 1)
-    if any(it["node"].get("_stack") is not None for it in placed):
-        # The rows above a stack give it their spare height.
-        row_h = min(row_h, 1.3)
-    # Une carte ne depasse jamais son emplacement. Un plancher de 1,1 pouce la
-    # gardait large quand la tribu compte quatorze feuilles: l'emplacement n'en
-    # fait plus que 0,9, et les cartes se chevauchaient deux a deux, chacune
-    # mordant sur sa voisine.
-    # A card is as wide as the gap to its nearest neighbour on the same row
-    # allows: the root, alone on its row, no longer shrinks to a leaf's width.
-    xs_by_depth: dict[int, set] = {}
-    for it in placed:
-        xs_by_depth.setdefault(it["depth"], set()).add(it["x"])
+    top = _TOP
+    col_w, x0 = g["col_w"], g["x0"]
+    row_h, box_h, stack_h = g["row_h"], g["box_h"], g["stack_h"]
 
     def width_at(d: int) -> float:
-        xs = sorted(xs_by_depth.get(d, ()))
-        gap = min((b - a for a, b in zip(xs, xs[1:])), default=n_leaf)
-        return min(2.2, gap * col_w * 0.92)
-
-    box_h = min(0.8, max(0.5, row_h * 0.62))
-    # Stacked leaves share the space from their row down to the bottom.
-    max_stack = 1 + max((it["node"].get("_stack") or 0 for it in placed), default=0)
-    stack_top = {it["depth"] for it in placed if it["node"].get("_stack") is not None}
-    if max_stack > 1:
-        d0 = min(stack_top)
-        room = bottom - (top + d0 * row_h + 0.1)
-        stack_h = min(box_h, room / max_stack - 0.08)
-    else:
-        stack_h = box_h
-
-    # Le texte suit la carte. PowerPoint passe un titre a la ligne, mais il ne coupe
-    # pas un mot: « Management » plus large que sa carte en sortait des deux cotes et
-    # s'ecrivait sur la voisine. On descend donc d'un demi-point tant que le mot le
-    # plus long ne rentre pas, et on coupe en dernier ressort plutot que de deborder.
-    CHAR_W = 0.0080            # largeur d'un caractere gras, par point de corps
-
-    def fit_size(text: str, base: float, d: int, floor: float = 8.0) -> float:
-        inner = width_at(d) - 0.12      # la largeur utile, marges deduites
-        longest = max((len(w) for w in (text or "").split()), default=1)
-        size = base
-        while size > floor and longest * CHAR_W * size > inner:
-            size -= 0.5
-        return size
-
-    def fit_text(text: str, size: float, lines: int, d: int) -> str:
-        """Le titre entier tient sur ses lignes, coupe a la fin avec « … » et non
-        plus mot par mot (« Platefo… de moderni… » ne se lisait plus)."""
-        chars = max(3, int((width_at(d) - 0.12) / (CHAR_W * size)))
-        words = (text or "").split()
-        out, cur, used = [], "", 0
-        for w in words:
-            if len(w) > chars:
-                w = w[:max(1, chars - 1)] + "…"
-            cand = f"{cur} {w}" if cur else w
-            if len(cand) <= chars:
-                cur = cand
-                continue
-            out.append(cur)
-            used += 1
-            cur = w
-            if used >= lines:
-                break
-        else:
-            out.append(cur)
-            return " ".join(x for x in out if x)
-        kept = " ".join(x for x in out if x).rstrip(" ,;:.")
-        return (kept[:-1] if kept.endswith("…") else kept) + "…"
-
-    def fit_person(name: str, size: float, d: int) -> str:
-        """Un nom sur une ligne: entier s'il tient, sinon l'initiale du prenom et
-        le nom (« C. Dubois »), et non plus le seul prenom (« Camille… »)."""
-        chars = max(3, int((width_at(d) - 0.12) / (CHAR_W * size)))
-        name = (name or "").strip()
-        if len(name) <= chars:
-            return name
-        parts = name.split()
-        if len(parts) > 1:
-            short = f"{parts[0][0]}. {' '.join(parts[1:])}"
-            if len(short) <= chars:
-                return short
-            return fit_text(short, size, 1, d)
-        return fit_text(name, size, 1, d)
-
-    # Un meme corps pour toutes les cartes d'un meme niveau: d'une carte a sa
-    # voisine, le titre changeait de taille selon la longueur de ses mots.
-    level_fs1: dict[int, float] = {}
-    level_fs2: dict[int, float] = {}
-    for item in placed:
-        n_, d_ = item["node"], item["depth"]
-        level_fs1[d_] = min(level_fs1.get(d_, 99), fit_size(n_["title"], 10.5 if max_depth <= 3 else 9, d_))
-        if n_.get("person_name"):
-            level_fs2[d_] = min(level_fs2.get(d_, 99), fit_size(n_["person_name"], 8.5, d_))
+        return g["widths"][d]
 
     def cx(x):  # leaf-slot centre → inches
-        return left_m + (x / n_leaf) * avail_w
+        return x0 + x * col_w
+
     def cy(depth, stack=None):
         if stack is not None:
             return top + depth * row_h + 0.1 + stack * (stack_h + 0.08)
@@ -349,17 +597,25 @@ def _org_slide(prs, roots, scope_name, lang, legend_on=True, stamp_on=True):
     def draw_connectors(node):
         kids = node.get("children") or []
         if kids and kids[0].get("_stack") is not None:
-            # A stack: one spine down the left edge, a tick into each card.
+            # A stack: one spine down the left edge of each column, a tick into
+            # each card, and one bar above the columns when there are several.
             x1, y1 = cx(node["_x"]), cy(node["_depth"], node.get("_stack")) + box_h
-            sx = cx(kids[0]["_x"]) - width_at(kids[0]["_depth"]) / 2 - 0.06
             first_y = cy(kids[0]["_depth"], 0)
+            cols = sorted({k["_x"] for k in kids})
+            half = width_at(kids[0]["_depth"]) / 2 + 0.06
+            spines = [cx(c) - half for c in cols]
             line(x1, y1, x1, first_y - 0.05)
-            line(sx, first_y - 0.05, x1, first_y - 0.05)
-            last_mid = cy(kids[-1]["_depth"], kids[-1]["_stack"]) + stack_h / 2
-            line(sx, first_y - 0.05, sx, last_mid)
-            for k in kids:
-                ym = cy(k["_depth"], k["_stack"]) + stack_h / 2
-                line(sx, ym, sx + 0.06, ym)
+            if len(cols) == 1:
+                line(spines[0], first_y - 0.05, x1, first_y - 0.05)
+            else:
+                line(min(spines + [x1]), first_y - 0.05, max(spines + [x1]), first_y - 0.05)
+            for c, sx in zip(cols, spines):
+                col = [k for k in kids if k["_x"] == c]
+                last_mid = cy(col[-1]["_depth"], col[-1]["_stack"]) + stack_h / 2
+                line(sx, first_y - 0.05, sx, last_mid)
+                for k in col:
+                    ym = cy(k["_depth"], k["_stack"]) + stack_h / 2
+                    line(sx, ym, sx + 0.06, ym)
             return
         if not kids:
             return
@@ -376,13 +632,12 @@ def _org_slide(prs, roots, scope_name, lang, legend_on=True, stamp_on=True):
         for k, x2 in zip(kids, xs):
             line(x2, ym, x2, cy(k["_depth"], k.get("_stack")))
             draw_connectors(k)
-    for r0 in roots:
+    for r0 in g["roots"]:
         draw_connectors(r0)
 
-    for item in placed:
+    for item in g["placed"]:
         node = item["node"]
-        stacked = node.get("_stack") is not None
-        bh_ = stack_h if stacked else box_h
+        title_txt, person, note, bh_ = _card_text(g, item)
         box_w = width_at(item["depth"])
         x, depth = cx(item["x"]) - box_w / 2, cy(item["depth"], node.get("_stack"))
         status = node.get("squad_status") if node.get("squad_id") else None
@@ -407,12 +662,15 @@ def _org_slide(prs, roots, scope_name, lang, legend_on=True, stamp_on=True):
         # ferait que pousser les noms hors de leur cadre sans rien rendre plus
         # lisible. Seul le titre de la slide, qui a toute la largeur pour lui,
         # profite de l'agrandissement.
-        fs1 = level_fs1[item["depth"]]
-        lines1 = max(1, int((bh_ - (0.16 if node.get("person_name") else 0.02)) / (fs1 * 1.2 / 72)))
-        r1 = p.add_run(); r1.text = fit_text(node["title"], fs1, lines1, item["depth"])
+        fs1 = g["fs1"][item["depth"]]
+        r1 = p.add_run(); r1.text = title_txt
         r1.font.size = Pt(fs1); r1.font.bold = True; r1.font.color.rgb = rgb(_INK)
-        if node.get("person_name"):
-            fs2 = level_fs2.get(item["depth"], 8.5)
+        fs2 = g["fs2"].get(item["depth"], 8.5)
+        if person is not None:
             p2 = tf.add_paragraph(); p2.alignment = PP_ALIGN.CENTER
-            r2 = p2.add_run(); r2.text = fit_person(node["person_name"], fs2, item["depth"])
+            r2 = p2.add_run(); r2.text = person
             r2.font.size = Pt(fs2); r2.font.color.rgb = rgb(_MUTED)
+        if note:
+            p3 = tf.add_paragraph(); p3.alignment = PP_ALIGN.CENTER
+            r3 = p3.add_run(); r3.text = note
+            r3.font.size = Pt(fs2); r3.font.italic = True; r3.font.color.rgb = rgb(_MUTED)

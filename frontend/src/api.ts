@@ -116,6 +116,9 @@ function requestForm<T>(path: string, form: FormData): Promise<T> {
  */
 export const api = {
   get: <T>(path: string) => request<T>("GET", path),
+  /** A GET the page makes on its own (an automatic refresh): not the user's
+   *  activity, so it does not keep an idle session alive (see IdleLogout). */
+  poll: <T>(path: string) => send<T>(path, { method: "GET", headers: { "X-Background": "1" } }),
   post: <T>(path: string, body?: unknown) => request<T>("POST", path, body ?? {}),
   put: <T>(path: string, body?: unknown) => request<T>("PUT", path, body ?? {}),
   del: <T>(path: string) => request<T>("DELETE", path),

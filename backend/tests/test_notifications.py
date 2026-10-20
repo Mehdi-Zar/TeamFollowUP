@@ -36,3 +36,12 @@ def test_preferences_mute_tweets(client, seeded):
     client.post("/api/feed", json={"content": "after mute", "kind": "info"})
     login(client, seeded["member"])
     assert client.get("/api/notifications").json()["unread_count"] == 0
+
+
+def test_getting_started_choice_kept_on_account(client, seeded):
+    """'Don't show at startup' survives a browser that clears its storage: /me carries it."""
+    login(client, seeded["member"])
+    assert client.get("/api/auth/me").json()["hide_getting_started"] is False
+    assert client.put("/api/me/preferences", json={"hide_getting_started": True}).json()["hide_getting_started"] is True
+    assert client.get("/api/auth/me").json()["hide_getting_started"] is True
+    assert client.get("/api/me/preferences").json()["notify_tweets"] is True

@@ -32,7 +32,7 @@ export default function NotificationBell() {
 
   function load() {
     if (!inappOn) return;
-    api.get<NotificationsResponse>("/api/notifications").then(setData).catch(() => {});
+    api.poll<NotificationsResponse>("/api/notifications").then(setData).catch(() => {});
   }
   // Poll for new notifications every 15s while mounted.
   useEffect(() => {

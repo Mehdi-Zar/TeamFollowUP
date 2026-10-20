@@ -61,6 +61,19 @@ _PT = {
         "continued": "suite",
         "km_more_one": "+1 autre message",
         "km_more": "+{n} autres messages",
+        "km_more_next_one": "+1 autre message en slide suivante",
+        "km_more_next": "+{n} autres messages en slide suivante",
+        "tl_dropped_next_one": "1 boîte de jalons en slide suivante",
+        "tl_dropped_next": "{n} boîtes de jalons en slide suivante",
+        "detail_title": "{squad} : détail",
+        "detail_milestones": "Jalons qui ne tenaient pas sur la frise",
+        "detail_messages": "Messages clés",
+        "h_when": "Quand",
+        "h_commitment": "Engagement",
+        "h_milestone": "Jalon",
+        "h_status": "Statut",
+        "h_type": "Type",
+        "h_message": "Message",
         "late_frame": "Engagement en retard",
         "budget_empty": "Montants non renseignés",
         "budget_none": "Pas de budget dans ce document",
@@ -72,6 +85,8 @@ _PT = {
         "nothing": "Rien à signaler.",
         "no_leave": "Aucune absence prévue.",
         "more": "+{n} autres",
+        "more_next_one": "+1 autre en slide suivante",
+        "more_next": "+{n} autres en slide suivante",
         "no_leader": "Aucun squad leader",
         "not_reported": "Non renseigné",
     },
@@ -88,6 +103,19 @@ _PT = {
         "continued": "continued",
         "km_more_one": "+1 more message",
         "km_more": "+{n} more messages",
+        "km_more_next_one": "+1 more message on the next slide",
+        "km_more_next": "+{n} more messages on the next slide",
+        "tl_dropped_next_one": "1 milestone box on the next slide",
+        "tl_dropped_next": "{n} milestone boxes on the next slide",
+        "detail_title": "{squad}: details",
+        "detail_milestones": "Milestones that did not fit on the timeline",
+        "detail_messages": "Key messages",
+        "h_when": "When",
+        "h_commitment": "Commitment",
+        "h_milestone": "Milestone",
+        "h_status": "Status",
+        "h_type": "Type",
+        "h_message": "Message",
         "late_frame": "Late commitment",
         "budget_empty": "Amounts not entered",
         "budget_none": "No budget in this document",
@@ -99,6 +127,8 @@ _PT = {
         "nothing": "Nothing to report.",
         "no_leave": "No absence planned.",
         "more": "+{n} more",
+        "more_next_one": "+1 more on the next slide",
+        "more_next": "+{n} more on the next slide",
         "no_leader": "No squad leader",
         "not_reported": "Not reported",
     },
@@ -610,9 +640,17 @@ def report_deck(prs, data: dict) -> dict:
                         B["ink"]))
         return rt(lang, "leaves_upcoming"), out, _pt(lang, "no_leave")
 
-    def attention_column(s, which, x, y=1.34, cw=None, h=5.8):
-        """Une colonne des points d'attention, dans ce cadre (pouces)."""
+    def attention_column(s, which, x, y=1.34, cw=None, h=5.8, *, start=0, paged=False, titled=True,
+                         flows_on=False):
+        """Une colonne des points d'attention, dans ce cadre (pouces), a partir de
+        la ligne ``start``. Rend le nombre de lignes posees. ``paged``: la suite
+        part sur la slide suivante, la colonne le dit au lieu de « +N »."""
         title, rows, empty = attention_rows(which)
+        if start:
+            title += f' ({_pt(lang, "continued")})'
+        if not titled:
+            title = " "        # la meme hauteur de titre: les lignes restent alignees
+        all_rows, rows = rows, rows[start:]
         sh = rrect(s, Inches(x), Inches(y), Inches(cw), Inches(h), B["white"], line=B["line"], radius=0.03)
         paras = [(title, 13, B["navy"], True, PP_ALIGN.LEFT, 8)]
         # La place se compte en lignes, et chaque texte passe a la ligne
@@ -632,11 +670,14 @@ def report_deck(prs, data: dict) -> dict:
                 paras.append((_wrap_fit(info, cpl, il), 10, B["muted"], False, PP_ALIGN.LEFT, 6))
             used += need
             shown += 1
-        if len(rows) > shown:
-            paras.append((_pt(lang, "more", n=len(rows) - shown), 10, B["muted"], False, PP_ALIGN.LEFT, 0))
-        if not rows:
+        if len(rows) > shown and not flows_on:   # la colonne voisine continue: rien a dire
+            more = (_pt(lang, "more_next", n=len(rows) - shown) if paged
+                    else _pt(lang, "more", n=len(rows) - shown))
+            paras.append((more, 10, B["muted"], False, PP_ALIGN.LEFT, 0))
+        if not all_rows:
             paras.append((empty, 10.5, B["muted"], False, PP_ALIGN.LEFT, 0))
         place(sh, paras, anchor=MSO_ANCHOR.TOP, ml=0.2, mt=0.16, mr=0.2)
+        return max(shown, 1) if rows else 0
 
     def attention_slide(sec=None):
         s = new_slide()
@@ -650,9 +691,34 @@ def report_deck(prs, data: dict) -> dict:
         nc = len(cols)
         if not nc:
             return
-        cw = (13.333 - 1.0 - (nc - 1) * 0.2) / nc
-        for i, which in enumerate(cols):
-            attention_column(s, which, 0.5 + i * (cw + 0.2), 1.34, cw, 5.8)
+        # Rien ne se tait: une colonne qui deborde continue sur une slide
+        # « (suite) », qui ne reprend que les colonnes qui ont encore a dire.
+        total = {w: len(attention_rows(w)[1]) for w in cols}
+        done = {w: 0 for w in cols}
+        first = True
+        while first or any(done[w] < total[w] for w in cols):
+            if not first:
+                s = new_slide()
+                if block_on(sec, "header"):
+                    summary_header(s, True)
+            left = [w for w in cols if done[w] < total[w]]
+            # Une page de suite garde trois colonnes: la liste qui continue en
+            # occupe plusieurs, l'une apres l'autre, au lieu d'une seule colonne
+            # au milieu d'une slide vide.
+            if first:
+                slots = [(w, True) for w in cols]
+            else:
+                share = [3 // len(left) + (1 if i < 3 % len(left) else 0) for i in range(len(left))]
+                slots = [(w, k == 0) for w, n in zip(left, share) for k in range(n)]
+            cw = (13.333 - 1.0 - (len(slots) - 1) * 0.2) / len(slots)
+            for i, (which, titled) in enumerate(slots):
+                if not titled and done[which] >= total[which]:
+                    continue
+                last = i + 1 == len(slots) or slots[i + 1][0] != which
+                done[which] += attention_column(s, which, 0.5 + i * (cw + 0.2), 1.34, cw, 5.8,
+                                                start=done[which], paged=True, titled=titled,
+                                                flows_on=not last)
+            first = False
 
     # ---------------- Une slide par squad: la frise de l'annee --------------------
     #
@@ -1116,7 +1182,8 @@ def report_deck(prs, data: dict) -> dict:
                 words += it["title"].split()
             return max((len(w) for w in words), default=1)
 
-        def lay_boxes(fs: float, count: int, *, whole_words: bool = True, tight: bool = False):
+        def lay_boxes(fs: float, count: int, *, whole_words: bool = True, tight: bool = False,
+                      pick=None):
             """Range les boites dans leur trimestre et rend leur geometrie.
 
             Une boite **ne sort jamais du trimestre de sa date**: elle peut
@@ -1136,7 +1203,7 @@ def report_deck(prs, data: dict) -> dict:
             boite du bas traverserait celle du haut. Les suivantes portent leur
             mois devant leur titre, ce qui dit la meme chose sans rien croiser.
             """
-            shown = groups[:count]
+            shown = groups[:count] if pick is None else pick
             title_h = _fs(fs + 1) * 0.0170
             line_h = _fs(fs) * 0.0170
             by_quarter: dict[int, list] = {}
@@ -1207,9 +1274,41 @@ def report_deck(prs, data: dict) -> dict:
 
         # Du plus lisible au plus dense: on reduit le texte avant de renoncer a une
         # boite. Ce qui ne tient toujours pas est compte en clair plutot que tu.
+        # Avec la slide de detail, ce qui ne tient pas y part en entier: la frise
+        # garde un corps lisible (8, soit un peu plus de 9 points une fois mis a
+        # l'echelle) et ne passe jamais en mode serre, une ligne coupee par jalon.
+        detail_on = bool(sparam(sec, "detail_slides", True))
+        modes = (((True, False), (False, False)) if detail_on
+                 else ((True, False), (False, False), (False, True)))
         laid = None
+        if detail_on and groups:
+            # Chaque trimestre garde ce qu'il peut tenir: retirer les dernieres
+            # boites de l'annee videait le second semestre pour un premier
+            # trimestre charge. Le plus grand corps qui montre le plus de boites.
+            by_q: dict[int, list] = {}
+            for g in groups:
+                by_q.setdefault(g["month"] // 3, []).append(g)
+            best = None
+            for whole_words in (True, False):
+                for fs in (11.5, 11, 10.5, 10, 9.5, 9, 8.5, 8):
+                    pick = []
+                    for boxes in by_q.values():
+                        for k in range(len(boxes), 0, -1):
+                            if lay_boxes(fs, 0, whole_words=whole_words, pick=boxes[:k]) is not None:
+                                pick += boxes[:k]
+                                break
+                    if best is None or len(pick) > len(best[1]):
+                        best = (fs, pick, whole_words)
+                    if len(pick) == len(groups):
+                        break
+                if len(best[1]) == len(groups):
+                    break
+            fs, pick, whole_words = best
+            laid = lay_boxes(fs, 0, whole_words=whole_words, pick=pick) if pick else []
         for count in range(len(groups), 0, -1):
-            for whole_words, tight in ((True, False), (False, False), (False, True)):
+            if detail_on:
+                break
+            for whole_words, tight in modes:
                 # Le plus grand corps qui tienne quand la slide est aeree, et on
                 # descend jusqu'au plus petit qui se lise encore plutot que de
                 # renoncer a une boite: un jalon ecrit petit se lit encore, un
@@ -1218,6 +1317,8 @@ def report_deck(prs, data: dict) -> dict:
                 # Serre, un grand corps couperait chaque titre apres dix lettres:
                 # on reste au plus petit corps lisible, qui en garde le plus.
                 sizes = (8, 7.5, 7) if tight else (11.5, 11, 10.5, 10, 9.5, 9, 8.5, 8, 7.5, 7)
+                if detail_on:
+                    sizes = tuple(f for f in sizes if f >= 8)
                 for fs in sizes:
                     laid = lay_boxes(fs, count, whole_words=whole_words, tight=tight)
                     if laid is not None:
@@ -1227,7 +1328,9 @@ def report_deck(prs, data: dict) -> dict:
             if laid is not None:
                 break
         laid = laid or []
-        dropped = groups[len(laid):]
+        shown_ids = {id(g) for g in (pick if detail_on and groups else groups[:len(laid)])}
+        dropped = [g for g in groups if id(g) not in shown_ids]
+        overflow["groups"] = list(dropped) if detail_on else []
 
         # Les traits d'abord, les boites par-dessus: un trait s'arrete ainsi net au
         # bord de la boite, sans depasser a l'interieur.
@@ -1316,7 +1419,10 @@ def report_deck(prs, data: dict) -> dict:
             notes.append(f'{rt(lang, "tl_no_date")}{_sep(lang)}{", ".join(undated)}')
         if dropped:
             # Not shown for lack of room: said as such, not mixed with the undated.
-            notes.append(f'{rt(lang, "tl_dropped", n=len(dropped))}{_sep(lang)}'
+            # With the detail slide, the note says where they went.
+            head = (_pt(lang, "tl_dropped_next", n=len(dropped)) if detail_on
+                    else rt(lang, "tl_dropped", n=len(dropped)))
+            notes.append(f'{head}{_sep(lang)}'
                          + ", ".join(g["title"] or rt(lang, "h_jalons") for g in dropped))
         if not groups and not by_month:
             # Au milieu de la frise vide, et non sur le bord arrondi de la carte.
@@ -1360,13 +1466,21 @@ def report_deck(prs, data: dict) -> dict:
         limit = min(KM_MAX, int(bparam(sec, "key_messages", "max", KM_MAX) or KM_MAX))
         shown = kms[:limit]
         km_fs = 10 if len(shown) <= 2 else 8
-        more = _pt(lang, "km_more", n=len(kms) - limit) if len(kms) > limit else None
+        detail_on = bool(sparam(sec, "detail_slides", True))
+        more = (_pt(lang, "km_more_next" if detail_on else "km_more", n=len(kms) - limit)
+                if len(kms) > limit else None)
         km_rag = {"success": "green", "alert": "amber", "risk": "red"}
         # Un message, une ligne; un message seul peut en prendre deux.
         cpl = int((W - 0.34) / ((0.0078 if km_fs >= 10 else 0.0066) * _fs(km_fs)))
         per = cpl * 2 if len(shown) == 1 else cpl
-        lines = [(_cut(f'{rt(lang, "km_" + m["kind"])}{_sep(lang)}{m["text"]}', per),
-                  rgb(_RAG_BRAND[km_rag.get(m["kind"], "grey")]), False) for m in shown]
+        full = [f'{rt(lang, "km_" + m["kind"])}{_sep(lang)}{m["text"]}' for m in shown]
+        lines = [(_cut(txt, per), rgb(_RAG_BRAND[km_rag.get(m["kind"], "grey")]), False)
+                 for txt, m in zip(full, shown)]
+        # Des messages en trop: la slide de detail les reprend tous, en entier. Un
+        # message seulement coupe n'en ouvre pas une a lui seul (un deck hebdo en
+        # aurait une par squad), mais y figure en entier quand elle existe.
+        overflow["kms"] = kms if detail_on and len(kms) > limit else []
+        overflow["km_cut"] = detail_on and any(_cut(txt, per) != txt for txt in full)
         list_card(s, Inches(X), Inches(Y), Inches(W), Inches(H),
                   rt(lang, "h_key_messages"), lines, rt(lang, "no_key_message"),
                   extra=more, fs=km_fs)
@@ -1553,6 +1667,7 @@ def report_deck(prs, data: dict) -> dict:
         """Une slide par squad: l'en-tete et le moral, la frise de l'annee, la rangee
         des messages, indicateurs et budget, et la legende. Chaque partie est un bloc
         que le modele peut retirer; la frise prend alors la place liberee."""
+        overflow["groups"], overflow["kms"], overflow["km_cut"] = [], [], False
         s = new_slide()
         rect(s, Inches(0), Inches(0), prs.slide_width, prs.slide_height,
              rgb(pptxtpl.color("background", "#F5F7FA")))
@@ -1584,6 +1699,113 @@ def report_deck(prs, data: dict) -> dict:
                 squad_status_legend(s)
             else:
                 squad_status_legend(s, 0.4 + 12.53 - 0.18, TY + 0.12)
+        if sparam(sec, "detail_slides", True) and (overflow["groups"] or overflow["kms"]):
+            if not overflow["kms"] and overflow.get("km_cut"):
+                overflow["kms"] = ((r.get("detail") or {}).get("key_messages") or [])
+                overflow["kms"] = sorted(overflow["kms"], key=lambda x: {"risk": 0, "alert": 1}.get(x.get("kind"), 2))
+            squad_detail_slides(r)
+
+    # Ce que la slide d'une squad n'a pas pu montrer: les boites de jalons sans
+    # place sur la frise, et les messages en trop ou coupes. Une squad peut saisir
+    # autant qu'elle veut; la slide garde son dessin et un corps lisible, et le
+    # reste part ici, en tableau, sur autant de slides qu'il faut.
+    overflow = {"groups": [], "kms": [], "km_cut": False}
+
+    def squad_detail_slides(r):
+        months = _MONTHS[_lang(lang)]
+        W = 12.53
+        cols = (1.2, 3.7, 6.13, 1.5)       # quand, engagement, jalon, statut
+        LINE = _fs(10) * 0.0170
+        CW = 0.0071 * _fs(10)              # largeur d'un caractere a ce corps
+        TOP, BOTTOM = 1.12, 7.15
+
+        def lines_in(text, width):
+            return wrap_lines(text or " ", max(8, int((width - 0.12) / CW)))
+
+        # Les lignes du tableau: (genre, cellules, hauteur). Un titre de partie
+        # occupe toute la largeur; un message aussi, apres sa colonne de type.
+        rows = []
+        if overflow["groups"]:
+            rows.append(("part", [_pt(lang, "detail_milestones")], LINE + 0.12))
+            rows.append(("head", [_pt(lang, k) for k in ("h_when", "h_commitment", "h_milestone", "h_status")],
+                         LINE + 0.1))
+            for g in overflow["groups"]:
+                when = months[g["month"]] if g.get("dated") else f'Q{g["items"][0]["quarter"]}'
+                for i, it in enumerate(g["items"]):
+                    label = it["title"] + (f' ({it["stage"]})' if it.get("stage") else "")
+                    # La date et l'engagement sur la premiere ligne du groupe seulement:
+                    # repetes, ils noyaient les jalons.
+                    head = (when, g["title"] or rt(lang, "h_jalons")) if i == 0 else ("", "")
+                    cells = [*head, label, _status_label(it["status"], lang)]
+                    n = max(lines_in(c, w) for c, w in zip(cells, cols))
+                    rows.append(("milestone", cells + [it["status"], g.get("status") == "late",
+                                                       (when, g["title"] or rt(lang, "h_jalons"))],
+                                 n * LINE + 0.1))
+        if overflow["kms"]:
+            rows.append(("part", [_pt(lang, "detail_messages")], LINE + 0.12))
+            for m in overflow["kms"]:
+                n = lines_in(m["text"], W - cols[0])
+                rows.append(("message", [rt(lang, "km_" + m["kind"]), m["text"], m["kind"]], n * LINE + 0.1))
+
+        # Decoupees en pages: une partie ne commence pas en bas d'une slide, et une
+        # page de suite reprend l'en-tete de ce qu'elle continue, avec l'engagement
+        # du premier jalon: seul en haut de page, il ne dirait plus a quoi il sert.
+        head_row = next((row for row in rows if row[0] == "head"), None)
+        msg_cont = ("part", [f'{_pt(lang, "detail_messages")} ({_pt(lang, "continued")})'], LINE + 0.12)
+        pages, cur, h = [], [], 0.0
+        for i, row in enumerate(rows):
+            need = row[2] + (rows[i + 1][2] if row[0] in ("part", "head") and i + 1 < len(rows) else 0)
+            if cur and h + need > BOTTOM - TOP:
+                pages.append(cur); cur, h = [], 0.0
+                if row[0] == "milestone":
+                    cur.append(head_row); h += head_row[2]
+                    row = (row[0], [*row[1][-1], *row[1][2:]], row[2])
+                elif row[0] == "message":
+                    cur.append(msg_cont); h += msg_cont[2]
+            cur.append(row); h += row[2]
+        if cur:
+            pages.append(cur)
+
+        km_rag = {"success": "green", "alert": "amber", "risk": "red"}
+        st_rag = {"done": "green", "at_risk": "amber", "blocked": "red"}
+        for k, page in enumerate(pages):
+            s = new_slide()
+            band = rect(s, Inches(0), Inches(0), prs.slide_width, Inches(0.86), B["navy"])
+            title = _pt(lang, "detail_title", squad=r.get("name") or "")
+            if k:
+                title += f' ({_pt(lang, "continued")})'
+            place(band, [(title, 22, B["white"], True, PP_ALIGN.LEFT, 0)],
+                  anchor=MSO_ANCHOR.MIDDLE, ml=0.4, mt=0.06, mr=0.4)
+            tbl = s.shapes.add_table(len(page), len(cols), Inches(0.4), Inches(TOP), Inches(W),
+                                     Inches(sum(row[2] for row in page))).table
+            for ci, w in enumerate(cols):
+                tbl.columns[ci].width = Inches(w)
+            for ri, (kind, cells, rh) in enumerate(page):
+                tbl.rows[ri].height = Inches(rh)
+                zebra = B["zebra"] if ri % 2 else B["white"]
+                if kind == "part":
+                    tbl.cell(ri, 0).merge(tbl.cell(ri, len(cols) - 1))
+                    style_cell(tbl.cell(ri, 0), cells[0], 12, B["white"], bold=True, fill=B["navy"])
+                elif kind == "head":
+                    for ci, txt in enumerate(cells):
+                        style_cell(tbl.cell(ri, ci), txt, 10, B["navy"], bold=True, fill=B["card"])
+                elif kind == "milestone":
+                    when, commit, label, status, code, late, _full = cells
+                    style_cell(tbl.cell(ri, 0), when, 10, B["muted"], fill=zebra)
+                    style_cell(tbl.cell(ri, 1), commit, 10, B["red"] if late else B["navy"], bold=True, fill=zebra)
+                    style_cell(tbl.cell(ri, 2), label, 10, B["ink"], fill=zebra)
+                    style_cell(tbl.cell(ri, 3), status, 10,
+                               rgb(_RAG_BRAND[st_rag[code]]) if code in st_rag else B["ink"], fill=zebra)
+                else:
+                    label, text, code = cells
+                    style_cell(tbl.cell(ri, 0), label, 10, rgb(_RAG_BRAND[km_rag.get(code, "grey")]),
+                               bold=True, fill=zebra)
+                    tbl.cell(ri, 1).merge(tbl.cell(ri, len(cols) - 1))
+                    style_cell(tbl.cell(ri, 1), text, 10, B["ink"], fill=zebra)
+                for ci in range(len(cols)):
+                    c = tbl.cell(ri, ci)
+                    c.margin_top = c.margin_bottom = Inches(0.04)
+                    c.text_frame.word_wrap = True
 
     # --- Les sections. Une squad, une slide, la meme dans les deux cas: un export
     # d'une seule squad n'est que ce deck sans sa page de synthese.
@@ -1744,8 +1966,10 @@ def roadmap_deck(prs, data: dict) -> dict:
             r.font.size = Pt(_fs(size)); r.font.bold = bold; r.font.color.rgb = color
         return box
 
-    def draw_header(s, title_on=True, legend_on=True):
+    def draw_header(s, title_on=True, legend_on=True, cont=False):
         title = f'{rt(lang, "roadmap_report")} | {data["scope_name"]}'
+        if cont:
+            title += f' ({_pt(lang, "continued")})'
         if title_on:
             textbox(s, MARGIN, 0.22, 8.6, 0.5, [(title, C["dark"], True)],
                     22 if len(title) <= 55 else 18 if len(title) <= 70 else 15)
@@ -1849,6 +2073,205 @@ def roadmap_deck(prs, data: dict) -> dict:
             r = p.add_run(); r.text = _RM_MORE_ONE[lang] if extra == 1 else _RM_MORE[lang].format(n=extra)
             r.font.size = Pt(_fs(max(7, item_fs - 0.5))); r.font.color.rgb = C["muted"]
 
+    def name_fit(name, band_h):
+        """Le plus grand corps ou le nom tient entier, sur les lignes que la
+        bande autorise; au plus petit, le nom se coupe avec « … »."""
+        top_fs = 11 if band_h >= 0.7 else 10 if band_h >= 0.45 else 9 if band_h >= 0.34 else 8
+        for fs in sorted({top_fs, max(8, top_fs - 1), 8}, reverse=True):
+            lines = max(1, int((band_h - 0.1) / (_fs(fs) * 0.0165)))
+            cpl = int((NAME_W - 0.12) / (0.0072 * _fs(fs)))
+            if wrap_lines(name, cpl) <= lines:
+                return name, fs
+        # Coupe au milieu, la fin gardee: « Squad supplementaire 12 » et « 13 »
+        # restaient trois fois le meme « Squad supplementai… ».
+        return _cut_middle(name, cpl * lines), fs
+
+    # ----- au-dela d'une slide lisible: les squads sur plusieurs slides ---------
+    #
+    # La slide unique serrait toutes les squads dans la hauteur: au-dela d'une
+    # dizaine, chaque carte ne montrait plus qu'un jalon en corps 8 et « +7
+    # autres ». Quand c'est le cas, la roadmap passe en pages: un corps fixe et
+    # lisible, chaque squad a la hauteur que ses jalons demandent (un jalon sur
+    # deux lignes au plus), autant de squads par slide qu'il en tient, et une
+    # squad trop chargee pour une slide entiere continue sur une bande « (suite) »
+    # qui rappelle ses themes.
+    FLOW_FS = 10
+    FLOW_ITEM_FS = FLOW_FS - 1.5
+    # Hauteur d'une ligne a interligne simple (1,2 fois le corps), plus l'espace
+    # apres paragraphe: les titres de theme et les jalons n'ont pas le meme corps.
+    THEME_LINE = _fs(FLOW_FS) * 1.25 / 72
+    ITEM_LINE = _fs(FLOW_ITEM_FS) * 1.3 / 72
+    PARA_GAP = 1.0 / 72
+    ITEM_MAX_LINES = 3                    # au-dela, le titre se coupe avec « … »
+    FLOW_PAD = 0.12                       # marges haute et basse d'une carte
+    LANE_GAP = 0.08
+    SEV = {"blocked": 0, "at_risk": 1, "on_track": 2, "done": 3}
+
+    def uniform_ok(lanes, themes):
+        """La slide unique d'origine montre-t-elle tout, a un corps lisible?"""
+        n = max(1, len(lanes))
+        band_h = (Y_BOTTOM - Y_TOP) / n
+        card_fs = (13 if band_h >= 1.05 else 12 if band_h >= 0.85 else 11 if band_h >= 0.68
+                   else 10 if band_h >= 0.52 else 9 if band_h >= 0.40 else 8)
+        if card_fs < 10:
+            return False
+        max_lines = max(1, int((band_h - 0.16) / (_fs(card_fs) * 0.020)))
+        with_themes = {"always": True, "never": False}.get(themes, max_lines >= 4)
+        for sq in lanes:
+            for qd in (sq.get("detail") or {}).get("quarters", []):
+                items = qd.get("items") or []
+                groups = group_by_theme(items)
+                count = len(items) + (sum(1 for t, _ in groups if t) if with_themes else 0)
+                if count > max_lines:
+                    return False
+        return True
+
+    def card_specs(items, themes):
+        """Les paragraphes d'une carte: (genre, valeur, hauteur en pouces). Les
+        largeurs de caractere sont majorees: une estimation trop courte ferait
+        deborder la carte, une trop longue ne laisse qu'un peu de blanc."""
+        icpl = int((COL_W - 0.14) / (0.0068 * _fs(FLOW_ITEM_FS))) - 2
+        tcpl = int((COL_W - 0.14) / (0.0068 * _fs(FLOW_FS)))
+        out = []
+        items = sorted(items, key=lambda it: SEV.get(it.get("status"), 2))
+        for theme, group in group_by_theme(items):
+            head = None
+            if theme and themes != "never":
+                head = ("theme", theme, min(2, wrap_lines(theme, tcpl)) * THEME_LINE + PARA_GAP)
+            body = []
+            for it in group:
+                stage = len(it["stage"]) + 3 if it.get("stage") else 0
+                n = min(ITEM_MAX_LINES, wrap_lines("  " + it["title"] + " " * stage, icpl))
+                body.append(("item", it, n * ITEM_LINE + PARA_GAP))
+            out.append((head, body))
+        return out, icpl
+
+    def chunk_card(groups, cap):
+        """Les groupes d'une carte decoupes en pages de ``cap`` lignes au plus;
+        un theme coupe est rappele en tete de la page suivante."""
+        pages, cur, used = [], [], 0
+        for head, body in groups:
+            hl = head[2] if head else 0
+            if cur and used + hl + (body[0][2] if body else 0) > cap:
+                pages.append(cur); cur, used = [], 0
+            if head:
+                cur.append(head); used += hl
+            for spec in body:
+                if cur and used + spec[2] > cap:
+                    pages.append(cur); cur, used = [], 0
+                    if head:
+                        cur.append(head); used += hl
+                cur.append(spec); used += spec[2]
+        if cur:
+            pages.append(cur)
+        return pages
+
+    def flow_lanes(lanes, themes):
+        """Chaque squad, decoupee en bandes qui tiennent dans une slide, avec la
+        hauteur de chacune."""
+        cap = Y_BOTTOM - Y_TOP - LANE_GAP - FLOW_PAD
+        out = []
+        for sq in lanes:
+            qmap = {qd["q"]: qd.get("items") or [] for qd in (sq.get("detail") or {}).get("quarters", [])}
+            per_q, icpl = {}, 0
+            for q in (1, 2, 3, 4):
+                groups, icpl = card_specs(qmap.get(q, []), themes)
+                per_q[q] = chunk_card(groups, cap)
+            n = max([1] + [len(v) for v in per_q.values()])
+            for k in range(n):
+                cards = {q: (per_q[q][k] if k < len(per_q[q]) else []) for q in (1, 2, 3, 4)}
+                tall = max([0.0] + [sum(sp[2] for sp in c) for c in cards.values()])
+                name = sq["name"] or ""
+                if k:
+                    name += f' ({_pt(lang, "continued")})'
+                h = max(0.62, FLOW_PAD + tall) + LANE_GAP
+                out.append({"name": name, "cards": cards, "h": h, "icpl": icpl})
+        return out
+
+    def draw_flow_card(s, x, y, w, h, specs, icpl):
+        card = shape(s, MSO_SHAPE.ROUNDED_RECTANGLE, x, y, w, h, C["card"], round_adj=0.06)
+        tf = card.text_frame
+        tf.word_wrap = True
+        tf.margin_left = Inches(0.07); tf.margin_right = Inches(0.04)
+        tf.margin_top = Inches(0.05); tf.margin_bottom = Inches(0.03)
+        tf.vertical_anchor = MSO_ANCHOR.TOP
+        for li, (kind, val, nl) in enumerate(specs):
+            p = tf.paragraphs[0] if li == 0 else tf.add_paragraph()
+            p.alignment = PP_ALIGN.LEFT
+            p.space_after = Pt(0.5)
+            if kind == "theme":
+                r = p.add_run(); r.text = val
+                r.font.size = Pt(_fs(FLOW_FS)); r.font.bold = True; r.font.color.rgb = C["card_ink"]
+                continue
+            it = val
+            stage = it.get("stage")
+            # PowerPoint revient a la ligne de lui-meme; seul un titre plus long que
+            # ITEM_MAX_LINES lignes est coupe, et avec « … ».
+            title = _cut(it["title"], max(8, icpl * ITEM_MAX_LINES - (len(stage) + 3 if stage else 0)))
+            rd = p.add_run(); rd.text = "● "
+            rd.font.size = Pt(_fs(FLOW_ITEM_FS))
+            rd.font.color.rgb = rgb(_RAG_BRAND[_status_rag(it.get("status"))])
+            r1 = p.add_run(); r1.text = title
+            r1.font.size = Pt(_fs(FLOW_ITEM_FS)); r1.font.color.rgb = C["card_ink"]
+            if stage:
+                for txt, color, bold in ((" (", C["card_ink"], False), (stage, STAGE.get(stage, C["card_ink"]), True),
+                                         (")", C["card_ink"], False)):
+                    rr = p.add_run(); rr.text = txt
+                    rr.font.size = Pt(_fs(FLOW_ITEM_FS)); rr.font.bold = bold; rr.font.color.rgb = color
+
+    def flow_section(sec, lanes, themes):
+        """La roadmap en pages: les bandes rangees dans l'ordre, une slide apres
+        l'autre, chacune avec son en-tete et ses trimestres."""
+        bands = flow_lanes(lanes, themes)
+        room = Y_BOTTOM - Y_TOP
+        count, used = (1 if bands else 0), 0.0
+        for b in bands:
+            if used and used + b["h"] > room:
+                count += 1; used = 0.0
+            used += b["h"]
+        flow_pages(sec, balance(bands, max(1, count)) or [[]])
+
+    def balance(bands, k):
+        """Les bandes en ``k`` slides, dans l'ordre, la plus haute aussi basse que
+        possible: sans cela la derniere slide portait une squad isolee."""
+        n = len(bands)
+        if n == 0:
+            return []
+        pre = [0.0]
+        for b in bands:
+            pre.append(pre[-1] + b["h"])
+        INF = float("inf")
+        # best[j][i]: la plus haute slide quand les i premieres bandes tiennent en j.
+        best = [[INF] * (n + 1) for _ in range(k + 1)]
+        cut = [[0] * (n + 1) for _ in range(k + 1)]
+        best[0][0] = 0.0
+        for j in range(1, k + 1):
+            for i in range(1, n + 1):
+                for m in range(j - 1, i):
+                    v = max(best[j - 1][m], pre[i] - pre[m])
+                    if v < best[j][i]:
+                        best[j][i], cut[j][i] = v, m
+        out, i = [], n
+        for j in range(k, 0, -1):
+            m = cut[j][i]
+            out.append(bands[m:i]); i = m
+        return [p for p in reversed(out) if p]
+
+    def flow_pages(sec, pages):
+        for k, page in enumerate(pages):
+            s = pptxtpl.add_slide(prs)
+            draw_header(s, block_on(sec, "header"), block_on(sec, "legend"), cont=k > 0)
+            y = Y_TOP
+            for b in page:
+                bh = b["h"] - LANE_GAP
+                lbl = shape(s, MSO_SHAPE.ROUNDED_RECTANGLE, NAME_X, y + LANE_GAP / 2, NAME_W, bh,
+                            C["dark"], round_adj=0.08 if bh < 1.2 else 0.04)
+                name, label_fs = name_fit(b["name"], bh + 0.08)
+                set_text(lbl, name, label_fs, C["white"], bold=True, align=PP_ALIGN.LEFT)
+                for i, q in enumerate((1, 2, 3, 4)):
+                    draw_flow_card(s, col_x(i), y + LANE_GAP / 2, COL_W, bh, b["cards"][q], b["icpl"])
+                y += b["h"]
+
     def draw_swimlanes(s, lanes, themes="auto"):
         # Everything fits on ONE slide: band height + fonts scale with the count,
         # but with a readable floor (small decks get a comfortably large font).
@@ -1864,25 +2287,11 @@ def roadmap_deck(prs, data: dict) -> dict:
         # apres FONT_SCALE et le traverse sans changer.
         # Le nom, horizontal, dans une colonne a gauche des trimestres: sur deux
         # lignes quand la bande le permet, sur une sinon, coupe avec « … ».
-        top_fs = 11 if band_h >= 0.7 else 10 if band_h >= 0.45 else 9 if band_h >= 0.34 else 8
-
-        def name_fit(name):
-            """Le plus grand corps ou le nom tient entier, sur les lignes que la
-            bande autorise; au plus petit, le nom se coupe avec « … »."""
-            for fs in sorted({top_fs, max(8, top_fs - 1), 8}, reverse=True):
-                lines = max(1, int((band_h - 0.1) / (_fs(fs) * 0.0165)))
-                cpl = int((NAME_W - 0.12) / (0.0072 * _fs(fs)))
-                if wrap_lines(name, cpl) <= lines:
-                    return name, fs
-            # Coupe au milieu, la fin gardee: « Squad supplementaire 12 » et « 13 »
-            # restaient trois fois le meme « Squad supplementai… ».
-            return _cut_middle(name, cpl * lines), fs
-
         for ri, sq in enumerate(lanes):
             by = Y_TOP + ri * band_h
             lbl = shape(s, MSO_SHAPE.ROUNDED_RECTANGLE, NAME_X, by + 0.04, NAME_W, band_h - 0.08,
                         C["dark"], round_adj=0.08)
-            name, label_fs = name_fit(sq["name"] or "")
+            name, label_fs = name_fit(sq["name"] or "", band_h)
             set_text(lbl, name, label_fs, C["white"], bold=True, align=PP_ALIGN.LEFT)
             qmap = {qd["q"]: qd["items"] for qd in (sq.get("detail") or {}).get("quarters", [])}
             for i, q in enumerate((1, 2, 3, 4)):
@@ -1898,9 +2307,14 @@ def roadmap_deck(prs, data: dict) -> dict:
         return lanes
 
     def roadmap_section(sec):
-        s = pptxtpl.add_slide(prs)  # single page, always
-        draw_header(s, block_on(sec, "header"), block_on(sec, "legend"))
-        draw_swimlanes(s, lanes_for(sec), sparam(sec, "show_themes", "auto"))
+        lanes, themes = lanes_for(sec), sparam(sec, "show_themes", "auto")
+        # Une slide tant qu'elle montre tout a un corps lisible; des pages sinon.
+        if uniform_ok(lanes, themes):
+            s = pptxtpl.add_slide(prs)
+            draw_header(s, block_on(sec, "header"), block_on(sec, "legend"))
+            draw_swimlanes(s, lanes, themes)
+        else:
+            flow_section(sec, lanes, themes)
 
     def roadmap_in(s, X, Y, W, H, params=None):
         """The quarters and the swimlanes in a frame (inches), for a free layout."""
@@ -2000,10 +2414,13 @@ def initiatives_deck(prs, data: dict, *, lang: str = "fr") -> dict:
             wfrac = [f / sum(wfrac) for f in wfrac]
         nrows = max(2, len(rows) + 1)
         table_w = int(prs.slide_width - margin * 2)
+        heights = [row_h(it, keys, wfrac) for it in rows] or [0.32]
         tbl = s.shapes.add_table(nrows, len(keys), margin, Inches(1.3), Emu(table_w),
-                                 Inches(0.34) + Inches(0.32) * (nrows - 1)).table
+                                 Inches(0.34 + sum(heights))).table
         for ci, f in enumerate(wfrac):
             tbl.columns[ci].width = Emu(int(table_w * f))
+        for ri, rh in enumerate(heights, start=1):
+            tbl.rows[ri].height = Inches(rh)
         for ci, h in enumerate(headers):
             cell(tbl.cell(0, ci), h, 11, B["white"], bold=True, fill=B["navy"])
         if not rows:
@@ -2017,12 +2434,27 @@ def initiatives_deck(prs, data: dict, *, lang: str = "fr") -> dict:
             when = fmt_date(it["deadline"], lang) if it["deadline"] else "-"
             if late:
                 when += f' ({P["overdue"]})'
-            cmap = {"title": (_cut(it["title"], 70), B["ink"], True),
-                    "owner": (_cut(it["owner"] or "-", 34), B["ink"], False),
-                    "squad": (_cut(it["squad_name"] or "-", 30), B["ink"], False),
+            # Deux lignes par cellule: un titre coupe a la premiere ne disait plus
+            # quelle initiative c'etait des que plusieurs commencaient pareil.
+            cpl = {k: cell_cpl(k, keys, wfrac) for k in keys}
+            cmap = {"title": (_cut(it["title"], 2 * cpl["title"]), B["ink"], True),
+                    "owner": (_cut(it["owner"] or "-", 2 * cpl.get("owner", 30)), B["ink"], False),
+                    "squad": (_cut(it["squad_name"] or "-", 2 * cpl.get("squad", 30)), B["ink"], False),
                     "deadline": (when, B["red"] if late else B["ink"], late)}
             for ci, (val, color, bold) in enumerate(cmap[k] for k in keys):
                 cell(tbl.cell(ri, ci), val, 10, color, bold=bold, fill=zebra)
+
+    def cell_cpl(k, keys, wfrac):
+        """Caracteres par ligne d'une colonne, majores (gras pour le titre)."""
+        frac = wfrac[keys.index(k)]
+        w = (prs.slide_width - margin * 2) / 914400.0 * frac - 0.12
+        return max(8, int(w / ((0.0075 if k == "title" else 0.0068) * _fs(10))))
+
+    def row_h(it, keys, wfrac):
+        """La hauteur d'une ligne: une ou deux lignes de texte selon le plus long."""
+        texts = {"title": it["title"], "owner": it["owner"] or "-", "squad": it["squad_name"] or "-"}
+        n = max(min(2, wrap_lines(texts[k], cell_cpl(k, keys, wfrac))) for k in keys if k in texts)
+        return 0.32 if n == 1 else 0.50
 
     def initiatives_section(sec):
         PER = int(sparam(sec, "rows_per_slide", 16) or 16)
@@ -2031,9 +2463,23 @@ def initiatives_deck(prs, data: dict, *, lang: str = "fr") -> dict:
         if sparam(sec, "hide_past", False):
             rows = [it for it in rows if not (due(it) is not None and due(it) < today)]
         head_on = block_on(sec, "header")
-        page(rows[:PER], False, cols, head_on)
-        for k in range(PER, len(rows), PER):
-            page(rows[k:k + PER], True, cols, head_on)
+        keys = ["title"] + [c for c in ("owner", "squad", "deadline") if c in cols]
+        fmap = {"title": 0.42, "owner": 0.22, "squad": 0.20, "deadline": 0.16}
+        wfrac = [fmap[k] for k in keys]
+        if len(keys) < 4:
+            wfrac = [f / sum(wfrac) for f in wfrac]
+        # Des pages a la hauteur des lignes (une ligne sur deux lignes de texte
+        # prend plus de place), et jamais plus de PER lignes par slide.
+        room = 7.5 - 1.3 - 0.34 - 0.45
+        pages, cur, used = [], [], 0.0
+        for it in rows:
+            h = row_h(it, keys, wfrac)
+            if cur and (used + h > room or len(cur) >= PER):
+                pages.append(cur); cur, used = [], 0.0
+            cur.append(it); used += h
+        pages.append(cur)
+        for k, chunk in enumerate(pages):
+            page(chunk, k > 0, cols, head_on)
 
     return {"initiatives": initiatives_section, "parts": {}}
 

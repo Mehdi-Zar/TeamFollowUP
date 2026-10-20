@@ -73,9 +73,9 @@ export default function FeedPage() {
     const qs = p.toString();
     return `/api/feed${qs ? `?${qs}` : ""}`;
   }
-  function load() {
+  function load(background = false) {
     // A failed refresh says so above the list; the next one that works clears it.
-    api.get<FeedPost[]>(buildUrl()).then((p) => { setPosts(p); setError(null); }).catch((e) => setError(errorText(e)));
+    (background ? api.poll<FeedPost[]>(buildUrl()) : api.get<FeedPost[]>(buildUrl())).then((p) => { setPosts(p); setError(null); }).catch((e) => setError(errorText(e)));
   }
 
   useEffect(() => {
@@ -87,7 +87,7 @@ export default function FeedPage() {
   // Live refresh: re-fetch every 5s so new posts/replies appear without reload.
   useEffect(() => {
     // Not while the tab is hidden.
-    const id = setInterval(() => { if (document.visibilityState === "visible") load(); }, 5000);
+    const id = setInterval(() => { if (document.visibilityState === "visible") load(true); }, 5000);
     return () => clearInterval(id);
   }, []);
 

@@ -58,6 +58,8 @@ def _defaults() -> dict:
         "staleness_threshold_days": settings.staleness_threshold_days,
         "feed_post_scope": "leaders",   # leaders | everyone
         "feed_retention_days": 0,        # 0 = keep all
+        # Signed out after this many minutes without activity (0 = never).
+        "idle_timeout_minutes": 0,
         # The org chart's views in their order: the first opens by default.
         "org_views": list(ORG_VIEWS),
         # The roles a squad member is given from (plus "other", free text).
@@ -130,6 +132,10 @@ def set_general(db: Session, patch: dict) -> dict:
         cfg["feed_retention_days"] = 0
     cfg["org_views"] = _org_views(cfg.get("org_views"))
     cfg["member_roles"] = _member_roles(cfg.get("member_roles"))
+    try:
+        cfg["idle_timeout_minutes"] = max(0, min(1440, int(cfg.get("idle_timeout_minutes") or 0)))
+    except (TypeError, ValueError):
+        cfg["idle_timeout_minutes"] = 0
 
     row = db.get(AppSetting, GENERAL_KEY)
     payload = json.dumps(cfg)
@@ -158,6 +164,9 @@ def public_config(db: Session) -> dict:
         "version": APP_VERSION,
         "app_name": cfg["app_name"],
         "app_subtitle": cfg["app_subtitle"],
+        # The page signs the user out after this much inactivity (0 = never); the
+        # server refuses an idle session too (deps.get_current_user_any_status).
+        "idle_timeout_minutes": int(cfg.get("idle_timeout_minutes") or 0),
         "default_lang": cfg["default_lang"],
         "lang_switch": bool(cfg.get("lang_switch", True)),
         "default_year": cfg["default_year"],

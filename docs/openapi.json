@@ -1194,7 +1194,7 @@
           "squads"
         ],
         "summary": "Create Key Message",
-        "description": "POST /api/squads/{squad_id}/key-messages: add a curated key message\n(success/alert/risk) for a year (201).\n\nSquad leader (or admin) only. Audited, then ``notify_change(..., \"key_message\",\n...)``. ``year`` defaults to the current one. 409 once the squad already has\n``KEY_MESSAGES_MAX`` (4) messages in the reporting in progress.",
+        "description": "POST /api/squads/{squad_id}/key-messages: add a curated key message\n(success/alert/risk) for a year (201).\n\nSquad leader (or admin) only. Audited, then ``notify_change(..., \"key_message\",\n...)``. ``year`` defaults to the current one. 409 once the squad already has\nNo limit: past ``KEY_MESSAGES_MAX`` (4), the PowerPoint shows the others on\na detail slide after the squad's.",
         "operationId": "create_key_message_api_squads__squad_id__key_messages_post",
         "parameters": [
           {
@@ -3082,7 +3082,7 @@
           "notifications"
         ],
         "summary": "Get Preferences",
-        "description": "Return the caller's notification preferences.\n\nGET /api/me/preferences\nAccess: any authenticated user (own settings). No module gate.",
+        "description": "Return the caller's preferences.\n\nGET /api/me/preferences\nAccess: any authenticated user (own settings). No module gate.",
         "operationId": "get_preferences_api_me_preferences_get",
         "responses": {
           "200": {
@@ -3102,7 +3102,7 @@
           "notifications"
         ],
         "summary": "Update Preferences",
-        "description": "Update the caller's notification preferences.\n\nPUT /api/me/preferences\nAccess: any authenticated user (own settings). No module gate.",
+        "description": "Update the caller's preferences (notifications, getting-started guide).\n\nPUT /api/me/preferences\nAccess: any authenticated user (own settings). No module gate.",
         "operationId": "update_preferences_api_me_preferences_put",
         "requestBody": {
           "content": {
@@ -8936,6 +8936,57 @@
             }
           }
         },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/steerco/platform/{platform_id}/messages": {
+      "get": {
+        "tags": [
+          "steerco"
+        ],
+        "summary": "Get Reporting Messages",
+        "description": "The key messages the platform's squads wrote in their reportings of the\nperiod's year, newest first: what the events step offers to take over, so a\nfact said once in the reporting need not be typed again for the committee.\nThe same text said in several reportings of a squad comes once (the newest).",
+        "operationId": "get_reporting_messages_api_steerco_platform__platform_id__messages_get",
+        "parameters": [
+          {
+            "name": "platform_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Platform Id"
+            }
+          },
+          {
+            "name": "period",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+              "title": "Period"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -15226,6 +15277,11 @@
           "email_notifications": {
             "type": "boolean",
             "title": "Email Notifications"
+          },
+          "hide_getting_started": {
+            "type": "boolean",
+            "title": "Hide Getting Started",
+            "default": false
           }
         },
         "type": "object",
@@ -15235,7 +15291,7 @@
           "email_notifications"
         ],
         "title": "PreferencesOut",
-        "description": "The user's current notification preferences."
+        "description": "The user's current preferences (notifications, getting-started guide)."
       },
       "PreferencesUpdate": {
         "properties": {
@@ -15271,11 +15327,22 @@
               }
             ],
             "title": "Email Notifications"
+          },
+          "hide_getting_started": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hide Getting Started"
           }
         },
         "type": "object",
         "title": "PreferencesUpdate",
-        "description": "Partial update of notification preferences."
+        "description": "Partial update of the preferences."
       },
       "QuarterProgressIn": {
         "properties": {
@@ -17476,6 +17543,11 @@
               }
             ],
             "title": "Last Login At"
+          },
+          "hide_getting_started": {
+            "type": "boolean",
+            "title": "Hide Getting Started",
+            "default": false
           }
         },
         "type": "object",

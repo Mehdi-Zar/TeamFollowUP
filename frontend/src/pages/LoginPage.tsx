@@ -125,6 +125,9 @@ export default function LoginPage() {
                      onChange={(e) => setPassword(e.target.value)} required />
             </div>
             {error && <div className="error-text">{error}</div>}
+            {!error && params.get("idle") && (
+              <div className="banner small">{t("idle.signed_out", { n: params.get("idle") ?? "" })}</div>
+            )}
             <button type="submit" disabled={submitting} style={{ width: "100%" }}>
               {submitting ? t("login.connecting") : (localMethod.label || t("login.submit"))}
             </button>

@@ -12,7 +12,8 @@ import { useI18n } from "../i18n";
 import { KeyMessageKind, SquadDetail } from "../types";
 import { Collapsible, ErrorBanner } from "./ui";
 
-/** At most this many messages per reporting (the API refuses a fifth). */
+/** How many messages the squad slide shows; the others go to its detail slide.
+ *  Not a limit: a squad writes as many as it needs. */
 export const KEY_MESSAGES_MAX = 4;
 
 /** Map a key-message kind to its badge colour class (success/risk/alert). */
@@ -113,9 +114,10 @@ export default function KeyMessagesPanel({ squad, canEdit, onChange, editTo, edi
           )}
         </div>
       ))}
-      {canEdit && open.length >= KEY_MESSAGES_MAX && !adding ? (
+      {canEdit && open.length >= KEY_MESSAGES_MAX && (
         <div className="small muted" style={{ marginTop: 10 }}>{t("km.max", { n: KEY_MESSAGES_MAX })}</div>
-      ) : canEdit && (adding ? (
+      )}
+      {canEdit && (adding ? (
         <div className="stack" style={{ gap: 6, marginTop: 10 }}>
           <select value={kind} onChange={(e) => setKind(e.target.value as KeyMessageKind)}>
             {kinds.map((k) => <option key={k} value={k}>{t(`km.kind.${k}`)}</option>)}

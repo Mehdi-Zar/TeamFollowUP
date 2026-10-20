@@ -44,7 +44,8 @@ from ..database import get_db
 from ..deps import (can_report, get_current_user, record_audit, require_module,
                     require_admin_tab, require_writer, tribe_in_scope,
                     visible_tribe_id)
-from ..models import Platform, SteercoEntry, Squad, Tribe, User
+from ..models import KeyMessage, Platform, SteercoEntry, Squad, Tribe, User
+from ..reportcommon import wrap_lines
 
 router = APIRouter(prefix="/api/steerco", tags=["steerco"],
                    dependencies=[Depends(require_module("steerco"))])
@@ -97,6 +98,11 @@ I18N = {
         "no_event": "No event.", "no_squads": "No Steerco-enabled platform in your scope.",
         "not_filled": "Not filled in for {month}.", "expected_from": "Expected from: {names}.",
         "more_events": "+{n} more", "more_events_one": "+1 more",
+        "more_next": "+{n} more on the next slide", "more_next_one": "+1 more on the next slide",
+        "detail_title": "{name}: details", "continued": "continued",
+        "h_name": "Indicator", "h_value": "Value", "h_change": "Change", "h_service": "Service",
+        "h_date": "Date", "h_type": "Type", "h_event": "Event",
+        "current_short": "Month", "trailing_short": "Year",
     },
     "fr": {
         "months": ["janvier", "février", "mars", "avril", "mai", "juin", "juillet",
@@ -112,6 +118,11 @@ I18N = {
         "no_event": "Aucun évènement.", "no_squads": "Aucune plateforme Steerco activée dans votre périmètre.",
         "not_filled": "Non renseigné pour {month}.", "expected_from": "Attendu de : {names}.",
         "more_events": "+{n} autres", "more_events_one": "+1 autre",
+        "more_next": "+{n} autres en slide suivante", "more_next_one": "+1 autre en slide suivante",
+        "detail_title": "{name} : détail", "continued": "suite",
+        "h_name": "Indicateur", "h_value": "Valeur", "h_change": "Évolution", "h_service": "Service",
+        "h_date": "Date", "h_type": "Type", "h_event": "Évènement",
+        "current_short": "Mois", "trailing_short": "Année",
     },
 }
 
@@ -125,6 +136,31 @@ def _cut(text: str, n: int) -> str:
     if " " in head[n // 2:]:
         head = head.rsplit(" ", 1)[0]
     return head.rstrip(" ,;:.") + "…"
+
+
+def _cut_mid(text: str, n: int) -> str:
+    """Cut in the middle, keeping the end. Labels that share a long start
+    (« Indicateur supplementaire 3 », « ... 4 ») all read « Indicateur… » when cut
+    at the end; their end is what tells them apart."""
+    text = " ".join((text or "").split())
+    n = max(5, n)
+    if len(text) <= n:
+        return text
+    tail = (n - 1) * 3 // 5
+    head = n - 1 - tail
+    return text[:head].rstrip() + "…" + text[-tail:].lstrip()
+
+
+def _cut_labels(labels: list[str], n: int) -> list[str]:
+    """Cut each label to n characters: at the end, as usual, except the labels
+    that would then read the same; those are cut in the middle, keeping the end
+    that tells them apart. « Cloud Users » stays « Cloud… », not « Clou…sers »."""
+    ends = [_cut(str(t or ""), max(4, n)) for t in labels]
+    seen: dict[str, int] = {}
+    for e in ends:
+        seen[e] = seen.get(e, 0) + 1
+    return [_cut_mid(str(t or ""), n) if seen[e] > 1 and e != str(t or "").strip() else e
+            for t, e in zip(labels, ends)]
 
 
 def _lang(v: str | None) -> str:
@@ -608,6 +644,32 @@ def get_history(platform_id: int, period: str = PERIOD, db: Session = Depends(ge
                          SteercoEntry.period.in_(keys)).all()}
     return {"platform_id": platform_id, "period": period,
             "months": [{"period": k, "data": by_period.get(k, {})} for k in keys]}
+
+
+@router.get("/platform/{platform_id}/messages")
+def get_reporting_messages(platform_id: int, period: str = PERIOD, db: Session = Depends(get_db),
+                           user: User = Depends(get_current_user)):
+    """The key messages the platform's squads wrote in their reportings of the
+    period's year, newest first: what the events step offers to take over, so a
+    fact said once in the reporting need not be typed again for the committee.
+    The same text said in several reportings of a squad comes once (the newest)."""
+    p = _platform_in_scope(db, user, platform_id)
+    names = {s.id: s.name for s in p.contributors}
+    if not names:
+        return []
+    rows = (db.query(KeyMessage)
+            .filter(KeyMessage.squad_id.in_(list(names)), KeyMessage.year == int(period[:4]))
+            .order_by(KeyMessage.created_at.desc(), KeyMessage.id.desc()).all())
+    out, seen = [], set()
+    for m in rows:
+        key = (m.squad_id, " ".join(m.text.split()).lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append({"id": m.id, "squad_id": m.squad_id, "squad_name": names[m.squad_id],
+                    "kind": m.kind, "text": m.text, "created_at": m.created_at,
+                    "open": m.snapshot_id is None})
+    return out
 
 
 @router.put("/platform/{platform_id}/history")
@@ -1646,6 +1708,96 @@ def steerco_deck(prs, squads: list[dict], period: str, L: dict) -> dict:
                 tbl.cell(i + 1, j + 1).text = v
                 set_cell(tbl.cell(i + 1, j + 1), fills.get(s, "#FFFFFF"), texts.get(s, "#6B7C90"), bold=True)
 
+    def sla_fits(sla, w):
+        """The table holds when every service name sits in its column on two
+        lines at most, without breaking a word. Past that, PowerPoint wrapped the
+        headers letter by letter and the table ran out of its card."""
+        services = [str(s) for s in sla.get("services") or []]
+        col = (w - 1.2) / max(1, len(services))
+        cw = BOLD_CHAR_IN * _fs(10)
+        cpl = int((col - 0.1) / cw)
+        for name in services:
+            words = name.split() or [""]
+            if max(len(x) for x in words) > cpl or wrap_lines(name, max(1, cpl)) > 2:
+                return False
+        return True
+
+    def sla_list(slide, x, y, w, h, sla):
+        """Many services: one line each (service, then a value per row of the
+        table), in two or three columns of native tables, like the KPI list. What
+        the panel cannot hold goes to the detail slide."""
+        services = [str(s) for s in sla.get("services") or []]
+        rows = sla.get("rows") or []
+        size = 8
+        row_h = 0.22
+        per_max = max(1, int((h - row_h) / row_h))
+        cols = 2 if len(services) <= 2 * per_max else 3
+        cap = cols * per_max
+        items = list(range(len(services)))
+        note = None
+        if len(services) > cap and over.get("on"):
+            over["sla"] = sla
+            items = items[:cap - 1]
+            note = _more_next(len(services) - len(items))
+        entries = items + ([None] if note else [])   # None: the « +N » line
+        per = -(-len(entries) // cols)
+        gap = 0.15
+        tw = (w - gap * (cols - 1)) / cols
+        val_w = min(0.75, tw * 0.24)
+        fills = {"ok": "#E4F3EA", "warn": "#FBF0D9", "ko": "#F7E0E0"}
+        texts = {"ok": "#2E9E5B", "warn": "#9C7212", "ko": "#D24545"}
+        name_w = tw - val_w * len(rows)
+        room = max(5, int((name_w - 0.08) / (BOLD_CHAR_IN * _fs(size))))
+        short = {"__current__": L["current_short"], "__trailing__": L["trailing_short"]}
+        svc_names = _cut_labels(services, room)
+        heads = [L["h_service"]] + [short.get(str(r.get("period")), _row_label(str(r.get("period", "-")), L))
+                                    for r in rows]
+        for c in range(cols):
+            part = entries[c * per:(c + 1) * per]
+            extra = 1 if part and part[-1] is None else 0
+            part = [si for si in part if si is not None]
+            if not part and not extra:
+                continue
+            n = len(part) + extra + 1
+            tbl = slide.shapes.add_table(n, 1 + len(rows), Inches(x + c * (tw + gap)), Inches(y),
+                                         Inches(tw), Inches(row_h * n)).table
+            tbl.columns[0].width = Inches(name_w)
+            for j in range(len(rows)):
+                tbl.columns[j + 1].width = Inches(val_w)
+            for j, txt in enumerate(heads):
+                cell = tbl.cell(0, j)
+                cell.text = _cut(txt, room if j == 0 else 14)
+                set_cell(cell, NAVY, "#FFFFFF", size=size - 1, bold=True)
+            for r, si in enumerate(part, start=1):
+                fill = "#FFFFFF" if r % 2 else "#F4F7FB"
+                cell = tbl.cell(r, 0)
+                cell.text = svc_names[si]
+                set_cell(cell, fill, NAVY, size=size, bold=True)
+                cell.text_frame.paragraphs[0].alignment = PP_ALIGN.LEFT
+                for j, row in enumerate(rows):
+                    cells = row.get("cells") or []
+                    cv = cells[si] if si < len(cells) else {}
+                    v = str((cv or {}).get("v", "-"))
+                    if L is I18N["en"]:
+                        v = v.replace(",", ".")
+                    cell = tbl.cell(r, j + 1)
+                    cell.text = v
+                    s = (cv or {}).get("s")
+                    set_cell(cell, fills.get(s, "#FFFFFF"), texts.get(s, "#6B7C90"), size=size, bold=True)
+            if extra:
+                r = len(part) + 1
+                tbl.cell(r, 0).merge(tbl.cell(r, len(rows)))
+                tbl.cell(r, 0).text = note
+                set_cell(tbl.cell(r, 0), "#FFFFFF", "#6B7C90", size=size)
+                tbl.cell(r, 0).text_frame.paragraphs[0].alignment = PP_ALIGN.LEFT
+            for r in range(n):
+                tbl.rows[r].height = Inches(row_h)
+                for j in range(1 + len(rows)):
+                    cl = tbl.cell(r, j)
+                    cl.margin_top = cl.margin_bottom = Emu(0)
+                    cl.margin_left = cl.margin_right = Inches(0.04)
+                    cl.text_frame.word_wrap = False
+
     def mark_last(ps, s):
         """A dot on the latest month of a curve: with a single month (a platform's
         first steerco) the line chart drew nothing, a line needs two points."""
@@ -1761,12 +1913,23 @@ def steerco_deck(prs, squads: list[dict], period: str, L: dict) -> dict:
         value above it. A dozen curves stay readable where one plot could not."""
         n = len(series)
         cols = _sm_cols(n)
+        # Three rows at most: a fourth leaves each curve a few millimetres. The
+        # rest, month by month, goes to the detail slide; the last cell says so.
+        note = None
+        if n > 3 * cols and over.get("on"):
+            over["kpi_trend"] = (chart.get("labels") or [], series)
+            note = _more_next(n - (3 * cols - 1))
+            series = series[:3 * cols - 1]
+            n = 3 * cols
         rows = -(-n // cols)
         gap = Inches(0.08)
         cw = (w - gap * (cols - 1)) // cols
         ch_h = (h - gap * (rows - 1)) // rows
         head = min(Inches(0.22), ch_h // 3)
         labels = chart.get("labels") or []
+        vals = [_compact_num(_last(s.get("data")), _dec(L)) for s in series]
+        room_all = int((cw / 914400 - 0.1) / (0.0058 * _fs(8))) - max((len(v) for v in vals), default=0) - 2
+        names = _cut_labels([str(s.get("name") or "") for s in series], max(4, room_all))
         for i, s in enumerate(series):
             cx = x + (i % cols) * (cw + gap)
             cy = y + (i // cols) * (ch_h + gap)
@@ -1780,7 +1943,7 @@ def steerco_deck(prs, squads: list[dict], period: str, L: dict) -> dict:
             p = tf.paragraphs[0]
             val = _compact_num(_last(s.get("data")), _dec(L))
             room = int((cw / 914400 - 0.1) / (0.0058 * _fs(8))) - len(val) - 2
-            rn = p.add_run(); rn.text = _cut(str(s.get("name") or ""), max(4, room))
+            rn = p.add_run(); rn.text = names[i]
             rn.font.size = Pt(_fs(8)); rn.font.bold = True; rn.font.color.rgb = rgb("#141B47")
             rv = p.add_run(); rv.text = "  " + val
             rv.font.size = Pt(_fs(9)); rv.font.bold = True; rv.font.color.rgb = rgb(s.get("color") or NAVY)
@@ -1804,6 +1967,10 @@ def steerco_deck(prs, squads: list[dict], period: str, L: dict) -> dict:
             ps.format.line.width = Pt(1.75)
             ps.smooth = False
             mark_last(ps, s)
+        if note:
+            i = n - 1
+            add_text(slide, x + (i % cols) * (cw + gap), y + (i // cols) * (ch_h + gap) + Inches(0.04),
+                     cw, ch_h, note, size=8, color="#6B7C90")
 
     def kpi_table(slide, x, y, w, h, chart, series):
         """The KPIs month by month, native tables: one row per KPI, as many tables
@@ -1861,6 +2028,13 @@ def steerco_deck(prs, squads: list[dict], period: str, L: dict) -> dict:
         three columns there is no room for the change: a coloured arrow before the
         value says which way it went, and numbers are written compact."""
         cols = _list_cols(len(kpis))
+        # Below 0.2 inch a line no longer reads: what the panel cannot hold at
+        # that height goes to the detail slide, and the last line says so.
+        cap = cols * max(1, int(h / Inches(0.2)))
+        all_kpis = kpis
+        if len(kpis) > cap and over.get("on"):
+            over["kpis"] = all_kpis
+            kpis = kpis[:cap - 1] + [{"label": _more_next(len(all_kpis) - cap + 1), "_note": True}]
         per = -(-len(kpis) // cols)
         narrow = cols > 2
         dec = _dec(L)
@@ -1880,19 +2054,26 @@ def steerco_deck(prs, squads: list[dict], period: str, L: dict) -> dict:
             for j, vw in enumerate(val_ws):
                 tbl.columns[j + 1].width = vw
             room = max(4, int(((tw - sum(val_ws)) / 914400 - 0.08) / (BOLD_CHAR_IN * _fs(size))))
+            names = dict(zip(map(id, kpis), _cut_labels([str(k.get("label") or "-") for k in kpis], room)))
             for r, k in enumerate(part):
                 tbl.rows[r].height = row_h
                 trend = k.get("trend") if k.get("trend") in ("up", "down", "flat") else "flat"
                 tcolor = {"up": "#2E9E5B", "down": "#D24545", "flat": "#6B7C90"}[trend]
                 fill = "#FFFFFF" if r % 2 else "#F4F7FB"
-                cells = [(_cut(str(k.get("label") or "-"), room), NAVY, PP_ALIGN.LEFT)]
-                if narrow:
+                cells = [(names.get(id(k), str(k.get("label") or "-")), NAVY, PP_ALIGN.LEFT)]
+                if k.get("_note"):
+                    cells = [(str(k["label"]), "#6B7C90", PP_ALIGN.LEFT)] + [("", NAVY, PP_ALIGN.RIGHT)] * (1 if narrow else 2)
+                elif narrow:
                     cells.append((_compact_text(k.get("value") or "-", dec), NAVY, PP_ALIGN.RIGHT))
                 else:
                     cells.append((str(k.get("value") or "-"), NAVY, PP_ALIGN.RIGHT))
                     cells.append((f"{TREND_ARROW.get(trend, '')} {k.get('delta')}".strip() if k.get("delta") else "",
                                   tcolor, PP_ALIGN.RIGHT))
+                if k.get("_note"):
+                    tbl.cell(r, 0).merge(tbl.cell(r, ncol - 1))
                 for j, (txt, color, align) in enumerate(cells):
+                    if k.get("_note") and j:
+                        continue
                     cell = tbl.cell(r, j)
                     cell.text = txt
                     set_cell(cell, fill, color, size=size, bold=True)
@@ -1911,7 +2092,7 @@ def steerco_deck(prs, squads: list[dict], period: str, L: dict) -> dict:
                     cell.text_frame.word_wrap = False
                     para.font.size = Pt(_fs(size))
 
-    def events(slide, x, y, w, h, evs):
+    def events(slide, x, y, w, h, evs, key=None):
         """One event per line, as many as the panel holds, the rest counted.
 
         Written in one text box without a limit, the list ran out of its card
@@ -1948,7 +2129,12 @@ def steerco_deck(prs, squads: list[dict], period: str, L: dict) -> dict:
             extra = len(evs) - len(shown)
             pm = tf.add_paragraph()
             rm = pm.add_run()
-            rm.text = L["more_events_one"] if extra == 1 else L["more_events"].format(n=extra)
+            if key and over.get("on"):
+                # Every event, in full, on the platform's detail slide.
+                over[key] = evs
+                rm.text = _more_next(extra)
+            else:
+                rm.text = L["more_events_one"] if extra == 1 else L["more_events"].format(n=extra)
             rm.font.size = Pt(_fs(size)); rm.font.color.rgb = rgb("#6B7C90")
 
     def not_filled(slide, x, y, w, d):
@@ -1962,6 +2148,145 @@ def steerco_deck(prs, squads: list[dict], period: str, L: dict) -> dict:
             p2 = tf.add_paragraph(); r2 = p2.add_run()
             r2.text = L["expected_from"].format(names=", ".join(d["missing"]))
             r2.font.size = Pt(_fs(11)); r2.font.bold = True; r2.font.color.rgb = rgb("#9C7212")
+
+    # What a platform slide cannot show (KPIs past the list, SLA services past
+    # the list, events past their panel) goes to a detail slide right after it,
+    # in full, instead of a bare « +N ». ``on`` is set while a platform slide is
+    # drawn: a panel placed alone in a free layout keeps its count.
+    over: dict = {}
+
+    def _more_next(n):
+        return L["more_next_one"] if n == 1 else L["more_next"].format(n=n)
+
+    def platform_detail(s, d):
+        LINE = _fs(10) * 0.0170
+        CW = 0.0071 * _fs(10)
+        W = 13.333 - 2 * LM
+        top, bottom = 1.1, 7.5 - (foot or 0) - 0.25
+
+        def lines(text, width):
+            return wrap_lines(text or " ", max(6, int((width - 0.12) / CW)))
+
+        sections = []   # (title, headers, widths, rows of [(text, color, bold, fill)])
+        if over.get("kpis"):
+            rows = []
+            for k in over["kpis"]:
+                trend = k.get("trend") if k.get("trend") in ("up", "down", "flat") else "flat"
+                tc = {"up": "#2E9E5B", "down": "#D24545", "flat": "#6B7C90"}[trend]
+                unit = str(k.get("unit") or "")
+                rows.append([(str(k.get("label") or "-"), NAVY, True, None),
+                             (f"{k.get('value') or '-'}{unit}", NAVY, True, None),
+                             (f"{TREND_ARROW.get(trend, '')} {k.get('delta')}".strip() if k.get("delta") else "",
+                              tc, True, None)])
+            sections.append((L["key_figures"], [L["h_name"], L["h_value"], L["h_change"]], [0.6, 0.2, 0.2], rows))
+        if over.get("kpi_trend"):
+            labels, series = over["kpi_trend"]
+            rows = [[(str(s.get("name") or "-"), NAVY, True, None)]
+                    + [(_compact_num(v, _dec(L)) if v is not None else "-", s.get("color") or NAVY, False, None)
+                       for v in (s.get("data") or [])]
+                    for s in series]
+            n = len(labels)
+            sections.append((L["kpi_chart"], [L["h_name"]] + list(labels),
+                             [0.28] + [0.72 / max(1, n)] * n, rows))
+        if over.get("sla"):
+            sla = over["sla"]
+            srows = sla.get("rows") or []
+            fills = {"ok": "#E4F3EA", "warn": "#FBF0D9", "ko": "#F7E0E0"}
+            texts = {"ok": "#2E9E5B", "warn": "#9C7212", "ko": "#D24545"}
+            rows = []
+            for si, name in enumerate(sla.get("services") or []):
+                line = [(str(name), NAVY, True, None)]
+                for r in srows:
+                    cells = r.get("cells") or []
+                    cv = cells[si] if si < len(cells) else {}
+                    v = str((cv or {}).get("v", "-"))
+                    if L is I18N["en"]:
+                        v = v.replace(",", ".")
+                    st = (cv or {}).get("s")
+                    line.append((v, texts.get(st, "#6B7C90"), True, fills.get(st)))
+                rows.append(line)
+            n = len(srows)
+            sections.append((L["sla"], [L["h_service"]] + [_row_label(str(r.get("period", "-")), L) for r in srows],
+                             [0.6] + [0.4 / max(1, n)] * n, rows))
+        for key in ("last_events", "next_events"):
+            if over.get(key):
+                rows = []
+                for raw in over[key]:
+                    e = _as_event(raw)
+                    rows.append([(str(e.get("date") or ""), "#6B7C90", True, None),
+                                 (str(e.get("tag") or ""), SEV_FG.get(e.get("sev"), "#13315C"), True, None),
+                                 (str(e.get("text") or ""), "#1B2A3D", False, None)])
+                sections.append((L[key], [L["h_date"], L["h_type"], L["h_event"]], [0.1, 0.18, 0.72], rows))
+
+        # Pages: a section never starts at the foot of a slide, and a page that
+        # continues one repeats its title and its column headers.
+        pages, cur, used = [], [], 0.0
+        head_h = LINE + 0.1
+        title_h = LINE + 0.16
+        for title, headers, widths, rows in sections:
+            chunk, cont = [], False
+            for row in rows:
+                rh = max(lines(t, W * f) for (t, *_), f in zip(row, widths)) * LINE + 0.1
+                start = title_h + head_h if not chunk else 0
+                if used + start + rh > bottom - top and (cur or chunk):
+                    if chunk:
+                        cur.append((title, headers, widths, chunk, cont))
+                    pages.append(cur)
+                    cur, chunk, used, cont = [], [], 0.0, bool(chunk) or cont
+                    start = title_h + head_h
+                chunk.append((row, rh))
+                used += start + rh
+            if chunk:
+                cur.append((title, headers, widths, chunk, cont))
+                used += 0.18
+        if cur:
+            pages.append(cur)
+
+        for k, page in enumerate(pages):
+            slide = pptxtpl.add_slide(prs)
+            band = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, 0, prs.slide_width, Inches(0.86))
+            band.fill.solid(); band.fill.fore_color.rgb = rgb(NAVY); band.line.fill.background(); no_shadow(band)
+            tf = band.text_frame; tf.margin_left = Inches(LM); tf.vertical_anchor = MSO_ANCHOR.MIDDLE
+            title = L["detail_title"].format(name=s["squad_name"] or "")
+            if k:
+                title += f' ({L["continued"]})'
+            tf.paragraphs[0].alignment = PP_ALIGN.LEFT
+            r = tf.paragraphs[0].add_run(); r.text = title
+            r.font.size = Pt(_fs(20)); r.font.bold = True; r.font.color.rgb = rgb("#FFFFFF")
+            rp = tf.paragraphs[0].add_run(); rp.text = "   " + _period_long(period, L)
+            rp.font.size = Pt(_fs(12)); rp.font.color.rgb = rgb("#C7D2FE")
+            y = top
+            for title, headers, widths, chunk, cont in page:
+                t = title.upper() + (f' ({L["continued"]})' if cont else "")
+                add_text(slide, Inches(LM), Inches(y), Inches(W), Inches(title_h), t, size=12, bold=True, color=NAVY)
+                y += title_h
+                n = len(chunk) + 1
+                tbl = slide.shapes.add_table(n, len(headers), Inches(LM), Inches(y), Inches(W),
+                                             Inches(head_h + sum(rh for _, rh in chunk))).table
+                for j, f in enumerate(widths):
+                    tbl.columns[j].width = Inches(W * f)
+                tbl.rows[0].height = Inches(head_h)
+                for j, txt in enumerate(headers):
+                    tbl.cell(0, j).text = txt
+                    set_cell(tbl.cell(0, j), "#EDF2F8", NAVY, bold=True)
+                    if j == 0 or widths[-1] > 0.5:
+                        tbl.cell(0, j).text_frame.paragraphs[0].alignment = PP_ALIGN.LEFT
+                for i, (row, rh) in enumerate(chunk, start=1):
+                    tbl.rows[i].height = Inches(rh)
+                    zebra = "#F8FAFC" if i % 2 == 0 else "#FFFFFF"
+                    for j, (txt, color, bold, fill) in enumerate(row):
+                        cell = tbl.cell(i, j)
+                        cell.text = txt or " "
+                        set_cell(cell, fill or zebra, color, bold=bold)
+                        cell.text_frame.word_wrap = True
+                        # Text reads from the left; figures stay centred.
+                        if j == 0 or widths[-1] > 0.5:
+                            cell.text_frame.paragraphs[0].alignment = PP_ALIGN.LEFT
+                for i in range(n):
+                    for j in range(len(headers)):
+                        cl = tbl.cell(i, j)
+                        cl.margin_left = Inches(0.08); cl.margin_right = Inches(0.06)
+                y += head_h + sum(rh for _, rh in chunk) + 0.18
 
     # Leave the uploaded template's footer band (logo, page number) uncovered so it
     # actually shows through the one-pager. 0 for the plain default deck (full slide).
@@ -1992,9 +2317,12 @@ def steerco_deck(prs, squads: list[dict], period: str, L: dict) -> dict:
             nrows = -(-len(kpis) // cols)
             cw = (bw - cg * (cols - 1)) / cols
             rh = (bh - cg * (nrows - 1)) / nrows
+            # Cut together, so that labels sharing a long start stay apart.
+            names = _cut_labels([str(k.get("label") or "-") for k in kpis],
+                                max(4, int((cw - 0.18) / (0.0064 * _fs(8)))))
             for i, k in enumerate(kpis):
                 kpi_card(slide, Inches(bx + (i % cols) * (cw + cg)), Inches(by + (i // cols) * (rh + cg)),
-                         Inches(cw), Inches(rh), {**k, "sub": []}, compact=True)
+                         Inches(cw), Inches(rh), {**k, "label": names[i], "sub": []}, compact=True)
         elif kpis:
             cg = 0.1
             hero_h = min(0.92, bh * 0.48)
@@ -2017,7 +2345,11 @@ def steerco_deck(prs, squads: list[dict], period: str, L: dict) -> dict:
         """Row 2 left: SLA table."""
         bx, by, bw, bh = titled_panel(slide, x, y, w, h, L["sla"])
         if (d.get("sla") or {}).get("services"):
-            sla_table(slide, Inches(bx), Inches(by), Inches(bw), bh, d.get("sla") or {})
+            sla = d.get("sla") or {}
+            if sla_fits(sla, bw):
+                sla_table(slide, Inches(bx), Inches(by), Inches(bw), bh, sla)
+            else:
+                sla_list(slide, bx, by, bw, bh, sla)
         else:
             add_text(slide, Inches(bx), Inches(by), Inches(bw), Inches(0.3), L["no_sla"], size=11,
                      color="#6B7C90")
@@ -2029,11 +2361,11 @@ def steerco_deck(prs, squads: list[dict], period: str, L: dict) -> dict:
 
     def panel_last_events(slide, d, x, y, w, h):
         bx, by, bw, bh = titled_panel(slide, x, y, w, h, L["last_events"])
-        events(slide, Inches(bx), Inches(by), Inches(bw), Inches(bh), d.get("last_events") or [])
+        events(slide, Inches(bx), Inches(by), Inches(bw), Inches(bh), d.get("last_events") or [], "last_events")
 
     def panel_next_events(slide, d, x, y, w, h):
         bx, by, bw, bh = titled_panel(slide, x, y, w, h, L["next_events"])
-        events(slide, Inches(bx), Inches(by), Inches(bw), Inches(bh), d.get("next_events") or [])
+        events(slide, Inches(bx), Inches(by), Inches(bw), Inches(bh), d.get("next_events") or [], "next_events")
 
     PANELS = {"kpis": panel_kpis, "kpi_chart": panel_kpi_chart, "sla": panel_sla,
               "incidents": panel_incidents, "last_events": panel_last_events,
@@ -2055,6 +2387,16 @@ def steerco_deck(prs, squads: list[dict], period: str, L: dict) -> dict:
         rp = pp.add_run(); rp.text = _period_long(period, L); rp.font.size = Pt(_fs(12)); rp.font.bold = True; rp.font.color.rgb = rgb("#6B7C90")
 
     def platform_slide(s, sec=None):
+        over.clear()
+        over["on"] = True
+        try:
+            platform_page(s, sec)
+        finally:
+            over["on"] = False
+        if any(over.get(k) for k in ("kpis", "kpi_trend", "sla", "last_events", "next_events")):
+            platform_detail(s, s["data"] or {})
+
+    def platform_page(s, sec=None):
         slide = pptxtpl.add_slide(prs)
         d = s["data"] or {}
         head_on = block_on(sec, "header")

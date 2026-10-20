@@ -5,6 +5,7 @@ slide per platform and a platform can be fed by several squads. The tests that
 matter most here are the multi-contributor ones: two squad leaders filling the same
 slide must never overwrite each other, and every figure must have an owner.
 """
+from datetime import datetime, timezone
 import re
 
 from app.models import Platform, SteercoEntry
@@ -790,3 +791,24 @@ def test_the_slide_legend_sits_under_the_chart_grouped_by_axis(db, seeded):
     # Right under the chart, inside the same box.
     assert legend.top >= chart_shape.top + chart_shape.height - 10
     assert legend.left == chart_shape.left and legend.width == chart_shape.width
+
+
+def test_reporting_messages_offered_to_the_events_step(client, db, seeded):
+    """The events step offers the key messages of the platform's squads for the
+    period's year, newest first, the same text once, other squads' left out."""
+    from app.models import KeyMessage
+    _enable(client)
+    pid = _platform(db, seeded)
+    for i, (sq, year, text) in enumerate([("squad_a", 2026, "Vendor slipping"),
+                                          ("squad_a", 2026, "Go-live done"),
+                                          ("squad_a", 2026, "vendor  slipping"),
+                                          ("squad_a", 2025, "Last year"),
+                                          ("squad_b", 2026, "Not this platform")]):
+        db.add(KeyMessage(squad_id=seeded[sq], year=year, kind="risk", text=text, display_order=i,
+                          created_at=datetime(year, 3, 1 + i, tzinfo=timezone.utc)))
+    db.commit()
+    login(client, seeded["sl_a"])
+    r = client.get(f"/api/steerco/platform/{pid}/messages?period=2026-04")
+    assert r.status_code == 200, r.text
+    assert [m["text"] for m in r.json()] == ["vendor  slipping", "Go-live done"]
+    assert r.json()[0]["squad_name"] and r.json()[0]["kind"] == "risk"

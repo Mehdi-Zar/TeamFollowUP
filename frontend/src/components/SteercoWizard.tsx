@@ -13,13 +13,13 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { api, errorText } from "../api";
 import { useI18n } from "../i18n";
-import { Modal, Spinner } from "./ui";
+import { EmptyState, Modal, PickItem, Spinner } from "./ui";
 import { StepLayout } from "./StepLayout";
 import { BackfillGrid } from "./SteercoEditor";
 import {
   SteercoData, SteercoKpi, SlaCell, SteercoEvent, PlatformTemplate, EditableItems,
   EVENT_SEVS, SLA_ICON, TREND_ARROW, yearMonths, monthLongLabel,
-  clampPct, dataFromTemplate, kpiChange, prevPeriod, slaStatus,
+  clampPct, dataFromTemplate, kpiChange, periodChoices, prevPeriod, slaStatus,
 } from "../steerco";
 
 type HistMap = Record<string, SteercoData>;
@@ -28,6 +28,12 @@ type EntryPayload = {
   data: SteercoData; template: PlatformTemplate; editable: EditableItems;
   editable_squad_ids: number[]; contributors: Contributor[]; filled: boolean;
 };
+
+/** A key message a contributing squad wrote in its reporting (see /messages). */
+type ReportMsg = { id: number; squad_id: number; squad_name: string; kind: "success" | "alert" | "risk";
+  text: string; created_at: string; open: boolean };
+const KIND_SEV: Record<ReportMsg["kind"], SteercoEvent["sev"]> = { success: "green", alert: "amber", risk: "red" };
+const KIND_BADGE: Record<ReportMsg["kind"], string> = { success: "badge-green", alert: "badge-orange", risk: "badge-red" };
 
 const EMPTY_TPL: PlatformTemplate = { kpis: [], sla: [], incidents: { owner_squad_id: null } };
 
@@ -153,6 +159,8 @@ export default function SteercoWizard({ platformId, platformName, initialPeriod,
   });
 
   const evList = (which: "last_events" | "next_events") => data[which] ?? [];
+  // Which list the reporting-message picker is open for, if any.
+  const [pickFor, setPickFor] = useState<"last_events" | "next_events" | null>(null);
   const setEv = (which: "last_events" | "next_events", list: SteercoEvent[]) => setData((d) => ({ ...d, [which]: list }));
 
   // ---- history lookups (read-only context) ----
@@ -235,8 +243,10 @@ export default function SteercoWizard({ platformId, platformName, initialPeriod,
               <div>
                 <div className="wiz-h">{t("steerco.wiz.month_label")}</div>
                 <div className="wiz-help">{t("steerco.wiz.month_help")}</div>
-                <input type="month" value={period} disabled={ro} style={{ width: 200 }}
-                       onChange={(e) => e.target.value && setPeriod(e.target.value)} />
+                <select value={period} disabled={ro} style={{ width: 200 }}
+                        onChange={(e) => setPeriod(e.target.value)}>
+                  {periodChoices(period).map((p) => <option key={p} value={p}>{monthLongLabel(p, lang)}</option>)}
+                </select>
               </div>
               <div className="wiz-help" style={{ marginBottom: 0 }}>{t("steerco.wiz.month_next_hint")}</div>
             </div>
@@ -392,9 +402,29 @@ export default function SteercoWizard({ platformId, platformName, initialPeriod,
                   <div key={which} className="stack" style={{ gap: 8 }}>
                     <div className="between" style={{ alignItems: "center" }}>
                       <span className="wiz-h" style={{ marginBottom: 0 }}>{t(`steerco.f.${which}`)}</span>
-                      {!ro && editable.events && <button type="button" className="btn-secondary btn-sm"
-                        onClick={() => setEv(which, [...list, { date: "", text: "", sev: which === "last_events" ? "amber" : "ice", squad_id: mySquads[0] }])}>{t("steerco.f.add_event")}</button>}
+                      {!ro && editable.events && (
+                        <div className="inline" style={{ gap: 6 }}>
+                          <button type="button" className="btn-secondary btn-sm" aria-expanded={pickFor === which}
+                            onClick={() => setPickFor(pickFor === which ? null : which)}>{t("steerco.msg.take")}</button>
+                          <button type="button" className="btn-secondary btn-sm"
+                            onClick={() => setEv(which, [...list, { date: "", text: "", sev: which === "last_events" ? "amber" : "ice", squad_id: mySquads[0] }])}>{t("steerco.f.add_event")}</button>
+                        </div>
+                      )}
                     </div>
+                    {pickFor === which && (
+                      <MessagePicker platformId={platformId} period={period} taken={list.map((e) => e.text)}
+                        onCancel={() => setPickFor(null)}
+                        onAdd={(msgs) => {
+                          setEv(which, [...list, ...msgs.map((m): SteercoEvent => ({
+                            date: new Date(m.created_at).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" }),
+                            tag: t(`km.kind.${m.kind}`), text: m.text, sev: KIND_SEV[m.kind],
+                            // The line belongs to the squad that said it when the caller
+                            // writes for it, else to the caller's own squad.
+                            squad_id: mySquads.includes(m.squad_id) ? m.squad_id : mySquads[0],
+                          }))]);
+                          setPickFor(null);
+                        }} />
+                    )}
                     <div className="sc-ev">
                       <table>
                         <colgroup>
@@ -516,5 +546,75 @@ export function SteercoPreviewModal({ platformId, platformName, period, onClose 
         : <iframe title={t("steerco.wiz.preview_title")} srcDoc={html}
                   style={{ width: "100%", height: 560, border: "1px solid var(--line)", borderRadius: 12, background: "#fff" }} />}
     </Modal>
+  );
+}
+
+/** The key messages written in the reportings of the platform's squads, to take
+ *  over as events: filter by kind, tick, add. A message already on the list is
+ *  shown but cannot be taken twice. */
+function MessagePicker({ platformId, period, taken, onAdd, onCancel }: {
+  platformId: number; period: string; taken: string[];
+  onAdd: (msgs: ReportMsg[]) => void; onCancel: () => void;
+}) {
+  const { t, lang } = useI18n();
+  const [msgs, setMsgs] = useState<ReportMsg[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [kind, setKind] = useState<ReportMsg["kind"] | "">("");
+  const [picked, setPicked] = useState<number[]>([]);
+
+  useEffect(() => {
+    api.get<ReportMsg[]>(`/api/steerco/platform/${platformId}/messages?period=${encodeURIComponent(period)}`)
+      .then(setMsgs).catch((e) => { setErr(errorText(e)); setMsgs([]); });
+  }, [platformId, period]);
+
+  const norm = (s: string) => s.split(/\s+/).join(" ").trim().toLowerCase();
+  const takenSet = new Set(taken.map(norm));
+  const all = msgs ?? [];
+  const shown = all.filter((m) => !kind || m.kind === kind);
+  const count = (k: ReportMsg["kind"]) => all.filter((m) => m.kind === k).length;
+  const toggle = (id: number) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
+  const when = (iso: string) =>
+    new Date(iso).toLocaleDateString(lang === "fr" ? "fr-FR" : "en-US", { day: "numeric", month: "short" });
+
+  return (
+    <div className="card stack" style={{ gap: 10, padding: 12, background: "var(--ice-soft)" }}>
+      <div className="between" style={{ alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+        <div className="small muted">{t("steerco.msg.hint")}</div>
+        <div className="seg" role="group" aria-label={t("steerco.msg.filter")}>
+          <button type="button" className={kind === "" ? "active" : ""} onClick={() => setKind("")}>
+            {t("steerco.msg.all")} ({all.length})
+          </button>
+          {(["success", "alert", "risk"] as const).map((k) => (
+            <button key={k} type="button" className={kind === k ? "active" : ""} onClick={() => setKind(k)}>
+              {t(`km.kind.${k}`)} ({count(k)})
+            </button>
+          ))}
+        </div>
+      </div>
+      {err && <div className="small" style={{ color: "var(--red)" }}>{err}</div>}
+      {msgs === null ? <Spinner /> : shown.length === 0 ? (
+        <EmptyState message={t("steerco.msg.none")} />
+      ) : (
+        <div className="stack" style={{ gap: 6, maxHeight: 320, overflowY: "auto" }}>
+          {shown.map((m) => {
+            const already = takenSet.has(norm(m.text));
+            return (
+              <PickItem key={m.id} selected={picked.includes(m.id)} disabled={already}
+                onToggle={() => toggle(m.id)} title={m.text}
+                meta={`${m.squad_name}, ${when(m.created_at)}${m.open ? ` (${t("steerco.msg.open")})` : ""}`}
+                tag={already ? <span className="badge badge-grey">{t("steerco.msg.taken")}</span>
+                  : <span className={`badge ${KIND_BADGE[m.kind]}`}>{t(`km.kind.${m.kind}`)}</span>} />
+            );
+          })}
+        </div>
+      )}
+      <div className="inline" style={{ gap: 8, justifyContent: "flex-end" }}>
+        <button type="button" className="btn-ghost btn-sm" onClick={onCancel}>{t("action.cancel")}</button>
+        <button type="button" className="btn-sm" disabled={!picked.length}
+          onClick={() => onAdd(all.filter((m) => picked.includes(m.id)))}>
+          {t("steerco.msg.add", { n: picked.length })}
+        </button>
+      </div>
+    </div>
   );
 }

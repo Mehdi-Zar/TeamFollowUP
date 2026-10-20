@@ -47,6 +47,19 @@ effacer la colonne du voisin.
 Les **evenements** sont la seule section partagee : chacun ajoute les siens, chaque
 ligne porte sa squad d'origine, et personne ne peut modifier celles des autres.
 
+Sous charge, le document PowerPoint ne coupe rien : ce qu'un panneau ne tient
+pas (KPI, SLA, evenements) part en entier sur une **slide de detail** de la
+plateforme, et le panneau le dit (« +N autres en slide suivante »). Voir
+`24-exports-frise-annuelle-et-moral.md`, section 8 ter.
+
+Un evenement peut **reprendre un message cle du reporting** (bouton « Reprendre du
+reporting » de l'etape evenements) : la liste montre les messages cles saisis cette
+annee par les squads de la plateforme, du plus recent au plus ancien, filtrables par
+type (succes, alerte, risque), un meme texte d'une squad une seule fois
+(`GET /api/steerco/platform/{id}/messages?period=`). Chaque message coche devient une
+ligne : date du message, type en etiquette, gravite deduite (succes vert, alerte
+orange, risque rouge). Un message deja present dans la liste est marque « Deja repris ».
+
 Le one-pager **n'est pas stocke** : il est reconstruit a la demande a partir des
 instantanes de l'**annee** du rapport. C'est ce qui garantit la coherence :
 
@@ -126,6 +139,11 @@ d'avoir oublie quelque chose.
 plateforme active. La carte liste **les plateformes que la squad alimente**,
 rappelle la cadence (mensuelle, alors que le reporting au-dessus est hebdomadaire),
 indique si le mois est deja rempli, quand, par qui, et **qui manque encore**.
+
+La periode se choisit dans une **liste de mois** (« Octobre 2026 »), du mois prochain
+a deux ans en arriere, dans l'onglet Steerco du tableau de bord comme dans l'assistant.
+Dans Administration > Plateformes, l'etat **Dans le pack / Hors pack** se bascule
+directement depuis la liste, sans ouvrir la fenetre de la plateforme.
 
 Le bouton ouvre un **assistant en 5 etapes** : le mois, les KPI, SLA et incidents, les
 evenements, puis un recapitulatif avec **apercu en direct du one-pager** (rien n'est

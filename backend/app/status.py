@@ -219,6 +219,11 @@ def quarter_end(year: int, quarter: int) -> date:
     return date(year, 3 * quarter, 31 if quarter in (1, 4) else 30)
 
 
+def quarter_of(d: date) -> tuple[int, int]:
+    """The (year, quarter) a day falls in, comparable as a tuple."""
+    return d.year, (d.month - 1) // 3 + 1
+
+
 def day_of(dt) -> date | None:
     """The calendar day of a datetime (UTC) or a date."""
     if dt is None:
@@ -246,7 +251,10 @@ def otd_state(jalons, committed_date, now: datetime | None = None, otd=None) -> 
       no milestone   : late once the date has passed, else unscoped (nothing to
                        judge it on yet).
       all done       : delivered, or delivered_late when the last milestone was
-                       finished after the committed date.
+                       finished in a quarter after the committed date's. A
+                       milestone is planned by quarter and its end is the day
+                       someone ticked it, often days after the fact: comparing
+                       to the day would call late what was done on time.
       date passed    : late, from the day after the committed date.
       at_risk        : a milestone is blocked or at risk, the date is less than
                        OTD_DUE_SOON_DAYS days away, or an unfinished milestone is
@@ -271,7 +279,7 @@ def otd_state(jalons, committed_date, now: datetime | None = None, otd=None) -> 
     if all(j.status == "done" for j in jalons):
         ends = [day_of(getattr(j, "done_at", None)) for j in jalons]
         last = max((d for d in ends if d is not None), default=None)
-        if committed is not None and last is not None and last > committed:
+        if committed is not None and last is not None and quarter_of(last) > quarter_of(committed):
             return {"status": "delivered_late", "reasons": ["done_after_date"]}
         return {"status": "delivered", "reasons": ["all_done"]}
     if passed:

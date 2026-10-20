@@ -14,7 +14,7 @@ import { useI18n } from "../i18n";
 import { useAuth } from "../auth";
 import { Spinner, EmptyState } from "./ui";
 import { ListControls, ListSearch, SortSpec, applyListView, useListView } from "./listView";
-import { currentSteercoPeriod } from "../steerco";
+import { currentSteercoPeriod, monthLongLabel, periodChoices } from "../steerco";
 
 type Entry = {
   platform_id: number; platform_name: string; filled: boolean; updated_at: string | null;
@@ -219,7 +219,9 @@ export default function SteercoConsolidation({ period, setPeriod, platformId, se
         <div className="row" style={{ gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
           <div style={{ width: 160 }}>
             <label htmlFor="steerco-period">{t("steerco.period")}</label>
-            <input id="steerco-period" value={period} onChange={(e) => setPeriod(e.target.value)} placeholder="2026-07" />
+            <select id="steerco-period" value={period} onChange={(e) => setPeriod(e.target.value)}>
+              {periodChoices(period).map((p) => <option key={p} value={p}>{monthLongLabel(p, lang)}</option>)}
+            </select>
           </div>
           <ListSearch view={view} id="steerco-search" />
         </div>

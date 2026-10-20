@@ -108,6 +108,10 @@ class User(Base):
     # Personal report subscription: send the report every N days (0 = unsubscribed).
     report_interval_days: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     report_last_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # "Don't show at startup" for the getting-started guide. Kept on the account,
+    # not in the browser: a browser that clears its storage would show it again.
+    hide_getting_started: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false",
+                                                       nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Moves on logout and on any password, role or status change: every session

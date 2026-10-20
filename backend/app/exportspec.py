@@ -65,6 +65,9 @@ SECTION_TYPES: dict[str, dict] = {
             "filter": {"kind": "enum", "options": FILTERS, "default": "all"},
             "sort": {"kind": "enum", "options": SORTS, "default": "order"},
             "use_squad_variant": {"kind": "bool", "default": False},
+            # What the slide cannot hold (milestone boxes, messages) goes on a
+            # detail slide right after it, instead of being cut or left out.
+            "detail_slides": {"kind": "bool", "default": True},
         },
         "blocks": {
             "header": {"params": {

@@ -83,7 +83,8 @@ def bump_session(user) -> None:
 
 def create_session_token(user_id: int, impersonator_id: int | None = None,
                          session_version: int = 0, impersonator_version: int = 0,
-                         read_only: bool = False) -> str:
+                         read_only: bool = False, expires_at: int | None = None,
+                         issued_at: int | None = None) -> str:
     """Mint a signed JWT session token identifying ``user_id``.
 
     The token carries issued-at (iat), expiry (exp) and the account's session
@@ -92,6 +93,9 @@ def create_session_token(user_id: int, impersonator_id: int | None = None,
     this user; ``sub`` remains the impersonated user so the app behaves as them.
     An impersonation token lasts one hour at most. ``read_only`` (the "view as"
     mode, claim "ro") makes the server refuse every write of that session.
+    "act" is the last activity (now); renewing a token for activity keeps its
+    issue and expiry times (``issued_at``, ``expires_at``), so activity never
+    stretches a session past its maximum length.
     """
     now = datetime.now(timezone.utc)
     max_age = settings.session_max_age_seconds
@@ -99,8 +103,9 @@ def create_session_token(user_id: int, impersonator_id: int | None = None,
         max_age = min(max_age, IMPERSONATION_MAX_AGE_SECONDS)
     payload = {
         "sub": str(user_id),
-        "iat": int(now.timestamp()),
-        "exp": int((now + timedelta(seconds=max_age)).timestamp()),
+        "iat": int(issued_at if issued_at is not None else now.timestamp()),
+        "exp": int(expires_at if expires_at is not None else (now + timedelta(seconds=max_age)).timestamp()),
+        "act": int(now.timestamp()),
         "sv": int(session_version or 0),
     }
     if impersonator_id is not None:
@@ -135,7 +140,11 @@ def decode_session_claims(token: str) -> dict | None:
                 "imp": int(imp) if imp is not None else None,
                 "sv": int(payload.get("sv", 0) or 0),
                 "isv": int(payload.get("isv", 0) or 0),
-                "ro": imp is not None and bool(payload.get("ro"))}
+                "ro": imp is not None and bool(payload.get("ro")),
+                "iat": int(payload.get("iat", 0) or 0),
+                "exp": int(payload.get("exp", 0) or 0),
+                # Tokens from before the activity claim count from their issue.
+                "act": int(payload.get("act") or payload.get("iat", 0) or 0)}
     except Exception:
         return None
 

@@ -82,6 +82,18 @@ export function currentSteercoPeriod(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
+/** The months offered in a period picker, newest first: next month, then back
+ *  `back` months. `keep` is added when it falls outside (a link to an old month). */
+export function periodChoices(keep?: string, back = 24): string[] {
+  const d = new Date();
+  const out = Array.from({ length: back + 2 }, (_, i) => {
+    const m = new Date(d.getFullYear(), d.getMonth() + 1 - i, 1);
+    return `${m.getFullYear()}-${String(m.getMonth() + 1).padStart(2, "0")}`;
+  });
+  if (keep && /^\d{4}-\d{2}$/.test(keep) && !out.includes(keep)) out.push(keep);
+  return out.sort().reverse();
+}
+
 /** The 12 month keys ("YYYY-MM") of the given period's calendar year, January to
  *  December. This is the Steerco window everywhere (charts, wizard, backfill), so the
  *  charts always start in January and the entered months match the charted months. */

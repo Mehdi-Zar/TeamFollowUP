@@ -10,7 +10,14 @@
 | Break-glass admin | Bootstrapped on first boot (`bootstrap.ensure_breakglass`); password from `BREAKGLASS_PASSWORD` or random (logged once) |
 
 Session = Starlette `SessionMiddleware` (itsdangerous-signed cookie), `same_site=lax`,
-`max_age = session_max_age_seconds` (12h). Impersonation is admin-only and stamps the
+`max_age = session_max_age_seconds` (12h). **Sign-out on inactivity**: Administration > General
+settings, `idle_timeout_minutes` (0 = never, max 1440). The session token carries the last activity
+(`act`); `deps._check_idle` refuses a session idle for longer than the setting (plus a 150 s grace)
+and marks an active request for renewal, and the `_renew_session` middleware rewrites the cookie with
+a fresh `act` at most once a minute, keeping `iat` and `exp` (activity never extends the 12h maximum).
+The page's automatic refreshes send `X-Background: 1` and are not activity. The page itself
+(`components/IdleLogout.tsx`) follows mouse and keyboard across tabs, warns a minute before, and
+signs out to `/login?idle=<minutes>`. Impersonation is admin-only and stamps the
 session with `impersonator_id`. Two modes: **read only** ("Voir en tant que", claim `ro`), where
 the server refuses every write of the session (`deps._read_only_allowed` lists the few POSTs that
 only compute a preview, plus leaving or switching the simulation), and **act as** ("Agir en tant

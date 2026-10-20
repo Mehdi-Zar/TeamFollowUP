@@ -57,6 +57,13 @@ def _deck(db, viewer):
     return pptx.Presentation(io.BytesIO(report_mod.render_pptx(data))), data
 
 
+def _squad_slides(prs):
+    """Les slides de squad, sans la synthese ni les slides de detail qui suivent
+    une squad dont la frise ne tenait pas tout."""
+    return [s for s in list(prs.slides)[1:]
+            if not any(sh.has_text_frame and " : détail" in sh.text_frame.text for sh in s.shapes)]
+
+
 def _texts(slide):
     """Les formes qui portent du texte, en rectangles (gauche, haut, droite, bas)."""
     return [(sh.left, sh.top, sh.left + sh.width, sh.top + sh.height, sh.text_frame.text)
@@ -258,7 +265,7 @@ def test_two_commitments_of_the_same_month_are_stacked(db, fake):
     rows = [r for blk in data["tribes"] for r in blk["squads"] if r.get("detail")]
 
     pairs = 0
-    for i, (slide, r) in enumerate(zip(list(prs.slides)[1:], rows)):
+    for i, (slide, r) in enumerate(zip(_squad_slides(prs), rows)):
         top = _box_top(slide)
         stars = [sh for sh in slide.shapes
                  if sh.shape_type == MSO_SHAPE_TYPE.AUTO_SHAPE
@@ -289,7 +296,7 @@ def test_every_milestone_carries_a_status_tick(db, fake):
 
     prs, data = _deck(db, fake)
     rows = [r for blk in data["tribes"] for r in blk["squads"] if r.get("detail")]
-    for i, (slide, r) in enumerate(zip(list(prs.slides)[1:], rows)):
+    for i, (slide, r) in enumerate(zip(_squad_slides(prs), rows)):
         expected = sum(len(g["items"]) for g in report_mod.timeline_groups(r["detail"]))
         top = _box_top(slide)
         ticks = [sh for sh in slide.shapes
@@ -311,7 +318,7 @@ def test_the_tick_tells_three_states_by_its_drawing(db, fake):
 
     prs, data = _deck(db, fake)
     checks = dots = 0
-    for slide in list(prs.slides)[1:]:
+    for slide in _squad_slides(prs):
         top = _box_top(slide)
         if top is None:
             continue
@@ -338,3 +345,33 @@ def test_no_box_is_dropped_at_this_density(db, fake):
              for sh in s.shapes
              if sh.has_text_frame and sh.text_frame.text.startswith("+")]
     assert not notes, notes[:5]
+
+
+def test_no_milestone_is_lost_at_this_density(db, fake):
+    """Ce que la frise ne tient pas a un corps lisible part sur la slide de detail
+    de la squad: chaque jalon se lit sur l'une ou l'autre, aucun n'est tu."""
+    prs, data = _deck(db, fake)
+    rows = [r for blk in data["tribes"] for r in blk["squads"] if r.get("detail")]
+    slides = list(prs.slides)[1:]
+    text = {}
+    k = 0
+    for r in rows:
+        own = [slides[k]]
+        k += 1
+        while k < len(slides) and any(sh.has_text_frame and " : détail" in sh.text_frame.text
+                                      for sh in slides[k].shapes):
+            own.append(slides[k]); k += 1
+        parts = []
+        for s in own:
+            for sh in s.shapes:
+                if sh.has_text_frame:
+                    parts.append(sh.text_frame.text)
+                elif sh.has_table:
+                    parts += [c.text for row in sh.table.rows for c in row.cells]
+        text[r["name"]] = " ".join(" ".join(parts).split())
+    for r in rows:
+        for g in report_mod.timeline_groups(r["detail"]):
+            for it in g["items"]:
+                # Le debut du titre: sur la frise, un titre long peut finir en « … ».
+                head = " ".join(it["title"].split())[:12]
+                assert head in text[r["name"]], (r["name"], it["title"])

@@ -51,6 +51,14 @@ export function PlatformsAdmin() {
     catch (e) { setErr(errorText(e)); }
   }
 
+  // In or out of the deck, straight from the list: the most frequent change does
+  // not need the whole platform window.
+  async function setEnabled(p: Platform, on: boolean) {
+    setRows((rs) => rs && rs.map((r) => (r.id === p.id ? { ...r, steerco_enabled: on } : r)));
+    try { await api.put(`/api/steerco/platforms/${p.id}`, { steerco_enabled: on }); }
+    catch (e) { setErr(errorText(e)); await load(); }
+  }
+
   const unassigned = (p: Platform) =>
     (p.template.kpis ?? []).filter((k) => !k.owner_squad_id).length
     + (p.template.sla ?? []).filter((x) => !x.owner_squad_id).length
@@ -110,9 +118,18 @@ export function PlatformsAdmin() {
                   )}
                 </td>
                 <td>
-                  <span className={`badge ${p.steerco_enabled ? "badge-green" : "badge-grey"}`}>
-                    {p.steerco_enabled ? t("platforms.on") : t("platforms.off")}
-                  </span>
+                  {p.can_manage ? (
+                    <label className="switch" style={{ fontWeight: 400, fontSize: 13 }}>
+                      <input type="checkbox" checked={p.steerco_enabled}
+                             onChange={(e) => setEnabled(p, e.target.checked)} />
+                      <span className="track"><span className="knob" /></span>
+                      <span>{p.steerco_enabled ? t("platforms.on") : t("platforms.off")}</span>
+                    </label>
+                  ) : (
+                    <span className={`badge ${p.steerco_enabled ? "badge-green" : "badge-grey"}`}>
+                      {p.steerco_enabled ? t("platforms.on") : t("platforms.off")}
+                    </span>
+                  )}
                 </td>
                 <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                   {p.can_manage && (

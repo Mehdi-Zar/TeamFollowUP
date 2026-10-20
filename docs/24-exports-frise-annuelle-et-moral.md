@@ -254,9 +254,10 @@ haut a droite, la grande carte de la frise, puis les messages cles et le budget
 en bas. Un export de plusieurs squads garde sa page de synthese en tete ; un
 export d'une seule squad est le meme deck sans elle.
 
-Les messages cles appartiennent a un reporting : **4 au plus par reporting**
-(l'API refuse le cinquieme avec un 409, l'ecran de saisie masque alors le
-bouton d'ajout). La soumission ferme les messages du reporting (colonne
+Les messages cles appartiennent a un reporting, **sans limite de nombre**. Les
+4 premiers (les plus graves en tete) vont sur la slide de la squad, les suivants
+sur sa slide de detail (voir 8 bis) ; l'ecran de saisie le dit des le quatrieme.
+La soumission ferme les messages du reporting (colonne
 `key_messages.snapshot_id`) et le suivant repart sans message. Entre les deux,
 les documents montrent ceux du dernier reporting soumis, en lecture seule ; des
 que le nouveau reporting a ses propres messages, ils les remplacent partout. Les
@@ -357,6 +358,61 @@ ranger. `backend/tests/test_export_timeline_dense.py` tient les deux bouts : que
 ce jeu reste dense, puis qu'a cette densite les sept regles de la section 2
 tiennent, sur les treize slides.
 
+## 8 bis. La slide de detail : ce qui ne tient pas
+
+Une squad saisit autant de jalons et de messages qu'elle veut ; la slide garde
+son dessin et un corps lisible, et le reste part sur une **slide de detail**
+inseree juste apres la sienne (« <squad> : detail », puis « (suite) »).
+
+- **La frise ne descend pas sous le corps 8** (un peu plus de 9 points une fois
+  mis a l'echelle) et ne passe jamais en mode serre, une ligne coupee par jalon.
+  Ce mode faisait tout tenir, mais en texte illisible projete.
+- **Chaque trimestre garde ce qu'il peut tenir.** Retirer les dernieres boites
+  de l'annee videait le second semestre des qu'un premier trimestre etait
+  charge. On retient le plus grand corps qui montre le plus de boites.
+- **La slide de detail est un tableau** : Quand, Engagement, Jalon (avec sa
+  phase), Statut en couleur, la date et l'engagement sur la premiere ligne de
+  chaque groupe seulement. Puis les messages cles, tous et en entier, quand il y
+  en a plus de 4. Une page de suite reprend l'en-tete de colonnes et
+  l'engagement du jalon qui l'ouvre, et une partie ne commence pas en bas de page.
+- **La slide de la squad dit ou est le reste** : « 16 boites de jalons en slide
+  suivante : ... » sous la frise, « +3 autres messages en slide suivante » a cote
+  du titre des messages.
+- Un message simplement trop long pour sa ligne n'ouvre pas de slide de detail a
+  lui seul (un deck hebdomadaire en aurait une par squad) ; il y figure en entier
+  quand elle existe.
+- Le Studio peut la couper (parametre de section `detail_slides`, « Slide de
+  detail pour ce qui ne tient pas ») : on retrouve alors l'ancien comportement,
+  corps jusqu'a 7 et mode serre, puis « Non affiches faute de place ».
+
+Sur le jeu de demonstration, des squads ont desormais une slide de detail : il
+tenait tout grace au mode serre. `test_no_milestone_is_lost_at_this_density`
+verifie qu'aucun jalon n'est perdu, entre la slide et son detail.
+
+## 8 ter. Tous les exports PowerPoint sous charge
+
+Regle commune : **un corps lisible d'abord, des slides en plus ensuite, rien de
+tu**. Un export leger garde exactement sa mise en page ; c'est seulement quand
+elle ne montrerait plus tout a un corps lisible que l'export passe en pages.
+
+| Export | Sous charge |
+|---|---|
+| Slide d'une squad | slide de detail (voir 8 bis) |
+| Roadmap (tribe, squad) | des que la slide unique passerait sous le corps 10 ou compterait des jalons en « +N » : corps fixe, chaque squad a la hauteur que ses jalons demandent (un jalon sur trois lignes au plus), slides « (suite) » equilibrees, une squad trop chargee continue sur une bande « (suite) » qui rappelle ses themes |
+| Points d'attention | la liste continue sur des slides « (suite) », repartie sur trois colonnes, au lieu de « +17 autres » |
+| Initiatives | titre, porteur et squad sur deux lignes au lieu d'etre coupes, pages a la hauteur des lignes |
+| Dependances | deja pagine |
+| Steerco | slide de detail par plateforme (KPI, evolution mois par mois, SLA, evenements en entier) ; le SLA passe en liste quand ses services ne tiennent plus en colonnes ; les libelles KPI qui se ressemblent sont coupes au milieu pour rester distincts |
+| Organigramme | une slide tant qu'elle se lit (carte, corps, noms entiers) ; sinon une vue d'ensemble (branches et nombre d'elements) puis les branches, regroupees quand elles sont petites, en « (suite) » quand elles sont larges |
+
+Le banc de charge (jeu de demonstration gonfle : 25 squads, une vingtaine de
+jalons longs par squad, neuf messages, 70 initiatives, une plateforme a 13 KPI,
+12 services et 18 evenements, un organigramme de 60 equipes) a servi a regarder
+chaque export dans PowerPoint. Les tests qui tiennent ces regles :
+`test_report.py` (roadmap paginee lisible, points d'attention sans perte),
+`test_export_timeline_dense.py`, `test_budget.py`, `test_steerco_load.py`,
+`test_org_export_load.py`.
+
 ## 9. Ou est le code
 
 | Role | Fichier |
@@ -367,6 +423,6 @@ tiennent, sur les treize slides.
 | Le JPG, rendu depuis le HTML | `frontend/src/components/ExportMenu.tsx` |
 | Declarer le moral | `frontend/src/components/TeamMood.tsx`, `PUT /api/squads/{id}/mood` |
 | Le corps du texte des decks | `backend/app/pptxtpl.py` (`FONT_SCALE`, `font_size`) |
-| L'organigramme exporte | `backend/app/orgrender.py` (`fit_size`, `fit_text`) |
+| L'organigramme exporte | `backend/app/orgrender.py` (`_fit_size`, `_fit_text`, `_legible`, `_pages` : une slide tant que les cartes se lisent, sinon vue d'ensemble puis une slide par branche) |
 | Le jeu de donnees de demonstration | `backend/app/seed_fake.py` |
 | Tests | `backend/tests/test_export_timeline.py`, `backend/tests/test_export_timeline_dense.py`, `backend/tests/test_org_export.py`, `backend/tests/test_mood.py` |

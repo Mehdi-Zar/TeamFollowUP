@@ -65,20 +65,25 @@ def mark_read(notif_id: int, db: Session = Depends(get_db), user: User = Depends
     return {"ok": True}
 
 
+def _prefs(user: User) -> PreferencesOut:
+    return PreferencesOut(notify_tweets=user.notify_tweets, notify_replies=user.notify_replies,
+                          email_notifications=user.email_notifications,
+                          hide_getting_started=user.hide_getting_started)
+
+
 @router.get("/me/preferences", response_model=PreferencesOut)
 def get_preferences(user: User = Depends(get_current_user)):
-    """Return the caller's notification preferences.
+    """Return the caller's preferences.
 
     GET /api/me/preferences
     Access: any authenticated user (own settings). No module gate.
     """
-    return PreferencesOut(notify_tweets=user.notify_tweets, notify_replies=user.notify_replies,
-                          email_notifications=user.email_notifications)
+    return _prefs(user)
 
 
 @router.put("/me/preferences", response_model=PreferencesOut)
 def update_preferences(payload: PreferencesUpdate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """Update the caller's notification preferences.
+    """Update the caller's preferences (notifications, getting-started guide).
 
     PUT /api/me/preferences
     Access: any authenticated user (own settings). No module gate.
@@ -87,5 +92,4 @@ def update_preferences(payload: PreferencesUpdate, db: Session = Depends(get_db)
     for k, v in data.items():
         setattr(user, k, v)
     db.commit()
-    return PreferencesOut(notify_tweets=user.notify_tweets, notify_replies=user.notify_replies,
-                          email_notifications=user.email_notifications)
+    return _prefs(user)

@@ -577,6 +577,16 @@ export function SettingsAdmin() {
       </div>
 
       <div className="card">
+        <h3>{t("set.section.idle")}</h3>
+        <div className="small muted" style={{ marginBottom: 8 }}>{t("set.idle_hint")}</div>
+        <div style={{ width: 200 }}>
+          <label htmlFor="set-idle">{t("set.idle_minutes")}</label>
+          <input id="set-idle" type="number" min={0} max={1440} value={cfg.idle_timeout_minutes ?? 0}
+                 onChange={(e) => set("idle_timeout_minutes", Number(e.target.value))} />
+        </div>
+      </div>
+
+      <div className="card">
         <h3>{t("set.section.feed")}</h3>
         <div className="row">
           <div style={{ width: 240 }}>
