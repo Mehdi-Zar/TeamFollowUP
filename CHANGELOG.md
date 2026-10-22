@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 3.2.0 (2026-10-22)
 
 - **Deconnexion pour inactivite**, reglable dans Administration > Reglages generaux (minutes, 0 = jamais) :
   avertissement une minute avant avec « Rester connecte », activite partagee entre les onglets, message sur la
