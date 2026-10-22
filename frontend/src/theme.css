@@ -425,6 +425,25 @@ tr:last-child td { border-bottom: none; }
 }
 .menu-item:hover { background: var(--ice-soft); }
 
+/* Month picker: the year with arrows, then the twelve months as a grid */
+.month-picker { position: relative; }
+.month-picker-btn { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  width: 100%; font-size: 14px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 10px;
+  background: var(--surface); color: var(--text); font-weight: 400; cursor: pointer; text-align: left; }
+.month-picker-btn:hover:not(:disabled) { background: var(--ice-soft); }
+.month-picker-btn svg { color: var(--grey); flex: 0 0 auto; }
+.month-picker-pop { position: absolute; left: 0; top: calc(100% + 4px); z-index: 60; width: 248px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 8px; }
+.month-picker-head { display: flex; align-items: center; justify-content: space-between; padding: 2px 2px 8px; }
+.month-picker-head button { font-size: 18px; line-height: 1; padding: 4px 10px; }
+.month-picker-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+.month-picker-cell { border: 1px solid transparent; background: none; color: var(--text); font-weight: 500;
+  font-size: 13px; padding: 8px 0; border-radius: 8px; cursor: pointer; }
+.month-picker-cell:hover { background: var(--ice-soft); }
+.month-picker-cell.is-now { border-color: var(--accent); }
+.month-picker-cell.is-selected { background: var(--accent); color: var(--surface); font-weight: 700; }
+.month-picker-foot { display: flex; justify-content: center; padding-top: 6px; margin-top: 6px; border-top: 1px solid var(--line); }
+
 /* Export / share dropdown: refined layout */
 .export-pop { width: 336px; max-width: calc(100vw - 32px); padding: 6px; border-radius: 12px; }
 .export-row { display: flex; align-items: center; justify-content: space-between;

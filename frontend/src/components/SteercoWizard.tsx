@@ -16,10 +16,11 @@ import { useI18n } from "../i18n";
 import { EmptyState, Modal, PickItem, Spinner } from "./ui";
 import { StepLayout } from "./StepLayout";
 import { BackfillGrid } from "./SteercoEditor";
+import MonthPicker from "./MonthPicker";
 import {
   SteercoData, SteercoKpi, SlaCell, SteercoEvent, PlatformTemplate, EditableItems,
   EVENT_SEVS, SLA_ICON, TREND_ARROW, yearMonths, monthLongLabel,
-  clampPct, dataFromTemplate, kpiChange, periodChoices, prevPeriod, slaStatus,
+  clampPct, dataFromTemplate, kpiChange, prevPeriod, slaStatus,
 } from "../steerco";
 
 type HistMap = Record<string, SteercoData>;
@@ -243,10 +244,7 @@ export default function SteercoWizard({ platformId, platformName, initialPeriod,
               <div>
                 <div className="wiz-h">{t("steerco.wiz.month_label")}</div>
                 <div className="wiz-help">{t("steerco.wiz.month_help")}</div>
-                <select value={period} disabled={ro} style={{ width: 200 }}
-                        onChange={(e) => setPeriod(e.target.value)}>
-                  {periodChoices(period).map((p) => <option key={p} value={p}>{monthLongLabel(p, lang)}</option>)}
-                </select>
+                <MonthPicker value={period} disabled={ro} width={200} onChange={setPeriod} />
               </div>
               <div className="wiz-help" style={{ marginBottom: 0 }}>{t("steerco.wiz.month_next_hint")}</div>
             </div>

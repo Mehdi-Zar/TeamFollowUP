@@ -1,5 +1,11 @@
 # Changelog
 
+## Non publie
+
+- **Steerco** : le mois se choisit dans un calendrier (annee avec fleches, puis grille des douze mois, bouton
+  « Ce mois-ci ») au lieu d'une longue liste deroulante, dans l'onglet Steerco du tableau de bord comme dans
+  l'assistant de saisie.
+
 ## 3.2.0 (2026-10-22)
 
 - **Deconnexion pour inactivite**, reglable dans Administration > Reglages generaux (minutes, 0 = jamais) :

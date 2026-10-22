@@ -140,8 +140,11 @@ plateforme active. La carte liste **les plateformes que la squad alimente**,
 rappelle la cadence (mensuelle, alors que le reporting au-dessus est hebdomadaire),
 indique si le mois est deja rempli, quand, par qui, et **qui manque encore**.
 
-La periode se choisit dans une **liste de mois** (« Octobre 2026 »), du mois prochain
-a deux ans en arriere, dans l'onglet Steerco du tableau de bord comme dans l'assistant.
+La periode se choisit dans un **calendrier de mois** (« Octobre 2026 »), dans l'onglet
+Steerco du tableau de bord comme dans l'assistant : l'annee en haut avec des fleches
+pour changer d'annee, les douze mois en grille dessous, le mois en cours entoure et un
+bouton « Ce mois-ci » pour y revenir. Aucune borne : n'importe quel mois de n'importe
+quelle annee se choisit en deux clics.
 Dans Administration > Plateformes, l'etat **Dans le pack / Hors pack** se bascule
 directement depuis la liste, sans ouvrir la fenetre de la plateforme.
 
