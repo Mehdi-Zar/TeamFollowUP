@@ -15,6 +15,7 @@ import { AuthProvider } from "./auth";
 import { I18nProvider } from "./i18n";
 import { ConfigProvider } from "./config";
 import "./theme.css";
+import "./polish.css";
 import { installDraggableWindows } from "./components/dragWindows";
 import { installColorMode } from "./colorMode";
 

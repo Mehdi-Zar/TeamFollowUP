@@ -1,0 +1,97 @@
+/* ==========================================================================
+   Passe de polissage (unslop, mode "polish").
+   Chargee apres theme.css. Elle garde la charte navy telle quelle (barre
+   laterale, bandeaux, ombres, graisses) et ne retient que : les KPI neutres,
+   les libelles en casse de phrase, la grille de 4 px, les coins par taille,
+   le Dashboard elargi, le point de statut sur les badges et le focus clavier.
+   ========================================================================== */
+
+/* Les cartes passent a 12 px de rayon. */
+:root { --radius: 12px; }
+
+/* ---- KPI du Dashboard : une surface neutre -------------------------------- */
+/* La couleur reste au chiffre quand il signale un probleme. */
+.kpi { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 20px; }
+.kpi .v { font-variant-numeric: tabular-nums; }
+
+/* ---- Libelles en casse de phrase ------------------------------------------ */
+th, .kpi .l, .health-progress .hpl, .mini-stat .ml, .jalon-field .jl, .menu-label,
+.cal-head, .feed-kind, .persona-matrix--rows tr.persona-group-row th, .cmd-hint,
+.present-tribe, .present-lbl, .admin-nav-title, .wiz-recap .rc .rc-l, .rb-eyebrow,
+.rb-chip-label, .gs-section, .admin-content table th, .dep-chip .dep-kind {
+  text-transform: none;
+  letter-spacing: 0;
+}
+th { font-size: 13px; padding: 8px 12px; border-bottom-width: 1px; }
+.kpi .l { font-size: 13px; margin-top: 4px; }
+.mini-stat .ml, .jalon-field .jl, .menu-label, .cmd-hint, .admin-nav-title, .gs-section { font-size: 12px; }
+.rb-eyebrow { font-size: 13px; }
+
+/* ---- Espacements : grille de 4 px ----------------------------------------- */
+td { padding: 12px; }
+.badge { padding: 4px 8px; gap: 4px; }
+.banner { padding: 12px 16px; }
+.report-hero { padding: 20px 24px; }
+.report-intro { gap: 16px; }
+.flow-step { padding: 16px; }
+.rb-side { gap: 8px; }
+.rb-chip { padding: 8px 12px; }
+.mini-stats { gap: 20px; margin-top: 16px; }
+.notif-panel { padding: 12px; }
+
+button, .btn { padding: 8px 16px; }
+.btn-sm { padding: 4px 12px; }
+input, select, textarea { padding: 8px 12px; }
+.seg button { padding: 8px 16px; }
+.confidence-seg button { padding: 8px 12px; }
+
+/* ---- Coins : rayon selon la taille, plus de pilules partout --------------- */
+button, .btn, input, select, textarea, .seg, .confidence-seg { border-radius: 8px; }
+.badge, .pill-cat, .feed-kind, .sq-chip, .preview-mode-tag, .persona-head { border-radius: 6px; }
+.persona-head { padding: 4px 8px; }
+.rb-chip { border-radius: 8px; }
+.flow-step, .report-hero { border-radius: var(--radius); }
+.report-hero-badge { border-radius: 8px; }
+
+/* ---- Focus clavier visible, dans la palette ------------------------------- */
+button:focus-visible, .btn:focus-visible, a:focus-visible, .squad-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---- Mise en page : le Dashboard occupe la largeur ------------------------ */
+.app-content:has(.squad-grid-2) { max-width: 1600px; padding-left: 32px; padding-right: 32px; }
+.squad-grid-2 { grid-template-columns: repeat(auto-fill, minmax(min(380px, 100%), 1fr)); }
+@media (max-width: 720px) {
+  .app-content:has(.squad-grid-2) { padding: 0; }
+}
+
+/* ---- Signe de l'application ----------------------------------------------- */
+/* Les trois barres du favicon, sans tuile : elles se posent sur le navy. */
+.sidebar-mark { flex: none; display: block; width: 24px; height: 24px; margin: 4px; }
+
+/* ---- Signature : le point de statut --------------------------------------- */
+/* Tous les badges deviennent la meme etiquette neutre. La couleur ne vit plus
+   que dans le point, comme devant chaque squad et dans la fraicheur des
+   donnees. */
+.badge, .feed-kind {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  color: var(--text);
+}
+.badge-navy { color: var(--title); }
+.badge-grey { color: var(--grey); }
+.badge .dot { width: 8px; height: 8px; flex: none; }
+
+.badge-green:not(:has(.dot))::before, .badge-orange:not(:has(.dot))::before,
+.badge-red:not(:has(.dot))::before, .feed-kind::before {
+  content: ""; flex: none; width: 8px; height: 8px; border-radius: 50%;
+}
+.feed-kind::before { background: var(--grey); }
+.badge-green::before, .feed-kind.k-success::before { background: var(--green); }
+.badge-orange::before { background: var(--orange); }
+.badge-red::before, .feed-kind.k-incident::before { background: var(--red); }
+.feed-kind { display: inline-flex; align-items: center; gap: 4px; }
+.feed-kind.k-info::before { background: var(--accent); }
+/* Un badge-bouton (MySquads) garde son pointeur et un survol discret. */
+button.badge:hover { background: var(--surface-3); }

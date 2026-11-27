@@ -200,12 +200,18 @@ export default function Layout() {
       {mobileOpen && <div className="sidebar-overlay no-print" onClick={() => setMobileOpen(false)} />}
       <aside className={`sidebar no-print${mobileOpen ? " mobile-open" : ""}`}>
         <div className="sidebar-brand" role="link" onClick={() => navigate("/")} tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); navigate("/"); } }} title={app_name}>
-          {/* Le logo televerse remplace l'initiale. Une initiale est un defaut
-              acceptable, pas une identite: une organisation qui a un logo veut le
-              voir la. */}
+          {/* Le logo televerse remplace le signe de l'application. Le signe par
+              defaut est celui du favicon: trois barres qui montent, la progression
+              qu'on suit chaque semaine. */}
           {branding?.logo
             ? <img className="sidebar-logo-img" src={branding.logo} alt="" />
-            : <span className="sidebar-logo">{app_name.slice(0, 1).toUpperCase()}</span>}
+            : (
+              <svg className="sidebar-mark" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
+                <rect x="3" y="13" width="4" height="8" rx="1" fill="#CADCFC" />
+                <rect x="10" y="8.5" width="4" height="12.5" rx="1" fill="#E8F0FE" />
+                <rect x="17" y="3" width="4" height="18" rx="1" fill="#FFFFFF" />
+              </svg>
+            )}
           {!collapsed && <span className="sidebar-brand-text">{app_name}</span>}
         </div>
 
