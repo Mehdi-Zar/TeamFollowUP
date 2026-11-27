@@ -18,7 +18,7 @@ blocages visibles et d'un récap à diffuser.
 2. Cloisonné **par tribe**. Les droits suivent le modèle du Steerco : **responsable CS**
    désigné (le tribe leader l'est par défaut), **contributeur CS** nommé projet par
    projet, **lecteurs** par une capacité de persona.
-3. Des **projets à plat** : client, offre et personnes en texte libre, sans fiches
+3. Des **projets à plat** : client et personnes en texte libre (l'offre, présente en 4.2.0, a été retirée ensuite), sans fiches
    liées. Les étapes sont paramétrables.
 4. Une seule source par information : les décisions sont dans le journal, et le
    blocage affiché comme la prochaine action se déduisent des **points à suivre**.

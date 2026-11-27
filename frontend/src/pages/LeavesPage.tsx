@@ -1,4 +1,6 @@
 // LeavesPage - team absence tracking (calendar, list, and personal views).
+// A fourth tab, "On site / Remote" (ADR 0021, components/PresenceView), shows
+// where the team works; it is not an absence and lives in its own view.
 // Presents three tabs: a month calendar of everyone's absences, a filterable +
 // CSV-exportable list, and "mine" (my absences plus, for leaders, the pending
 // requests I can approve). Users file their own leave; leaders can file for their
@@ -14,6 +16,7 @@ import { ErrorBanner, Modal, Spinner } from "../components/ui";
 import { Leave, LeaveConfig, LeaveOverlapDay, LeaveStatus, LeaveType } from "../types";
 import { leaveLabel, leaveTypeLabel } from "../leaves";
 import { Sorted, SortTh } from "../components/tableView";
+import PresenceView from "../components/PresenceView";
 
 /* ---------- date helpers (local, no external dep) ---------- */
 // Small pure date utilities kept in-file to avoid a date library dependency.
@@ -34,7 +37,7 @@ const STATUS_CLASS: Record<LeaveStatus, string> = {
 };
 const WEEKDAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 /** The three top-level tabs of the page. */
-type View = "calendar" | "list" | "mine";
+type View = "calendar" | "list" | "mine" | "presence";
 
 /**
  * Leaves page shell: owns the active tab, the shared reference data (types,
@@ -54,6 +57,8 @@ export default function LeavesPage() {
   const { t } = useI18n();
   const { user } = useAuth();
   const [view, setView] = useState<View>("calendar");
+  const remoteOn = useModule()("leaves", "remote");
+  const views: View[] = remoteOn ? ["calendar", "list", "mine", "presence"] : ["calendar", "list", "mine"];
   const [types, setTypes] = useState<LeaveType[]>([]);
   const [config, setConfig] = useState<LeaveConfig | null>(null);
   const [people, setPeople] = useState<{ user_id: number; name: string }[]>([]);
@@ -75,18 +80,19 @@ export default function LeavesPage() {
     <div className="stack" style={{ gap: 16 }}>
       <div className="between" style={{ alignItems: "center" }}>
         <div className="seg" role="tablist">
-          {(["calendar", "list", "mine"] as View[]).map((v) => (
+          {views.map((v) => (
             <button key={v} className={view === v ? "seg-on" : ""} onClick={() => setView(v)}>
               {t(`leaves.view.${v}`)}
             </button>
           ))}
         </div>
-        <button className="btn btn-sm" onClick={() => setEditing("new")}>+ {t("leaves.new")}</button>
+        {view !== "presence" && <button className="btn btn-sm" onClick={() => setEditing("new")}>+ {t("leaves.new")}</button>}
       </div>
 
       {view === "calendar" && <CalendarView bump={bump} onOpen={setDetail} />}
       {view === "list" && <ListView bump={bump} types={types} onOpen={setDetail} />}
       {view === "mine" && <MineView bump={bump} onOpen={setDetail} onNew={() => setEditing("new")} />}
+      {view === "presence" && remoteOn && <PresenceView />}
 
       {editing && (
         <LeaveForm

@@ -807,6 +807,14 @@ def document_context(request: Request, db: Session, user: User, doc_kind: str, q
                 "chain": S.chain_for(db, platform_id=platform_id, tribe_id=visible_tribe_id(user)),
                 "lang": _lang(lang), "scope_name": plats[0].name if platform_id and plats else "Steerco",
                 "year": int(period[:4]), "period": period}
+    if kind == "cs":
+        from ..csreport import build_cs_list
+        from .cs import _tribe
+        _gate(db, user, "customer_success", None, None)
+        tid = _tribe(db, tribe_id, user)
+        data = build_cs_list(db, user, tid, lang or "fr")
+        return {"providers": {"cs": lambda: data}, "chain": S.chain_for(db, tribe_id=tid),
+                "lang": data["lang"], "scope_name": data["scope_name"], "year": data["year"], "period": ""}
     # org
     from .org import _resolve_tribe
     from .orgexport import _prune, _tree_dicts

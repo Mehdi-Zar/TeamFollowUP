@@ -1,105 +1,102 @@
-// One Customer Success project, in a window of the app (docs/37, section 3).
+// One Customer Success project, brought up to date step by step (docs/37, section 3).
 //
-// Four parts: the card (saved with one button, so a half-typed card is never
-// half-saved), the journal and the points to follow (each line saved at once),
-// and, for a CS leader, who contributes and the delete button.
+// Only for a project that exists: it is created in its own short window
+// (CreateModal in CsProjects). The same guided window as a squad's set-up: the
+// steps on the left, each with what it already holds, and Previous / Next at the
+// bottom. Few fields, laid flat (no box inside the window). The card is saved
+// when the user changes step or closes the window. The history and the points
+// to do (one step, Suivi) save each line at once.
 import { ReactNode, useCallback, useEffect, useState } from "react";
 import { api, errorText } from "../../api";
 import { useI18n } from "../../i18n";
 import {
-  CsSettings, HEALTHS, ITEM_KINDS, Item, ItemKind, JOURNAL_KINDS, JournalEntry, JournalKind, Link,
-  Project, RECAP_BY_DEFAULT, fmtDate, todayIso,
+  BILLINGS, CsSettings, HEALTHS, ITEM_KINDS, Item, ItemKind, JOURNAL_KINDS, JournalEntry, JournalKind,
+  DiscountKind, Project, RECAP_BY_DEFAULT, fmtAmount, fmtDate, netAmount, todayIso,
 } from "../../cs";
-import { Chip, ErrorBanner, Modal, Spinner, Toggle } from "../ui";
+import { ErrorBanner, Modal, Spinner } from "../ui";
+import { StepLayout } from "../StepLayout";
 
-type Part = "card" | "journal" | "items" | "access";
+type StepKey = "project" | "follow" | "billing" | "track";
 
 export default function CsProjectModal({ projectId, settings, onClose, onChanged }: {
   projectId: number; settings: CsSettings; onClose: () => void; onChanged: () => void;
 }) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
+  const id = projectId;
   const [p, setP] = useState<Project | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-  const [part, setPart] = useState<Part>("card");
+  const [f, setF] = useState<Project | null>(null);
   const [dirty, setDirty] = useState(false);
-
-  const load = useCallback(() => {
-    api.get<Project>(`/api/cs/projects/${projectId}`).then(setP).catch((e) => setErr(errorText(e)));
-  }, [projectId]);
-  useEffect(() => { load(); }, [load]);
-  const changed = (next?: Project) => { if (next) setP(next); else load(); onChanged(); };
-
-  const parts: { key: Part; label: string }[] = [
-    { key: "card", label: t("cs.part.card") },
-    { key: "journal", label: t("cs.part.journal", { n: p?.journal?.length ?? 0 }) },
-    { key: "items", label: t("cs.part.items", { n: (p?.items ?? []).filter((i) => !i.done).length }) },
-    ...(p?.can_run ? [{ key: "access" as Part, label: t("cs.part.access") }] : []),
-  ];
-
-  return (
-    <Modal width={980} dirty={dirty} onClose={onClose}
-           title={p ? (p.client ? `${p.client} : ${p.title}` : p.title) : t("cs.title")}>
-      {err && <ErrorBanner message={err} />}
-      {!p ? (!err && <Spinner />) : (
-        <div className="stack" style={{ gap: 16 }}>
-          <div className="inline" role="tablist" style={{ gap: 6, flexWrap: "wrap" }}>
-            {parts.map((x) => (
-              <button key={x.key} role="tab" aria-selected={part === x.key}
-                      className={`btn-sm ${part === x.key ? "" : "btn-secondary"}`}
-                      onClick={() => { if (!dirty || window.confirm(t("cs.leave_unsaved"))) { setDirty(false); setPart(x.key); } }}>
-                {x.label}
-              </button>
-            ))}
-          </div>
-          {!p.can_edit && <div className="banner small">{t("cs.read_only")}</div>}
-          {part === "card" && <CardForm p={p} settings={settings} setDirty={setDirty} onSaved={changed} />}
-          {part === "journal" && <JournalPart p={p} onChanged={() => changed()} />}
-          {part === "items" && <ItemsPart p={p} onChanged={() => changed()} />}
-          {part === "access" && <AccessPart p={p} onSaved={changed} onDeleted={() => { onChanged(); onClose(); }} />}
-        </div>
-      )}
-    </Modal>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// The card
-// ---------------------------------------------------------------------------
-
-function Field({ label, children, wide }: { label: string; children: ReactNode; wide?: boolean }) {
-  return (
-    <label className="stack" style={{ gap: 4, gridColumn: wide ? "1 / -1" : undefined }}>
-      <span className="small strong">{label}</span>{children}
-    </label>
-  );
-}
-
-function Group({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <fieldset className="stack" style={{ gap: 12, border: "1px solid var(--line)", borderRadius: "var(--radius)", padding: 16, margin: 0 }}>
-      <legend className="strong" style={{ padding: "0 6px" }}>{title}</legend>
-      <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>{children}</div>
-    </fieldset>
-  );
-}
-
-function CardForm({ p, settings, setDirty, onSaved }: {
-  p: Project; settings: CsSettings; setDirty: (v: boolean) => void; onSaved: (p: Project) => void;
-}) {
-  const { t } = useI18n();
-  const [f, setF] = useState<Project>(p);
-  const [tags, setTags] = useState((p.tags ?? []).join(", "));
+  const [at, setAt] = useState(0);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [ok, setOk] = useState(false);
-  const ro = !p.can_edit;
-  useEffect(() => { setF(p); setTags((p.tags ?? []).join(", ")); }, [p]);
+  const [confirmDel, setConfirmDel] = useState(false);
 
-  const set = <K extends keyof Project>(k: K, v: Project[K]) => { setF((x) => ({ ...x, [k]: v })); setDirty(true); setOk(false); };
-  const txt = (k: keyof Project, label: string, opts: { wide?: boolean; list?: string; max?: number } = {}) => (
+  const take = (next: Project) => { setP(next); setF(next); setDirty(false); };
+  const load = useCallback((pid: number) => {
+    api.get<Project>(`/api/cs/projects/${pid}`).then(take).catch((e) => setErr(errorText(e)));
+  }, []);
+  useEffect(() => { load(projectId); }, [projectId, load]);
+
+  if (!p || !f) {
+    return <Modal width={1100} title={t("cs.title")} onClose={onClose}>{err ? <ErrorBanner message={err} /> : <Spinner />}</Modal>;
+  }
+
+  const ro = !p.can_edit;
+  const set = <K extends keyof Project>(k: K, v: Project[K]) => { setF((x) => (x ? { ...x, [k]: v } : x)); setDirty(true); };
+
+  /** Saves the card if it changed. False when it could not (the error is shown). */
+  async function flush(): Promise<boolean> {
+    if (ro || !f) return true;
+    if (!dirty) return true;
+    if (!f.title.trim()) { setErr(t("cs.wiz.need_title")); setAt(0); return false; }
+    setBusy(true); setErr(null);
+    try {
+      const body = {
+        title: f.title, notes: f.notes, client: f.client, requesters: f.requesters,
+        stage: f.stage, health: f.health, planned_delivery: f.planned_delivery, actual_delivery: f.actual_delivery,
+        build_amount: f.build_amount, billing: f.billing, cost_code: f.cost_code,
+        discount_value: f.discount_value, discount_kind: f.discount_kind,
+        links: f.links.filter((l) => l.url.trim()),
+      };
+      await api.put<Project>(`/api/cs/projects/${id}`, body);
+      load(id);
+      setDirty(false); onChanged();
+      return true;
+    } catch (e) { setErr(errorText(e)); return false; }
+    finally { setBusy(false); }
+  }
+
+  const steps: StepKey[] = ["project", "follow", "billing", "track"];
+  const last = steps.length - 1;
+  const current = steps[Math.min(at, last)];
+  async function go(i: number) {
+    if (i === at) return;
+    if (await flush()) setAt(i);
+  }
+  async function close() {
+    if (await flush()) onClose();
+  }
+  async function del() {
+    try { await api.del(`/api/cs/projects/${id}`); onChanged(); onClose(); }
+    catch (e) { setErr(errorText(e)); setConfirmDel(false); }
+  }
+
+  const stageLabel = settings.stages.find((s) => s.key === f.stage)?.label ?? f.stage;
+  const openItems = (p.items ?? []).filter((i) => !i.done).length;
+  const todo = t("cs.meta.todo");
+  const meta: Record<StepKey, { text: string; done: boolean }> = {
+    project: { text: f.client || todo, done: !!(f.title && f.client && f.requesters) },
+    follow: { text: f.health ? `${stageLabel}, ${t(`cs.hv.${f.health}`)}` : stageLabel, done: !!f.health },
+    billing: { text: f.build_amount !== null ? `${fmtAmount(netAmount(f.build_amount, f.discount_value, f.discount_kind), lang)}, ${t(`cs.bill.${f.billing}`).toLowerCase()}` : todo,
+               done: f.build_amount !== null && !!f.cost_code },
+    track: { text: `${t("cs.meta.items", { n: openItems })}, ${t("cs.meta.journal", { n: p.journal?.length ?? 0 })}`,
+             done: (p.journal?.length ?? 0) + (p.items?.length ?? 0) > 0 },
+  };
+
+  const txt = (k: keyof Project, label: string, opts: { wide?: boolean; list?: string; autoFocus?: boolean } = {}) => (
     <Field label={label} wide={opts.wide}>
-      <input value={(f[k] as string | null) ?? ""} disabled={ro} list={opts.list} maxLength={opts.max ?? 255}
-             onChange={(e) => set(k, e.target.value as never)} />
+      <input value={(f[k] as string | null) ?? ""} disabled={ro} list={opts.list} maxLength={k === "requesters" ? 500 : 255}
+             autoFocus={opts.autoFocus} onChange={(e) => set(k, e.target.value as never)} />
     </Field>
   );
   const day = (k: keyof Project, label: string) => (
@@ -108,414 +105,384 @@ function CardForm({ p, settings, setDirty, onSaved }: {
     </Field>
   );
 
-  async function save() {
+  const reload = () => { load(id); onChanged(); };
+
+  return (
+    <Modal
+      width={1100}
+      onClose={close}
+      title={
+        <span className="sq-title">
+          <span>{f.title || p.title}</span>
+          {p.client && <span className="sq-title-sub">{p.client}</span>}
+        </span>
+      }
+      footer={
+        <div className="between" style={{ width: "100%", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          {confirmDel ? (
+            <div className="inline" style={{ gap: 6 }}>
+              <span className="small">{t("cs.delete_confirm", { title: p.title })}</span>
+              <button className="btn-danger btn-sm" onClick={del}>{t("action.delete")}</button>
+              <button className="btn-secondary btn-sm" onClick={() => setConfirmDel(false)}>{t("action.cancel")}</button>
+            </div>
+          ) : (
+            <span className="inline" style={{ gap: 12 }}>
+              {p.can_run && (
+                <button className="btn-ghost btn-sm sq-danger" onClick={() => setConfirmDel(true)}>{t("cs.delete")}</button>
+              )}
+              <span className="small muted">{ro ? t("cs.read_only") : busy ? t("common.saving") : t("cs.wiz.autosave")}</span>
+            </span>
+          )}
+          <div className="inline" style={{ gap: 8 }}>
+            <button className="btn-secondary btn-sm" disabled={at === 0 || busy} onClick={() => go(at - 1)}>‹ {t("common.prev")}</button>
+            {at < last
+              ? <button className="btn-sm" disabled={busy} onClick={() => go(at + 1)}>{t("common.next")} ›</button>
+              : <button className="btn-sm" disabled={busy} onClick={close}>{t("cs.wiz.finish")}</button>}
+          </div>
+        </div>
+      }
+    >
+      <StepLayout ariaLabel={t("cs.title")} at={Math.min(at, last)} onGo={go} desc={t(`cs.stepd.${current}`)}
+                  steps={steps.map((k) => ({ key: k, title: t(`cs.step.${k}`), meta: meta[k].text, done: meta[k].done }))}>
+        {err && <ErrorBanner message={err} />}
+
+        {current === "project" && (
+          <div className="cs-form">
+            {txt("title", t("cs.f.title"), { wide: true })}
+            <Field label={t("cs.f.notes")} wide>
+              <textarea rows={4} disabled={ro} value={f.notes ?? ""} onChange={(e) => set("notes", e.target.value)} />
+            </Field>
+            {txt("client", t("cs.f.client"))}
+            {txt("requesters", t("cs.f.requesters"))}
+            <Field label={t("cs.g.links")} wide hint={t("cs.links_hint")}>
+              <Links ro={ro} rows={f.links} onChange={(rows) => set("links", rows)} />
+            </Field>
+          </div>
+        )}
+
+        {current === "follow" && (
+          <div className="cs-form">
+            <Field label={t("cs.f.stage")}>
+              <select value={f.stage} disabled={ro} onChange={(e) => set("stage", e.target.value)}>
+                {settings.stages.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+              </select>
+            </Field>
+            <Field label={t("cs.f.health")}>
+              <select value={f.health ?? ""} disabled={ro} onChange={(e) => set("health", (e.target.value || null) as Project["health"])}>
+                <option value="">{t("cs.health.none")}</option>
+                {HEALTHS.map((h) => <option key={h} value={h}>{t(`cs.hv.${h}`)}</option>)}
+              </select>
+            </Field>
+            {day("planned_delivery", t("cs.f.planned"))}
+            {day("actual_delivery", t("cs.f.actual"))}
+          </div>
+        )}
+
+        {current === "billing" && (
+          <div className="cs-form">
+            <Field label={t("cs.f.amount")}>
+              <input type="number" min={0} step="0.01" value={f.build_amount ?? ""} disabled={ro}
+                     onChange={(e) => set("build_amount", e.target.value === "" ? null : Number(e.target.value))} />
+            </Field>
+            <DiscountInput price={f.build_amount} value={f.discount_value} kind={f.discount_kind} disabled={ro}
+                           onChange={(v, k) => { set("discount_value", v); set("discount_kind", k); }} />
+            {txt("cost_code", t("cs.f.cost_code"))}
+            <Field label={t("cs.f.billing")}>
+              <select value={f.billing} disabled={ro} onChange={(e) => set("billing", e.target.value as Project["billing"])}>
+                {BILLINGS.map((b) => <option key={b} value={b}>{t(`cs.bill.${b}`)}</option>)}
+              </select>
+            </Field>
+          </div>
+        )}
+
+        {current === "track" && <TrackPart p={p} onChanged={reload} />}
+      </StepLayout>
+    </Modal>
+  );
+}
+
+/** The discount on the price: a figure, in percent or in euros, and the net price
+ *  it leaves. Shared by the creation window and the Facturation step. */
+export function DiscountInput({ price, value, kind, disabled, onChange }: {
+  price: number | null; value: number | null; kind: DiscountKind; disabled?: boolean;
+  onChange: (value: number | null, kind: DiscountKind) => void;
+}) {
+  const { t, lang } = useI18n();
+  const net = netAmount(price, value, kind);
+  return (
+    <div className="cs-field">
+      <span className="cs-label">{t("cs.f.discount")}</span>
+      <div className="cs-discount">
+        <input type="number" min={0} max={kind === "pct" ? 100 : undefined} step="0.01" value={value ?? ""} disabled={disabled}
+               aria-label={t("cs.f.discount")}
+               onChange={(e) => onChange(e.target.value === "" ? null : Number(e.target.value), kind)} />
+        <select value={kind} disabled={disabled} aria-label={t("cs.f.discount_kind")}
+                onChange={(e) => onChange(value, e.target.value as DiscountKind)}>
+          <option value="pct">%</option>
+          <option value="amount">€</option>
+        </select>
+      </div>
+      {price !== null && !!value && <span className="small muted">{t("cs.f.net", { v: fmtAmount(net, lang) })}</span>}
+    </div>
+  );
+}
+
+function Field({ label, children, wide, hint }: { label: string; children: ReactNode; wide?: boolean; hint?: string }) {
+  return (
+    <label className={`cs-field${wide ? " cs-wide" : ""}`}>
+      <span className="cs-label">{label}</span>
+      {hint && <span className="small muted">{hint}</span>}
+      {children}
+    </label>
+  );
+}
+
+/** The project's links: a name and an address per line. */
+function Links({ rows, onChange, ro }: { rows: Project["links"]; onChange: (rows: Project["links"]) => void; ro: boolean }) {
+  const { t } = useI18n();
+  return (
+    <span className="stack" style={{ gap: 6 }}>
+      {rows.map((r, i) => (
+        <span key={i} className="cs-line">
+          <input placeholder={t("cs.link_label")} aria-label={t("cs.link_label")} value={r.label} disabled={ro}
+                 onChange={(e) => onChange(rows.map((x, j) => j === i ? { ...x, label: e.target.value } : x))} />
+          <input placeholder="https://" aria-label="URL" value={r.url} disabled={ro}
+                 onChange={(e) => onChange(rows.map((x, j) => j === i ? { ...x, url: e.target.value } : x))} />
+          {!ro && <button type="button" className="btn-ghost btn-sm" onClick={() => onChange(rows.filter((_, j) => j !== i))}>
+            {t("action.remove")}</button>}
+        </span>
+      ))}
+      {!ro && <span><button type="button" className="btn-ghost btn-sm" onClick={() => onChange([...rows, { label: "", url: "" }])}>
+        + {t("cs.link_add")}</button></span>}
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// The follow-up: two tables, one question each. "À faire" holds what is left to
+// do (ticked once settled), "Historique" what happened (newest first). Each has
+// its own new line at the top, filled where it will be read, and every line is
+// changed in place (Modifier), never in another window.
+// ---------------------------------------------------------------------------
+
+// A history entry "Blocage" would read like the point of the same name: what
+// blocks is noted as a point to do, so it is not offered for a new entry.
+const PAST_KINDS = JOURNAL_KINDS.filter((k) => k !== "blocker");
+const KIND_COLOR: Record<ItemKind, string | undefined> = { blocker: "var(--red)", risk: "var(--orange)", action: undefined };
+
+function TrackPart({ p, onChanged }: { p: Project; onChanged: () => void }) {
+  const { t } = useI18n();
+  const open = (p.items ?? []).filter((i) => !i.done).length;
+  return (
+    <div className="stack" style={{ gap: 24 }}>
+      <section className="stack" style={{ gap: 8 }}>
+        <div className="cs-sec-head">
+          <span className="strong">{t("cs.track.todo")}</span>
+          <span className="small muted">{t("cs.t.open_n", { n: open })}</span>
+        </div>
+        <TodoTable p={p} onChanged={onChanged} />
+      </section>
+      <section className="stack" style={{ gap: 8 }}>
+        <div className="cs-sec-head">
+          <span className="strong">{t("cs.track.history")}</span>
+          <span className="small muted">{t("cs.meta.journal", { n: (p.journal ?? []).length })}</span>
+        </div>
+        <HistoryTable p={p} onChanged={onChanged} />
+      </section>
+    </div>
+  );
+}
+
+/** Calls the API, reports a failure in the table, refreshes on success. */
+function useRun(onChanged: () => void) {
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  async function run(fn: () => Promise<unknown>): Promise<boolean> {
     setBusy(true); setErr(null);
-    try {
-      const body = {
-        title: f.title, client: f.client, requesters: f.requesters, contacts: f.contacts,
-        tags: tags.split(",").map((x) => x.trim()).filter(Boolean),
-        stage: f.stage, health: f.health, offer: f.offer, delivery_mode: f.delivery_mode,
-        gcp_project: f.gcp_project, planned_delivery: f.planned_delivery, actual_delivery: f.actual_delivery,
-        build_amount: f.build_amount, quote_signed: f.quote_signed, cost_code: f.cost_code,
-        consumption_billing: f.consumption_billing, consumption_cap: f.consumption_cap,
-        users_count: f.users_count, models: f.models, data_classification: f.data_classification,
-        max_duration: f.max_duration, access_end: f.access_end, milestones: f.milestones,
-        links: f.links.filter((l) => l.url.trim()), notes: f.notes,
-      };
-      const next = await api.put<Project>(`/api/cs/projects/${p.id}`, body);
-      setDirty(false); setOk(true); onSaved(next);
-    } catch (e) { setErr(errorText(e)); }
+    try { await fn(); onChanged(); return true; } catch (e) { setErr(errorText(e)); return false; }
     finally { setBusy(false); }
   }
+  return { err, busy, run };
+}
 
-  const ms = (key: string, which: "planned" | "actual", v: string) => {
-    const cur = f.milestones[key] ?? { planned: null, actual: null };
-    set("milestones", { ...f.milestones, [key]: { ...cur, [which]: v || null } });
+// ----- À faire ---------------------------------------------------------------
+
+type ItemDraft = { kind: ItemKind; label: string; owner: string; due: string };
+const blankItem = (kind: ItemKind = "action"): ItemDraft => ({ kind, label: "", owner: "", due: "" });
+
+function TodoTable({ p, onChanged }: { p: Project; onChanged: () => void }) {
+  const { t, lang } = useI18n();
+  const { err, busy, run } = useRun(onChanged);
+  const [draft, setDraft] = useState<ItemDraft>(blankItem());
+  const [editing, setEditing] = useState<{ id: number; d: ItemDraft } | null>(null);
+  const [showDone, setShowDone] = useState(false);
+  const all = p.items ?? [];
+  const rows = all.filter((i) => showDone || !i.done);
+  const doneCount = all.filter((i) => i.done).length;
+  const today = todayIso();
+  const body = (d: ItemDraft) => ({ kind: d.kind, label: d.label, owner: d.owner || null, due: d.due || null });
+
+  const add = () => run(() => api.post(`/api/cs/projects/${p.id}/items`, body(draft))).then((ok) => ok && setDraft(blankItem(draft.kind)));
+  const save = () => editing && run(() => api.put(`/api/cs/items/${editing.id}`, body(editing.d))).then((ok) => ok && setEditing(null));
+  const remove = (i: Item) => window.confirm(t("cs.i.delete_confirm")) && run(() => api.del(`/api/cs/items/${i.id}`));
+  const enter = (fn: () => void, ok: boolean) => (e: React.KeyboardEvent) => { if (e.key === "Enter" && ok) fn(); };
+
+  const inputs = (d: ItemDraft, set: (d: ItemDraft) => void, onEnter: (e: React.KeyboardEvent) => void, focus = false) => (
+    <>
+      <td><select aria-label={t("cs.add.kind")} value={d.kind} onChange={(e) => set({ ...d, kind: e.target.value as ItemKind })}>
+        {ITEM_KINDS.map((k) => <option key={k} value={k}>{t(`cs.ik.${k}`)}</option>)}
+      </select></td>
+      <td><input aria-label={t("cs.t.what")} placeholder={t("cs.add.text_todo")} maxLength={500} value={d.label} autoFocus={focus}
+                 onChange={(e) => set({ ...d, label: e.target.value })} onKeyDown={onEnter} /></td>
+      <td><input aria-label={t("cs.t.owner")} placeholder={t("cs.t.owner")} maxLength={255} value={d.owner}
+                 onChange={(e) => set({ ...d, owner: e.target.value })} onKeyDown={onEnter} /></td>
+      <td><input type="date" aria-label={t("cs.add.date_due")} value={d.due} onChange={(e) => set({ ...d, due: e.target.value })} /></td>
+    </>
+  );
+
+  return (
+    <div className="stack" style={{ gap: 8 }}>
+      {err && <ErrorBanner message={err} />}
+      <table className="table cs-ttable">
+        <colgroup><col style={{ width: 40 }} /><col style={{ width: 112 }} /><col /><col style={{ width: 110 }} /><col style={{ width: 156 }} /><col style={{ width: 128 }} /></colgroup>
+        <thead><tr>
+          <th aria-label={t("cs.i.done")} /><th>{t("cs.add.kind")}</th><th>{t("cs.t.what")}</th><th>{t("cs.t.owner")}</th><th>{t("cs.add.date_due")}</th><th />
+        </tr></thead>
+        <tbody>
+          {p.can_edit && !editing && (
+            <tr className="cs-newrow">
+              <td />
+              {inputs(draft, setDraft, enter(add, !!draft.label.trim()))}
+              <td className="cs-tact"><button className="btn-sm" disabled={busy || !draft.label.trim()} onClick={add}>{t("action.add")}</button></td>
+            </tr>
+          )}
+          {rows.length === 0 && <tr><td /><td colSpan={5} className="small muted">{t("cs.i.none")}</td></tr>}
+          {rows.map((i) => editing?.id === i.id ? (
+            <tr key={i.id} className="cs-newrow">
+              <td />
+              {inputs(editing.d, (d) => setEditing({ id: i.id, d }), enter(save, !!editing.d.label.trim()), true)}
+              <td className="cs-tact">
+                <button className="btn-ghost btn-sm" onClick={() => setEditing(null)}>{t("action.cancel")}</button>
+                <button className="btn-sm" disabled={busy || !editing.d.label.trim()} onClick={save}>{t("action.save")}</button>
+              </td>
+            </tr>
+          ) : (
+            <tr key={i.id} className={i.done ? "cs-done" : undefined}>
+              <td><input type="checkbox" checked={i.done} disabled={!p.can_edit || busy} aria-label={t("cs.i.done")}
+                         onChange={(e) => run(() => api.put(`/api/cs/items/${i.id}`, { done: e.target.checked }))} /></td>
+              <td style={{ color: i.done ? undefined : KIND_COLOR[i.kind] }}>{t(`cs.ik.${i.kind}`)}</td>
+              <td className="cs-wrap">{i.label}</td>
+              <td className="cs-cut" title={i.owner ?? undefined}>{i.owner || <span className="muted">-</span>}</td>
+              <td style={!i.done && i.due && i.due < today ? { color: "var(--red)" } : undefined}>
+                {i.due ? fmtDate(i.due, lang) : <span className="muted">-</span>}
+                {!i.done && i.due && i.due < today && <span className="small">{`, ${t("cs.i.late")}`}</span>}
+              </td>
+              <td className="cs-tact">{p.can_edit && !editing && (
+                <>
+                  <button className="btn-ghost btn-sm" onClick={() => setEditing({ id: i.id, d: { kind: i.kind, label: i.label, owner: i.owner ?? "", due: i.due ?? "" } })}>{t("action.edit")}</button>
+                  <button className="btn-ghost btn-sm" onClick={() => remove(i)}>{t("action.delete")}</button>
+                </>
+              )}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {doneCount > 0 && (
+        <div><button className="btn-ghost btn-sm" onClick={() => setShowDone(!showDone)}>
+          {showDone ? t("cs.i.hide_done") : t("cs.i.show_done_n", { n: doneCount })}</button></div>
+      )}
+    </div>
+  );
+}
+
+// ----- Historique ------------------------------------------------------------
+
+type EntryDraft = { date: string; kind: JournalKind; text: string; in_recap: boolean };
+const blankEntry = (kind: JournalKind = "note"): EntryDraft => ({ date: todayIso(), kind, text: "", in_recap: RECAP_BY_DEFAULT.includes(kind) });
+
+function HistoryTable({ p, onChanged }: { p: Project; onChanged: () => void }) {
+  const { t, lang } = useI18n();
+  const { err, busy, run } = useRun(onChanged);
+  const [draft, setDraft] = useState<EntryDraft>(blankEntry());
+  const [recapTouched, setRecapTouched] = useState(false);
+  const [editing, setEditing] = useState<{ id: number; d: EntryDraft } | null>(null);
+  const rows = p.journal ?? [];
+
+  const add = () => run(() => api.post(`/api/cs/projects/${p.id}/journal`, { ...draft, date: draft.date || todayIso() }))
+    .then((ok) => { if (ok) { setDraft(blankEntry(draft.kind)); setRecapTouched(false); } });
+  const save = () => editing && run(() => api.put(`/api/cs/journal/${editing.id}`, editing.d)).then((ok) => ok && setEditing(null));
+  const remove = (e: JournalEntry) => window.confirm(t("cs.j.delete_confirm")) && run(() => api.del(`/api/cs/journal/${e.id}`));
+  const enter = (fn: () => void, ok: boolean) => (e: React.KeyboardEvent) => { if (e.key === "Enter" && ok) fn(); };
+
+  const inputs = (d: EntryDraft, set: (d: EntryDraft) => void, onEnter: (e: React.KeyboardEvent) => void,
+                  kinds: JournalKind[], focus = false) => (
+    <>
+      <td><input type="date" aria-label={t("cs.j.date")} value={d.date} onChange={(e) => set({ ...d, date: e.target.value })} /></td>
+      <td><select aria-label={t("cs.j.kind")} value={d.kind} onChange={(e) => set({ ...d, kind: e.target.value as JournalKind })}>
+        {kinds.map((k) => <option key={k} value={k}>{t(`cs.jk.${k}`)}</option>)}
+      </select></td>
+      <td><input aria-label={t("cs.j.text")} placeholder={t("cs.add.text_past")} value={d.text} autoFocus={focus}
+                 onChange={(e) => set({ ...d, text: e.target.value })} onKeyDown={onEnter} /></td>
+      <td className="cs-tcenter"><input type="checkbox" aria-label={t("cs.j.in_recap")} title={t("cs.j.in_recap")} checked={d.in_recap}
+                                         onChange={(e) => set({ ...d, in_recap: e.target.checked })} /></td>
+    </>
+  );
+  // A new entry's kind sets whether it goes in the recap, until the box is ticked by hand.
+  const setNew = (d: EntryDraft) => {
+    if (d.in_recap !== draft.in_recap) setRecapTouched(true);
+    else if (d.kind !== draft.kind && !recapTouched) d = { ...d, in_recap: RECAP_BY_DEFAULT.includes(d.kind) };
+    setDraft(d);
   };
 
   return (
-    <div className="stack" style={{ gap: 16 }}>
+    <div className="stack" style={{ gap: 8 }}>
       {err && <ErrorBanner message={err} />}
-      <Group title={t("cs.g.identity")}>
-        {txt("title", t("cs.f.title"))}
-        {txt("client", t("cs.f.client"))}
-        {txt("requesters", t("cs.f.requesters"), { max: 500 })}
-        <Field label={t("cs.f.tags")}>
-          <input value={tags} disabled={ro} placeholder={t("cs.f.tags_hint")}
-                 onChange={(e) => { setTags(e.target.value); setDirty(true); }} />
-        </Field>
-        <Field label={t("cs.f.contacts")} wide>
-          <ListEditor ro={ro} rows={f.contacts} empty={{ name: "", role: "" }}
-                      onChange={(rows) => set("contacts", rows)} addLabel={t("cs.f.contact_add")}
-                      cols={[{ key: "name", ph: t("cs.f.contact_name") }, { key: "role", ph: t("cs.f.contact_role") }]} />
-        </Field>
-      </Group>
-
-      <Group title={t("cs.g.follow")}>
-        <Field label={t("cs.f.stage")}>
-          <select value={f.stage} disabled={ro} onChange={(e) => set("stage", e.target.value)}>
-            {settings.stages.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
-          </select>
-        </Field>
-        <Field label={t("cs.f.health")}>
-          <select value={f.health ?? ""} disabled={ro} onChange={(e) => set("health", (e.target.value || null) as Project["health"])}>
-            <option value="">{t("cs.health.none")}</option>
-            {HEALTHS.map((h) => <option key={h} value={h}>{t(`cs.hv.${h}`)}</option>)}
-          </select>
-        </Field>
-      </Group>
-
-      <Group title={t("cs.g.delivery")}>
-        {txt("offer", t("cs.f.offer"), { list: "cs-offers" })}
-        <datalist id="cs-offers">{settings.offers.map((o) => <option key={o} value={o} />)}</datalist>
-        {txt("delivery_mode", t("cs.f.mode"), { list: "cs-modes", max: 120 })}
-        <datalist id="cs-modes"><option value={t("cs.mode.for_you")} /><option value={t("cs.mode.with_you")} /></datalist>
-        {txt("gcp_project", t("cs.f.gcp"))}
-        {day("planned_delivery", t("cs.f.planned"))}
-        {day("actual_delivery", t("cs.f.actual"))}
-      </Group>
-
-      <Group title={t("cs.g.money")}>
-        <Field label={t("cs.f.build")}>
-          <input type="number" min={0} step="0.01" value={f.build_amount ?? ""} disabled={ro}
-                 onChange={(e) => set("build_amount", e.target.value === "" ? null : Number(e.target.value))} />
-        </Field>
-        <div className="stack" style={{ gap: 4, justifyContent: "flex-end" }}>
-          <Toggle checked={f.quote_signed} disabled={ro} onChange={(v) => set("quote_signed", v)}>{t("cs.f.quote_signed")}</Toggle>
-        </div>
-        {txt("cost_code", t("cs.f.cost_code"))}
-        <Field label={t("cs.f.billing")}>
-          <select value={f.consumption_billing ?? ""} disabled={ro}
-                  onChange={(e) => set("consumption_billing", (e.target.value || null) as Project["consumption_billing"])}>
-            <option value="">{t("cs.billing.none")}</option>
-            <option value="uncapped">{t("cs.billing.uncapped")}</option>
-            <option value="capped">{t("cs.billing.capped")}</option>
-          </select>
-        </Field>
-        {f.consumption_billing === "capped" && txt("consumption_cap", t("cs.f.cap"))}
-      </Group>
-
-      <Group title={t("cs.g.scope")}>
-        <Field label={t("cs.f.users")}>
-          <input type="number" min={0} value={f.users_count ?? ""} disabled={ro}
-                 onChange={(e) => set("users_count", e.target.value === "" ? null : Number(e.target.value))} />
-        </Field>
-        {txt("models", t("cs.f.models"), { max: 500 })}
-        {txt("data_classification", t("cs.f.classification"), { max: 40 })}
-        {txt("max_duration", t("cs.f.duration"), { max: 120 })}
-        {day("access_end", t("cs.f.access_end"))}
-      </Group>
-
-      <fieldset className="stack" style={{ gap: 8, border: "1px solid var(--line)", borderRadius: "var(--radius)", padding: 16, margin: 0 }}>
-        <legend className="strong" style={{ padding: "0 6px" }}>{t("cs.g.milestones")}</legend>
-        <table className="table">
-          <thead><tr><th>{t("cs.f.stage")}</th><th>{t("cs.ms.planned")}</th><th>{t("cs.ms.actual")}</th></tr></thead>
-          <tbody>
-            {settings.stages.map((s) => (
-              <tr key={s.key}>
-                <td>{s.label}</td>
-                <td><input type="date" disabled={ro} value={f.milestones[s.key]?.planned ?? ""} aria-label={`${s.label} ${t("cs.ms.planned")}`}
-                           onChange={(e) => ms(s.key, "planned", e.target.value)} /></td>
-                <td><input type="date" disabled={ro} value={f.milestones[s.key]?.actual ?? ""} aria-label={`${s.label} ${t("cs.ms.actual")}`}
-                           onChange={(e) => ms(s.key, "actual", e.target.value)} /></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </fieldset>
-
-      <fieldset className="stack" style={{ gap: 8, border: "1px solid var(--line)", borderRadius: "var(--radius)", padding: 16, margin: 0 }}>
-        <legend className="strong" style={{ padding: "0 6px" }}>{t("cs.g.links")}</legend>
-        <div className="small muted">{t("cs.links_hint")}</div>
-        <ListEditor ro={ro} rows={f.links} empty={{ label: "", url: "" }} onChange={(rows) => set("links", rows)}
-                    addLabel={t("cs.link_add")}
-                    cols={[{ key: "label", ph: t("cs.link_label") }, { key: "url", ph: "https://" }]} />
-        <Field label={t("cs.f.notes")} wide>
-          <textarea rows={3} disabled={ro} value={f.notes ?? ""} onChange={(e) => set("notes", e.target.value)} />
-        </Field>
-      </fieldset>
-
-      {!ro && (
-        <div className="inline" style={{ gap: 8, justifyContent: "flex-end", alignItems: "center" }}>
-          {ok && <span className="small" style={{ color: "var(--green)" }}>{t("cs.saved")}</span>}
-          <button className="btn-sm" disabled={busy || !f.title.trim()} onClick={save}>{t("action.save")}</button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** A small editable list of rows with the same text columns (contacts, links). */
-function ListEditor<T extends Record<string, string>>({ rows, cols, empty, onChange, addLabel, ro }: {
-  rows: T[]; cols: { key: keyof T & string; ph: string }[]; empty: T; onChange: (rows: T[]) => void;
-  addLabel: string; ro: boolean;
-}) {
-  const { t } = useI18n();
-  return (
-    <div className="stack" style={{ gap: 6 }}>
-      {rows.map((r, i) => (
-        <div key={i} className="inline" style={{ gap: 6 }}>
-          {cols.map((c) => (
-            <input key={c.key} placeholder={c.ph} aria-label={c.ph} value={r[c.key] ?? ""} disabled={ro} style={{ flex: 1 }}
-                   onChange={(e) => onChange(rows.map((x, j) => j === i ? { ...x, [c.key]: e.target.value } : x))} />
+      <table className="table cs-ttable">
+        <colgroup><col style={{ width: 150 }} /><col style={{ width: 130 }} /><col /><col style={{ width: 64 }} /><col style={{ width: 128 }} /></colgroup>
+        <thead><tr>
+          <th>{t("cs.j.date")}</th><th>{t("cs.j.kind")}</th><th>{t("cs.j.text")}</th>
+          <th className="cs-tcenter" title={t("cs.j.in_recap")}>{t("cs.t.recap")}</th><th />
+        </tr></thead>
+        <tbody>
+          {p.can_edit && !editing && (
+            <tr className="cs-newrow">
+              {inputs(draft, setNew, enter(add, !!draft.text.trim()), PAST_KINDS)}
+              <td className="cs-tact"><button className="btn-sm" disabled={busy || !draft.text.trim()} onClick={add}>{t("action.add")}</button></td>
+            </tr>
+          )}
+          {rows.length === 0 && <tr><td colSpan={5} className="small muted">{t("cs.j.none")}</td></tr>}
+          {rows.map((e) => editing?.id === e.id ? (
+            <tr key={e.id} className="cs-newrow">
+              {inputs(editing.d, (d) => setEditing({ id: e.id, d }), enter(save, !!editing.d.text.trim()), JOURNAL_KINDS, true)}
+              <td className="cs-tact">
+                <button className="btn-ghost btn-sm" onClick={() => setEditing(null)}>{t("action.cancel")}</button>
+                <button className="btn-sm" disabled={busy || !editing.d.text.trim()} onClick={save}>{t("action.save")}</button>
+              </td>
+            </tr>
+          ) : (
+            <tr key={e.id}>
+              <td>{fmtDate(e.date, lang)}{e.new && <div className="small" style={{ color: "var(--green)" }}>{t("cs.j.new")}</div>}</td>
+              <td>{t(`cs.jk.${e.kind}`)}</td>
+              <td className="cs-wrap">
+                {e.text}
+                {e.people && <div className="small muted">{e.people}</div>}
+                {e.links.map((l, i) => <div key={i}><a className="small" href={l.url} target="_blank" rel="noreferrer noopener">{l.label || l.url}</a></div>)}
+              </td>
+              <td className="cs-tcenter">
+                <input type="checkbox" checked={e.in_recap} disabled={!p.can_edit || busy}
+                       aria-label={e.in_recap ? t("cs.j.remove_recap") : t("cs.j.put_recap")} title={e.in_recap ? t("cs.j.remove_recap") : t("cs.j.put_recap")}
+                       onChange={(x) => run(() => api.put(`/api/cs/journal/${e.id}`, { in_recap: x.target.checked }))} />
+              </td>
+              <td className="cs-tact">{p.can_edit && !editing && (
+                <>
+                  <button className="btn-ghost btn-sm" onClick={() => setEditing({ id: e.id, d: { date: e.date, kind: e.kind, text: e.text, in_recap: e.in_recap } })}>{t("action.edit")}</button>
+                  <button className="btn-ghost btn-sm" onClick={() => remove(e)}>{t("action.delete")}</button>
+                </>
+              )}</td>
+            </tr>
           ))}
-          {!ro && <button type="button" className="btn-ghost btn-sm" aria-label={t("action.remove")}
-                          onClick={() => onChange(rows.filter((_, j) => j !== i))}>✕</button>}
-        </div>
-      ))}
-      {!ro && <div><button type="button" className="btn-secondary btn-sm" onClick={() => onChange([...rows, { ...empty }])}>{addLabel}</button></div>}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// The journal
-// ---------------------------------------------------------------------------
-
-type EntryDraft = { date: string; kind: JournalKind; people: string; text: string; in_recap: boolean; link: string };
-const newDraft = (): EntryDraft => ({ date: todayIso(), kind: "note", people: "", text: "", in_recap: false, link: "" });
-
-function JournalPart({ p, onChanged }: { p: Project; onChanged: () => void }) {
-  const { t, lang } = useI18n();
-  const [d, setD] = useState<EntryDraft>(newDraft());
-  const [recapTouched, setRecapTouched] = useState(false);
-  const [kind, setKind] = useState<"" | JournalKind>("");
-  const [editing, setEditing] = useState<number | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const entries = (p.journal ?? []).filter((e) => !kind || e.kind === kind);
-
-  const setKindDraft = (k: JournalKind) =>
-    setD((x) => ({ ...x, kind: k, in_recap: recapTouched ? x.in_recap : RECAP_BY_DEFAULT.includes(k) }));
-
-  async function add() {
-    setBusy(true); setErr(null);
-    try {
-      const links: Link[] = d.link.trim() ? [{ label: "", url: d.link.trim() }] : [];
-      await api.post(`/api/cs/projects/${p.id}/journal`, { date: d.date, kind: d.kind, people: d.people, text: d.text, in_recap: d.in_recap, links });
-      setD(newDraft()); setRecapTouched(false); onChanged();
-    } catch (e) { setErr(errorText(e)); }
-    finally { setBusy(false); }
-  }
-  async function patch(e: JournalEntry, body: Partial<JournalEntry>) {
-    setErr(null);
-    try { await api.put(`/api/cs/journal/${e.id}`, body); setEditing(null); onChanged(); }
-    catch (x) { setErr(errorText(x)); }
-  }
-  async function remove(e: JournalEntry) {
-    if (!window.confirm(t("cs.j.delete_confirm"))) return;
-    try { await api.del(`/api/cs/journal/${e.id}`); onChanged(); } catch (x) { setErr(errorText(x)); }
-  }
-
-  return (
-    <div className="stack" style={{ gap: 16 }}>
-      {err && <ErrorBanner message={err} />}
-      {p.can_edit && (
-        <div className="card stack" style={{ gap: 10 }}>
-          <div className="strong">{t("cs.j.add")}</div>
-          <div className="grid" style={{ gridTemplateColumns: "160px 180px 1fr", gap: 8 }}>
-            <input type="date" aria-label={t("cs.j.date")} value={d.date} onChange={(e) => setD({ ...d, date: e.target.value })} />
-            <select aria-label={t("cs.j.kind")} value={d.kind} onChange={(e) => setKindDraft(e.target.value as JournalKind)}>
-              {JOURNAL_KINDS.map((k) => <option key={k} value={k}>{t(`cs.jk.${k}`)}</option>)}
-            </select>
-            <input placeholder={t("cs.j.people")} aria-label={t("cs.j.people")} value={d.people} maxLength={500}
-                   onChange={(e) => setD({ ...d, people: e.target.value })} />
-          </div>
-          <textarea rows={3} placeholder={t("cs.j.text")} aria-label={t("cs.j.text")} value={d.text}
-                    onChange={(e) => setD({ ...d, text: e.target.value })} />
-          <input placeholder={t("cs.j.link")} aria-label={t("cs.j.link")} value={d.link} onChange={(e) => setD({ ...d, link: e.target.value })} />
-          <div className="between" style={{ alignItems: "center" }}>
-            <Toggle checked={d.in_recap} onChange={(v) => { setRecapTouched(true); setD({ ...d, in_recap: v }); }}>{t("cs.j.in_recap")}</Toggle>
-            <button className="btn-sm" disabled={busy || !d.text.trim()} onClick={add}>{t("action.add")}</button>
-          </div>
-        </div>
-      )}
-      <div className="inline" style={{ gap: 6, flexWrap: "wrap" }}>
-        <Chip on={!kind} onToggle={() => setKind("")}>{t("cs.j.all")}</Chip>
-        {JOURNAL_KINDS.map((k) => <Chip key={k} on={kind === k} onToggle={() => setKind(kind === k ? "" : k)}>{t(`cs.jk.${k}`)}</Chip>)}
-      </div>
-      {entries.length === 0 ? <div className="small muted">{t("cs.j.none")}</div> : (
-        <div className="stack" style={{ gap: 8 }}>
-          {entries.map((e) => editing === e.id
-            ? <EntryEdit key={e.id} e={e} onCancel={() => setEditing(null)} onSave={(b) => patch(e, b)} />
-            : (
-              <div key={e.id} className="card stack" style={{ gap: 4, padding: 12 }}>
-                <div className="between" style={{ alignItems: "center", gap: 8 }}>
-                  <div className="inline small" style={{ gap: 8, flexWrap: "wrap" }}>
-                    <span className="strong">{fmtDate(e.date, lang)}</span>
-                    <span className="badge badge-navy">{t(`cs.jk.${e.kind}`)}</span>
-                    {e.people && <span className="muted">{e.people}</span>}
-                    {e.new && <span className="badge badge-green">{t("cs.j.new")}</span>}
-                    {!e.in_recap && <span className="badge badge-grey">{t("cs.j.out_of_recap")}</span>}
-                  </div>
-                  {p.can_edit && (
-                    <div className="inline" style={{ gap: 4 }}>
-                      <button className="btn-ghost btn-sm" onClick={() => patch(e, { in_recap: !e.in_recap })}>
-                        {e.in_recap ? t("cs.j.remove_recap") : t("cs.j.put_recap")}
-                      </button>
-                      <button className="btn-ghost btn-sm" onClick={() => setEditing(e.id)}>{t("action.edit")}</button>
-                      <button className="btn-ghost btn-sm" onClick={() => remove(e)}>{t("action.delete")}</button>
-                    </div>
-                  )}
-                </div>
-                <div style={{ whiteSpace: "pre-wrap" }}>{e.text}</div>
-                {e.links.map((l, i) => <a key={i} className="small" href={l.url} target="_blank" rel="noreferrer noopener">{l.label || l.url}</a>)}
-              </div>
-            ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function EntryEdit({ e, onCancel, onSave }: { e: JournalEntry; onCancel: () => void; onSave: (b: Partial<JournalEntry>) => void }) {
-  const { t } = useI18n();
-  const [d, setD] = useState({ date: e.date, kind: e.kind, people: e.people ?? "", text: e.text });
-  return (
-    <div className="card stack" style={{ gap: 8, padding: 12 }}>
-      <div className="grid" style={{ gridTemplateColumns: "160px 180px 1fr", gap: 8 }}>
-        <input type="date" aria-label={t("cs.j.date")} value={d.date} onChange={(x) => setD({ ...d, date: x.target.value })} />
-        <select aria-label={t("cs.j.kind")} value={d.kind} onChange={(x) => setD({ ...d, kind: x.target.value as JournalKind })}>
-          {JOURNAL_KINDS.map((k) => <option key={k} value={k}>{t(`cs.jk.${k}`)}</option>)}
-        </select>
-        <input aria-label={t("cs.j.people")} value={d.people} onChange={(x) => setD({ ...d, people: x.target.value })} />
-      </div>
-      <textarea rows={3} aria-label={t("cs.j.text")} value={d.text} onChange={(x) => setD({ ...d, text: x.target.value })} />
-      <div className="inline" style={{ gap: 8, justifyContent: "flex-end" }}>
-        <button className="btn-secondary btn-sm" onClick={onCancel}>{t("action.cancel")}</button>
-        <button className="btn-sm" disabled={!d.text.trim()} onClick={() => onSave(d)}>{t("action.save")}</button>
-      </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Points to follow
-// ---------------------------------------------------------------------------
-
-function ItemsPart({ p, onChanged }: { p: Project; onChanged: () => void }) {
-  const { t, lang } = useI18n();
-  const [d, setD] = useState({ kind: "action" as ItemKind, label: "", owner: "", due: "" });
-  const [showDone, setShowDone] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  const items = (p.items ?? []).filter((i) => showDone || !i.done);
-  const today = todayIso();
-
-  async function add() {
-    setErr(null);
-    try {
-      await api.post(`/api/cs/projects/${p.id}/items`, { ...d, due: d.due || null });
-      setD({ kind: d.kind, label: "", owner: "", due: "" }); onChanged();
-    } catch (e) { setErr(errorText(e)); }
-  }
-  async function patch(i: Item, body: Partial<Item>) {
-    setErr(null);
-    try { await api.put(`/api/cs/items/${i.id}`, body); onChanged(); } catch (e) { setErr(errorText(e)); }
-  }
-  async function remove(i: Item) {
-    if (!window.confirm(t("cs.i.delete_confirm"))) return;
-    try { await api.del(`/api/cs/items/${i.id}`); onChanged(); } catch (e) { setErr(errorText(e)); }
-  }
-
-  return (
-    <div className="stack" style={{ gap: 16 }}>
-      <div className="small muted">{t("cs.i.hint")}</div>
-      {err && <ErrorBanner message={err} />}
-      {p.can_edit && (
-        <div className="grid" style={{ gridTemplateColumns: "150px 1fr 200px 160px auto", gap: 8, alignItems: "center" }}>
-          <select aria-label={t("cs.i.kind")} value={d.kind} onChange={(e) => setD({ ...d, kind: e.target.value as ItemKind })}>
-            {ITEM_KINDS.map((k) => <option key={k} value={k}>{t(`cs.ik.${k}`)}</option>)}
-          </select>
-          <input placeholder={t("cs.i.label")} aria-label={t("cs.i.label")} value={d.label} maxLength={500}
-                 onChange={(e) => setD({ ...d, label: e.target.value })} />
-          <input placeholder={t("cs.i.owner")} aria-label={t("cs.i.owner")} value={d.owner} maxLength={255}
-                 onChange={(e) => setD({ ...d, owner: e.target.value })} />
-          <input type="date" aria-label={t("cs.i.due")} value={d.due} onChange={(e) => setD({ ...d, due: e.target.value })} />
-          <button className="btn-sm" disabled={!d.label.trim()} onClick={add}>{t("action.add")}</button>
-        </div>
-      )}
-      <Toggle checked={showDone} onChange={setShowDone}>{t("cs.i.show_done")}</Toggle>
-      {items.length === 0 ? <div className="small muted">{t("cs.i.none")}</div> : (
-        <table className="table">
-          <thead><tr>
-            <th>{t("cs.i.kind")}</th><th>{t("cs.i.label")}</th><th>{t("cs.i.owner")}</th>
-            <th>{t("cs.i.since")}</th><th>{t("cs.i.due")}</th><th>{t("cs.i.done")}</th><th></th>
-          </tr></thead>
-          <tbody>
-            {items.map((i) => (
-              <tr key={i.id} style={i.done ? { opacity: 0.6 } : undefined}>
-                <td><span className={`badge ${i.kind === "blocker" ? "badge-red" : i.kind === "risk" ? "badge-orange" : "badge-navy"}`}>{t(`cs.ik.${i.kind}`)}</span></td>
-                <td>{i.label}</td>
-                <td className="small">{i.owner}</td>
-                <td className="small">{fmtDate(i.opened_on, lang)}</td>
-                <td className="small" style={!i.done && i.due && i.due < today ? { color: "var(--red)" } : undefined}>{fmtDate(i.due, lang)}</td>
-                <td><Toggle checked={i.done} disabled={!p.can_edit} onChange={(v) => patch(i, { done: v })}>
-                  <span className="sr-only">{t("cs.i.done")}</span></Toggle></td>
-                <td style={{ textAlign: "right" }}>
-                  {p.can_edit && <button className="btn-ghost btn-sm" onClick={() => remove(i)}>{t("action.delete")}</button>}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Who contributes, and deleting the project (CS leaders)
-// ---------------------------------------------------------------------------
-
-type Person = { id: number; name: string; email: string | null; tribe_id: number | null };
-
-function AccessPart({ p, onSaved, onDeleted }: { p: Project; onSaved: (p: Project) => void; onDeleted: () => void }) {
-  const { t } = useI18n();
-  const [people, setPeople] = useState<Person[]>([]);
-  const [ids, setIds] = useState<number[]>((p.contributors ?? []).map((c) => c.id));
-  const [pick, setPick] = useState("");
-  const [err, setErr] = useState<string | null>(null);
-  const [ok, setOk] = useState(false);
-  useEffect(() => {
-    api.get<Person[]>("/api/tribes/people").then((ps) => setPeople(ps.filter((x) => x.tribe_id === p.tribe_id))).catch(() => {});
-  }, [p.tribe_id]);
-  const name = (id: number) => people.find((x) => x.id === id)?.name ?? p.contributors?.find((c) => c.id === id)?.name ?? `#${id}`;
-
-  async function save() {
-    setErr(null); setOk(false);
-    try { onSaved(await api.put<Project>(`/api/cs/projects/${p.id}`, { contributor_user_ids: ids })); setOk(true); }
-    catch (e) { setErr(errorText(e)); }
-  }
-  async function del() {
-    if (!window.confirm(t("cs.delete_confirm", { title: p.title }))) return;
-    try { await api.del(`/api/cs/projects/${p.id}`); onDeleted(); } catch (e) { setErr(errorText(e)); }
-  }
-
-  return (
-    <div className="stack" style={{ gap: 16 }}>
-      {err && <ErrorBanner message={err} />}
-      <div className="stack" style={{ gap: 8 }}>
-        <div className="strong">{t("cs.contrib.title")}</div>
-        <div className="small muted">{t("cs.contrib.hint")}</div>
-        <div className="inline" style={{ gap: 6, flexWrap: "wrap" }}>
-          {ids.length === 0 && <span className="small muted">{t("cs.contrib.none")}</span>}
-          {ids.map((id) => <Chip key={id} on onToggle={() => setIds(ids.filter((x) => x !== id))}>{name(id)}</Chip>)}
-        </div>
-        <div className="inline" style={{ gap: 8 }}>
-          <select aria-label={t("cs.contrib.pick")} value={pick} onChange={(e) => setPick(e.target.value)} style={{ minWidth: 240 }}>
-            <option value="">{t("cs.contrib.pick")}</option>
-            {people.filter((x) => !ids.includes(x.id)).map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
-          </select>
-          <button className="btn-secondary btn-sm" disabled={!pick} onClick={() => { setIds([...ids, Number(pick)]); setPick(""); }}>{t("action.add")}</button>
-          <button className="btn-sm" onClick={save}>{t("action.save")}</button>
-          {ok && <span className="small" style={{ color: "var(--green)" }}>{t("cs.saved")}</span>}
-        </div>
-      </div>
-      <div className="stack" style={{ gap: 8, borderTop: "1px solid var(--line)", paddingTop: 16 }}>
-        <div className="strong">{t("cs.delete_title")}</div>
-        <div className="small muted">{t("cs.delete_hint")}</div>
-        <div><button className="btn-danger btn-sm" onClick={del}>{t("cs.delete")}</button></div>
-      </div>
+        </tbody>
+      </table>
     </div>
   );
 }

@@ -28,6 +28,7 @@ Risks, Future Evolution**.
 | [0018](0018-steerco-is-a-topic-of-its-own.md) | Le Steerco est un sujet a part, mene par des Steerco leaders | Accepted |
 | [0019](0019-steerco-contributors.md) | Des contributeurs Steerco, plateforme par plateforme | Accepted |
 | [0020](0020-customer-success-module.md) | Customer Success, un module à part pour suivre les projets livrés | Accepted |
+| [0021](0021-remote-work-is-not-an-absence.md) | Le télétravail n'est pas une absence : une vue « Sur site / À distance » | Accepted |
 
 ## Dependency map
 

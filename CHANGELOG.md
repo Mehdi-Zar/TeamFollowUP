@@ -1,5 +1,61 @@
 # Changelog
 
+## 4.3.0 (2026-11-27)
+
+- **Customer Success, plus simple et plus propre.**
+  - Creer et mettre a jour un projet sont deux fenetres distinctes. Nouveau projet ne
+    demande que ce que dit la demande (titre, client, demandeurs, description, et s'ils
+    sont connus le prix et la livraison souhaitee) puis revient au tableau, avec la
+    ligne marquee et un bouton Completer maintenant. Le bouton Mettre a jour, au bout de
+    chaque ligne, ouvre la mise a jour, guidee comme une squad : Le projet, Avancement,
+    Facturation, Suivi. Le Suivi tient en deux tableaux : A faire (type, quoi, qui,
+    echeance, case a cocher) puis Historique (date, type, ce qui s'est passe, recap).
+    Chacun a sa ligne d'ajout en haut, et chaque ligne se modifie sur place.
+    L'etape Contributeurs est retiree. La fiche s'enregistre a chaque changement d'etape
+    et a la fermeture.
+  - Une remise sur le prix, en % ou en euros, a la creation comme dans l'etape
+    Facturation. Le prix net s'affiche dessous, et c'est lui que comptent le tableau, les
+    chiffres A facturer, Facture et Paye, le recap et l'export (migration 0055).
+  - Livraison reelle devient Date de livraison. La fin d'acces disparait (champ, colonne,
+    chiffre et ligne du recap), retiree par la migration 0055.
+  - Des mots plus simples pour la facturation en anglais : Not invoiced yet, Awaiting
+    payment, Paid (au lieu de To invoice, Invoiced). En francais, le chiffre dit "en attente
+    de paiement".
+  - L'onglet Parametrage devient Responsables : il ne sert plus qu'a designer les
+    responsables CS. Les etapes et les seuils des alertes gardent leurs valeurs par defaut.
+  - Un menu Exporter, comme sur le Dashboard et la Roadmap : HTML, JPG et PPTX. Le
+    PowerPoint passe par le Studio (document Customer Success), avec le gabarit, le
+    masque et le theme de la tribe.
+  - Le tableau de bord est plus lisible : une bande de chiffres a la place des tuiles,
+    une ligne par projet (texte coupe, entier au survol), le client dans sa colonne et
+    un filtre par client. Les colonnes se reordonnent par glisser-deposer, sur leur en-tete
+    ou dans Personnaliser.
+  - Le journal et les points a suivre s'ajoutent en une ligne ; les points regles sont
+    masques par defaut.
+  - La facturation se resume au prix, au code d'imputation et a un statut : A facturer,
+    Facture (en attente de paiement), Paye. Les chiffres separent le prix a facturer
+    de celui qui attend son paiement.
+  - Le statut d'un projet se choisit (En bonne voie, A surveiller, En difficulte) et la
+    couleur en decoule. Les etapes par defaut s'affichent dans la langue de l'ecran.
+  - Champs retires de la fiche et de la base (migration `0054_cs_simplify`) : offre,
+    etiquettes, autres interlocuteurs, jalons par etape, modeles, classification, duree
+    maximale, mode de livraison, projet GCP, nombre d'utilisateurs, refacturation des
+    consommations. Le devis signe devient le statut Paye, un montant sans devis signe devient
+    Facture, le reste A facturer : a corriger a la main si besoin.
+  - Les projets s'affichent dans un tableau triable a la place des cartes, sans jamais de
+    defilement horizontal, avec une recherche et des filtres (etape, meteo, livres et clos).
+  - Les indicateurs du haut filtrent le tableau d'un clic, et Personnaliser permet a chacun
+    de choisir ses indicateurs et ses colonnes.
+  - Plus de pastilles : l'etape et le statut s'ecrivent en toutes lettres (le statut dans
+    sa couleur), le reste n'est colore que pour une alerte. Les etapes n'ont plus de couleur
+    a regler.
+- **Sur site / A distance** (ADR 0021) : une nouvelle vue du menu Conges, a part des
+  absences. Chacun indique sa semaine habituelle de teletravail et change un jour d'un
+  clic ; un leader le fait pour son equipe. Un recapitulatif montre, pour la semaine ou le
+  mois, combien sont sur site, a distance ou absents, qui est ou chaque jour, et la part sur
+  site de chaque squad. Une absence declaree compte toujours en premier. Option
+  `leaves.remote` du module Conges, allumee par defaut.
+
 ## 4.2.0 (2026-11-27)
 
 - **Customer Success** (ADR 0020, doc 37) : un nouveau menu, desactive par defaut

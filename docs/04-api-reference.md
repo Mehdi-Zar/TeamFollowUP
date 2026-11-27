@@ -183,6 +183,14 @@ Leaves: `GET ""` (filters `from/to/user_id/squad_id/status/mine`); `POST ""`; `P
 simply never appears); `GET /export.csv`. Visibility is tribe-scoped (admins: all); the motif is
 returned only to the person, their leader and admins.
 
+### presence (`/api/presence`) - module `leaves.remote` + capability `leaves` (ADR 0021)
+`GET ""` (`from`, `to`, at most 93 days; `squad_id`; `tribe_id` for an admin): the people of the
+tribe with their squads, `can_edit`, their usual week (`weekdays`, 0 = Monday) and the status of
+each day (`onsite`, `remote`, `leave`, `off`), plus the changes and the absences of the period.
+`PUT /week/{user_id}` (`{"weekdays": [0, 4]}`) sets the usual remote days; `PUT /day/{user_id}`
+(`{"day", "location": "remote"|"onsite"|null}`) changes one working day, null goes back to the
+usual week. Writes: the person, or whoever manages their absences; audited.
+
 ### steerco (`/api/steerco`) - module `steerco` (off by default)
 A topic of its own since 4.0 ([ADR 0018](adr/0018-steerco-is-a-topic-of-its-own.md), [15](15-steerco.md)).
 **RUNNER** = a Steerco leader of the tribe (tribe leader by default, designated user, admin);

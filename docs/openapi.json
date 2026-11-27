@@ -3,7 +3,7 @@
   "info": {
     "title": "TeamFollowUP",
     "description": "Outil de pilotage de tribe : consolidation, drill-down, saisie, organigramme, exports.",
-    "version": "4.2.0"
+    "version": "4.3.0"
   },
   "paths": {
     "/api/auth/config": {
@@ -8256,6 +8256,192 @@
         }
       }
     },
+    "/api/presence": {
+      "get": {
+        "tags": [
+          "leaves"
+        ],
+        "summary": "Team Presence",
+        "description": "Where each person of the tribe works, day by day, over [from, to].\n\nGET /api/presence?from=&to=&squad_id=&tribe_id=\nAccess: anyone with the leaves menu, within their tribe (admins: every tribe,\nor ``tribe_id``). At most 93 days. Each person comes with ``can_edit`` (self or\nmanaged) and the status of each day: onsite, remote, leave or off (weekend).",
+        "operationId": "team_presence_api_presence_get",
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "title": "From"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "title": "To"
+            }
+          },
+          {
+            "name": "squad_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Squad Id"
+            }
+          },
+          {
+            "name": "tribe_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tribe Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/presence/week/{user_id}": {
+      "put": {
+        "tags": [
+          "leaves"
+        ],
+        "summary": "Set Week",
+        "description": "Set the usual remote weekdays of a person (0 = Monday .. 4 = Friday).\n\nPUT /api/presence/week/{user_id}  {\"weekdays\": [0, 4]}\nAccess: the person, or whoever manages their absences. An empty list means\nalways on site. Audited.",
+        "operationId": "set_week_api_presence_week__user_id__put",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "User Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WeekIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/presence/day/{user_id}": {
+      "put": {
+        "tags": [
+          "leaves"
+        ],
+        "summary": "Set Day",
+        "description": "Change where a person works on one day, or go back to their usual week.\n\nPUT /api/presence/day/{user_id}  {\"day\": \"2026-12-01\", \"location\": \"remote\"}\n``location`` is remote, onsite, or null (back to the usual week). A change\nequal to the usual week is not stored. Weekends are refused (422).\nAccess: the person, or whoever manages their absences. Audited.",
+        "operationId": "set_day_api_presence_day__user_id__put",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "User Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DayIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/committees": {
       "post": {
         "tags": [
@@ -10152,7 +10338,7 @@
           "customer-success"
         ],
         "summary": "Get Settings",
-        "description": "The tribe's stages, offers and thresholds. Readable by anyone who sees a\nproject of the tribe (the screens need the stage labels).",
+        "description": "The tribe's stages and thresholds. Readable by anyone who sees a\nproject of the tribe (the screens need the stage labels).",
         "operationId": "get_settings_api_cs_settings_get",
         "parameters": [
           {
@@ -10198,7 +10384,7 @@
           "customer-success"
         ],
         "summary": "Put Settings",
-        "description": "Change the stages (labels, order, colours, which ones count as done), the\noffers and the thresholds. A stage still used by a project cannot be removed.\nCS leaders. Audited.",
+        "description": "Change the stages (labels, order, colours, which ones count as done) and\nthe thresholds. A stage still used by a project cannot be removed.\nCS leaders. Audited.",
         "operationId": "put_settings_api_cs_settings_put",
         "parameters": [
           {
@@ -10959,7 +11145,7 @@
           "customer-success"
         ],
         "summary": "Recap",
-        "description": "The recap mail as HTML, ready to paste into Outlook. Shows the projects the\ncaller sees, filtered by offer, stages, tag or a list of project ids.",
+        "description": "The recap mail as HTML, ready to paste into Outlook. Shows the projects the\ncaller sees, filtered by stages or a list of project ids.",
         "operationId": "recap_api_cs_recap_html_get",
         "parameters": [
           {
@@ -10989,22 +11175,6 @@
             }
           },
           {
-            "name": "offer",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Offer"
-            }
-          },
-          {
             "name": "stages",
             "in": "query",
             "required": false,
@@ -11021,22 +11191,6 @@
               "title": "Stages"
             },
             "description": "Étapes retenues, séparées par des virgules"
-          },
-          {
-            "name": "tag",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Tag"
-            }
           },
           {
             "name": "projects",
@@ -11063,6 +11217,160 @@
                 "schema": {
                   "type": "string"
                 }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cs/export.html": {
+      "get": {
+        "tags": [
+          "customer-success"
+        ],
+        "summary": "Export Html",
+        "description": "The projects the caller sees as a standalone page: the four figures, then\none line per project (the HTML of the Export menu, and its JPG).",
+        "operationId": "export_html_api_cs_export_html_get",
+        "parameters": [
+          {
+            "name": "tribe_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tribe Id"
+            }
+          },
+          {
+            "name": "lang",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "fr",
+              "title": "Lang"
+            }
+          },
+          {
+            "name": "closed",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true,
+              "title": "Closed"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cs/export.pptx": {
+      "get": {
+        "tags": [
+          "customer-success"
+        ],
+        "summary": "Export Pptx",
+        "description": "The same projects as a deck, through the tribe's export template (Studio,\ndocument \"Customer Success\"). Returns 501 if python-pptx is not installed.",
+        "operationId": "export_pptx_api_cs_export_pptx_get",
+        "parameters": [
+          {
+            "name": "tribe_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tribe Id"
+            }
+          },
+          {
+            "name": "lang",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "fr",
+              "title": "Lang"
+            }
+          },
+          {
+            "name": "closed",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true,
+              "title": "Closed"
+            }
+          },
+          {
+            "name": "template_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Template Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
               }
             }
           },
@@ -14460,6 +14768,31 @@
         ],
         "title": "DashboardSummary",
         "description": "Aggregate headline figures across all squads in scope."
+      },
+      "DayIn": {
+        "properties": {
+          "day": {
+            "type": "string",
+            "format": "date",
+            "title": "Day"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          }
+        },
+        "type": "object",
+        "required": [
+          "day"
+        ],
+        "title": "DayIn"
       },
       "DependencyIn": {
         "properties": {
@@ -19409,6 +19742,22 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "WeekIn": {
+        "properties": {
+          "weekdays": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Weekdays"
+          }
+        },
+        "type": "object",
+        "required": [
+          "weekdays"
+        ],
+        "title": "WeekIn"
       }
     },
     "securitySchemes": {

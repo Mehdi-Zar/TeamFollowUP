@@ -24,7 +24,7 @@ import { DocContext, DocKind as StudioKind, contextQuery } from "../studio/model
  *  menu coherent with the tab you're on (e.g. the Roadmap tab exports only the
  *  roadmap, not the dashboard or the weekly report). Omit = offer everything the
  *  modules/capabilities allow (used on the full squad page). */
-type DocKind = "dashboard" | "roadmap" | "dependencies" | "report" | "steerco";
+type DocKind = "dashboard" | "roadmap" | "dependencies" | "report" | "steerco" | "cs";
 
 type Props = {
   year?: number;
@@ -34,6 +34,8 @@ type Props = {
   // Steerco one-pager export: the current period, the (optional) selected platform
   // and the tribe on screen. Without a platform, the tribe's whole pack is exported.
   steerco?: { period: string; platformId?: string; tribeId?: number };
+  // Customer Success: the projects of the tribe on screen.
+  cs?: { tribeId: number };
 };
 
 type View = "menu" | "emailReport";
@@ -71,7 +73,7 @@ export async function renderHtmlToJpg(url: string, filename: string): Promise<vo
 /** The export/share dropdown. `squadId` scopes exports to one squad (per-squad
  *  roadmap/dashboard); when absent the global variants open a squad picker.
  *  `docs` restricts which documents this instance may offer (see DocKind). */
-export default function ExportMenu({ year, squadId, sinceDays = 7, docs, steerco }: Props) {
+export default function ExportMenu({ year, squadId, sinceDays = 7, docs, steerco, cs }: Props) {
   const { t, lang } = useI18n();
   const { smtp_enabled } = useConfig();
   const m = useModule();
@@ -88,6 +90,9 @@ export default function ExportMenu({ year, squadId, sinceDays = 7, docs, steerco
   const dashboardOn = allow("dashboard") && m("dashboard") && can("dashboard");
   // The Steerco pack follows the Steerco's own read right (ADR 0018), not the dashboard's.
   const steercoOn = allow("steerco") && !!steerco && m("steerco") && steercoRights.read;
+  // Customer Success: the page that shows the menu already checked who may read it.
+  const csOn = allow("cs") && !!cs && m("customer_success");
+  const csQs = cs ? `tribe_id=${cs.tribeId}&lang=${lang}` : "";
 
   const ref = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
@@ -145,7 +150,7 @@ export default function ExportMenu({ year, squadId, sinceDays = 7, docs, steerco
     return () => document.removeEventListener("mousedown", onDoc);
   }, []);
 
-  const hasDownloads = roadmapAvail || dashboardOn || dependenciesOn || steercoOn;
+  const hasDownloads = roadmapAvail || dashboardOn || dependenciesOn || steercoOn || csOn;
   const hasEmail = smtp_enabled && reportOn;
   if (!hasDownloads && !hasEmail) return null;
 
@@ -234,6 +239,8 @@ export default function ExportMenu({ year, squadId, sinceDays = 7, docs, steerco
                                              kind="dependencies" ctx={{ year, lang }} />}
               {steercoOn && <ExportRow label={t("export.doc_steerco")} html={steercoHtml} pptx={steercoPptx}
                                         kind="steerco" ctx={{ lang, period: steerco?.period, platform_id: steerco?.platformId ? Number(steerco.platformId) : undefined }} />}
+              {csOn && <ExportRow label={t("export.doc_cs")} html={`/api/cs/export.html?${csQs}`} pptx={`/api/cs/export.pptx?${csQs}`}
+                                   kind="cs" ctx={{ lang, tribe_id: cs!.tribeId }} />}
 
               {hasEmail && <div className="menu-label" style={{ marginTop: 6 }}>{t("export.group_email")}</div>}
               {hasEmail && <Item onClick={() => { setView("emailReport"); setMsg(null); }}>{t("export.send_report")} …</Item>}

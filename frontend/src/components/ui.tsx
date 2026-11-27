@@ -134,11 +134,15 @@ export function Modal({ title, onClose, children, footer, width = 560, dirty = f
   const { t } = useI18n();
   const cardRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
-  // Focus moves into the dialog once, when it opens, and goes back to what
-  // opened it when it closes (the keyboard user stays where they were).
+  // Focus moves into the dialog once, when it opens (onto the window, unless a
+  // field inside already took it with autoFocus), and goes back to what opened
+  // it when it closes (the keyboard user stays where they were). The opener is
+  // read during the first render, before any autoFocus moves the focus.
+  const openerRef = useRef<HTMLElement | null>(null);
+  if (openerRef.current === null && typeof document !== "undefined") openerRef.current = document.activeElement as HTMLElement | null;
   useEffect(() => {
-    const opener = document.activeElement as HTMLElement | null;
-    cardRef.current?.focus();
+    const opener = openerRef.current;
+    if (!cardRef.current?.contains(document.activeElement)) cardRef.current?.focus();
     return () => { if (opener && document.contains(opener)) opener.focus(); };
   }, []);
   // Escape closes (unless edited); Tab stays inside the window.

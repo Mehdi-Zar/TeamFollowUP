@@ -29,7 +29,7 @@ export const DEFAULT_MODULES: ModulesConfig = {
   customer_success: { enabled: false },
   notifications: { enabled: true, inapp: true, email: true },
   getting_started: { enabled: true },
-  leaves: { enabled: true, overlap_alert: true },
+  leaves: { enabled: true, overlap_alert: true, remote: true },
 };
 
 /** Full default config used as the initial context value before /api/config loads. */

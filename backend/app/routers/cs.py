@@ -1,7 +1,7 @@
 """Customer Success: the projects a CS team delivers (ADR 0020, docs/37).
 
-A flat list of projects per tribe. Each project has a card (offer, delivery,
-money, technical scope, milestones, links), a dated **journal** and a short list
+A flat list of projects per tribe. Each project has a short card (stage,
+health, delivery, money, links), a dated **journal** and a short list
 of **points to follow** (actions, risks, blockers). What the screens show on top of
 that is computed, never typed twice:
 
@@ -41,13 +41,13 @@ JOURNAL_KINDS = ["request", "decision", "proposal", "delivery", "reminder", "blo
 RECAP_BY_DEFAULT = {"request", "decision", "proposal", "delivery"}
 ITEM_KINDS = ["action", "risk", "blocker"]
 HEALTH = {"green", "amber", "red"}
-BILLING = {"uncapped", "capped"}
+# Where the billing stands: to invoice, invoiced (waiting for the payment), paid.
+BILLING = ("todo", "invoiced", "paid")
+DISCOUNT_KINDS = ("pct", "amount")
 
-_TEXT_FIELDS = {"title": 255, "client": 255, "requesters": 500, "offer": 255,
-                "delivery_mode": 120, "gcp_project": 255, "cost_code": 255,
-                "consumption_cap": 255, "models": 500, "data_classification": 40,
-                "max_duration": 120}
-_DATE_FIELDS = ("planned_delivery", "actual_delivery", "access_end")
+_TEXT_FIELDS = {"title": 255, "client": 255, "requesters": 500,
+                "cost_code": 255}
+_DATE_FIELDS = ("planned_delivery", "actual_delivery")
 
 
 def _now() -> datetime:
@@ -92,39 +92,6 @@ def _links(raw) -> list[dict]:
     return out[:50]
 
 
-def _contacts(raw) -> list[dict]:
-    out = []
-    for x in raw if isinstance(raw, list) else []:
-        if not isinstance(x, dict):
-            continue
-        name = str(x.get("name") or "").strip()[:200]
-        if name:
-            out.append({"name": name, "role": str(x.get("role") or "").strip()[:120]})
-    return out[:50]
-
-
-def _tags(raw) -> list[str]:
-    out, seen = [], set()
-    for x in raw if isinstance(raw, list) else []:
-        x = str(x or "").strip()[:60]
-        if x and x.lower() not in seen:
-            seen.add(x.lower())
-            out.append(x)
-    return out[:20]
-
-
-def _milestones(raw, stages: list[str]) -> dict:
-    out = {}
-    for key, v in (raw.items() if isinstance(raw, dict) else []):
-        if key not in stages or not isinstance(v, dict):
-            continue
-        planned, actual = _date(v.get("planned"), "jalon"), _date(v.get("actual"), "jalon")
-        if planned or actual:
-            out[key] = {"planned": planned.isoformat() if planned else None,
-                        "actual": actual.isoformat() if actual else None}
-    return out
-
-
 def _amount(v) -> Decimal | None:
     if v in (None, ""):
         return None
@@ -154,31 +121,29 @@ def _apply(db: Session, p: CsProject, payload: dict, cfg: dict) -> None:
     if "health" in payload:
         h = payload.get("health") or None
         if h is not None and h not in HEALTH:
-            raise HTTPException(status_code=400, detail="Météo inconnue")
+            raise HTTPException(status_code=400, detail="Statut inconnu")
         p.health = h
-    if "consumption_billing" in payload:
-        b = payload.get("consumption_billing") or None
-        if b is not None and b not in BILLING:
-            raise HTTPException(status_code=400, detail="Refacturation inconnue")
-        p.consumption_billing = b
     if "build_amount" in payload:
         p.build_amount = _amount(payload.get("build_amount"))
-    if "quote_signed" in payload:
-        p.quote_signed = bool(payload.get("quote_signed"))
-    if "users_count" in payload:
-        v = payload.get("users_count")
-        try:
-            p.users_count = None if v in (None, "") else max(0, int(v))
-        except (TypeError, ValueError):
-            raise HTTPException(status_code=400, detail="Nombre d'utilisateurs invalide")
-    if "contacts" in payload:
-        p.contacts = _contacts(payload.get("contacts"))
-    if "tags" in payload:
-        p.tags = _tags(payload.get("tags"))
+    if "discount_kind" in payload:
+        k = payload.get("discount_kind") or "pct"
+        if k not in DISCOUNT_KINDS:
+            raise HTTPException(status_code=400, detail="Type de remise inconnu")
+        p.discount_kind = k
+    if "discount_value" in payload:
+        p.discount_value = _amount(payload.get("discount_value"))
+    if p.discount_value is not None:
+        if p.discount_kind == "pct" and p.discount_value > 100:
+            raise HTTPException(status_code=400, detail="Une remise ne dépasse pas 100 %")
+        if p.discount_kind == "amount" and p.build_amount is not None and p.discount_value > Decimal(str(p.build_amount)):
+            raise HTTPException(status_code=400, detail="La remise dépasse le prix")
+    if "billing" in payload:
+        b = payload.get("billing") or "todo"
+        if b not in BILLING:
+            raise HTTPException(status_code=400, detail="Facturation inconnue")
+        p.billing = b
     if "links" in payload:
         p.links = _links(payload.get("links"))
-    if "milestones" in payload:
-        p.milestones = _milestones(payload.get("milestones"), csconfig.stage_keys(cfg))
     if "notes" in payload:
         p.notes = (str(payload.get("notes") or "").strip()[:20000]) or None
 
@@ -212,7 +177,6 @@ def facts(p: CsProject, cfg: dict, today: date | None = None) -> dict:
     b, a, last = _blocker(p), _next_action(p), _last_contact(p)
     since = last or (p.created_at.date() if p.created_at else today)
     overdue = sum(1 for i in p.items if not i.done and i.due and i.due < today)
-    access_days = (p.access_end - today).days if p.access_end else None
     return {
         "closed": closed,
         "blocked": b is not None and not closed,
@@ -226,9 +190,6 @@ def facts(p: CsProject, cfg: dict, today: date | None = None) -> dict:
         "days_since_contact": (today - since).days,
         "stale": (not closed) and (today - since).days >= cfg["stale_days"],
         "overdue_items": overdue,
-        "access_days": access_days,
-        "access_soon": access_days is not None and 0 <= access_days <= cfg["access_warn_days"],
-        "access_over": access_days is not None and access_days < 0,
     }
 
 
@@ -249,16 +210,14 @@ def _entry_out(e: CsJournalEntry, marked: datetime | None = None) -> dict:
 def _project_out(db: Session, user: User, p: CsProject, cfg: dict, full: bool = False) -> dict:
     out = {
         "id": p.id, "tribe_id": p.tribe_id, "title": p.title, "client": p.client,
-        "requesters": p.requesters, "contacts": p.contacts or [], "tags": p.tags or [],
-        "stage": p.stage, "health": p.health, "offer": p.offer,
-        "delivery_mode": p.delivery_mode, "gcp_project": p.gcp_project,
+        "requesters": p.requesters,
+        "stage": p.stage, "health": p.health,
         "planned_delivery": _iso(p.planned_delivery), "actual_delivery": _iso(p.actual_delivery),
         "build_amount": float(p.build_amount) if p.build_amount is not None else None,
-        "quote_signed": p.quote_signed, "cost_code": p.cost_code,
-        "consumption_billing": p.consumption_billing, "consumption_cap": p.consumption_cap,
-        "users_count": p.users_count, "models": p.models,
-        "data_classification": p.data_classification, "max_duration": p.max_duration,
-        "access_end": _iso(p.access_end), "milestones": p.milestones or {},
+        "discount_value": float(p.discount_value) if p.discount_value is not None else None,
+        "discount_kind": p.discount_kind,
+        "net_amount": float(p.net_amount) if p.net_amount is not None else None,
+        "billing": p.billing, "cost_code": p.cost_code,
         "links": p.links or [], "notes": p.notes,
         "updated_at": p.updated_at.isoformat() if p.updated_at else None,
         "can_edit": acc.can_edit(db, user, p),
@@ -335,7 +294,7 @@ def _touch(p: CsProject) -> None:
 @router.get("/settings")
 def get_settings(tribe_id: int | None = Query(None), db: Session = Depends(get_db),
                  user: User = Depends(get_current_user)):
-    """The tribe's stages, offers and thresholds. Readable by anyone who sees a
+    """The tribe's stages and thresholds. Readable by anyone who sees a
     project of the tribe (the screens need the stage labels)."""
     tid = _tribe(db, tribe_id, user)
     if not (acc.reads_tribe(db, user, tid) or acc.can_designate(user, tid)
@@ -348,13 +307,13 @@ def get_settings(tribe_id: int | None = Query(None), db: Session = Depends(get_d
 @router.put("/settings")
 def put_settings(payload: dict = Body(...), tribe_id: int | None = Query(None),
                  db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """Change the stages (labels, order, colours, which ones count as done), the
-    offers and the thresholds. A stage still used by a project cannot be removed.
+    """Change the stages (labels, order, colours, which ones count as done) and
+    the thresholds. A stage still used by a project cannot be removed.
     CS leaders. Audited."""
     tid = _tribe(db, tribe_id, user)
     acc.ensure_runs(db, user, tid)
     patch = {k: v for k, v in payload.items()
-             if k in ("stages", "offers", "stale_days", "access_warn_days", "recap_intro")}
+             if k in ("stages", "stale_days", "recap_intro")}
     if "stages" in patch:
         new = csconfig.normalize({"stages": patch["stages"]})["stages"]
         if not patch["stages"]:
@@ -491,17 +450,15 @@ def dashboard(tribe_id: int | None = Query(None), db: Session = Depends(get_db),
         "blocked": sum(1 for _, f in rows if f["blocked"]),
         "delivered_year": sum(1 for p, _ in rows if p.actual_delivery and p.actual_delivery.year == year),
         "year": year,
-        "build_signed": float(sum((p.build_amount or 0) for p, _ in rows if p.quote_signed)),
-        "build_pending": float(sum((p.build_amount or 0) for p, f in open_ if not p.quote_signed)),
+        # The money, by where its billing stands (any stage: a delivered project can
+        # still be waiting for its invoice or its payment).
+        # The net price, after the discount: what is actually invoiced.
+        **{f"{b}_total": float(sum((p.net_amount or 0) for p, _ in rows if p.billing == b)) for b in BILLING},
         "overdue_items": sum(f["overdue_items"] for _, f in rows),
         "overdue_projects": sum(1 for _, f in rows if f["overdue_items"]),
-        "access_soon": sum(1 for _, f in rows if f["access_soon"]),
-        # A project in the last stage (Closed by default) is over: its access too.
-        "access_over": sum(1 for p, f in rows if f["access_over"] and p.stage != last_stage),
         "stale": sum(1 for _, f in rows if f["stale"]),
         "by_stage": {s["key"]: sum(1 for p, _ in rows if p.stage == s["key"]) for s in cfg["stages"]},
         "stale_days": cfg["stale_days"],
-        "access_warn_days": cfg["access_warn_days"],
     }
 
 
@@ -514,8 +471,8 @@ def create_project(payload: dict = Body(...), tribe_id: int | None = Query(None)
     cfg = csconfig.get(db, tid)
     if not _text(payload.get("title"), 255):
         raise HTTPException(status_code=400, detail="Le projet doit avoir un titre")
-    p = CsProject(tribe_id=tid, title="", stage=cfg["stages"][0]["key"], contacts=[], tags=[],
-                  milestones={}, links=[], created_by_user_id=user.id, created_at=_now(),
+    p = CsProject(tribe_id=tid, title="", stage=cfg["stages"][0]["key"],
+                  links=[], created_by_user_id=user.id, created_at=_now(),
                   updated_at=_now())
     _apply(db, p, payload, cfg)
     db.add(p)
@@ -738,17 +695,13 @@ def delete_item(item_id: int, db: Session = Depends(get_db), user: User = Depend
 RECAP_L = {
     "fr": {
         "summary": "En résumé", "h_topic": "Sujet", "h_requester": "Demandeur",
-        "h_gcp": "Projet GCP", "h_status": "Statut", "tbd": "À définir",
-        "delivered_on": "Livré le {d}", "users": "{n} utilisateurs", "user": "1 utilisateur",
+        "h_status": "Statut",
+        "delivered_on": "Livré le {d}",
         "blocked": "En attente : {label}", "new": "Nouveau", "open_points": "Points ouverts",
         "due": "échéance {d}", "no_project": "Aucun projet dans ce périmètre.",
-        "f_offer": "Offre", "f_mode": "Mode", "f_gcp": "Projet GCP", "f_build": "Build",
-        "f_quote_ok": "devis signé", "f_quote_ko": "devis non signé",
-        "f_cost_code": "Code projet", "f_billing": "Consommation",
-        "billing_uncapped": "refacturée au projet, sans plafond",
-        "billing_capped": "refacturée au projet, plafond : {cap}",
-        "f_users": "Utilisateurs", "f_models": "Modèles", "f_class": "Données",
-        "f_duration": "Durée maximale", "f_access_end": "Fin d'accès",
+        "discount": "({off} de remise sur {price})",
+        "f_amount": "Prix", "billing": {"todo": "à facturer", "invoiced": "facturé", "paid": "payé"},
+        "f_cost_code": "Code d'imputation",
         "f_planned": "Livraison prévue", "f_delivered": "Livré le",
         "kind": {"request": "Demande", "decision": "Décision", "proposal": "Proposition",
                  "delivery": "Livraison", "reminder": "Relance", "blocker": "Blocage", "note": "Note"},
@@ -756,17 +709,13 @@ RECAP_L = {
     },
     "en": {
         "summary": "Summary", "h_topic": "Topic", "h_requester": "Requester",
-        "h_gcp": "GCP project", "h_status": "Status", "tbd": "To be defined",
-        "delivered_on": "Delivered on {d}", "users": "{n} users", "user": "1 user",
+        "h_status": "Status",
+        "delivered_on": "Delivered on {d}",
         "blocked": "Waiting for: {label}", "new": "New", "open_points": "Open points",
         "due": "due {d}", "no_project": "No project in this scope.",
-        "f_offer": "Offer", "f_mode": "Mode", "f_gcp": "GCP project", "f_build": "Build",
-        "f_quote_ok": "quote signed", "f_quote_ko": "quote not signed",
-        "f_cost_code": "Cost code", "f_billing": "Consumption",
-        "billing_uncapped": "charged to the project, no cap",
-        "billing_capped": "charged to the project, cap: {cap}",
-        "f_users": "Users", "f_models": "Models", "f_class": "Data",
-        "f_duration": "Maximum duration", "f_access_end": "Access ends",
+        "discount": "({off} off {price})",
+        "f_amount": "Price", "billing": {"todo": "not invoiced yet", "invoiced": "awaiting payment", "paid": "paid"},
+        "f_cost_code": "Cost code",
         "f_planned": "Planned delivery", "f_delivered": "Delivered on",
         "kind": {"request": "Request", "decision": "Decision", "proposal": "Proposal",
                  "delivery": "Delivery", "reminder": "Reminder", "blocker": "Blocker", "note": "Note"},
@@ -794,15 +743,20 @@ def _amount_txt(v: Decimal | None, lang: str) -> str:
     return f"€{n} excl. VAT"
 
 
+def _discount_txt(p: CsProject, L: dict, lang: str) -> str:
+    """ " (10 % de remise sur 10 000 € HT)", or nothing without a discount."""
+    if not p.discount_value:
+        return ""
+    off = (f"{p.discount_value:g} %" if p.discount_kind == "pct" else _amount_txt(p.discount_value, lang))
+    return " " + L["discount"].format(off=off, price=_amount_txt(p.build_amount, lang))
+
+
 def _status_txt(p: CsProject, f: dict, cfg: dict, L: dict, lang: str) -> str:
     if p.actual_delivery and f["closed"]:
-        s = L["delivered_on"].format(d=_dm(p.actual_delivery, lang))
-        if p.users_count:
-            s += f" ({L['user'] if p.users_count == 1 else L['users'].format(n=p.users_count)})"
-        return s
+        return L["delivered_on"].format(d=_dm(p.actual_delivery, lang))
     if f["blocker"]:
         return L["blocked"].format(label=f["blocker"]["label"])
-    labels = {s["key"]: s["label"] for s in cfg["stages"]}
+    labels = {s["key"]: csconfig.stage_label(s, lang) for s in cfg["stages"]}
     return labels.get(p.stage, p.stage)
 
 
@@ -820,32 +774,19 @@ def _project_facts(p: CsProject, L: dict, lang: str) -> list[str]:
         if value:
             out.append(f"<li><b>{escape(label)}</b> : {escape(str(value))}</li>" if lang == "fr"
                        else f"<li><b>{escape(label)}</b>: {escape(str(value))}</li>")
-    add(L["f_offer"], p.offer)
-    add(L["f_mode"], p.delivery_mode)
-    add(L["f_gcp"], p.gcp_project)
     if p.build_amount is not None:
-        add(L["f_build"], f"{_amount_txt(p.build_amount, lang)}, "
-                          f"{L['f_quote_ok'] if p.quote_signed else L['f_quote_ko']}")
+        add(L["f_amount"], f"{_amount_txt(p.net_amount, lang)}{_discount_txt(p, L, lang)}, "
+                           f"{L['billing'].get(p.billing, p.billing)}")
     add(L["f_cost_code"], p.cost_code)
-    if p.consumption_billing == "uncapped":
-        add(L["f_billing"], L["billing_uncapped"])
-    elif p.consumption_billing == "capped":
-        add(L["f_billing"], L["billing_capped"].format(cap=p.consumption_cap or "?"))
-    add(L["f_users"], p.users_count)
-    add(L["f_models"], p.models)
-    add(L["f_class"], p.data_classification)
-    add(L["f_duration"], p.max_duration)
     if p.actual_delivery:
         add(L["f_delivered"], p.actual_delivery.strftime("%d/%m/%Y"))
     elif p.planned_delivery:
         add(L["f_planned"], p.planned_delivery.strftime("%d/%m/%Y"))
-    if p.access_end:
-        add(L["f_access_end"], p.access_end.strftime("%d/%m/%Y"))
     return out
 
 
-def recap_html(db: Session, user: User, tid: int, lang: str = "fr", offer: str | None = None,
-               stages: list[str] | None = None, tag: str | None = None,
+def recap_html(db: Session, user: User, tid: int, lang: str = "fr",
+               stages: list[str] | None = None,
                project_ids: list[int] | None = None) -> str:
     """The recap mail, as HTML that pastes cleanly into Outlook (inline styles,
     tables, no script, no external resource)."""
@@ -854,12 +795,8 @@ def recap_html(db: Session, user: User, tid: int, lang: str = "fr", offer: str |
     marked = _marked(cfg)
     order = {k: i for i, k in enumerate(csconfig.stage_keys(cfg))}
     projects = _visible_projects(db, user, tid)
-    if offer:
-        projects = [p for p in projects if (p.offer or "") == offer]
     if stages:
         projects = [p for p in projects if p.stage in stages]
-    if tag:
-        projects = [p for p in projects if tag.lower() in [t.lower() for t in (p.tags or [])]]
     if project_ids:
         projects = [p for p in projects if p.id in project_ids]
     projects.sort(key=lambda p: (order.get(p.stage, 99), p.title.lower()))
@@ -875,13 +812,13 @@ def recap_html(db: Session, user: User, tid: int, lang: str = "fr", offer: str |
     parts.append(f'<table style="border-collapse:collapse;{_FONT}">')
     parts.append("<tr>" + "".join(
         f'<th style="{_TD};background:#F2F4F7;text-align:left">{escape(h)}</th>'
-        for h in (L["h_topic"], L["h_requester"], L["h_gcp"], L["h_status"])) + "</tr>")
+        for h in (L["h_topic"], L["h_requester"], L["h_status"])) + "</tr>")
     rows = [(p, facts(p, cfg, today)) for p in projects]
     for p, f in rows:
         topic = f"{p.client} : {p.title}" if p.client and lang == "fr" else (
             f"{p.client}: {p.title}" if p.client else p.title)
         parts.append("<tr>" + "".join(f'<td style="{_TD}">{escape(c)}</td>' for c in (
-            topic, p.requesters or "", p.gcp_project or L["tbd"], _status_txt(p, f, cfg, L, lang))) + "</tr>")
+            topic, p.requesters or "", _status_txt(p, f, cfg, L, lang))) + "</tr>")
     parts.append("</table>")
 
     for n, (p, f) in enumerate(rows, start=1):
@@ -940,16 +877,51 @@ def _ids(raw: str | None) -> list[int] | None:
 
 
 @router.get("/recap.html", response_class=HTMLResponse)
-def recap(tribe_id: int | None = Query(None), lang: str = Query("fr"), offer: str | None = Query(None),
+def recap(tribe_id: int | None = Query(None), lang: str = Query("fr"),
           stages: str | None = Query(None, description="Étapes retenues, séparées par des virgules"),
-          tag: str | None = Query(None), projects: str | None = Query(None),
+          projects: str | None = Query(None),
           db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """The recap mail as HTML, ready to paste into Outlook. Shows the projects the
-    caller sees, filtered by offer, stages, tag or a list of project ids."""
+    caller sees, filtered by stages or a list of project ids."""
     tid = _tribe(db, tribe_id, user)
     st = [s for s in (stages or "").split(",") if s] or None
-    html = recap_html(db, user, tid, "en" if lang == "en" else "fr", offer, st, tag, _ids(projects))
+    html = recap_html(db, user, tid, "en" if lang == "en" else "fr", st, _ids(projects))
     return HTMLResponse(html)
+
+
+@router.get("/export.html", response_class=HTMLResponse)
+def export_html(tribe_id: int | None = Query(None), lang: str = Query("fr"), closed: bool = Query(True),
+                db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """The projects the caller sees as a standalone page: the four figures, then
+    one line per project (the HTML of the Export menu, and its JPG)."""
+    from ..csreport import build_cs_list, render_cs_html
+    tid = _tribe(db, tribe_id, user)
+    return HTMLResponse(render_cs_html(build_cs_list(db, user, tid, lang, closed=closed)))
+
+
+@router.get("/export.pptx")
+def export_pptx(tribe_id: int | None = Query(None), lang: str = Query("fr"), closed: bool = Query(True),
+                template_id: int | None = Query(None),
+                db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """The same projects as a deck, through the tribe's export template (Studio,
+    document "Customer Success"). Returns 501 if python-pptx is not installed."""
+    from .. import exportstore
+    from ..csreport import build_cs_list
+    tid = _tribe(db, tribe_id, user)
+    data = build_cs_list(db, user, tid, lang, closed=closed)
+    try:
+        payload, filename, _m = exportstore.render(
+            db, user, "cs", {"cs": lambda: data}, chain=exportstore.chain_for(db, tribe_id=tid),
+            lang=data["lang"], scope_name=data["scope_name"], year=data["year"], template_id=template_id,
+            legacy_name=f"customer_success_{date.today().isoformat()}.pptx")
+    except ImportError:
+        raise HTTPException(status_code=501, detail="Génération PPTX indisponible (python-pptx non installé)")
+    except LookupError:
+        raise HTTPException(status_code=404, detail="Modèle introuvable")
+    db.commit()
+    return Response(content=payload,
+                    media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                    headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
 @router.post("/recap/mark")

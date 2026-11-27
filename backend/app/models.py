@@ -867,6 +867,39 @@ class Leave(Base):
     type: Mapped["LeaveType"] = relationship(foreign_keys=[type_id])
 
 
+class RemotePattern(Base):
+    """The usual remote work week of one person (ADR 0021, app/presence.py).
+
+    ``weekdays`` lists the weekdays (0 = Monday .. 4 = Friday) the person usually
+    works remotely. No row means always on site. Remote work is not an absence:
+    it is kept apart from the leaves and needs no approval."""
+    __tablename__ = "remote_patterns"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"),
+                                         nullable=False, unique=True, index=True)
+    weekdays: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+    updated_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"),
+                                                           nullable=True)
+
+
+class RemoteDay(Base):
+    """A change to the usual week for one day: remote on a usual on-site day, or
+    on site on a usual remote day (ADR 0021). Full days only."""
+    __tablename__ = "remote_days"
+    __table_args__ = (UniqueConstraint("user_id", "day", name="uq_remote_day"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"),
+                                         nullable=False, index=True)
+    day: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    location: Mapped[str] = mapped_column(String(8), nullable=False)  # remote | onsite
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"),
+                                                           nullable=True)
+
+
 class AuditLog(Base):
     """An append-only record of a security-relevant action for traceability.
 
@@ -1082,13 +1115,12 @@ class CsLeader(Base):
 class CsProject(Base):
     """A project the Customer Success team delivers (docs/37).
 
-    Projects are flat: the client, the offer and the people are free text, so that
+    Projects are flat: the client and the people are free text, so that
     entering one is as quick as a OneNote page. ``stage`` is a key of the tribe's
     stage list (app/csconfig.py); the blocker, the next action and the last contact
     are never stored, they are read from the items and the journal.
 
-    ``contacts``: [{"name", "role"}]. ``tags``: [str]. ``links``: [{"label", "url"}].
-    ``milestones``: {stage_key: {"planned": "YYYY-MM-DD", "actual": "YYYY-MM-DD"}}.
+    ``links``: [{"label", "url"}].
     """
     __tablename__ = "cs_projects"
 
@@ -1098,28 +1130,31 @@ class CsProject(Base):
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     client: Mapped[str | None] = mapped_column(String(255), nullable=True)
     requesters: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    contacts: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
-    tags: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     stage: Mapped[str] = mapped_column(String(40), nullable=False, default="request")
     # green | amber | red, set by hand; None until someone gives one.
     health: Mapped[str | None] = mapped_column(String(10), nullable=True)
-    offer: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    delivery_mode: Mapped[str | None] = mapped_column(String(120), nullable=True)
-    gcp_project: Mapped[str | None] = mapped_column(String(255), nullable=True)
     planned_delivery: Mapped[date | None] = mapped_column(Date, nullable=True)
     actual_delivery: Mapped[date | None] = mapped_column(Date, nullable=True)
     build_amount: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
-    quote_signed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Where the billing of build_amount stands: todo (to invoice) | invoiced | paid.
+    billing: Mapped[str] = mapped_column(String(20), default="todo", server_default="todo", nullable=False)
+    # A discount on build_amount: a percentage (pct) or euros excl. VAT (amount).
+    # The net price is computed (CsProject.net_amount), never stored.
+    discount_value: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    discount_kind: Mapped[str] = mapped_column(String(10), default="pct", server_default="pct", nullable=False)
+
+    @property
+    def net_amount(self):
+        """The price after the discount, never below zero. None without a price."""
+        from decimal import Decimal
+        if self.build_amount is None:
+            return None
+        price = Decimal(str(self.build_amount))
+        d = Decimal(str(self.discount_value or 0))
+        off = price * d / 100 if self.discount_kind == "pct" else d
+        return max(Decimal("0"), price - off).quantize(Decimal("0.01"))
     cost_code: Mapped[str | None] = mapped_column(String(255), nullable=True)
     # uncapped | capped; the cap itself is free text (an amount, a quota).
-    consumption_billing: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    consumption_cap: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    users_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    models: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    data_classification: Mapped[str | None] = mapped_column(String(40), nullable=True)
-    max_duration: Mapped[str | None] = mapped_column(String(120), nullable=True)
-    access_end: Mapped[date | None] = mapped_column(Date, nullable=True)
-    milestones: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     links: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

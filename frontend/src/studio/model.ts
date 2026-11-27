@@ -3,7 +3,7 @@
 // fresh id). The authority on a specification is the server (exportspec.py): the
 // editor sends the whole thing and gets back the cleaned version.
 
-export type DocKind = "dashboard" | "weekly" | "roadmap" | "dependencies" | "initiatives" | "steerco" | "org";
+export type DocKind = "dashboard" | "weekly" | "roadmap" | "dependencies" | "initiatives" | "steerco" | "org" | "cs";
 
 export type ParamKind = "bool" | "int" | "enum" | "multi" | "text" | "longtext" | "color" | "asset";
 export type ParamSpec = { kind: ParamKind; default?: any; options?: string[]; min?: number; max?: number };

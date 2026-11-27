@@ -27,8 +27,11 @@ EN: dict[str, str] = {
     "Point introuvable": "Point not found",
     "Un lien commence par https:// ou http://": "A link starts with https:// or http://",
     "Étape inconnue": "Unknown stage",
-    "Météo inconnue": "Unknown health",
-    "Refacturation inconnue": "Unknown billing",
+    "Statut inconnu": "Unknown status",
+    "Facturation inconnue": "Unknown billing status",
+    "Type de remise inconnu": "Unknown discount type",
+    "Une remise ne dépasse pas 100 %": "A discount cannot exceed 100%",
+    "La remise dépasse le prix": "The discount exceeds the price",
     "Il faut au moins une étape": "At least one stage is needed",
     "Cette personne n'appartient pas à la tribe du projet": "This person does not belong to the project's tribe",
     "Type d'entrée inconnu": "Unknown entry type",
@@ -36,7 +39,6 @@ EN: dict[str, str] = {
     "Type de point inconnu": "Unknown point type",
     "Le point doit avoir un libellé": "The point needs a label",
     "Liste de projets invalide": "Invalid project list",
-    "Nombre d'utilisateurs invalide": "Invalid number of users",
     # Rattacher un jalon a un OTD depuis le jalon.
     "Ce jalon est rattaché à un OTD que vous ne gérez pas": "This milestone is linked to an OTD you do not manage",
     "Cet OTD n'est pas celui de cette squad": "This OTD is not this squad's",
@@ -204,6 +206,10 @@ EN: dict[str, str] = {
     "Réservé aux Steerco leaders et aux contributeurs de cette plateforme":
         "Reserved for the Steerco leaders and the contributors of this platform",
     "Contributeur introuvable": "Contributor not found",
+    "Vous ne gérez pas le télétravail de cette personne": "You do not manage the remote work of this person",
+    "Période trop longue (93 jours au plus)": "Period too long (93 days at most)",
+    "Lieu inconnu (remote ou onsite)": "Unknown place (remote or onsite)",
+    "Le samedi et le dimanche ne se planifient pas": "Saturday and Sunday cannot be planned",
     "Ce mois a été modifié entre-temps : rechargez avant d'enregistrer":
         "This month was changed in the meantime: reload before saving",
     "Vous ne dirigez pas cette squad": "You do not lead this squad",

@@ -63,7 +63,7 @@ DOMAINS: dict[str, dict] = {
     "committees": {"tables": ["committees"], "implies": []},
     "members": {"tables": ["members"], "implies": []},
     "org": {"tables": ["org_nodes"], "implies": []},
-    "leaves": {"tables": ["leaves"], "implies": []},
+    "leaves": {"tables": ["leaves", "remote_days", "remote_patterns"], "implies": []},
     "feed": {"tables": ["feed_reactions", "feed_replies", "feed_posts"], "implies": []},
     "notifications": {"tables": ["notifications"], "implies": []},
     "audit": {"tables": ["audit_log"], "implies": []},

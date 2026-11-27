@@ -38,6 +38,7 @@ from .routers import (
     org,
     orgexport,
     otds,
+    presence,
     reports,
     roadmap,
     roadmapview,
@@ -165,7 +166,7 @@ errors.install(app)
 
 for r in (auth, tribes, squads, dashboard, org, orgexport, roadmap, roadmapview, kpis,
           members, snapshots, feed, notifications, admin, diffusions, audit, reports,
-          initiatives, otds, access, leaves, committees, steerco, cs, data, directory, scim, exports):
+          initiatives, otds, access, leaves, presence, committees, steerco, cs, data, directory, scim, exports):
     app.include_router(r.router)
 # SCIM answers its errors in its own format (application/scim+json).
 scim.install(app)

@@ -76,14 +76,16 @@ export function useTableView<T>(storageKey: string, rows: T[], cols: Col<T>[],
 }
 
 /** A column header that sorts its table. */
-export function SortTh<T>({ view, col, children, style, className }: {
+export function SortTh<T>({ view, col, children, style, className, thProps }: {
   view: TableView<T>; col: string; children: ReactNode; style?: React.CSSProperties; className?: string;
+  /** Extra attributes for the cell, such as the drag and drop of a movable column. */
+  thProps?: React.ThHTMLAttributes<HTMLTableCellElement>;
 }) {
   const { t } = useI18n();
   const on = view.sort === col;
   return (
     <th style={style} className={`sort-th${on ? " on" : ""}${className ? ` ${className}` : ""}`}
-        aria-sort={on ? (view.desc ? "descending" : "ascending") : "none"}>
+        aria-sort={on ? (view.desc ? "descending" : "ascending") : "none"} {...thProps}>
       <button type="button" className="sort-th-btn" onClick={() => view.toggle(col)}
               title={on ? t("list.sort_flip") : t("table.sort_by")}>
         {children}<span className="sort-th-mark" aria-hidden>{on ? (view.desc ? "▼" : "▲") : "↕"}</span>

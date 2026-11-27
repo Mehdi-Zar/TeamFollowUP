@@ -21,12 +21,12 @@ import re
 # --------------------------------------------------------------------------
 # Catalogue
 # --------------------------------------------------------------------------
-DOC_KINDS = ("dashboard", "weekly", "roadmap", "dependencies", "initiatives", "steerco", "org")
+DOC_KINDS = ("dashboard", "weekly", "roadmap", "dependencies", "initiatives", "steerco", "org", "cs")
 
 # Where each document gets its data. A section reads the family of its document.
 DOC_DATA = {"dashboard": "report", "weekly": "report", "roadmap": "report",
             "dependencies": "dependencies", "initiatives": "initiatives",
-            "steerco": "steerco", "org": "org"}
+            "steerco": "steerco", "org": "org", "cs": "cs"}
 
 GRID_COLS, GRID_ROWS = 12, 8
 
@@ -120,6 +120,14 @@ SECTION_TYPES: dict[str, dict] = {
             "hide_past": {"kind": "bool", "default": False},
             "columns": {"kind": "multi", "default": ["owner", "squad", "deadline"],
                         "options": ["owner", "squad", "deadline"]},
+        },
+        "blocks": {"header": {}},
+    },
+    "cs": {
+        "data": "cs", "repeat": "once",
+        "params": {
+            "rows_per_slide": {"kind": "int", "min": 5, "max": 12, "default": 10},
+            "hide_closed": {"kind": "bool", "default": False},
         },
         "blocks": {"header": {}},
     },
@@ -282,6 +290,8 @@ def system_spec(doc_kind: str) -> dict:
         secs = [_section("initiatives", "initiatives")]
     elif doc_kind == "steerco":
         secs = [_section("platforms", "platform")]
+    elif doc_kind == "cs":
+        secs = [_section("cs", "cs")]
     elif doc_kind == "org":
         secs = [_section("org", "org")]
     else:

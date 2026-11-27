@@ -96,10 +96,69 @@ button:focus-visible, .btn:focus-visible, a:focus-visible, .squad-card:focus-vis
 /* Un badge-bouton (MySquads) garde son pointeur et un survol discret. */
 button.badge:hover { background: var(--surface-3); }
 
-/* Customer Success (docs/37): a project card and its stage bar. */
-.cs-card { border: 1px solid var(--line); background: var(--surface); font: inherit; color: inherit; }
-.cs-card:hover { border-color: var(--accent); }
-.cs-steps { display: flex; gap: 4px; }
-.cs-step { flex: 1; height: 6px; border-radius: 999px; }
+/* Customer Success (docs/37). Plain and quiet: no pills, text coloured only
+   for an alert. The projects table never scrolls sideways: its column widths
+   are set by the page from the columns each user keeps, the text wraps, and the
+   secondary columns go on a narrow screen (they stay in the project's window). */
+/* The figures: small cards on one line (they share the width, a long label is cut).
+   A figure that counts projects also filters them. */
+.cs-band { display: flex; flex-wrap: nowrap; gap: 12px; }
+.cs-band-item { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 14px;
+  font: inherit; color: inherit; text-align: left; }
+button.cs-band-item { cursor: pointer; }
+button.cs-band-item:hover { border-color: var(--grey); }
+.cs-band-item.on { border-color: var(--title); }
+/* Sober like the rest: no lift, no glow, no focus halo on click (the keyboard keeps its outline). */
+button.cs-band-item, button.cs-band-item:active, button.cs-band-item:focus { transform: none; box-shadow: none; }
+button.cs-band-item:focus:not(:focus-visible) { outline: none; }
+.cs-band-n { font-size: 20px; font-weight: 700; line-height: 1.2; color: var(--title); font-variant-numeric: tabular-nums; }
+.cs-band-l { font-size: 12px; color: var(--muted); display: block; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cs-band-l::first-letter { text-transform: uppercase; }
+.cs-filters { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+.cs-check { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer; }
+.cs-checks { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px 16px; }
+.cs-table { table-layout: fixed; width: 100%; }
+.cs-table th, .cs-table td { vertical-align: middle; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cs-table td { border-bottom: 1px solid var(--line); padding-top: 14px; padding-bottom: 14px; font-size: 14px; }
+.cs-table thead th { border-bottom: 1px solid var(--line); }
+.cs-table .c-build { text-align: right; }
+@media (max-width: 1100px) { .cs-table .c-req, .cs-table .c-build { display: none; } }
+@media (max-width: 900px) { .cs-table .c-contact, .cs-table .c-health, .cs-table .c-planned, .cs-table .c-stage { display: none; } }
+.cs-row-new td { background: rgba(2,122,72,.08); }
+.cs-table .c-act { text-align: right; overflow: visible; }
+/* Movable columns: a header is dragged onto another. */
+.cs-table th.cs-drag { cursor: grab; }
+.cs-table th.cs-drop { box-shadow: inset 2px 0 0 var(--title); }
+.cs-order { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
+.cs-order li { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--line); cursor: grab; background: var(--surface, transparent); }
+.cs-order li.dragging { opacity: 0.5; }
+.cs-order .cs-check { flex: 1; }
+.cs-grip { color: var(--muted); letter-spacing: -2px; user-select: none; }
+.cs-order-btns { display: inline-flex; gap: 2px; }
+/* A project's steps: fields laid flat in two columns, no box inside the panel. */
+.cs-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 20px; max-width: 760px; }
+.cs-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.cs-wide { grid-column: 1 / -1; }
+.cs-label { font-size: 13px; font-weight: 600; color: var(--title); }
+.cs-line { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) auto; gap: 8px; align-items: center; }
+/* Suivi: two tables, a new line on top of each, changed in place. Fixed columns,
+   the text wraps: never a horizontal scroll. */
+.cs-sec-head { display: flex; align-items: baseline; gap: 12px; }
+.cs-ttable { table-layout: fixed; width: 100%; }
+.cs-ttable th, .cs-ttable td { vertical-align: middle; }
+.cs-ttable td input:not([type="checkbox"]), .cs-ttable td select { width: 100%; min-width: 0; }
+.cs-ttable .cs-newrow td { background: var(--bg); }
+.cs-ttable .cs-wrap { white-space: pre-wrap; overflow-wrap: anywhere; }
+.cs-ttable .cs-cut { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cs-ttable .cs-tact { text-align: right; white-space: nowrap; }
+.cs-ttable .cs-tact button + button { margin-left: 4px; }
+.cs-ttable .cs-tcenter { text-align: center; }
+.cs-ttable tr.cs-done td { color: var(--muted); }
+.cs-ttable tr.cs-done td.cs-wrap { text-decoration: line-through; }
+.cs-discount { display: grid; grid-template-columns: minmax(0, 1fr) 72px; gap: 8px; }
+@media (max-width: 760px) {
+  .cs-form { grid-template-columns: 1fr; }
+}
 .cs-recap { border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; background: #fff; color: #1D2939; max-height: 52vh; overflow: auto; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }

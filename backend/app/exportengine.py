@@ -24,10 +24,10 @@ from .exportspec import DOC_DATA, SECTION_TYPES, WIDGETS, fill, sparam
 DOC_LABELS = {
     "fr": {"dashboard": "Tableau de bord", "weekly": "Rapport hebdomadaire", "roadmap": "Roadmap",
            "dependencies": "Dépendances", "initiatives": "Initiatives", "steerco": "Steerco",
-           "org": "Organigramme"},
+           "org": "Organigramme", "cs": "Customer Success"},
     "en": {"dashboard": "Dashboard", "weekly": "Weekly report", "roadmap": "Roadmap",
            "dependencies": "Dependencies", "initiatives": "Initiatives", "steerco": "Steerco",
-           "org": "Org chart"},
+           "org": "Org chart", "cs": "Customer Success"},
 }
 
 WIDGET_LABELS = {
@@ -150,6 +150,11 @@ def _build(prs, spec: dict, ctx: Context) -> None:
                 from .routers.steerco import steerco_deck
                 platforms, period, L = got
                 d = steerco_deck(prs, platforms, period, L)
+        elif kind == "cs":
+            data = ctx.data("cs")
+            if data is not None:
+                from .csreport import cs_deck
+                d = cs_deck(prs, data, lang=lang)
         elif kind == "org":
             got = ctx.data("org")
             if got is not None:
@@ -161,7 +166,7 @@ def _build(prs, spec: dict, ctx: Context) -> None:
 
     family_of = {"summary": "report", "squad": "report", "attention": "report", "roadmap": "roadmap",
                  "dependencies": "dependencies", "initiatives": "initiatives",
-                 "platform": "steerco", "org": "org"}
+                 "platform": "steerco", "org": "org", "cs": "cs"}
 
     for sec in spec["sections"]:
         if not sec.get("enabled", True):

@@ -9,14 +9,13 @@ import { useEffect, useRef, useState } from "react";
 import { api, errorText } from "../../api";
 import { useI18n } from "../../i18n";
 import { CsSettings, Project, fmtDate } from "../../cs";
-import { Chip, ErrorBanner, Modal, Spinner } from "../ui";
+import { ErrorBanner, Modal, Spinner } from "../ui";
 
 export default function CsRecapModal({ tribeId, settings, projects, canRun, onClose, onSaved }: {
   tribeId: number; settings: CsSettings; projects: Project[]; canRun: boolean;
   onClose: () => void; onSaved: () => void;
 }) {
   const { t, lang } = useI18n();
-  const [offer, setOffer] = useState("");
   // Every stage but the last (Closed by default): a closed project has left the recap.
   const [stages, setStages] = useState<string[]>(settings.stages.slice(0, -1).map((s) => s.key));
   const [mailLang, setMailLang] = useState<"fr" | "en">(lang === "en" ? "en" : "fr");
@@ -27,11 +26,9 @@ export default function CsRecapModal({ tribeId, settings, projects, canRun, onCl
   const [note, setNote] = useState<string | null>(null);
   const [marked, setMarked] = useState(settings.recap_marked_at);
   const box = useRef<HTMLDivElement>(null);
-  const offers = Array.from(new Set(projects.map((p) => p.offer).filter((o): o is string => !!o))).sort();
 
   const query = () => {
     const q = new URLSearchParams({ tribe_id: String(tribeId), lang: mailLang });
-    if (offer) q.set("offer", offer);
     if (stages.length) q.set("stages", stages.join(","));
     return q.toString();
   };
@@ -40,7 +37,7 @@ export default function CsRecapModal({ tribeId, settings, projects, canRun, onCl
     api.get<string>(`/api/cs/recap.html?${query()}`).then((h) => setHtml(String(h ?? ""))).catch((e) => setErr(errorText(e)));
   };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(refresh, [offer, stages.join(","), mailLang, tribeId]);
+  useEffect(refresh, [stages.join(","), mailLang, tribeId]);
 
   async function saveIntro() {
     setErr(null);
@@ -91,19 +88,15 @@ export default function CsRecapModal({ tribeId, settings, projects, canRun, onCl
       <div className="stack" style={{ gap: 12 }}>
         {err && <ErrorBanner message={err} />}
         <div className="inline" style={{ gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-          {offers.length > 0 && (
-            <select className="w-auto" aria-label={t("cs.f.offer")} value={offer} onChange={(e) => setOffer(e.target.value)}>
-              <option value="">{t("cs.all_offers")}</option>
-              {offers.map((o) => <option key={o} value={o}>{o}</option>)}
-            </select>
-          )}
           <select className="w-auto" aria-label={t("cs.recap.lang")} value={mailLang} onChange={(e) => setMailLang(e.target.value as "fr" | "en")}>
             <option value="fr">Français</option>
             <option value="en">English</option>
           </select>
         </div>
         <div className="inline" style={{ gap: 6, flexWrap: "wrap" }}>
-          {settings.stages.map((s) => <Chip key={s.key} on={stages.includes(s.key)} onToggle={() => toggleStage(s.key)}>{s.label}</Chip>)}
+          {settings.stages.map((s) => (
+            <label key={s.key} className="cs-check"><input type="checkbox" checked={stages.includes(s.key)} onChange={() => toggleStage(s.key)} />{s.label}</label>
+          ))}
         </div>
         {canRun && (
           <div className="stack" style={{ gap: 4 }}>

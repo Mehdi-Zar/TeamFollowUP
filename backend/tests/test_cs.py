@@ -116,20 +116,18 @@ def test_contributor_must_belong_to_the_tribe(client, seeded, db):
 
 def test_card_fields_round_trip_and_validation(client, seeded):
     _enable(client)
-    p = _project(client, seeded["t1"], offer="Offre IA", build_amount="7 000", quote_signed=True,
-                 consumption_billing="uncapped", users_count=23, data_classification="C2",
-                 access_end="2027-01-19", tags=["IA", "ia", "Pilote"],
-                 contacts=[{"name": "Personne A", "role": "Sponsor"}, {"name": ""}],
-                 links=[{"label": "Devis", "url": "https://example.test/devis"}],
-                 milestones={"proposal": {"planned": "2026-09-24", "actual": "2026-09-24"},
-                             "unknown": {"planned": "2026-01-01"}})
-    assert p["build_amount"] == 7000.0 and p["users_count"] == 23
-    assert p["tags"] == ["IA", "Pilote"] and len(p["contacts"]) == 1
-    assert list(p["milestones"]) == ["proposal"]
+    p = _project(client, seeded["t1"], build_amount="7 000", billing="invoiced", cost_code="CC-1",
+                 links=[{"label": "Devis", "url": "https://example.test/devis"}])
+    assert p["build_amount"] == 7000.0 and p["billing"] == "invoiced" and p["cost_code"] == "CC-1"
+    r = client.put(f"/api/cs/projects/{p['id']}", json={"billing": "maybe"})
+    assert r.status_code == 400 and "Facturation inconnue" in r.text
+    for gone in ("offer", "tags", "contacts", "milestones", "models", "gcp_project", "users_count"):
+        assert gone not in p
     pid = p["id"]
     assert client.put(f"/api/cs/projects/{pid}", json={"stage": "nope"}).status_code == 400
     assert client.put(f"/api/cs/projects/{pid}", json={"health": "pink"}).status_code == 400
-    assert client.put(f"/api/cs/projects/{pid}", json={"access_end": "19/01/2027"}).status_code == 400
+    assert client.put(f"/api/cs/projects/{pid}", json={"actual_delivery": "19/01/2027"}).status_code == 400
+    assert "access_end" not in p
     r = client.put(f"/api/cs/projects/{pid}", json={"links": [{"url": "javascript:alert(1)"}]})
     assert r.status_code == 400
     assert client.put(f"/api/cs/projects/{pid}", json={"title": " "}).status_code == 400
@@ -166,15 +164,14 @@ def test_blocker_next_action_last_contact(client, seeded):
     assert dash["open"] == 1 and dash["blocked"] == 1 and dash["stale"] == 1
 
 
-def test_delivered_projects_are_not_stale_and_access_badge(client, seeded):
+def test_delivered_projects_are_not_stale(client, seeded):
     _enable(client)
-    soon = (date.today() + timedelta(days=10)).isoformat()
-    p = _project(client, seeded["t1"], stage="delivered", access_end=soon,
-                 actual_delivery=date.today().isoformat(), build_amount=7000, quote_signed=True)
-    assert p["closed"] and not p["stale"] and p["access_soon"]
+    p = _project(client, seeded["t1"], stage="delivered",
+                 actual_delivery=date.today().isoformat(), build_amount=7000, billing="paid")
+    assert p["closed"] and not p["stale"]
     dash = client.get("/api/cs/dashboard", params={"tribe_id": seeded["t1"]}).json()
-    assert dash["open"] == 0 and dash["delivered_year"] == 1 and dash["access_soon"] == 1
-    assert dash["build_signed"] == 7000.0
+    assert dash["open"] == 0 and dash["delivered_year"] == 1 and "access_soon" not in dash
+    assert dash["paid_total"] == 7000.0 and dash["todo_total"] == 0 and dash["invoiced_total"] == 0
 
 
 # ---- settings -----------------------------------------------------------------
@@ -186,9 +183,9 @@ def test_stages_are_editable_but_a_used_one_stays(client, seeded):
     cfg = client.get("/api/cs/settings", params={"tribe_id": tid}).json()
     stages = cfg["stages"]
     renamed = [dict(s, label="Nouvelle demande") if s["key"] == "request" else s for s in stages]
-    r = client.put("/api/cs/settings", params={"tribe_id": tid}, json={"stages": renamed, "offers": ["A", "a", "B"]})
+    r = client.put("/api/cs/settings", params={"tribe_id": tid}, json={"stages": renamed})
     assert r.status_code == 200 and r.json()["stages"][0]["label"] == "Nouvelle demande"
-    assert r.json()["offers"] == ["A", "B"]
+    assert "offers" not in r.json()
     r = client.put("/api/cs/settings", params={"tribe_id": tid},
                    json={"stages": [s for s in stages if s["key"] != "request"]})
     assert r.status_code == 409
@@ -202,15 +199,15 @@ def test_recap_is_the_mail_and_escapes(client, seeded):
     tid = seeded["t1"]
     client.put("/api/cs/settings", params={"tribe_id": tid},
                json={"recap_intro": "Bonjour,\n\nRécap des sujets <IA>."})
-    p = _project(client, tid, requesters="Personne A", gcp_project="prj-demo",
-                 build_amount=7000, quote_signed=True)
+    p = _project(client, tid, requesters="Personne A", cost_code="CC-DEMO",
+                 build_amount=7000, billing="paid")
     client.post(f"/api/cs/projects/{p['id']}/journal",
                 json={"kind": "proposal", "date": "2026-09-24", "text": "7 000 € HT <b>build</b>"})
     client.post(f"/api/cs/projects/{p['id']}/journal",
                 json={"kind": "note", "date": "2026-09-25", "text": "petite relance"})
     client.post(f"/api/cs/projects/{p['id']}/items", json={"kind": "blocker", "label": "Dérogation"})
     html = client.get("/api/cs/recap.html", params={"tribe_id": tid}).text
-    assert "En résumé" in html and "prj-demo" in html and "En attente : Dérogation" in html
+    assert "En résumé" in html and "CC-DEMO" in html and "En attente : Dérogation" in html
     assert "&lt;b&gt;build&lt;/b&gt;" in html and "<b>build</b>" not in html
     assert "&lt;IA&gt;" in html
     assert "petite relance" not in html  # a note is not in the recap by default
@@ -229,10 +226,8 @@ def test_recap_is_the_mail_and_escapes(client, seeded):
 def test_recap_filters(client, seeded):
     _enable(client)
     tid = seeded["t1"]
-    a = _project(client, tid, title="Alpha", offer="Offre IA")
-    _project(client, tid, title="Beta", offer="Autre")
-    html = client.get("/api/cs/recap.html", params={"tribe_id": tid, "offer": "Offre IA"}).text
-    assert "Alpha" in html and "Beta" not in html
+    a = _project(client, tid, title="Alpha")
+    _project(client, tid, title="Beta")
     html = client.get("/api/cs/recap.html", params={"tribe_id": tid, "projects": str(a["id"])}).text
     assert "Alpha" in html and "Beta" not in html
 
@@ -248,3 +243,34 @@ def test_deleting_a_user_keeps_projects(client, seeded, db):
     assert r.status_code in (200, 204), r.text
     got = client.get(f"/api/cs/projects/{p['id']}").json()
     assert got["contributors"] == []
+
+
+# ---- the export (HTML, PPTX through the export engine) ---------------------------
+
+def test_export_html_and_pptx(client, seeded):
+    _enable(client)
+    tid = seeded["t1"]
+    p = _project(client, tid, title="Projet export", requesters="Personne A", build_amount=7000, billing="todo")
+    client.put(f"/api/cs/projects/{p['id']}", json={"client": "Entité X"})
+    html = client.get("/api/cs/export.html", params={"tribe_id": tid}).text
+    assert "Projet export" in html and "Entité X" in html and "Personne A" in html
+    assert chr(0x2014) not in html and chr(0xB7) not in html
+    r = client.get("/api/cs/export.pptx", params={"tribe_id": tid, "lang": "en"})
+    assert r.status_code == 200 and r.content[:2] == b"PK"
+    assert ".pptx" in r.headers["content-disposition"]
+
+
+def test_discount_percent_or_amount(client, seeded):
+    _enable(client)
+    tid = seeded["t1"]
+    p = _project(client, tid, title="Remise", build_amount=10000, billing="todo")
+    r = client.put(f"/api/cs/projects/{p['id']}", json={"discount_value": 10, "discount_kind": "pct"})
+    assert r.status_code == 200 and r.json()["net_amount"] == 9000
+    assert client.get("/api/cs/dashboard", params={"tribe_id": tid}).json()["todo_total"] == 9000
+    r = client.put(f"/api/cs/projects/{p['id']}", json={"discount_value": 1500, "discount_kind": "amount"})
+    assert r.json()["net_amount"] == 8500
+    assert client.put(f"/api/cs/projects/{p['id']}", json={"discount_value": 20000}).status_code == 400
+    assert client.put(f"/api/cs/projects/{p['id']}", json={"discount_value": 120, "discount_kind": "pct"}).status_code == 400
+    assert client.put(f"/api/cs/projects/{p['id']}", json={"discount_kind": "gift"}).status_code == 400
+    r = client.put(f"/api/cs/projects/{p['id']}", json={"discount_value": None})
+    assert r.json()["net_amount"] == 10000

@@ -4,7 +4,7 @@
 //   Projets       the dashboard (figures and badges), then one card per project,
 //                 grouped Blocked / In progress / Delivered; a card opens the
 //                 project in a window of the app. The recap mail is built from here.
-//   Parametrage   the CS leaders, the stages, the offers and the thresholds.
+//   Parametrage   the CS leaders, the stages and the thresholds.
 //
 // A CS leader (the tribe leader by default, the designated users, the
 // administrator) sees both. A reader (capability "customer_success") and a

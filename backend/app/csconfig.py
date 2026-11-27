@@ -3,9 +3,7 @@
 Stored as one JSON value per tribe in ``app_settings['cs:<tribe_id>']``:
 
     {"stages": [{"key", "label", "color", "closed"}],  # in order
-     "offers": [str],                                  # the offer picklist
      "stale_days": 14,                                 # "no news since" threshold
-     "access_warn_days": 30,                           # "access ends soon" threshold
      "recap_intro": str,                               # the recap's opening text
      "recap_marked_at": "YYYY-MM-DDTHH:MM:SS+00:00"}   # entries after it read "New"
 
@@ -31,6 +29,21 @@ DEFAULT_STAGES = [
     {"key": "delivered", "label": "Livré", "color": "#199E6E", "closed": True},
     {"key": "closed", "label": "Clos", "color": "#475467", "closed": True},
 ]
+# The default stages in English. A stage keeps its French label as stored, but
+# while nobody renamed it, an English screen or recap shows this one instead.
+EN_LABELS = {"request": "Request", "scoping": "Scoping", "proposal": "Proposal",
+             "agreement": "Client agreement", "build": "Build", "delivered": "Delivered",
+             "closed": "Closed"}
+_FR_LABELS = {s["key"]: s["label"] for s in DEFAULT_STAGES}
+
+
+def stage_label(stage: dict, lang: str) -> str:
+    """The label to show: the English one for an unrenamed default stage."""
+    if lang == "en" and stage.get("label") == _FR_LABELS.get(stage.get("key")):
+        return EN_LABELS[stage["key"]]
+    return stage.get("label") or stage.get("key") or ""
+
+
 _HEX = re.compile(r"^#[0-9A-Fa-f]{6}$")
 
 
@@ -39,8 +52,8 @@ def _key(tribe_id: int) -> str:
 
 
 def defaults() -> dict:
-    return {"stages": [dict(s) for s in DEFAULT_STAGES], "offers": [], "stale_days": 14,
-            "access_warn_days": 30, "recap_intro": "", "recap_marked_at": None}
+    return {"stages": [dict(s) for s in DEFAULT_STAGES], "stale_days": 14,
+            "recap_intro": "", "recap_marked_at": None}
 
 
 def _slug(label: str) -> str:
@@ -80,17 +93,7 @@ def normalize(raw: dict | None) -> dict:
     stages = _clean_stages(raw.get("stages"))
     if stages:
         cfg["stages"] = stages
-    offers = raw.get("offers")
-    if isinstance(offers, list):
-        seen, clean = set(), []
-        for o in offers:
-            o = str(o or "").strip()[:255]
-            if o and o.lower() not in seen:
-                seen.add(o.lower())
-                clean.append(o)
-        cfg["offers"] = clean
     cfg["stale_days"] = _int(raw.get("stale_days"), 14, 1, 365)
-    cfg["access_warn_days"] = _int(raw.get("access_warn_days"), 30, 1, 365)
     cfg["recap_intro"] = str(raw.get("recap_intro") or "")[:20000]
     m = raw.get("recap_marked_at")
     cfg["recap_marked_at"] = m if isinstance(m, str) and m else None

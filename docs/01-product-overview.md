@@ -58,7 +58,7 @@ isolation beyond tribe scoping, mobile native apps.
 | Studio des exports | - | `exports` (on by default for admin and tribe leader) | templates per scope (organisation, tribe, squad, platform) with live preview, versions, locks, themes and files; what one changes follows the role (squad leader: simple mode), see [35](35-studio-des-exports.md) |
 | Weekly report (HTML/PPTX/email) | `review.weekly_report` | - | scheduled + on-demand |
 | Notifications | `notifications` (inapp/email) | - | bell + preferences |
-| Leave / absences | `leaves` (+overlap_alert) | `leaves` | team calendar, per-tribe approval, CSV; visible to all (tribe-scoped) |
+| Leave / absences | `leaves` (+overlap_alert, +remote) | `leaves` | team calendar, per-tribe approval, CSV; visible to all (tribe-scoped). "On site / Remote" view: usual remote week, one-day changes, recap per day and per squad (ADR 0021) |
 | Getting started | `getting_started` | - | onboarding |
 
 Modules are toggled in **Admin > Modules**; capabilities per persona in **Admin > Personas**.

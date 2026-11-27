@@ -66,6 +66,9 @@ OWNED_BY_USER: set[tuple[str, str]] = {
     # And for running or filling in Customer Success projects (ADR 0020).
     ("cs_leaders", "user_id"),
     ("cs_contributors", "user_id"),
+    # Where the person works (ADR 0021): their own week and their own days.
+    ("remote_patterns", "user_id"),
+    ("remote_days", "user_id"),
 }
 
 

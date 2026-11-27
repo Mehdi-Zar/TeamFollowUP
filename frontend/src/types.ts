@@ -513,7 +513,7 @@ export interface ModulesConfig {
   customer_success: { enabled: boolean };
   notifications: { enabled: boolean; inapp: boolean; email: boolean };
   getting_started: { enabled: boolean };
-  leaves: { enabled: boolean; overlap_alert: boolean };
+  leaves: { enabled: boolean; overlap_alert: boolean; remote: boolean };
 }
 
 /** Any valid top-level module name (keys of {@link ModulesConfig}). */

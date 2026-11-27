@@ -35,6 +35,7 @@ données ; il lui donne les faits techniques dont il a besoin.
 | **Absences** (type, dates) | `leaves` | tout le monde dans la tribu de la personne |
 | **Motif d'absence** (texte libre) | `leaves.comment` | la personne, son responsable de squad, le tribe leader, les admins |
 | Commentaire de décision | `leaves.decision_comment` | idem |
+| **Jours de télétravail** (semaine habituelle, changements d'un jour) | `remote_patterns`, `remote_days` | tout le monde dans la tribu de la personne (ADR 0021) |
 
 Le motif d'une absence est le champ le plus délicat de l'application : un texte
 libre où quelqu'un peut écrire une raison médicale ou familiale. Il est déjà
@@ -59,6 +60,7 @@ supprimer le champ si votre organisation n'en a pas besoin.
 | Journal d'audit | **conservé indéfiniment** | `AUDIT_RETENTION_DAYS` (variable d'environnement). 0 = tout garder. |
 | Messages du fil | **conservés indéfiniment** | Administration > Réglages > « Rétention des messages ». 0 = tout garder. |
 | Absences | **conservées indéfiniment** | aucun réglage : à purger à la main (§5) |
+| Jours de télétravail | **conservés indéfiniment** | supprimés avec le compte ; effacés avec les données « Congés » |
 | Comptes utilisateurs | jusqu'à suppression | Administration > Utilisateurs |
 | Sauvegardes | 14 fichiers glissants | `BACKUP_KEEP` ([19](19-plan-de-reprise.md)) |
 | Journaux du conteneur | selon votre collecteur | hors application |

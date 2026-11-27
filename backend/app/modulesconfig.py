@@ -45,7 +45,8 @@ def _defaults() -> dict:
         "customer_success": {"enabled": False},
         "notifications": {"enabled": True, "inapp": True, "email": True},
         "getting_started": {"enabled": True},
-        "leaves": {"enabled": False, "overlap_alert": True},
+        # remote: the "On site / Remote" view of the team (ADR 0021).
+        "leaves": {"enabled": False, "overlap_alert": True, "remote": True},
     }
 
 

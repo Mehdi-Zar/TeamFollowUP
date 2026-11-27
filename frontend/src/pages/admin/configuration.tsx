@@ -27,7 +27,7 @@ export const MODULE_TREE: { key: ModuleKey; features: string[] }[] = [
   { key: "customer_success", features: [] },
   { key: "notifications", features: ["inapp", "email"] },
   { key: "getting_started", features: [] },
-  { key: "leaves", features: ["overlap_alert"] },
+  { key: "leaves", features: ["overlap_alert", "remote"] },
 ];
 
 
