@@ -920,3 +920,64 @@ def test_reporting_messages_offered_to_the_events_step(client, db, seeded):
     assert r.status_code == 200, r.text
     assert [m["text"] for m in r.json()] == ["vendor  slipping", "Go-live done"]
     assert r.json()[0]["squad_name"] and r.json()[0]["kind"] == "risk"
+
+
+# ---- contributors (ADR 0019) ---------------------------------------------------
+
+def test_a_contributor_fills_in_their_platform_and_nothing_else(client, db, seeded):
+    """Named on one platform by a Steerco leader: they read and write that month,
+    see no other platform, and cannot validate, send or change the settings."""
+    _enable(client)
+    mine = _platform(db, seeded, name="Mine")
+    other = _platform(db, seeded, name="Other")
+    login(client, seeded["tribe"])                     # a Steerco leader by default
+    r = client.put(f"/api/steerco/platforms/{mine}", json={"contributor_user_ids": [seeded["sl_b_id"]]})
+    assert r.status_code == 200, r.text
+    assert [c["id"] for c in r.json()["contributors"]] == [seeded["sl_b_id"]]
+
+    login(client, seeded["sl_b"])
+    rights = client.get("/api/auth/me/permissions").json()["steerco"]
+    assert rights["contribute"] is True and rights["contribute_platform_ids"] == [mine]
+    listed = client.get(f"/api/steerco/entries?period=2026-07&tribe_id={seeded['t1']}").json()
+    assert [e["platform_id"] for e in listed] == [mine]
+    assert listed[0]["can_edit"] is True and listed[0]["can_run"] is False
+
+    r = client.put(f"/api/steerco/platform/{mine}?period=2026-07",
+                   json={"data": {"incidents": "4"}, "version": 0})
+    assert r.status_code == 200, r.text
+    assert client.put(f"/api/steerco/platform/{other}?period=2026-07",
+                      json={"data": {"incidents": "4"}, "version": 0}).status_code == 404
+    assert client.post(f"/api/steerco/platform/{mine}/validate?period=2026-07").status_code == 403
+    assert client.post("/api/steerco/platforms", json={"name": "P", "tribe_id": seeded["t1"]}).status_code == 403
+    assert client.put(f"/api/steerco/platforms/{mine}", json={"name": "X"}).status_code == 403
+    assert client.post(f"/api/steerco/send?period=2026-07&tribe_id={seeded['t1']}").status_code == 403
+
+
+def test_removing_a_contributor_closes_the_platform_to_them(client, db, seeded):
+    _enable(client)
+    pid = _platform(db, seeded, name="Mine")
+    login(client, seeded["tribe"])
+    client.put(f"/api/steerco/platforms/{pid}", json={"contributor_user_ids": [seeded["sl_b_id"]]})
+    client.put(f"/api/steerco/platforms/{pid}", json={"contributor_user_ids": []})
+    login(client, seeded["sl_b"])
+    assert client.get(f"/api/steerco/platform/{pid}?period=2026-07").status_code == 403
+
+
+def test_the_reminder_reaches_a_contributor_with_their_platforms_only(db, seeded, monkeypatch):
+    from datetime import date
+    from app import steercomail
+    from app.models import SteercoContributor
+    from app.modulesconfig import get_modules
+    mine = _platform(db, seeded, name="Mine")
+    _platform(db, seeded, name="Other")
+    db.add(SteercoContributor(user_id=seeded["sl_b_id"], platform_id=mine))
+    db.commit()
+    monkeypatch.setattr("app.modulesconfig.is_active", lambda mods, key: True)
+    sent = []
+    monkeypatch.setattr("app.mail.send_email",
+                        lambda smtp, to, subject, body, **k: sent.append((to, body)) or True)
+    steercomail.send_due_reminders(db, today=date(2026, 8, 6))
+    from app.models import User
+    email = db.get(User, seeded["sl_b_id"]).email
+    theirs = [h for to, h in sent if to == email]
+    assert len(theirs) == 1 and "Mine" in theirs[0] and "Other" not in theirs[0]

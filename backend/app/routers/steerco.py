@@ -36,6 +36,7 @@ from html import escape
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse, Response
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from datetime import datetime, timezone
@@ -47,7 +48,7 @@ from .. import pptxtpl
 from .. import steercoaccess as acc
 from ..database import get_db
 from ..deps import get_current_user, record_audit, require_module
-from ..models import KeyMessage, Platform, SteercoEntry, SteercoLeader, Squad, Tribe, User
+from ..models import KeyMessage, Platform, SteercoContributor, SteercoEntry, SteercoLeader, Squad, Tribe, User
 from ..reportcommon import wrap_lines
 
 router = APIRouter(prefix="/api/steerco", tags=["steerco"],
@@ -178,6 +179,7 @@ def _lang(v: str | None) -> str:
 
 READER = acc.reader_dep()
 RUNNER = acc.runner_dep()
+EDITOR = acc.editor_dep()
 
 
 def _now() -> datetime:
@@ -188,7 +190,9 @@ def _readable_platforms(db: Session, user: User, tribe_id: int | None = None) ->
     q = db.query(Platform)
     ids = acc.readable_tribe_ids(db, user)
     if ids is not None:
-        q = q.filter(Platform.tribe_id.in_(ids or [-1]))
+        # A contributor also sees the platforms they fill in, and those only.
+        mine = acc.contributed_platform_ids(db, user)
+        q = q.filter(or_(Platform.tribe_id.in_(ids or [-1]), Platform.id.in_(mine or [-1])))
     if tribe_id is not None:
         q = q.filter(Platform.tribe_id == tribe_id)
     return q.order_by(Platform.display_order, Platform.name).all()
@@ -198,7 +202,8 @@ def _readable_platform(db: Session, user: User, platform_id: int) -> Platform:
     """The platform, or a 404 that says nothing about other tribes' platforms."""
     platform = db.get(Platform, platform_id)
     ids = acc.readable_tribe_ids(db, user)
-    if platform is None or (ids is not None and platform.tribe_id not in ids):
+    if platform is None or (ids is not None and platform.tribe_id not in ids
+                            and platform.id not in acc.contributed_platform_ids(db, user)):
         raise HTTPException(status_code=404, detail="Plateforme introuvable")
     return platform
 
@@ -209,6 +214,33 @@ def _run_platform(db: Session, user: User, platform_id: int) -> Platform:
     platform = _readable_platform(db, user, platform_id)
     acc.ensure_runs(db, user, platform.tribe_id)
     return platform
+
+
+def _edit_platform(db: Session, user: User, platform_id: int) -> Platform:
+    """A platform whose month the caller may write: a Steerco leader of its tribe or
+    one of its contributors (ADR 0019)."""
+    platform = _readable_platform(db, user, platform_id)
+    if not acc.edits(db, user, platform):
+        raise HTTPException(status_code=403,
+                            detail="Réservé aux Steerco leaders et aux contributeurs de cette plateforme")
+    return platform
+
+
+def _set_contributors(db: Session, user: User, p: Platform, ids) -> None:
+    """Replace the platform's contributors with the users ``ids``. Steerco leaders."""
+    wanted = []
+    for uid in dict.fromkeys(int(x) for x in (ids or [])):
+        target = db.get(User, uid)
+        if target is None:
+            raise HTTPException(status_code=400, detail="Contributeur introuvable")
+        wanted.append(uid)
+    have = {r.user_id: r for r in p.steerco_contributors}
+    for uid, row in have.items():
+        if uid not in wanted:
+            p.steerco_contributors.remove(row)
+    for uid in wanted:
+        if uid not in have:
+            p.steerco_contributors.append(SteercoContributor(user_id=uid, created_by_user_id=user.id))
 
 
 def _linked_squads(db: Session, tribe_id: int, ids) -> list[Squad]:
@@ -240,7 +272,9 @@ def _platform_out(db: Session, user: User, p: Platform) -> dict:
         "display_order": p.display_order, "steerco_enabled": p.steerco_enabled,
         "template": tpl,
         "squads": squads,
+        "contributors": acc.contributors_of(db, p.id),
         "can_run": acc.runs(db, user, p.tribe_id),
+        "can_edit": acc.edits(db, user, p),
     }
 
 
@@ -294,6 +328,8 @@ def create_platform(payload: dict = Body(...), db: Session = Depends(get_db),
                  display_order=int(payload.get("display_order") or 0),
                  steerco_enabled=bool(payload.get("steerco_enabled", True)))
     p.contributors = squads
+    if "contributor_user_ids" in payload:
+        _set_contributors(db, user, p, payload.get("contributor_user_ids"))
     # It starts from the tribe's model, the skeleton its Steerco leaders impose,
     # unless a template is given.
     p.template = (plat.normalize_template(payload["template"]) if payload.get("template")
@@ -301,7 +337,8 @@ def create_platform(payload: dict = Body(...), db: Session = Depends(get_db),
     db.add(p)
     db.flush()
     record_audit(db, user.id, "platform.create", entity="platform", entity_id=p.id,
-                 detail={"name": p.name, "squads": [s.id for s in squads]})
+                 detail={"name": p.name, "squads": [s.id for s in squads],
+                         "contributors": [r.user_id for r in p.steerco_contributors]})
     db.commit()
     return _platform_out(db, user, p)
 
@@ -329,6 +366,8 @@ def update_platform(platform_id: int, payload: dict = Body(...), db: Session = D
         p.steerco_enabled = bool(payload.get("steerco_enabled"))
     if "squad_ids" in payload or "contributor_ids" in payload:
         p.contributors = _linked_squads(db, p.tribe_id, _squad_ids_of(payload))
+    if "contributor_user_ids" in payload:
+        _set_contributors(db, user, p, payload.get("contributor_user_ids"))
     if "template" in payload:
         raw_tpl = payload.get("template")
         # The platform screen edits the items; the rendering is chosen on the
@@ -338,7 +377,8 @@ def update_platform(platform_id: int, payload: dict = Body(...), db: Session = D
         _relayout(p, plat.normalize_template(raw_tpl))
     db.flush()
     record_audit(db, user.id, "platform.update", entity="platform", entity_id=p.id,
-                 detail={"name": p.name, "squads": [s.id for s in p.contributors]})
+                 detail={"name": p.name, "squads": [s.id for s in p.contributors],
+                         "contributors": [r.user_id for r in p.steerco_contributors]})
     db.commit()
     return _platform_out(db, user, p)
 
@@ -639,6 +679,7 @@ def list_entries(period: str = PERIOD, tribe_id: int | None = Query(None),
             "data": (e.data if e else {}),
             "filled": bool(e and e.data),
             "can_run": acc.runs(db, user, p.tribe_id),
+            "can_edit": acc.edits(db, user, p),
             **_state(tpl, e),
         })
     return out
@@ -656,6 +697,7 @@ def get_platform_entry(platform_id: int, period: str = PERIOD, db: Session = Dep
         "period": period, "template": tpl,
         "squads": [{"id": s.id, "name": s.name} for s in sorted(p.contributors, key=lambda x: x.name)],
         "can_run": acc.runs(db, user, p.tribe_id),
+        "can_edit": acc.edits(db, user, p),
         "data": e.data if (e and e.data) else plat.blank_data(tpl),
         "filled": bool(e and e.data),
         **_state(tpl, e),
@@ -671,13 +713,14 @@ def _refuse_validated(e: SteercoEntry | None, period: str) -> None:
 @router.put("/platform/{platform_id}")
 def upsert_platform_entry(platform_id: int, period: str = PERIOD,
                           body: dict = Body(default=None), db: Session = Depends(get_db),
-                          user: User = Depends(RUNNER)):
+                          user: User = Depends(EDITOR)):
     """Write a platform's month. Body: ``{"data": {...}, "version": n}``.
 
     ``version`` is the one the form was loaded with: if another Steerco leader saved
     in between, the call is refused with 409 rather than replacing their figures
-    without either of them knowing. A validated month is refused too (409)."""
-    p = _run_platform(db, user, platform_id)
+    without either of them knowing. A validated month is refused too (409).
+    Steerco leaders and the platform's contributors."""
+    p = _edit_platform(db, user, platform_id)
     body = body or {}
     data = body.get("data") if "data" in body else body
     version = body.get("version") if "data" in body else None
@@ -847,12 +890,12 @@ def get_history(platform_id: int, period: str = PERIOD, db: Session = Depends(ge
 
 @router.get("/platform/{platform_id}/messages")
 def get_reporting_messages(platform_id: int, period: str = PERIOD, db: Session = Depends(get_db),
-                           user: User = Depends(RUNNER)):
+                           user: User = Depends(EDITOR)):
     """The key messages the platform's squads concerned wrote in their reportings of
     the period's year, newest first: what the events step offers to take over, so a
     fact said once in the reporting need not be typed again for the committee.
     The same text said in several reportings of a squad comes once (the newest)."""
-    p = _run_platform(db, user, platform_id)
+    p = _edit_platform(db, user, platform_id)
     names = {s.id: s.name for s in p.contributors}
     if not names:
         return []
@@ -873,10 +916,10 @@ def get_reporting_messages(platform_id: int, period: str = PERIOD, db: Session =
 
 @router.put("/platform/{platform_id}/history")
 def upsert_history(platform_id: int, months: dict = Body(..., embed=True),
-                   db: Session = Depends(get_db), user: User = Depends(RUNNER)):
+                   db: Session = Depends(get_db), user: User = Depends(EDITOR)):
     """Backfill several months at once. Body: ``{"months": {"2026-06": {...}, ...}}``.
     Validated months are left untouched and listed in ``skipped``."""
-    p = _run_platform(db, user, platform_id)
+    p = _edit_platform(db, user, platform_id)
     tpl = plat.normalize_template(p.template)
     bad = [k for k in (months or {}) if not re.match(PERIOD_RE, str(k))]
     if bad:
@@ -911,7 +954,7 @@ _XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 @router.get("/import/template")
 def download_import_template(platform_id: int | None = Query(None), db: Session = Depends(get_db),
-                             user: User = Depends(RUNNER)):
+                             user: User = Depends(EDITOR)):
     """GET /api/steerco/import/template?platform_id= : the Steerco workbook to fill.
     With ``platform_id`` it is built for that platform (name pre-filled, its KPI and
     SLA rows); without, the standard structure."""
@@ -919,7 +962,7 @@ def download_import_template(platform_id: int | None = Query(None), db: Session 
     kpis = services = None
     name = ""
     if platform_id is not None:
-        p = _run_platform(db, user, platform_id)
+        p = _edit_platform(db, user, platform_id)
         kpis, services = structure_for_platform(db, platform_id)
         name = p.name
     slug = "".join(c if c.isalnum() else "-" for c in name).strip("-").lower() or "template"
@@ -929,7 +972,7 @@ def download_import_template(platform_id: int | None = Query(None), db: Session 
 
 @router.post("/import")
 async def import_workbook(file: UploadFile = File(...), db: Session = Depends(get_db),
-                          user: User = Depends(RUNNER)):
+                          user: User = Depends(EDITOR)):
     """POST /api/steerco/import : upload a filled workbook into the platform it names
     (one the caller runs). Idempotent per (platform, period); validated months are
     left untouched and listed in ``skipped_validated``. 400 on a wrong file. Audited."""
@@ -937,7 +980,8 @@ async def import_workbook(file: UploadFile = File(...), db: Session = Depends(ge
     content = await file.read()
     try:
         summary = import_steerco(db, content, user_id=user.id,
-                                 tribe_ids=acc.led_tribe_ids(db, user))
+                                 tribe_ids=acc.led_tribe_ids(db, user),
+                                 platform_ids=acc.contributed_platform_ids(db, user))
     except ValueError as exc:
         db.rollback()
         raise HTTPException(status_code=400, detail=str(exc))
@@ -2744,10 +2788,11 @@ def onepager_html(platform_id: int = Query(...), period: str = PERIOD,
 @router.post("/platform/{platform_id}/preview.html", response_class=HTMLResponse)
 def preview_html(platform_id: int, period: str = PERIOD, data: dict = Body(...),
                  lang: str | None = Query(None), db: Session = Depends(get_db),
-                 user: User = Depends(RUNNER)):
+                 user: User = Depends(EDITOR)):
     """Live preview of the one-pager for the wizard, using the still-unsaved snapshot
-    (``data``) as the current month. Nothing is persisted. Steerco leaders only."""
-    p = _run_platform(db, user, platform_id)
+    (``data``) as the current month. Nothing is persisted. Steerco leaders and the
+    platform's contributors."""
+    p = _edit_platform(db, user, platform_id)
     L = I18N[_lang(lang)]
     body = _onepager(p.name, period, _aggregate(db, platform_id, period, override=data), L)
     return HTMLResponse(_document(f"Steerco {p.name} {period}", body, _lang(lang)))

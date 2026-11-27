@@ -52,7 +52,11 @@ export type Platform = {
   template: PlatformTemplate;
   /** The squads concerned (optional): their key messages feed the events step. */
   squads: { id: number; name: string }[];
+  /** The people who fill in its figures besides the Steerco leaders (ADR 0019). */
+  contributors: { id: number; name: string; email?: string | null }[];
   can_run: boolean;
+  /** May write the month: a Steerco leader of the tribe or a contributor. */
+  can_edit: boolean;
 };
 
 /** Where a platform's month stands (life cycle + how much is filled). */
@@ -69,9 +73,12 @@ export type MonthState = {
 export type SteercoRights = {
   read: boolean; run: boolean; all_tribes: boolean;
   run_tribe_ids: number[]; read_tribe_ids: number[]; designate_tribe_ids: number[];
+  /** Contributor (ADR 0019): fills in the month of these platforms, nothing else. */
+  contribute: boolean; contribute_platform_ids: number[]; contribute_tribe_ids: number[];
 };
 export const NO_STEERCO: SteercoRights = {
   read: false, run: false, all_tribes: false, run_tribe_ids: [], read_tribe_ids: [], designate_tribe_ids: [],
+  contribute: false, contribute_platform_ids: [], contribute_tribe_ids: [],
 };
 
 /** The empty snapshot matching a template: labels in place, values empty.

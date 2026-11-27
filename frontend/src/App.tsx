@@ -114,7 +114,7 @@ function SteercoGuard({ children }: { children: JSX.Element }) {
   const { steerco, loading } = useAuth();
   if (loading) return <Spinner />;
   if (!moduleOn(modules, "steerco")) return <Navigate to="/" replace />;
-  return steerco.read || steerco.run || steerco.designate_tribe_ids.length ? children : <SectionClosed />;
+  return steerco.read || steerco.run || steerco.contribute || steerco.designate_tribe_ids.length ? children : <SectionClosed />;
 }
 
 /** The export Studio: the "exports" capability, or a Steerco leader (who designs

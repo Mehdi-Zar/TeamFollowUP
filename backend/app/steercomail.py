@@ -114,7 +114,7 @@ def pending(db: Session, tribe_id: int, period: str) -> list[dict]:
         if e is not None and e.status == "validated":
             continue
         tpl = plat.normalize_template(p.template)
-        out.append({"name": p.name, "filled": plat.filled_count(tpl, e.data if e else None),
+        out.append({"id": p.id, "name": p.name, "filled": plat.filled_count(tpl, e.data if e else None),
                     "total": plat.item_count(tpl)})
     return out
 
@@ -128,7 +128,8 @@ def _t(lang: str, fr: str, en: str) -> str:
     return fr if lang == "fr" else en
 
 
-def reminder_mail(db: Session, tribe: Tribe, period: str, rows: list[dict], lang: str) -> tuple[str, str]:
+def reminder_mail(db: Session, tribe: Tribe, period: str, rows: list[dict], lang: str,
+                  contributor: bool = False) -> tuple[str, str]:
     from .mailbody import app_link, button, footer, layout
     month = _month_label(period, lang)
     title = _t(lang, f"Steerco {month} : {len(rows)} plateforme(s) à valider",
@@ -150,7 +151,8 @@ def reminder_mail(db: Session, tribe: Tribe, period: str, rows: list[dict], lang
     link = app_link(db, "/steerco")
     if link:
         body += button(link, _t(lang, "Ouvrir la saisie Steerco", "Open the Steerco entry"))
-    return title, layout(title, tribe.name, body, footer=footer(lang, "steerco_reminder"))
+    return title, layout(title, tribe.name, body,
+                         footer=footer(lang, "steerco_reminder_contrib" if contributor else "steerco_reminder"))
 
 
 def send_due_reminders(db: Session, today: date | None = None) -> list[str]:
@@ -178,10 +180,19 @@ def send_due_reminders(db: Session, today: date | None = None) -> list[str]:
         rows = pending(db, tribe.id, period)
         if rows:
             to = steercoaccess.leader_emails(db, tribe.id)
-            if not to:
+            # A contributor (ADR 0019) is reminded of the platforms they fill in, only.
+            theirs: dict[str, list[dict]] = {}
+            for r in rows:
+                for addr in steercoaccess.contributor_emails(db, r["id"]):
+                    if addr not in to:
+                        theirs.setdefault(addr, []).append(r)
+            if not to and not theirs:
                 continue
             subject, html = reminder_mail(db, tribe, period, rows, lang)
             sent = any([send_email(smtp, addr, subject, html, html=True, lang=lang) for addr in to])
+            for addr, mine in theirs.items():
+                sub2, html2 = reminder_mail(db, tribe, period, mine, lang, contributor=True)
+                sent = send_email(smtp, addr, sub2, html2, html=True, lang=lang) or sent
             if not sent:
                 continue  # retried at the next tick, the SMTP may come back
             done.append(tribe.name)

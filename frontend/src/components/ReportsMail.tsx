@@ -16,7 +16,7 @@ import { api, errorText } from "../api";
 import { useAuth } from "../auth";
 import { useI18n } from "../i18n";
 import { ChangeNotifyAdmin } from "../pages/admin/configuration";
-import { ErrorBanner, Modal, Spinner } from "./ui";
+import { ErrorBanner, Modal, Spinner, Toggle } from "./ui";
 import { StepItem, StepLayout } from "./StepLayout";
 
 export const WEEKDAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
@@ -514,11 +514,10 @@ function DiffusionEditor({ initial, scopes, onClose, onSaved }: {
                 <span className="small muted">{t("mailrep.paris")}</span>
               </div>
             </div>
-            <label className="mr-check">
-              <input type="checkbox" checked={cfg.only_when_changes} onChange={(e) => set("only_when_changes", e.target.checked)} />
+            <Toggle checked={cfg.only_when_changes} onChange={(v) => set("only_when_changes", v)}>
               <span><span className="strong">{t("mailrep.only_changes")}</span><br />
-                <span className="small muted">{t("mailrep.only_changes_hint")}</span></span>
-            </label>
+                <span className="small muted" style={{ fontWeight: 400 }}>{t("mailrep.only_changes_hint")}</span></span>
+            </Toggle>
           </div>)}
 
           {at === 2 && (<div className="mr-step-body">

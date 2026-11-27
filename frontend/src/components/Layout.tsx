@@ -22,7 +22,7 @@ import { canSeeAdmin } from "../perms";
 import NotificationBell from "./NotificationBell";
 import { GettingStartedGuide } from "../pages/GettingStartedPage";
 import CommandPalette from "./CommandPalette";
-import { Modal } from "./ui";
+import { Modal, Toggle } from "./ui";
 import { usePageChrome } from "./pageChrome";
 import {
   IconAccess,
@@ -153,7 +153,7 @@ export default function Layout() {
   const navVisible = (n: NavItem) =>
     (n.to === "/admin" && !isPreview ? adminTabs.length > 0
       : n.to === "/acces" ? canReviewAccess
-      : n.to === "/steerco" ? (steerco.read || steerco.run || steerco.designate_tribe_ids.length > 0)
+      : n.to === "/steerco" ? (steerco.read || steerco.run || steerco.contribute || steerco.designate_tribe_ids.length > 0)
       : n.to === "/exports" ? (can("exports") || steerco.run)
       : n.visible(role)) &&
     (!n.module || moduleOn(modules, n.module, n.feature)) &&
@@ -397,10 +397,7 @@ export default function Layout() {
             width={760}
             footer={
               <div className="between" style={{ width: "100%", alignItems: "center" }}>
-                <label className="inline small" style={{ gap: 6 }}>
-                  <input type="checkbox" checked={hideOnStart} onChange={(e) => toggleHideOnStart(e.target.checked)} />
-                  {t("gs.dont_show")}
-                </label>
+                <Toggle checked={hideOnStart} onChange={toggleHideOnStart}><span className="small">{t("gs.dont_show")}</span></Toggle>
                 <button className="btn-sm" onClick={() => setGuide(false)}>{t("action.close")}</button>
               </div>
             }

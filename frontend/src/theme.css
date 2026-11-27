@@ -1852,3 +1852,65 @@ th.sort-th.on .sort-th-mark { opacity: 1; color: var(--accent); }
 .sc-check { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px;
   border-radius: 50%; font-size: 13px; font-weight: 700; background: var(--ice-soft); color: var(--accent); flex: none; }
 .sc-checklist li.done .sc-check { background: var(--green); color: #fff; }
+
+/* ------------------------------------------------------------------------
+   Choices, everywhere (4.1). Three looks, never the browser's own checkbox:
+   - a yes/no setting with its label is a switch (.switch, component Toggle);
+   - one choice among several is a pill that lights up with a round tick
+     (.chip-opt, component Chip; .check-chip and .rm-pick-chip get the same look);
+   - a box in a table or a tree (persona matrix, Studio) is a drawn box, rounded,
+     with a clean tick in the accent colour.
+   ------------------------------------------------------------------------ */
+input[type="checkbox"]:not(.switch > input) {
+  appearance: none; -webkit-appearance: none; flex: none; margin: 0; vertical-align: middle;
+  width: 18px; height: 18px; border-radius: 6px; cursor: pointer;
+  border: 1.5px solid var(--line-strong); background: var(--surface) center / 12px 12px no-repeat;
+  transition: background-color .12s, border-color .12s, box-shadow .12s;
+}
+input[type="checkbox"]:not(.switch > input):hover:not(:disabled) { border-color: var(--accent); box-shadow: 0 0 0 3px var(--ice-soft); }
+input[type="checkbox"]:not(.switch > input):checked {
+  background-color: var(--accent); border-color: var(--accent);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.5 8.5l3 3 6-7' fill='none' stroke='white' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+input[type="checkbox"]:not(.switch > input):indeterminate {
+  background-color: var(--accent); border-color: var(--accent);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4 8h8' stroke='white' stroke-width='2.2' stroke-linecap='round'/%3E%3C/svg%3E");
+}
+input[type="checkbox"]:not(.switch > input):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+input[type="checkbox"]:not(.switch > input):disabled { opacity: .5; cursor: not-allowed; }
+.pick-box { border-radius: 6px; border-color: var(--line-strong); }
+
+/* The switch: its label never wraps under the track; a disabled one is dimmed. */
+.switch .switch-label { font-weight: inherit; }
+.switch.disabled { opacity: .5; cursor: not-allowed; }
+.switch input:disabled + .track { cursor: not-allowed; }
+
+/* The pill. */
+.chip-opt, .check-chip, .rm-pick-chip {
+  position: relative; display: inline-flex; align-items: center; gap: 8px; margin: 0;
+  padding: 7px 14px 7px 10px; min-height: 0; border-radius: 999px;
+  border: 1px solid var(--line-strong); background: var(--surface); color: var(--text);
+  font: inherit; font-size: 13px; font-weight: 500; line-height: 1.2; cursor: pointer; user-select: none;
+  box-shadow: none; transition: border-color .12s, background .12s, color .12s;
+}
+.rm-pick-chip { display: flex; border-radius: 12px; padding: 9px 13px 9px 10px; }
+.chip-opt:hover:not(:disabled), .check-chip:hover, .rm-pick-chip:hover { border-color: var(--accent); background: var(--ice-soft); }
+.chip-opt.on, .check-chip.on, .check-chip:has(> input:checked), .rm-pick-chip.on {
+  border-color: var(--accent); background: var(--ice-soft); color: var(--title); box-shadow: none; font-weight: 600;
+}
+.chip-opt:disabled { opacity: .5; cursor: not-allowed; }
+.chip-opt:focus-visible, .check-chip:has(> input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+.check-chip > input, .rm-pick-chip > input {
+  position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; pointer-events: none;
+}
+/* The round tick: an empty ring, filled with a white tick once chosen. */
+.chip-tick, .check-chip::before, .rm-pick-chip::before {
+  content: ""; flex: none; width: 16px; height: 16px; border-radius: 50%;
+  border: 1.5px solid var(--line-strong); background: var(--surface) center / 10px 10px no-repeat;
+  transition: background-color .12s, border-color .12s;
+}
+.chip-opt.on .chip-tick, .check-chip.on::before, .check-chip:has(> input:checked)::before, .rm-pick-chip.on::before {
+  border-color: var(--accent); background-color: var(--accent);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.5 8.5l3 3 6-7' fill='none' stroke='white' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }

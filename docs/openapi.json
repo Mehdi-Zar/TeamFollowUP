@@ -3,7 +3,7 @@
   "info": {
     "title": "TeamFollowUP",
     "description": "Outil de pilotage de tribe : consolidation, drill-down, saisie, organigramme, exports.",
-    "version": "4.0.0"
+    "version": "4.1.0"
   },
   "paths": {
     "/api/auth/config": {
@@ -9097,7 +9097,7 @@
           "steerco"
         ],
         "summary": "Upsert Platform Entry",
-        "description": "Write a platform's month. Body: ``{\"data\": {...}, \"version\": n}``.\n\n``version`` is the one the form was loaded with: if another Steerco leader saved\nin between, the call is refused with 409 rather than replacing their figures\nwithout either of them knowing. A validated month is refused too (409).",
+        "description": "Write a platform's month. Body: ``{\"data\": {...}, \"version\": n}``.\n\n``version`` is the one the form was loaded with: if another Steerco leader saved\nin between, the call is refused with 409 rather than replacing their figures\nwithout either of them knowing. A validated month is refused too (409).\nSteerco leaders and the platform's contributors.",
         "operationId": "upsert_platform_entry_api_steerco_platform__platform_id__put",
         "parameters": [
           {
@@ -9674,7 +9674,7 @@
           "steerco"
         ],
         "summary": "Preview Html",
-        "description": "Live preview of the one-pager for the wizard, using the still-unsaved snapshot\n(``data``) as the current month. Nothing is persisted. Steerco leaders only.",
+        "description": "Live preview of the one-pager for the wizard, using the still-unsaved snapshot\n(``data``) as the current month. Nothing is persisted. Steerco leaders and the\nplatform's contributors.",
         "operationId": "preview_html_api_steerco_platform__platform_id__preview_html_post",
         "parameters": [
           {

@@ -37,7 +37,7 @@ export default function SteercoPage() {
   const designateIds = steerco.designate_tribe_ids;
   const tabs = useMemo(() => {
     const out: { key: Tab; label: string }[] = [];
-    if (steerco.read || steerco.run) out.push({ key: "month", label: t("steerco.tab.month") });
+    if (steerco.read || steerco.run || steerco.contribute) out.push({ key: "month", label: t("steerco.tab.month") });
     if (steerco.run || designateIds.length) out.push({ key: "settings", label: t("steerco.tab.settings") });
     return out;
   }, [steerco, designateIds.length, t]);
@@ -50,7 +50,8 @@ export default function SteercoPage() {
 
   // The tribes this tab works on: the ones read for the month, the ones run or
   // designated in for the settings.
-  const scopeIds = tab === "month" ? Array.from(new Set([...steerco.read_tribe_ids, ...runIds])).sort((a, b) => a - b)
+  const scopeIds = tab === "month"
+    ? Array.from(new Set([...steerco.read_tribe_ids, ...runIds, ...steerco.contribute_tribe_ids])).sort((a, b) => a - b)
     : Array.from(new Set([...runIds, ...designateIds])).sort((a, b) => a - b);
   const [tribeId, setTribeId] = useState<number | null>(() => {
     const s = Number(localStorage.getItem(TRIBE_KEY));

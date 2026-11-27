@@ -386,6 +386,7 @@ _WHY = {
         "test": "Mail de test envoyé depuis Administration.",
         "steerco_reminder": "Vous recevez ce mail car vous êtes Steerco leader de cette tribe. Le rappel se règle dans le menu Steerco, Paramétrage.",
         "steerco_pack": "Un Steerco leader vous a envoyé la présentation Steerco depuis l'application.",
+        "steerco_reminder_contrib": "Vous recevez ce mail car un Steerco leader vous a confié la saisie de ces plateformes.",
     },
     "en": {
         "schedule": "You receive this mail because the scheduled report includes you. It is set in the Reports by email menu.",
@@ -399,6 +400,7 @@ _WHY = {
         "test": "Test mail sent from Administration.",
         "steerco_reminder": "You receive this mail because you are a Steerco leader of this tribe. The reminder is set in the Steerco menu, Setup.",
         "steerco_pack": "A Steerco leader sent you the Steerco presentation from the application.",
+        "steerco_reminder_contrib": "You receive this email because you are a Steerco contributor for these platforms. A Steerco leader designated you.",
     },
 }
 

@@ -3,6 +3,7 @@
 // (studio.o.*), so a new parameter of an existing kind needs no new screen.
 import { ReactNode } from "react";
 import { useI18n } from "../i18n";
+import { Toggle } from "../components/ui";
 import { Asset, ParamSpec } from "./model";
 
 export function ParamField({ name, spec, value, onChange, disabled, assets, assetKind, inherited, onReset }: {
@@ -26,10 +27,7 @@ export function ParamField({ name, spec, value, onChange, disabled, assets, asse
   switch (spec.kind) {
     case "bool":
       return row(
-        <label className="inline small" style={{ gap: 6 }}>
-          <input type="checkbox" checked={!!value} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
-          {label}
-        </label>, true);
+        <Toggle checked={!!value} disabled={disabled} onChange={onChange}><span className="small">{label}</span></Toggle>, true);
     case "int":
       return row(
         <input type="number" value={value ?? ""} min={spec.min} max={spec.max} disabled={disabled}

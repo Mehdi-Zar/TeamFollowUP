@@ -25,7 +25,7 @@ type HistMap = Record<string, SteercoData>;
 type LinkedSquad = { id: number; name: string };
 type EntryPayload = MonthState & {
   data: SteercoData; template: PlatformTemplate; squads: LinkedSquad[];
-  can_run: boolean; filled: boolean;
+  can_run: boolean; can_edit?: boolean; filled: boolean;
 };
 type HistoryPayload = {
   previous?: { period: string; data: SteercoData };
@@ -83,7 +83,8 @@ export default function SteercoWizard({ platformId, platformName, initialPeriod,
   const [data, setData] = useState<SteercoData>(dataFromTemplate(EMPTY_TPL));
   const [tpl, setTpl] = useState<PlatformTemplate>(EMPTY_TPL);
   const [squads, setSquads] = useState<LinkedSquad[]>([]);
-  const [canRun, setCanRun] = useState(false);
+  const [canRun, setCanRun] = useState(false);     // validate, reopen
+  const [canEdit, setCanEdit] = useState(false);   // write the month (Steerco leader or contributor)
   const [state, setState] = useState<MonthState | null>(null);
   const [hist, setHist] = useState<HistMap>({});
   // The month before the reported one (December of the year before for a January).
@@ -114,6 +115,7 @@ export default function SteercoWizard({ platformId, platformName, initialPeriod,
       setTpl(cur.template ?? EMPTY_TPL);
       setSquads(cur.squads ?? []);
       setCanRun(!!cur.can_run);
+      setCanEdit(!!(cur.can_edit ?? cur.can_run));
       setState(cur);
       setExisted(!!cur.filled);
       setPrevious(h.previous?.data ?? {});
@@ -129,7 +131,7 @@ export default function SteercoWizard({ platformId, platformName, initialPeriod,
 
   const validated = state?.status === "validated";
   // Read-only: asked by the caller, a reader, or a validated month.
-  const ro = !!readonly || !canRun || validated;
+  const ro = !!readonly || !canEdit || validated;
 
   // The report year's 12 months, January to December: exactly what /history returns
   // and what the one-pager charts plot. The reported month is highlighted and
@@ -150,7 +152,7 @@ export default function SteercoWizard({ platformId, platformName, initialPeriod,
     if (step !== 4 || !loaded) return;
     let alive = true;
     setPreviewHtml(null); setPreviewErr(null); setPreviewBusy(true);
-    const req = canRun
+    const req = canEdit
       ? api.post<string>(`/api/steerco/platform/${platformId}/preview.html?period=${encodeURIComponent(period)}&lang=${lang}`, data)
       : api.get<string>(`/api/steerco/onepager.html?platform_id=${platformId}&period=${encodeURIComponent(period)}&lang=${lang}`);
     req.then((html) => { if (alive) setPreviewHtml(typeof html === "string" ? html : String(html)); })
@@ -298,10 +300,10 @@ export default function SteercoWizard({ platformId, platformName, initialPeriod,
               : (ro
                   ? <button className="btn-sm" onClick={onClose}>{t("action.close")}</button>
                   : <>
-                      <button className="btn-secondary btn-sm" disabled={busy} onClick={() => save(false)}>
+                      <button className={canRun ? "btn-secondary btn-sm" : "btn-sm"} disabled={busy} onClick={() => save(false)}>
                         {busy ? t("common.saving") : t("steerco.wiz.save_draft")}
                       </button>
-                      <button className="btn-sm" disabled={busy} onClick={() => save(true)}>{t("steerco.wiz.save_validate")}</button>
+                      {canRun && <button className="btn-sm" disabled={busy} onClick={() => save(true)}>{t("steerco.wiz.save_validate")}</button>}
                     </>)}
           </div>
         </div>
@@ -594,7 +596,7 @@ export default function SteercoWizard({ platformId, platformName, initialPeriod,
                             style={{ width: "100%", height: 460, border: "1px solid var(--line)", borderRadius: 12, background: "#fff" }} />}
               </div>
 
-              {canRun && !readonly && (
+              {canEdit && !readonly && (
                 <details>
                   <summary className="small" style={{ cursor: "pointer", color: "var(--accent)" }}>{t("steerco.wiz.first_time")}</summary>
                   <div style={{ marginTop: 10 }}>
@@ -604,7 +606,7 @@ export default function SteercoWizard({ platformId, platformName, initialPeriod,
                 </details>
               )}
 
-              {!ro && <div className="small muted">{t("steerco.wiz.submit_hint")}</div>}
+              {!ro && <div className="small muted">{t(canRun ? "steerco.wiz.submit_hint" : "steerco.wiz.submit_hint_contrib")}</div>}
             </div>
           )}
         </>

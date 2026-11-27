@@ -31,7 +31,7 @@ export function SteercoImportModal({ tribeId, onClose, onDone }: {
     const q = tribeId ? `?tribe_id=${tribeId}` : "";
     api.get<Platform[]>(`/api/steerco/platforms${q}`)
       .then((ps) => {
-        const mine = ps.filter((p) => p.can_run && p.steerco_enabled);
+        const mine = ps.filter((p) => p.can_edit && p.steerco_enabled);
         setPlatforms(mine);
         if (mine.length) setPlatformId(String(mine[0].id));
       })

@@ -24,6 +24,7 @@ you see charted, and the charts always start in January.
 import io
 from datetime import date
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from .models import Platform, SteercoEntry
@@ -461,7 +462,7 @@ def _merge_month(old: dict, new: dict) -> dict:
 
 
 def import_steerco(db: Session, content: bytes, user_id: int | None = None,
-                   tribe_id: int | None = None, tribe_ids=None) -> dict:
+                   tribe_id: int | None = None, tribe_ids=None, platform_ids=None) -> dict:
     """Parse a filled workbook and merge it into the platform's Steerco entries.
 
     Idempotent per (platform, period) and **non-destructive**: values present in the
@@ -473,7 +474,8 @@ def import_steerco(db: Session, content: bytes, user_id: int | None = None,
     ``skipped_validated``; reopen it first to import into it.
 
     ``tribe_ids`` limits the platforms reachable (the tribes the Steerco leader
-    runs); None reaches every tribe.
+    runs), ``platform_ids`` adds the platforms a contributor fills in; None reaches
+    every tribe.
     """
     parsed = parse_workbook(content)
     name = parsed["squad"]
@@ -482,8 +484,10 @@ def import_steerco(db: Session, content: bytes, user_id: int | None = None,
     q = db.query(Platform)
     if tribe_id is not None:
         q = q.filter(Platform.tribe_id == tribe_id)
-    if tribe_ids is not None:  # a Steerco leader reaches the tribes they run only
-        q = q.filter(Platform.tribe_id.in_(list(tribe_ids) or [-1]))
+    if tribe_ids is not None:  # a Steerco leader reaches the tribes they run only,
+        # a contributor the platforms they fill in (ADR 0019)
+        q = q.filter(or_(Platform.tribe_id.in_(list(tribe_ids) or [-1]),
+                         Platform.id.in_(list(platform_ids or []) or [-1])))
     matches = [p for p in q.all() if p.name.strip().lower() == name.lower()]
     if not matches:
         raise ValueError(f"Plateforme introuvable : « {name} ». Vérifiez le nom exact dans l'app.")

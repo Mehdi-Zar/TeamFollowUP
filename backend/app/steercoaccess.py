@@ -6,6 +6,10 @@ Two levels, nothing in between:
   send the pack, design the platform slides in the Studio): the administrator on
   every tribe; a tribe leader on their own tribe, by default; any user designated
   Steerco leader of a tribe (``steerco_leaders``), whatever their role.
+* **contribute** (ADR 0019): fill in the month of the platforms a Steerco leader
+  named you on (``steerco_contributors``), on screen or from Excel. Nothing else: no
+  validation, no reopening, no sending, no settings, and only those platforms are
+  visible.
 * **read** (open the Steerco menu, preview any month, export): whoever runs it, and
   the personas the administrator granted the ``steerco`` capability, on their own
   tribe. Closed by default: the slide shows degraded SLAs and risks before the
@@ -23,7 +27,7 @@ from fastapi import Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from .database import get_db
-from .models import SteercoLeader, Tribe, User
+from .models import Platform, SteercoContributor, SteercoLeader, Tribe, User
 
 ADMIN = "admin"
 TRIBE = "tribe_leader"
@@ -79,6 +83,37 @@ def can_read(db: Session, user: User) -> bool:
     return ids is None or bool(ids)
 
 
+def contributed_platform_ids(db: Session, user: User) -> set[int]:
+    """The platforms ``user`` was named contributor on."""
+    if user.id is None:
+        return set()
+    return {r.platform_id for r in
+            db.query(SteercoContributor).filter(SteercoContributor.user_id == user.id).all()}
+
+
+def contributes_any(db: Session, user: User) -> bool:
+    return bool(contributed_platform_ids(db, user))
+
+
+def edits(db: Session, user: User, platform: Platform) -> bool:
+    """May ``user`` write this platform's month: a Steerco leader of its tribe, or
+    one of its contributors."""
+    return runs(db, user, platform.tribe_id) or platform.id in contributed_platform_ids(db, user)
+
+
+def contributors_of(db: Session, platform_id: int) -> list[dict]:
+    rows = (db.query(SteercoContributor).filter(SteercoContributor.platform_id == platform_id).all())
+    out = [{"id": r.user_id, "name": r.user.display_name or r.user.email, "email": r.user.email}
+           for r in rows if r.user is not None]
+    return sorted(out, key=lambda x: (x["name"] or "").lower())
+
+
+def contributor_emails(db: Session, platform_id: int) -> list[str]:
+    rows = db.query(SteercoContributor).filter(SteercoContributor.platform_id == platform_id).all()
+    return sorted({r.user.email for r in rows
+                   if r.user is not None and r.user.email and (r.user.status or "active") == "active"})
+
+
 def _current_user_dep():
     from .deps import get_current_user
     return get_current_user
@@ -89,8 +124,20 @@ def reader_dep():
     get_current_user = _current_user_dep()
 
     def dep(db: Session = Depends(get_db), user: User = Depends(get_current_user)) -> User:
-        if not can_read(db, user):
+        if not (can_read(db, user) or contributes_any(db, user)):
             raise HTTPException(status_code=403, detail="Le Steerco ne vous est pas ouvert")
+        return user
+    return dep
+
+
+def editor_dep():
+    """Route guard: a Steerco leader of some tribe or a contributor of some platform.
+    Each route then checks the platform it writes with ``edits``."""
+    get_current_user = _current_user_dep()
+
+    def dep(db: Session = Depends(get_db), user: User = Depends(get_current_user)) -> User:
+        if not (runs_any(db, user) or contributes_any(db, user)):
+            raise HTTPException(status_code=403, detail="Réservé aux Steerco leaders et aux contributeurs")
         return user
     return dep
 
@@ -151,7 +198,12 @@ def summary(db: Session, user: User) -> dict:
     led = led_tribe_ids(db, user)
     read = readable_tribe_ids(db, user)
     names = {t.id: t.name for t in db.query(Tribe).all()}
+    contrib = sorted(contributed_platform_ids(db, user))
+    contrib_tribes = sorted({p.tribe_id for p in db.query(Platform).filter(Platform.id.in_(contrib or [-1]))})
     return {
+        "contribute": bool(contrib),
+        "contribute_platform_ids": contrib,
+        "contribute_tribe_ids": contrib_tribes,
         "read": read is None or bool(read),
         "run": led is None or bool(led),
         "all_tribes": led is None,

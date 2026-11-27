@@ -1,5 +1,16 @@
 # Changelog
 
+## 4.1.0 (2026-11-27)
+
+- **Cases a cocher redessinees, partout** : un reglage oui/non est un interrupteur ; un
+  choix parmi plusieurs (squads, KPI, demi-journees, blocs) devient une pastille qui
+  s'allume avec une coche ronde ; les cases des tableaux et du Studio sont dessinees
+  (coins arrondis, coche nette) au lieu de la case du navigateur.
+- **Contributeurs Steerco** (ADR 0019) : un Steerco leader confie la saisie d'une
+  plateforme a une ou plusieurs personnes, dans la fiche de la plateforme. Elles
+  remplissent le mois de leurs plateformes (a l'ecran ou par Excel) et recoivent le
+  rappel pour elles ; un Steerco leader valide et envoie toujours la presentation.
+
 ## 4.0.0 (2026-11-27)
 
 Version majeure : le Steerco devient un sujet a part, et les rapports par mail sont refaits. Des routes sont

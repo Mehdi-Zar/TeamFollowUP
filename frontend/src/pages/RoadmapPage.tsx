@@ -12,7 +12,7 @@ import { api } from "../api";
 import { useI18n } from "../i18n";
 import { useAuth } from "../auth";
 import { RoadmapCellItem, RoadmapMatrix, Tribe } from "../types";
-import { Dot, Spinner, ErrorBanner, EmptyState } from "../components/ui";
+import { Chip, Dot, Spinner, ErrorBanner, EmptyState } from "../components/ui";
 import { Rag, RoadmapStatus } from "../types";
 
 const statusRag = (s: RoadmapStatus): Rag =>
@@ -264,12 +264,9 @@ function SquadPicker({ all, picked, onChange, t }: {
               </button>
             )}
           </div>
-          <div className="stack" style={{ gap: 2, maxHeight: 320, overflowY: "auto" }}>
+          <div className="chips" style={{ maxHeight: 320, overflowY: "auto" }}>
             {all.map((s) => (
-              <label key={s.squad_id} className="inline small" style={{ gap: 6, cursor: "pointer" }}>
-                <input type="checkbox" checked={picked.has(s.squad_id)} onChange={() => toggle(s.squad_id)} />
-                {s.name}
-              </label>
+              <Chip key={s.squad_id} on={picked.has(s.squad_id)} onToggle={() => toggle(s.squad_id)}>{s.name}</Chip>
             ))}
           </div>
         </div>

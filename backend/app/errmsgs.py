@@ -178,6 +178,10 @@ EN: dict[str, str] = {
     "Ce mois n'est pas validé": "This month is not validated",
     "Aucun destinataire : ajoutez-en dans les réglages d'envoi": "No recipient: add some in the sending settings",
     "Aucune plateforme dans la présentation": "No platform in the presentation",
+    "Réservé aux Steerco leaders et aux contributeurs": "Reserved for the Steerco leaders and contributors",
+    "Réservé aux Steerco leaders et aux contributeurs de cette plateforme":
+        "Reserved for the Steerco leaders and the contributors of this platform",
+    "Contributeur introuvable": "Contributor not found",
     "Ce mois a été modifié entre-temps : rechargez avant d'enregistrer":
         "This month was changed in the meantime: reload before saving",
     "Vous ne dirigez pas cette squad": "You do not lead this squad",

@@ -11,7 +11,7 @@ import { useI18n } from "../../i18n";
 import { usePeople } from "../../components/usePeople";
 import { useReloadConfig } from "../../config";
 import { LeaveConfig, LeaveType, ModuleKey, Permissions, Squad, Tribe } from "../../types";
-import { ErrorBanner } from "../../components/ui";
+import { ErrorBanner, Toggle } from "../../components/ui";
 
 import { useErr, useLoadState } from "./shared";
 
@@ -242,14 +242,10 @@ export function LeaveTypesAdmin() {
             <input type="color" value={tp.color} onChange={(e) => upd(tp.id, { color: e.target.value })}
                    style={{ width: 44, height: 38, padding: 2 }} aria-label={t("leaves.type_color")} />
             <input aria-label={t("a11y.leave_type_label")} value={tp.label} onChange={(e) => upd(tp.id, { label: e.target.value })} style={{ flex: 1 }} />
-            <label className="inline small" style={{ gap: 6 }}>
-              <input type="checkbox" checked={tp.is_active} onChange={(e) => upd(tp.id, { is_active: e.target.checked })} />
-              {t("leaves.type_active")}
-            </label>
-            <label className="inline small" style={{ gap: 6 }} title={t("leaves.type_requires_detail_hint")}>
-              <input type="checkbox" checked={tp.requires_detail} onChange={(e) => upd(tp.id, { requires_detail: e.target.checked })} />
-              {t("leaves.type_requires_detail")}
-            </label>
+            <Toggle checked={tp.is_active} onChange={(v) => upd(tp.id, { is_active: v })}><span className="small">{t("leaves.type_active")}</span></Toggle>
+            <Toggle checked={tp.requires_detail} onChange={(v) => upd(tp.id, { requires_detail: v })} title={t("leaves.type_requires_detail_hint")}>
+              <span className="small">{t("leaves.type_requires_detail")}</span>
+            </Toggle>
             <button className="btn-secondary btn-sm" onClick={() => saveType(tp)}>{t("action.save")}</button>
             <button className="btn-danger btn-sm" onClick={() => delType(tp.id)} aria-label={t("action.delete")}>✕</button>
           </div>
@@ -378,10 +374,9 @@ export function ChangeNotifyAdmin() {
                 </div>
                 <div className="small muted" style={{ paddingBottom: 8 }}>{t("changenotify.interval_hint")}</div>
               </div>
-              <label className="inline small" style={{ gap: 6 }}>
-                <input type="checkbox" checked={chg.current_year_only !== false} onChange={(e) => setC("current_year_only", e.target.checked)} />
-                {t("changenotify.current_year_only")}
-              </label>
+              <Toggle checked={chg.current_year_only !== false} onChange={(v) => setC("current_year_only", v)}>
+                <span className="small">{t("changenotify.current_year_only")}</span>
+              </Toggle>
               <label className="switch">
                 <input type="checkbox" checked={chg.attach_pptx !== false} onChange={(e) => setC("attach_pptx", e.target.checked)} />
                 <span className="track"><span className="knob" /></span>

@@ -10,6 +10,7 @@
 import { DragEvent, useEffect, useState } from "react";
 import { api } from "../api";
 import { useI18n } from "../i18n";
+import { Toggle } from "../components/ui";
 import { ParamField, assetKindOf } from "./fields";
 import GridEditor from "./GridEditor";
 import {
@@ -305,11 +306,10 @@ export default function SpecEditor({ cat, spec, onChange, parent, inherited = []
                 </button>
               </div>
               <div className="small muted">{t(`studio.blk_hint.${b}`)}</div>
-              <label className="inline small" style={{ gap: 6 }}>
-                <input type="checkbox" checked={blk.enabled} disabled={locked}
-                       onChange={(e) => edit((n) => { n.sections[i].blocks[b].enabled = e.target.checked; })} />
-                {t("studio.block_shown")}
-              </label>
+              <Toggle checked={blk.enabled} disabled={locked}
+                      onChange={(v) => edit((n) => { n.sections[i].blocks[b].enabled = v; })}>
+                <span className="small">{t("studio.block_shown")}</span>
+              </Toggle>
               {Object.entries(bspec).map(([k, p]) => (
                 <ParamField key={k} name={k} spec={p} value={blk.params[k]} disabled={locked}
                             inherited={pb ? same(pb.params?.[k], blk.params[k]) : undefined}

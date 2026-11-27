@@ -62,6 +62,7 @@ OWNED_BY_USER: set[tuple[str, str]] = {
     ("squad_contributors", "user_id"),
     # And for running a tribe's Steerco: a designation of the person.
     ("steerco_leaders", "user_id"),
+    ("steerco_contributors", "user_id"),
 }
 
 

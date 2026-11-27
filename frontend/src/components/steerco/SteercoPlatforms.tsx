@@ -2,26 +2,28 @@
 //
 // A platform is one slide. Everything that shapes a slide is set here, once: its
 // rows (from the tribe's model), the squads concerned (optional: their key messages
-// feed the events step), how its KPI chart is drawn, and, through the Studio, its
-// layout. The month's figures are entered in "Le mois", never here.
+// feed the events step), its contributors (optional: people who fill in its figures,
+// ADR 0019), how its KPI chart is drawn, and, through the Studio, its layout. The month's figures are entered in "Le mois", never here.
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, errorText } from "../../api";
 import { useI18n } from "../../i18n";
 import { Squad } from "../../types";
 import { ChartMode, Display, Platform, PlatformTemplate, TemplateItem } from "../../steerco";
-import { ErrorBanner, Modal, Spinner, EmptyState } from "../ui";
+import { Chip, ErrorBanner, Modal, Spinner, EmptyState } from "../ui";
 
 const EMPTY: PlatformTemplate = { kpis: [], sla: [] };
 const MODES: ChartMode[] = ["auto", "lines", "small_multiples", "table"];
 // Past this many curves on one plot, they cannot be told apart (same rule as the server).
 const LINES_MAX = 5;
+type Person = { id: number; name: string; email: string | null; tribe_id: number | null };
 
 /** The platforms of one tribe. */
 export function PlatformList({ tribeId, onChanged }: { tribeId: number; onChanged?: () => void }) {
   const { t } = useI18n();
   const [rows, setRows] = useState<Platform[] | null>(null);
   const [squads, setSquads] = useState<Squad[]>([]);
+  const [people, setPeople] = useState<Person[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [editing, setEditing] = useState<Platform | "new" | null>(null);
 
@@ -34,6 +36,7 @@ export function PlatformList({ tribeId, onChanged }: { tribeId: number; onChange
       ]);
       setRows(p); setSquads(s.filter((x) => x.tribe_id === tribeId));
     } catch (e) { setErr(errorText(e)); setRows([]); }
+    api.get<Person[]>("/api/tribes/people").then((ps) => setPeople(ps.filter((x) => x.tribe_id === tribeId))).catch(() => {});
   }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { setRows(null); load(); }, [tribeId]);
@@ -67,6 +70,7 @@ export function PlatformList({ tribeId, onChanged }: { tribeId: number; onChange
             <tr>
               <th>{t("platforms.name")}</th>
               <th>{t("platforms.squads")}</th>
+              <th>{t("platforms.contributors")}</th>
               <th>{t("platforms.items")}</th>
               <th>{t("platforms.state")}</th>
               <th></th>
@@ -77,6 +81,7 @@ export function PlatformList({ tribeId, onChanged }: { tribeId: number; onChange
               <tr key={p.id}>
                 <td className="strong">{p.name}</td>
                 <td className="small">{p.squads.map((c) => c.name).join(", ") || "-"}</td>
+                <td className="small">{(p.contributors ?? []).map((c) => c.name).join(", ") || "-"}</td>
                 <td className="small">
                   {t("platforms.item_count", {
                     kpis: String((p.template.kpis ?? []).length),
@@ -108,6 +113,7 @@ export function PlatformList({ tribeId, onChanged }: { tribeId: number; onChange
           platform={editing === "new" ? null : editing}
           tribeId={tribeId}
           squads={squads}
+          people={people}
           onClose={() => setEditing(null)}
           onSaved={() => { setEditing(null); changed(); }}
         />
@@ -196,13 +202,16 @@ export function TribeModelEditor({ tribeId, onSaved }: { tribeId: number; onSave
 
 /** Create / edit one platform: identity, squads concerned, the slide's rows and how
  *  its KPI chart is drawn. */
-function PlatformModal({ platform, tribeId, squads, onClose, onSaved }:
-  { platform: Platform | null; tribeId: number; squads: Squad[]; onClose: () => void; onSaved: () => void }) {
+function PlatformModal({ platform, tribeId, squads, people, onClose, onSaved }:
+  { platform: Platform | null; tribeId: number; squads: Squad[]; people: Person[];
+    onClose: () => void; onSaved: () => void }) {
   const { t } = useI18n();
   const [name, setName] = useState(platform?.name ?? "");
   const [description, setDescription] = useState(platform?.description ?? "");
   const [enabled, setEnabled] = useState(platform?.steerco_enabled ?? true);
   const [linked, setLinked] = useState<number[]>(platform?.squads.map((c) => c.id) ?? []);
+  const [contrib, setContrib] = useState<number[]>(platform?.contributors?.map((c) => c.id) ?? []);
+  const [who, setWho] = useState("");
   const [tpl, setTpl] = useState<PlatformTemplate>(platform?.template ?? EMPTY);
   const saved: Display = platform?.template?.display ?? { kpi_chart: "auto", chart_kpis: [] };
   const [mode, setMode] = useState<ChartMode>(saved.kpi_chart);
@@ -212,6 +221,14 @@ function PlatformModal({ platform, tribeId, squads, onClose, onSaved }:
 
   const toggleSquad = (id: number) =>
     setLinked((c) => (c.includes(id) ? c.filter((x) => x !== id) : [...c, id]));
+  const toggleContrib = (id: number) =>
+    setContrib((c) => (c.includes(id) ? c.filter((x) => x !== id) : [...c, id]));
+  // The chosen ones first, then whoever matches the search (all of them when the
+  // tribe is small enough to show at once).
+  const known = new Map(people.map((p) => [p.id, p.name]));
+  for (const c of platform?.contributors ?? []) if (!known.has(c.id)) known.set(c.id, c.name);
+  const q = who.trim().toLowerCase();
+  const others = people.filter((p) => !contrib.includes(p.id) && (q ? p.name.toLowerCase().includes(q) : people.length <= 16));
   function setItem(kind: "kpis" | "sla", i: number, patch: Partial<TemplateItem>) {
     setTpl((x) => ({ ...x, [kind]: (x[kind] ?? []).map((it, j) => (j === i ? { ...it, ...patch } : it)) }));
   }
@@ -230,7 +247,8 @@ function PlatformModal({ platform, tribeId, squads, onClose, onSaved }:
 
   async function save() {
     setBusy(true); setErr(null);
-    const body: any = { name, description, steerco_enabled: enabled, squad_ids: linked, tribe_id: tribeId };
+    const body: any = { name, description, steerco_enabled: enabled, squad_ids: linked,
+                        contributor_user_ids: contrib, tribe_id: tribeId };
     // A new platform starts from the tribe's model (server side); its skeleton is
     // adjusted afterwards, here, like any other platform.
     if (platform) body.template = {
@@ -298,14 +316,25 @@ function PlatformModal({ platform, tribeId, squads, onClose, onSaved }:
         <div className="stack" style={{ gap: 6 }}>
           <div className="strong">{t("platforms.squads")}</div>
           <div className="small muted">{t("platforms.squads_hint")}</div>
-          <div className="inline" style={{ gap: 10, flexWrap: "wrap" }}>
+          <div className="chips">
             {squads.length === 0 && <span className="small muted">{t("platforms.no_squad")}</span>}
             {squads.map((s) => (
-              <label key={s.id} className="inline small" style={{ gap: 4 }}>
-                <input type="checkbox" checked={linked.includes(s.id)} onChange={() => toggleSquad(s.id)} />
-                {s.name}
-              </label>
+              <Chip key={s.id} on={linked.includes(s.id)} onToggle={() => toggleSquad(s.id)}>{s.name}</Chip>
             ))}
+          </div>
+        </div>
+
+        <div className="stack" style={{ gap: 6 }}>
+          <div className="strong">{t("platforms.contributors")}</div>
+          <div className="small muted">{t("platforms.contributors_hint")}</div>
+          {people.length > 16 && (
+            <input aria-label={t("platforms.contributors_search")} placeholder={t("platforms.contributors_search")}
+                   value={who} onChange={(e) => setWho(e.target.value)} style={{ maxWidth: 320 }} />
+          )}
+          <div className="chips">
+            {contrib.map((id) => <Chip key={id} on onToggle={() => toggleContrib(id)}>{known.get(id) ?? `#${id}`}</Chip>)}
+            {others.slice(0, 30).map((p) => <Chip key={p.id} on={false} onToggle={() => toggleContrib(p.id)}>{p.name}</Chip>)}
+            {!contrib.length && !others.length && <span className="small muted">{t("platforms.contributors_none")}</span>}
           </div>
         </div>
 
@@ -376,12 +405,8 @@ function PlatformModal({ platform, tribeId, squads, onClose, onSaved }:
               {labels.length > 0 && (
                 <>
                   <div className="small muted">{t("steerco.render_kpis", { n: shown.length, total: labels.length })}</div>
-                  <div className="inline" style={{ gap: 12, flexWrap: "wrap" }}>
-                    {labels.map((k) => (
-                      <label key={k} className="inline small" style={{ gap: 4, cursor: "pointer" }}>
-                        <input type="checkbox" checked={shown.includes(k)} onChange={() => toggleKpi(k)} /> {k}
-                      </label>
-                    ))}
+                  <div className="chips">
+                    {labels.map((k) => <Chip key={k} on={shown.includes(k)} onToggle={() => toggleKpi(k)}>{k}</Chip>)}
                   </div>
                   {mode === "lines" && shown.length > LINES_MAX && (
                     <div className="small" style={{ color: "var(--orange)" }}>{t("steerco.render_too_many", { n: shown.length })}</div>

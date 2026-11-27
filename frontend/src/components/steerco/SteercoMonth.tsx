@@ -7,8 +7,9 @@
 //   3. send the deck by mail.
 // The step to do now is highlighted. The settings are all in "Parametrage".
 //
-// A reader (the "steerco" capability) sees the platforms of the month, their state
-// and their slide, without the steps.
+// A contributor (ADR 0019) sees only the platforms they fill in, with step 1 alone:
+// validating and sending stay with the Steerco leaders. A reader (the "steerco"
+// capability) sees the platforms of the month, their state and their slide.
 import { useEffect, useState } from "react";
 import { api, errorText } from "../../api";
 import { useI18n } from "../../i18n";
@@ -21,7 +22,7 @@ import { MonthState, monthLongLabel } from "../../steerco";
 
 type Entry = MonthState & {
   platform_id: number; platform_name: string; tribe_id: number; tribe_name?: string | null;
-  filled: boolean; can_run: boolean;
+  filled: boolean; can_run: boolean; can_edit: boolean;
 };
 
 /** A platform's month state as one badge: validated, complete, in progress, empty. */
@@ -98,6 +99,8 @@ export default function SteercoMonth({ tribeId, canRun, period, setPeriod, platf
   // The step to do now: the first one not finished.
   const current = !total ? 0 : ready < total ? 1 : !allValidated ? 2 : 3;
   const month = monthLongLabel(period, lang);
+  // A contributor: writes some platforms without running the tribe's Steerco.
+  const contributor = !canRun && all.some((e) => e.can_edit);
 
   async function validateAll() {
     setBusy(true); setErr(null); setMsg(null);
@@ -155,7 +158,7 @@ export default function SteercoMonth({ tribeId, canRun, period, setPeriod, platf
               </div>
               <StateBadge s={e} />
               <div className="inline" style={{ gap: 6 }}>
-                {e.can_run && (
+                {e.can_edit && (
                   <button className={primary ? "btn-sm" : "btn-secondary btn-sm"} onClick={() => setOpen(e)}>
                     {primary ? "✎ " : ""}{action}
                   </button>
@@ -204,6 +207,19 @@ export default function SteercoMonth({ tribeId, canRun, period, setPeriod, platf
             <button className="btn-sm" onClick={onSettings}>{t("steerco.first.go")}</button>
           </div>
         ) : <EmptyState message={t("steerco.no_platforms")} />
+      ) : contributor ? (
+        <section className="card sc-step now">
+          <div className="sc-step-head">
+            <span style={{ flex: 1 }}>{t("steerco.contrib.title")}</span>
+            <span className="small muted" style={{ fontWeight: 400 }}>{t("steerco.step.enter_state", { n: ready, total })}</span>
+          </div>
+          <div className="small muted">{t("steerco.contrib.hint")}</div>
+          {list}
+          <div className="sc-alt">
+            <span className="small muted">{t("steerco.step.excel_hint")}</span>
+            <button className="btn-ghost btn-sm" onClick={() => setImporting(true)}>{t("steerco.board.import")}</button>
+          </div>
+        </section>
       ) : !canRun ? (
         <div className="card stack" style={{ gap: 10 }}>{list}</div>
       ) : (

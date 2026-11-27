@@ -24,7 +24,7 @@ import { useAuth } from "../auth";
 import { useI18n } from "../i18n";
 import { useConfig, useModule } from "../config";
 import { Dependency, Kpi, Member, RoadmapItem, Squad, SquadDetail, Tribe, Trend, Role } from "../types";
-import { Dot, Spinner, ErrorBanner, EmptyState, Modal, SectionCard as Card, StageBadge } from "../components/ui";
+import { Dot, Spinner, ErrorBanner, EmptyState, Modal, SectionCard as Card, StageBadge, Toggle } from "../components/ui";
 import { QuarterProgressEditor } from "../components/EntryExtras";
 import TeamMood, { moodAge, WEEKLY_STALE_DAYS } from "../components/TeamMood";
 import KeyMessagesPanel from "../components/KeyMessagesPanel";
@@ -685,10 +685,9 @@ function QuarterEditor({ squad, year, quarter, readonly, t, roadmap, onAdd, onEd
         )}
         <span style={{ flex: 1 }} />
         {total === 0 && (
-          <label className="inline small" style={{ gap: 6 }} title={t("entry.q_na_hint")}>
-            <input type="checkbox" disabled={readonly} checked={na} onChange={(e) => setNa(e.target.checked)} />
-            {t("entry.q_na_box")}
-          </label>
+          <Toggle checked={na} disabled={readonly} onChange={setNa} title={t("entry.q_na_hint")}>
+            <span className="small">{t("entry.q_na_box")}</span>
+          </Toggle>
         )}
         {!readonly && (
           <button className="btn-secondary btn-sm" onClick={onAdd}>+ {t("jalon.add")}</button>

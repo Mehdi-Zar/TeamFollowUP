@@ -961,6 +961,9 @@ class Platform(Base):
                                                        back_populates="platforms")
     entries: Mapped[list["SteercoEntry"]] = relationship(back_populates="platform",
                                                          cascade="all, delete-orphan")
+    # The people who fill in this platform's figures (ADR 0019), besides the Steerco leaders.
+    steerco_contributors: Mapped[list["SteercoContributor"]] = relationship(
+        back_populates="platform", cascade="all, delete-orphan")
 
 
 class SteercoEntry(Base):
@@ -1028,6 +1031,30 @@ class SteercoLeader(Base):
                                                            nullable=True)
 
     user: Mapped["User"] = relationship(foreign_keys=[user_id])
+
+
+class SteercoContributor(Base):
+    """Who fills in one platform's figures without running the Steerco (ADR 0019).
+
+    A Steerco leader names them, platform by platform: they enter the month (on
+    screen or from Excel) of the platforms they hold, and get the monthly reminder
+    for those. They do not validate, reopen, send, nor see the other platforms or the
+    settings: the month the committee sees is still validated by a Steerco leader.
+    """
+    __tablename__ = "steerco_contributors"
+    __table_args__ = (UniqueConstraint("user_id", "platform_id", name="uq_steerco_contributor"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"),
+                                         nullable=False, index=True)
+    platform_id: Mapped[int] = mapped_column(ForeignKey("platforms.id", ondelete="CASCADE"),
+                                             nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"),
+                                                           nullable=True)
+
+    user: Mapped["User"] = relationship(foreign_keys=[user_id])
+    platform: Mapped["Platform"] = relationship(back_populates="steerco_contributors")
 
 
 class DataSnapshot(Base):

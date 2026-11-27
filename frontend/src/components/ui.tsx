@@ -31,6 +31,33 @@ export function PickItem({ selected, disabled, onToggle, title, meta, tag }: {
   );
 }
 
+/** A yes/no setting with its label: always a switch, never a bare checkbox. */
+export function Toggle({ checked, onChange, disabled, children, title }: {
+  checked: boolean; onChange: (v: boolean) => void; disabled?: boolean; children: ReactNode; title?: string;
+}) {
+  return (
+    <label className={`switch${disabled ? " disabled" : ""}`} title={title}>
+      <input type="checkbox" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
+      <span className="track"><span className="knob" /></span>
+      <span className="switch-label">{children}</span>
+    </label>
+  );
+}
+
+/** One choice among several (squads, KPI, options): a pill that lights up, with a
+ *  round tick, instead of a checkbox next to a word. */
+export function Chip({ on, onToggle, disabled, children, title }: {
+  on: boolean; onToggle: () => void; disabled?: boolean; children: ReactNode; title?: string;
+}) {
+  return (
+    <button type="button" role="checkbox" aria-checked={on} disabled={disabled} title={title}
+            className={`chip-opt${on ? " on" : ""}`} onClick={onToggle}>
+      <span className="chip-tick" aria-hidden />
+      <span>{children}</span>
+    </button>
+  );
+}
+
 /** Scales its content down (never up) so it always fits the available space -
  *  keeps the org chart readable on one page without scrollbars. With fitHeight
  *  it fits BOTH width and height of its container (for a fullscreen view). */

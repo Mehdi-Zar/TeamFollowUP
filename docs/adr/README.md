@@ -26,6 +26,7 @@ Risks, Future Evolution**.
 | [0016](0016-a-version-is-a-day-replayed-from-frozen-submissions.md) | Une version est une journee, rejouee depuis les saisies figees | Accepted |
 | [0017](0017-templates-drive-the-renderers-and-the-preview-reads-the-deck.md) | Les modeles pilotent les renderers, et l'apercu lit le deck | Accepted |
 | [0018](0018-steerco-is-a-topic-of-its-own.md) | Le Steerco est un sujet a part, mene par des Steerco leaders | Accepted |
+| [0019](0019-steerco-contributors.md) | Des contributeurs Steerco, plateforme par plateforme | Accepted |
 
 ## Dependency map
 

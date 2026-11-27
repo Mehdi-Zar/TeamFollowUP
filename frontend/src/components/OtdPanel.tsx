@@ -14,7 +14,7 @@ import { Link } from "react-router-dom";
 import { api, errorText } from "../api";
 import { useI18n } from "../i18n";
 import { CandidateJalon, OtdReport, OtdScope, SquadDetail } from "../types";
-import { Collapsible, ErrorBanner, Modal, PickItem } from "./ui";
+import { Collapsible, ErrorBanner, Modal, PickItem, Toggle } from "./ui";
 import { Sorted, SortTh } from "./tableView";
 
 /** The colour of a status: green kept, orange to watch, red missed, grey out of play. */
@@ -434,10 +434,7 @@ function OtdDetailModal({ otd, squad, onClose, onSaved, t }: any) {
           )}
           {f.id && (
             <div className="stack" style={{ gap: 4 }}>
-              <label className="inline" style={{ gap: 8, cursor: "pointer" }}>
-                <input type="checkbox" checked={cancelled} onChange={(e) => setCancelled(e.target.checked)} />
-                <span className="strong">{t("otd.cancel_label")}</span>
-              </label>
+              <Toggle checked={cancelled} onChange={setCancelled}><span className="strong">{t("otd.cancel_label")}</span></Toggle>
               <span className="small muted">{t("otd.cancel_hint")}</span>
               {cancelled && (
                 <>

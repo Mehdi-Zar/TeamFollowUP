@@ -20,6 +20,7 @@ colonne a remplir) n'a pas change.
 | **Administrateur** | tout, dans toutes les tribes ; seul a retirer au tribe leader sa designation par defaut |
 | **Tribe leader** | Steerco leader de sa tribe **par defaut** (il reste tribe leader) ; designe et retire les autres Steerco leaders de sa tribe |
 | **Steerco leader designe** | tout dans le Steerco de sa tribe : plateformes, modele, saisie, import, validation, reouverture, rappel, envoi de la presentation, mise en page de ses plateformes dans le Studio. Il ne designe personne |
+| **Contributeur Steerco** (ADR 0019), nomme sur une plateforme par un Steerco leader | remplit le mois de ses plateformes, a l'ecran ou par Excel, et recoit le rappel pour elles. Ne valide pas, n'envoie pas, ne voit ni les autres plateformes ni le Parametrage |
 | **Lecteur** (capacite `steerco` d'une persona) | l'onglet Reporting du mois de sa tribe, en lecture : etats, apercus et documents |
 | Tous les autres | rien : le menu n'apparait pas, l'API repond `403` |
 
@@ -30,7 +31,14 @@ leader n'y a pas de ligne : il l'est implicitement, et une ligne `excluded` (pos
 l'administrateur seulement) le lui retire. Les regles vivent dans
 `backend/app/steercoaccess.py`, et `/api/auth/me/permissions` renvoie a l'interface ce
 que l'utilisateur peut faire (`steerco: {read, run, run_tribe_ids, read_tribe_ids,
-designate_tribe_ids}`).
+designate_tribe_ids, contribute, contribute_platform_ids, contribute_tribe_ids}`).
+
+Les **contributeurs Steerco** sont dans la table `steerco_contributors` (`user_id`,
+`platform_id`). Un Steerco leader les choisit dans la fiche de la plateforme
+(Parametrage > Les plateformes > Modifier, section « Contributeurs Steerco »). Dans
+Reporting du mois, un contributeur ne voit que la liste de ses plateformes, avec
+Remplir et l'import Excel ; un Steerco leader valide ensuite. Le mot « Steerco » les
+distingue de la persona Contributor des squads.
 
 La capacite `steerco` se coche dans **Administration > Personas** ; elle est fermee par
 defaut pour toutes les personas sauf l'administrateur. Une squad, ses leaders et ses
