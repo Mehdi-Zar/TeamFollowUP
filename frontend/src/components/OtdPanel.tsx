@@ -158,9 +158,6 @@ export function OtdPanel({ squad, canManage, canOwn, onChange, editTo, editLabel
                 <td>
                   <button className="otd-open" style={{ cursor: "pointer" }}
                           onClick={() => (writable ? setEditing(o) : setViewing(o))}>
-                    {/* Le filet de couleur dit la portee sans ajouter un mot a
-                        lire: c'est la meme couleur que sur la frise exportee. */}
-                    <span className={`otd-scope-bar otd-scope-${scope}`} aria-hidden="true" />
                     <span className="strong">{o.title}</span>
                   </button>
                 </td>
