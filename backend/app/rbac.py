@@ -26,16 +26,16 @@ MANAGER_ROLES = (ADMIN, TRIBE, SQUAD)
 
 # Admin tabs each role may open. Global-config tabs are admin-only.
 ADMIN_TABS = {
-    ADMIN: ["tribes", "import", "squads", "users", "personas", "modules", "report", "leaves",
+    ADMIN: ["tribes", "import", "squads", "platforms", "users", "personas", "modules", "report", "leaves",
             "moderation", "auth", "directory", "api", "smtp", "trust", "logs", "settings", "branding", "data",
             "audit", "ops"],
     # Tribe & squad leaders manage their squads on the dedicated "my squads"
     # page, not in Administration. Tribe leaders may set their own tribe's leave rules.
-    # The Steerco is no longer an Administration tab: it has its own menu, run by
-    # the tribe's Steerco leaders (app/steercoaccess.py, ADR 0018).
+    # Platforms are theirs too: a steerco slide and who owes each figure on it is a
+    # tribe-level decision, not something a squad leader hands itself.
     # The default only: the tribe leader's tabs are chosen in Admin > Personas
     # (personasconfig.admin_tabs_for), this list is what an untouched install gives.
-    TRIBE: ["tribe", "users", "leaves", "report"],
+    TRIBE: ["tribe", "platforms", "users", "leaves", "report"],
     SQUAD: [],
     CONTRIB: [],
     MEMBER: [],
@@ -162,10 +162,4 @@ def permissions_payload(user: User, db=None) -> dict:
         "assignable_roles": assignable_roles(user),
         "can_create_tribe": can_create_or_delete_tribe(user),
         "can_manage_users": can_manage_users(user),
-        **({"steerco": _steerco_summary(db, user)} if db is not None else {}),
     }
-
-
-def _steerco_summary(db, user: User) -> dict:
-    from .steercoaccess import summary
-    return summary(db, user)

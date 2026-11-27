@@ -170,6 +170,12 @@ class Squad(Base):
     leader_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     display_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     kpis_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # True when this squad contributes to at least one platform's steerco. Derived
+    # from ``platforms`` and kept in sync on every contributor change (see
+    # app/platforms.py:sync_squad_flags): the reporting screen reads this one boolean
+    # to decide whether to show the Steerco step, and it has no business loading the
+    # platform graph for that.
+    steerco_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     # Budget tracking is opt-in per squad: the tribe leader turns it on, then the
     # squad leader reports the figures. The amounts (SquadBudget) are visible only
     # to the squad leader, its tribe leader and admins.
@@ -906,17 +912,20 @@ platform_contributors = Table(
 class Platform(Base):
     """A platform: what the steering committee actually looks at, one slide each.
 
-    The platform owns the **shape** of its slide (``template``): which KPI cards
-    (and their sub-metrics), which SLA columns. Since 4.0 (ADR 0018) the figures are
-    entered by the tribe's Steerco leaders only, so the template no longer names an
-    owner per item. The linked squads (``contributors``, shown as "squads
-    concerned") are optional: they feed "take over from the reporting" with their
-    key messages and give the squad page its link to the platform.
+    The unit of steerco reporting used to be the squad, so a platform served by two
+    squads produced two slides and nothing in the model knew they described the same
+    thing. A platform groups its contributing squads and owns the **shape** of its
+    slide (``template``): which KPI cards, which SLA columns, and for each of them
+    which contributing squad is responsible for the figure.
+
+    Ownership is per item rather than per slide, which is what makes this work for
+    any number of contributors: every value on the slide has exactly one author, so
+    nothing is ever merged and no figure is anonymous.
 
     ``template`` shape (see app/platforms.py, which is the authority on it):
-        {"kpis": [{"label": "K8aaS", "sub": ["GitLab", ...]}],
-         "sla":  [{"label": "Gitlab"}],
-         "display": {"kpi_chart": "auto", "chart_kpis": []}}
+        {"kpis": [{"label": "K8aaS", "owner_squad_id": 9, "sub": ["GitLab", ...]}],
+         "sla":  [{"label": "Gitlab", "owner_squad_id": 8}],
+         "incidents": {"owner_squad_id": 8}}
     """
     __tablename__ = "platforms"
     __table_args__ = (UniqueConstraint("tribe_id", "name", name="uq_platform_tribe_name"),)
@@ -941,10 +950,12 @@ class Platform(Base):
 class SteercoEntry(Base):
     """One platform's Steering-Committee (steerco) monthly snapshot.
 
-    A platform has at most one entry per month (unique constraint): the row is the
-    slide's figures for that month, entered by the tribe's Steerco leaders. The
-    one-pager (HTML / PPTX) is not stored: it is rebuilt on the fly from the year's
-    rows, so the charts and the annual SLA row stay in sync by construction.
+    A platform has at most one entry per month (unique constraint), whatever the
+    number of squads feeding it: the row is the slide, and each contributor writes
+    only the items the platform's template assigns to it (see
+    ``app/platforms.py:merge_owned``). The one-pager (HTML / PPTX) is not stored: it
+    is rebuilt on the fly from the year's rows, so the charts and the annual SLA row
+    stay in sync by construction.
 
     The snapshot fields live in the schemaless ``data`` JSON blob rather than in
     columns, so the input shape can evolve without a migration per field. See
@@ -965,44 +976,9 @@ class SteercoEntry(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),
                                                  default=utcnow, onupdate=utcnow)
     updated_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
-    # Life cycle of the month (ADR 0018): "draft" is freely edited; "validated" is
-    # read-only, what the committee saw. Reopening needs a reason (audited) and
-    # stamps ``revised_at``, which the exported document then mentions.
-    status: Mapped[str] = mapped_column(String(16), default="draft", nullable=False)
-    # Bumped on every write: a save sent against an older version is refused (409)
-    # rather than silently replacing what another Steerco leader just entered.
-    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
-    validated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    validated_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
-    revised_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     platform: Mapped["Platform"] = relationship(back_populates="entries")
     updated_by: Mapped["User | None"] = relationship(foreign_keys=[updated_by_user_id])
-    validated_by: Mapped["User | None"] = relationship(foreign_keys=[validated_by_user_id])
-
-
-class SteercoLeader(Base):
-    """Who runs a tribe's Steerco (ADR 0018): a designation, not a persona.
-
-    It adds to whatever role the person has (a squad leader can be one), and one
-    person can hold it on several tribes, one row each. The tribe leader holds it
-    on their tribe **by default**, without a row: ``excluded`` rows exist only to
-    take it away from a tribe leader, which only the administrator may do.
-    """
-    __tablename__ = "steerco_leaders"
-    __table_args__ = (UniqueConstraint("user_id", "tribe_id", name="uq_steerco_leader"),)
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"),
-                                         nullable=False, index=True)
-    tribe_id: Mapped[int] = mapped_column(ForeignKey("tribes.id", ondelete="CASCADE"),
-                                          nullable=False, index=True)
-    excluded: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"),
-                                                           nullable=True)
-
-    user: Mapped["User"] = relationship(foreign_keys=[user_id])
 
 
 class DataSnapshot(Base):
