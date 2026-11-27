@@ -265,10 +265,7 @@ function Links({ rows, onChange, ro }: { rows: Project["links"]; onChange: (rows
 // changed in place (Modifier), never in another window.
 // ---------------------------------------------------------------------------
 
-// A history entry "Blocage" would read like the point of the same name: what
-// blocks is noted as a point to do, so it is not offered for a new entry.
-const PAST_KINDS = JOURNAL_KINDS.filter((k) => k !== "blocker");
-const KIND_COLOR: Record<ItemKind, string | undefined> = { blocker: "var(--red)", risk: "var(--orange)", action: undefined };
+const KIND_COLOR: Record<ItemKind, string | undefined> = { blocker: "var(--red)", risk: "var(--orange)", action: undefined, note: undefined };
 
 function TrackPart({ p, onChanged }: { p: Project; onChanged: () => void }) {
   const { t } = useI18n();
@@ -446,7 +443,7 @@ function HistoryTable({ p, onChanged }: { p: Project; onChanged: () => void }) {
         <tbody>
           {p.can_edit && !editing && (
             <tr className="cs-newrow">
-              {inputs(draft, setNew, enter(add, !!draft.text.trim()), PAST_KINDS)}
+              {inputs(draft, setNew, enter(add, !!draft.text.trim()), JOURNAL_KINDS)}
               <td className="cs-tact"><button className="btn-sm" disabled={busy || !draft.text.trim()} onClick={add}>{t("action.add")}</button></td>
             </tr>
           )}

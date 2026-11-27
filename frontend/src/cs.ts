@@ -7,12 +7,12 @@
 
 export type Health = "green" | "amber" | "red";
 export type JournalKind = "request" | "decision" | "proposal" | "delivery" | "reminder" | "blocker" | "note";
-export type ItemKind = "action" | "risk" | "blocker";
+export type ItemKind = "action" | "risk" | "blocker" | "note";
 
 export const JOURNAL_KINDS: JournalKind[] = ["request", "decision", "proposal", "delivery", "reminder", "blocker", "note"];
 /** Ticked "in the recap" by default (same rule as the server). */
 export const RECAP_BY_DEFAULT: JournalKind[] = ["request", "decision", "proposal", "delivery"];
-export const ITEM_KINDS: ItemKind[] = ["action", "risk", "blocker"];
+export const ITEM_KINDS: ItemKind[] = ["action", "risk", "blocker", "note"];
 export const HEALTHS: Health[] = ["green", "amber", "red"];
 
 export type Stage = { key: string; label: string; color: string; closed: boolean };

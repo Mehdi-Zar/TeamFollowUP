@@ -11,6 +11,8 @@
     Facturation, Suivi. Le Suivi tient en deux tableaux : A faire (type, quoi, qui,
     echeance, case a cocher) puis Historique (date, type, ce qui s'est passe, recap).
     Chacun a sa ligne d'ajout en haut, et chaque ligne se modifie sur place.
+    A faire accepte aussi une Note (ni action ni blocage), et l'Historique propose tous
+    les types qu'il affiche.
     L'etape Contributeurs est retiree. La fiche s'enregistre a chaque changement d'etape
     et a la fermeture.
   - Une remise sur le prix, en % ou en euros, a la creation comme dans l'etape

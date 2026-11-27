@@ -39,7 +39,7 @@ router = APIRouter(prefix="/api/cs", tags=["customer-success"],
 JOURNAL_KINDS = ["request", "decision", "proposal", "delivery", "reminder", "blocker", "note"]
 # Ticked "in the recap" by default: what the recap mail is made of.
 RECAP_BY_DEFAULT = {"request", "decision", "proposal", "delivery"}
-ITEM_KINDS = ["action", "risk", "blocker"]
+ITEM_KINDS = ["action", "risk", "blocker", "note"]
 HEALTH = {"green", "amber", "red"}
 # Where the billing stands: to invoice, invoiced (waiting for the payment), paid.
 BILLING = ("todo", "invoiced", "paid")
@@ -705,7 +705,7 @@ RECAP_L = {
         "f_planned": "Livraison prévue", "f_delivered": "Livré le",
         "kind": {"request": "Demande", "decision": "Décision", "proposal": "Proposition",
                  "delivery": "Livraison", "reminder": "Relance", "blocker": "Blocage", "note": "Note"},
-        "item": {"action": "Action", "risk": "Risque", "blocker": "Blocage"},
+        "item": {"action": "Action", "risk": "Risque", "blocker": "Blocage", "note": "Note"},
     },
     "en": {
         "summary": "Summary", "h_topic": "Topic", "h_requester": "Requester",
@@ -719,7 +719,7 @@ RECAP_L = {
         "f_planned": "Planned delivery", "f_delivered": "Delivered on",
         "kind": {"request": "Request", "decision": "Decision", "proposal": "Proposal",
                  "delivery": "Delivery", "reminder": "Reminder", "blocker": "Blocker", "note": "Note"},
-        "item": {"action": "Action", "risk": "Risk", "blocker": "Blocker"},
+        "item": {"action": "Action", "risk": "Risk", "blocker": "Blocker", "note": "Note"},
     },
 }
 

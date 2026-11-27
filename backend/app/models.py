@@ -1212,7 +1212,7 @@ class CsJournalEntry(Base):
 
 
 class CsItem(Base):
-    """A point to follow on a project: an action, a risk or a blocker.
+    """A point to follow on a project: an action, a risk, a blocker or a note.
 
     An open blocker makes the project read "Blocked"; the open action due first is
     its next action. Nothing else (no impact, no probability): kept simple on purpose.

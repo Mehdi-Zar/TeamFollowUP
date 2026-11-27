@@ -82,7 +82,8 @@ Proposition et Livraison. Affiché du plus récent au plus ancien. Les décision
 ### 3.4 À faire (ce qui reste à faire ou bloque)
 
 Une seule liste par projet, volontairement simple : **type** (Action, Risque,
-Blocage), libellé, échéance, case **réglé**. Les points réglés sont masqués, un clic
+Blocage, Note), quoi, qui, échéance, case **réglé**. Une note est à garder en tête :
+elle n'est ni la prochaine action ni un blocage. Les points réglés sont masqués, un clic
 les montre.
 
 - Un **blocage ouvert** fait afficher « Bloqué : dérogation sécurité (depuis 14 j) »

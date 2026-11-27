@@ -274,3 +274,12 @@ def test_discount_percent_or_amount(client, seeded):
     assert client.put(f"/api/cs/projects/{p['id']}", json={"discount_kind": "gift"}).status_code == 400
     r = client.put(f"/api/cs/projects/{p['id']}", json={"discount_value": None})
     assert r.json()["net_amount"] == 10000
+
+
+def test_note_point_is_not_a_next_action(client, seeded):
+    _enable(client)
+    p = _project(client, seeded["t1"], title="Note")
+    r = client.post(f"/api/cs/projects/{p['id']}/items", json={"kind": "note", "label": "Le client change d'interlocuteur"})
+    assert r.status_code == 201
+    got = client.get(f"/api/cs/projects/{p['id']}").json()
+    assert got["next_action"] is None and not got["blocked"] and got["items"][0]["kind"] == "note"
