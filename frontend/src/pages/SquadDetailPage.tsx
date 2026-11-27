@@ -56,7 +56,7 @@ export default function SquadDetailPage() {
   const roadmapOn = moduleOn("squad_content", "roadmap");
   const kpisOn = moduleOn("squad_content", "kpis");
   const committeesOn = moduleOn("committees");
-  const { user, effectiveRole, adminTabs, can } = useAuth();
+  const { user, effectiveRole, adminTabs, can, steerco } = useAuth();
 
   // Re-fetch the squad in place (no spinner flash) after a budget / key-message edit.
   const reload = () => {
@@ -194,6 +194,16 @@ export default function SquadDetailPage() {
             )}
             <FreshnessBadge freshness={squad.freshness} />
           </div>
+          {/* The Steerco platforms this squad is concerned by: read only, the link
+              opens the Steerco for whoever may read it (ADR 0018). */}
+          {moduleOn("steerco") && (squad.steerco_platforms?.length ?? 0) > 0 && (
+            <div className="inline small" style={{ marginTop: 6, gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+              <span className="muted">{t("steerco.tab")}{t("common.colon")}</span>
+              {steerco.read || steerco.run
+                ? <Link to="/steerco?tab=month">{squad.steerco_platforms!.join(", ")}</Link>
+                : <span>{squad.steerco_platforms!.join(", ")}</span>}
+            </div>
+          )}
           {(squad.products?.length ?? 0) > 0 && (
             <div className="inline" style={{ marginTop: 6, gap: 6, flexWrap: "wrap", alignItems: "center" }}>
               <span className="muted small">{t("squad.products")} :</span>

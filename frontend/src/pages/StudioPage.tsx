@@ -94,8 +94,10 @@ function StudioHome({ cat, onOpen }: { cat: Catalog; onOpen: (id: number, applyT
   const { t } = useI18n();
   const scopes = scopeOptions(cat, t);
   // Start where the person works: the organisation for the admin, the tribe for
-  // a tribe leader, their squad for a squad leader.
-  const [key, setKey] = useState(scopes[0]?.key || "");
+  // a tribe leader, their squad for a squad leader. A link may name the scope
+  // (?scope=platform:12, from a Steerco platform sheet).
+  const asked = new URLSearchParams(window.location.search).get("scope") || "";
+  const [key, setKey] = useState(scopes.some((s) => s.key === asked) ? asked : (scopes[0]?.key || ""));
   const scope = scopes.find((s) => s.key === key);
   const kinds = scope ? (KINDS_FOR[scope.type] || cat.doc_kinds) : [];
   type Row = { kind: DocKind; template_id: number; name: string; source: string };

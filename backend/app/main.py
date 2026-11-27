@@ -24,6 +24,7 @@ from .routers import (
     auth,
     committees,
     dashboard,
+    diffusions,
     data,
     directory,
     exports,
@@ -162,7 +163,7 @@ from . import errors  # noqa: E402
 errors.install(app)
 
 for r in (auth, tribes, squads, dashboard, org, orgexport, roadmap, roadmapview, kpis,
-          members, snapshots, feed, notifications, admin, audit, reports,
+          members, snapshots, feed, notifications, admin, diffusions, audit, reports,
           initiatives, otds, access, leaves, committees, steerco, data, directory, scim, exports):
     app.include_router(r.router)
 # SCIM answers its errors in its own format (application/scim+json).
@@ -245,24 +246,35 @@ async def _apply_outbound_trust():
         db.close()
 
 
+TICK_SECONDS = 300  # the report mails can be set to the 5 minutes
+
+
 def seconds_to_next_tick(now=None) -> float:
-    """Seconds until the next HH:00:30 (UTC and Paris hours start together):
-    the scheduler ticks just after each full hour, whenever the app started."""
+    """Seconds until the next HH:M0:30 or HH:M5:30 (UTC and Paris minutes are the
+    same): the scheduler ticks just after every 5 minutes, whenever the app started."""
     import time as _time
     now = _time.time() if now is None else now
-    nxt = (int(now) // 3600) * 3600 + 30
+    nxt = (int(now) // TICK_SECONDS) * TICK_SECONDS + 30
     if nxt <= now:
-        nxt += 3600
+        nxt += TICK_SECONDS
     return nxt - now
+
+
+def is_hourly_tick(now=None) -> bool:
+    """The first tick of an hour: the jobs that run once an hour (purge, snapshot,
+    reminders) wait for it; only the report mails look at every tick."""
+    import time as _time
+    now = _time.time() if now is None else now
+    return int(now) % 3600 < TICK_SECONDS
 
 
 @app.on_event("startup")
 async def _start_weekly_progress_scheduler():
     """Lightweight in-process scheduler.
 
-    Runs at the top of every hour and, when due, sends the weekly HTML/PPTX report by email on the
-    configured weekday/hour, then purges old
-    records. All steps are idempotent and self-healing. Disabled in tests via
+    Ticks every 5 minutes and, when due, sends the report mails on the configured
+    weekday, hour and minute; once an hour it also purges old records and runs the
+    other hourly jobs. All steps are idempotent and self-healing. Disabled in tests via
     DISABLE_SCHEDULER=1.
     """
     if os.environ.get("DISABLE_SCHEDULER") == "1":
@@ -290,6 +302,9 @@ async def _start_weekly_progress_scheduler():
                 scheduler_last_success_timestamp.set(_time.time())
         except Exception:
             pass
+
+    async def _next_tick():
+        await asyncio.sleep(seconds_to_next_tick())
 
     async def loop():
         # Small initial delay so startup (migrations/seed) settles first.
@@ -319,23 +334,31 @@ async def _start_weekly_progress_scheduler():
                             sent = send_due_weekly_reports(db)
                             if sent:
                                 logging.getLogger("trt.report").info("Weekly reports emailed: %s", sent)
-                            # Change notices still waiting (a restart lost their timer).
-                            from .changenotify import flush_pending
-                            flush_pending()
-                            purge_old_records(db)
-                            # OTDs not delivered by the end of their year move on
-                            # to the next one (does nothing but in January).
-                            from .otdcarry import carry_over_otds
-                            carried = carry_over_otds(db)
-                            if carried:
-                                logging.getLogger("trt.otd").info("OTDs carried over: %s", carried)
-                            # Automatic data snapshot when one is due (off by
-                            # default, see app/datasnapshots.py).
-                            from .datasnapshots import run_due_snapshot
-                            took = run_due_snapshot(db)
-                            if took:
-                                logging.getLogger('trt.datasnapshots').info(
-                                    'automatic snapshot: %s', took)
+                            # Once an hour (the report mails above look at every tick).
+                            if is_hourly_tick():
+                                # Change notices still waiting (a restart lost their timer).
+                                from .changenotify import flush_pending
+                                flush_pending()
+                                purge_old_records(db)
+                                # OTDs not delivered by the end of their year move on
+                                # to the next one (does nothing but in January).
+                                from .otdcarry import carry_over_otds
+                                carried = carry_over_otds(db)
+                                if carried:
+                                    logging.getLogger("trt.otd").info("OTDs carried over: %s", carried)
+                                # Automatic data snapshot when one is due (off by
+                                # default, see app/datasnapshots.py).
+                                from .datasnapshots import run_due_snapshot
+                                took = run_due_snapshot(db)
+                                if took:
+                                    logging.getLogger('trt.datasnapshots').info(
+                                        'automatic snapshot: %s', took)
+                                # Monthly Steerco reminder to the Steerco leaders, once
+                                # per month and tribe (app/steercomail.py).
+                                from .steercomail import send_due_reminders
+                                reminded = send_due_reminders(db)
+                                if reminded:
+                                    logging.getLogger("trt.steerco").info("Steerco reminders: %s", reminded)
                             _tick_metric("ok")
                         finally:
                             db.close()
@@ -355,11 +378,11 @@ async def _start_weekly_progress_scheduler():
             except Exception as exc:  # never crash the loop
                 logging.getLogger("trt.progress").warning("weekly scheduler error: %s", exc)
                 _tick_metric("error")
-            # Wait for the top of the next hour (always ahead, so no tight
-            # busy-loop on the non-leader replicas either). The tick used to
-            # come a full hour after the previous one, counted from the start of
-            # the app: a mail set for 8 h left at 8 h 40 after a restart at 10 h 40.
-            await asyncio.sleep(seconds_to_next_tick())
+            # Wait for the next 5 minutes (always ahead, so no tight busy-loop
+            # on the non-leader replicas either). The tick used to come a full
+            # hour after the previous one, counted from the start of the app: a
+            # mail set for 8 h left at 8 h 40 after a restart at 10 h 40.
+            await _next_tick()
 
     asyncio.create_task(loop())
 

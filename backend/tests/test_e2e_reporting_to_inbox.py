@@ -32,9 +32,8 @@ import app.changenotify as changenotify
 import app.database as dbmod
 from app import report as report_mod
 from app.changeconfig import ALL_EVENTS, set_change_notify
-from app.reportconfig import set_report
 from app.smtpconfig import set_smtp
-from tests.conftest import TestingSessionLocal, login
+from tests.conftest import TestingSessionLocal, diffusion, login
 
 YEAR = dt.datetime.now(dt.timezone.utc).year
 OUT = os.environ.get("E2E_OUT")
@@ -218,11 +217,12 @@ def _steerco(client, db, seeded):
     from app.models import Platform, Squad
     from app.platforms import default_template
     p = Platform(tribe_id=seeded["t1"], name="Cloud Platform", display_order=1, steerco_enabled=True,
-                 template=default_template(seeded["squad_a"]))
+                 template=default_template())
     p.contributors = [db.get(Squad, seeded["squad_a"])]
     db.add(p)
     db.commit()
-    login(client, seeded["sl_a"])
+    # Since 4.0 the Steerco is entered by its Steerco leaders: the tribe leader by default.
+    login(client, seeded["tribe"])
     period = f"{YEAR}-06"
     r = client.put(f"/api/steerco/platform/{p.id}?period={period}", json={
         "kpis": [{"label": "Cloud Users", "value": "760"}, {"label": "Landing Zone", "value": "240"},
@@ -341,9 +341,9 @@ def test_from_the_reporting_to_the_inbox(client, db, seeded, inbox, monkeypatch)
     # (its leader the tribe's document, each squad leader their squad's).
     login(client, "admin@test")
     now = dt.datetime(YEAR, 6, 15, 9, 0, tzinfo=dt.timezone.utc)
-    set_report(db, {"enabled": True, "recipients": ["copil@example.org"], "weekdays": [now.weekday()], "hour": 8})
-    set_report(db, {"enabled": True, "weekdays": [now.weekday()], "hour": 8, "copy_leader": True,
-                    "leader_mode": "per_squad"}, seeded["t1"])
+    diffusion(db, None, enabled=True, recipients=["copil@example.org"], weekdays=[now.weekday()], hour=8)
+    tribe_d = diffusion(db, seeded["t1"], enabled=True, weekdays=[now.weekday()], hour=8, copy_leader=True,
+                        leader_tribe=False, leader_squads=True)
     db.commit()
     report_mod.send_due_weekly_reports(db, now=now)
     got = inbox.take()
@@ -357,8 +357,8 @@ def test_from_the_reporting_to_the_inbox(client, db, seeded, inbox, monkeypatch)
     squad_mail = next(v for k, v in mails.items() if k.startswith("scheduled") and "Squad A" in v["subject"])
     assert MILESTONE_BLOCKED in squad_mail["visible"]
 
-    # 3. The Test button sends a line's mail to the caller.
-    r = client.post(f"/api/admin/report-config/test?tribe_id={seeded['t1']}", json={"line": "roles"})
+    # 3. The Test button sends one of the diffusion's mails to the caller.
+    r = client.post(f"/api/admin/diffusions/{tribe_d['id']}/test", json={})
     assert r.status_code == 200 and r.json()["ok"], r.text
     got = inbox.take()
     assert len(got) == 1

@@ -18,8 +18,7 @@ NAMES = ["Cloud Users", "Landing Zone", "K8aaS", "DBaaS", "Software Factory", "O
 def _many(db, seeded, n=len(NAMES)) -> int:
     pid = _platform(db, seeded)
     p = db.get(Platform, pid)
-    p.template = plat.normalize_template({"kpis": [{"label": x} for x in NAMES[:n]]},
-                                         [s.id for s in p.contributors])
+    p.template = plat.normalize_template({"kpis": [{"label": x} for x in NAMES[:n]]})
     for m in (6, 7):
         db.add(SteercoEntry(platform_id=pid, period=f"2026-{m:02d}", data={"kpis": [
             {"label": x, "value": str((i + 1) * 10 + m)} for i, x in enumerate(NAMES[:n])]}))
@@ -91,9 +90,15 @@ def test_the_rendering_is_saved_by_whoever_manages_platforms(client, db, seeded)
                       json={"kpi_chart": "pie"}).json()["template"]["display"]["kpi_chart"] == "auto"
 
 
-def test_a_squad_leader_previews_but_does_not_save(client, db, seeded):
+def test_a_reader_previews_but_does_not_save(client, db, seeded):
+    """A persona granted "steerco" reads and tries renderings; saving one is for the
+    Steerco leaders."""
     pid = _many(db, seeded)
     _enable(client)
+    login(client, "admin@test")
+    items = client.get("/api/admin/personas").json()["personas"]
+    next(p for p in items if p["key"] == "squad_leader")["caps"]["steerco"] = True
+    assert client.put("/api/admin/personas", json={"personas": items}).status_code == 200
     login(client, seeded["sl_a"])
     assert client.put(f"/api/steerco/platforms/{pid}/display", json={"kpi_chart": "table"}).status_code == 403
     html = client.get(f"/api/steerco/onepager.html?platform_id={pid}&period=2026-07&chart=table"
@@ -113,8 +118,7 @@ def test_nothing_runs_past_the_first_row_whatever_the_number_of_kpis(db, seeded)
         db.query(SteercoEntry).delete(); db.query(Platform).delete(); db.commit()
         pid = _platform(db, seeded)
         p = db.get(Platform, pid)
-        p.template = plat.normalize_template({"kpis": [{"label": x} for x in names[:n]]},
-                                             [s.id for s in p.contributors])
+        p.template = plat.normalize_template({"kpis": [{"label": x} for x in names[:n]]})
         for m in range(1, 10):
             db.add(SteercoEntry(platform_id=pid, period=f"2026-{m:02d}", data={"kpis": [
                 {"label": x, "value": str(1000000 + i * 12345 + m * 54321)} for i, x in enumerate(names[:n])]}))

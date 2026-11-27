@@ -37,6 +37,7 @@ const InitiativesPage = lazy(() => import("./pages/InitiativesPage"));
 const LeavesPage = lazy(() => import("./pages/LeavesPage"));
 const AccessRequestsPage = lazy(() => import("./pages/AccessRequestsPage"));
 const StudioPage = lazy(() => import("./pages/StudioPage"));
+const SteercoPage = lazy(() => import("./pages/SteercoPage"));
 import { PageChromeProvider } from "./components/pageChrome";
 
 /**
@@ -106,6 +107,24 @@ function Section({ module, feature, cap, children }: { module?: ModuleKey; featu
   return children;
 }
 
+/** The Steerco menu (ADR 0018): its module on, and the user a Steerco leader, a
+ *  reader (capability "steerco") or someone who designates the leaders. */
+function SteercoGuard({ children }: { children: JSX.Element }) {
+  const { modules } = useConfig();
+  const { steerco, loading } = useAuth();
+  if (loading) return <Spinner />;
+  if (!moduleOn(modules, "steerco")) return <Navigate to="/" replace />;
+  return steerco.read || steerco.run || steerco.designate_tribe_ids.length ? children : <SectionClosed />;
+}
+
+/** The export Studio: the "exports" capability, or a Steerco leader (who designs
+ *  the slides of the platforms they run, even without the capability). */
+function StudioGuard({ children }: { children: JSX.Element }) {
+  const { can, steerco, loading } = useAuth();
+  if (loading) return <Spinner />;
+  return can("exports") || steerco.run ? children : <SectionClosed />;
+}
+
 /** The access-requests screen: for whoever may review access (the same flag as
  *  its menu entry and as the server). */
 function ReviewGuard({ children }: { children: JSX.Element }) {
@@ -151,7 +170,8 @@ export default function App() {
         <Route path="/organigramme" element={<Section module="org" cap="org"><OrgPage /></Section>} />
 
         <Route path="/mes-squads" element={<Section cap="mysquads"><MySquadsPage /></Section>} />
-        <Route path="/exports" element={<Section cap="exports"><StudioPage /></Section>} />
+        <Route path="/exports" element={<StudioGuard><StudioPage /></StudioGuard>} />
+        <Route path="/steerco" element={<SteercoGuard><SteercoPage /></SteercoGuard>} />
         <Route path="/admin" element={<Protected adminPage><AdminPage /></Protected>} />
       </Route>
 

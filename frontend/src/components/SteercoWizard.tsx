@@ -1,15 +1,13 @@
 // SteercoWizard - a guided, step-by-step popup to produce ONE month's Steerco
-// report for a PLATFORM. The contributor moves through clear steps (month, KPIs,
+// report for a PLATFORM. The Steerco leader moves through clear steps (month, KPIs,
 // SLA & incidents, events, review), always seeing which month they are reporting and
 // the previous months' values next to the editable current-month column, so the entry
 // reads like filling the next column of a familiar table.
 //
-// A platform can be fed by several squads, and the platform's template assigns every
-// KPI card and every SLA column to one of them. The form shows the WHOLE slide and
-// only enables the items the signed-in user owns: the rest stays visible, greyed, and
-// labelled with the squad that owes it. That is what lets two squad leaders fill one
-// slide without either of them overwriting the other, and it tells each of them what
-// the slide is still missing.
+// Since 4.0 (ADR 0018) a Steerco leader fills the whole slide. Two leaders on the same
+// month are kept apart by the month's version: a save made on a stale copy is refused
+// (409) and the form offers to reload. A validated month is read-only until it is
+// reopened, with a reason.
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { api, errorText } from "../api";
 import { useI18n } from "../i18n";
@@ -18,44 +16,88 @@ import { StepLayout } from "./StepLayout";
 import { BackfillGrid } from "./SteercoEditor";
 import MonthPicker from "./MonthPicker";
 import {
-  SteercoData, SteercoKpi, SlaCell, SteercoEvent, PlatformTemplate, EditableItems,
+  SteercoData, SteercoKpi, SlaCell, SteercoEvent, PlatformTemplate, MonthState,
   EVENT_SEVS, SLA_ICON, TREND_ARROW, yearMonths, monthLongLabel,
   clampPct, dataFromTemplate, kpiChange, prevPeriod, slaStatus,
 } from "../steerco";
 
 type HistMap = Record<string, SteercoData>;
-type Contributor = { id: number; name: string };
-type EntryPayload = {
-  data: SteercoData; template: PlatformTemplate; editable: EditableItems;
-  editable_squad_ids: number[]; contributors: Contributor[]; filled: boolean;
+type LinkedSquad = { id: number; name: string };
+type EntryPayload = MonthState & {
+  data: SteercoData; template: PlatformTemplate; squads: LinkedSquad[];
+  can_run: boolean; filled: boolean;
+};
+type HistoryPayload = {
+  previous?: { period: string; data: SteercoData };
+  months: { period: string; data: SteercoData; status?: string }[];
 };
 
-/** A key message a contributing squad wrote in its reporting (see /messages). */
+/** A key message a squad concerned wrote in its reporting (see /messages). */
 type ReportMsg = { id: number; squad_id: number; squad_name: string; kind: "success" | "alert" | "risk";
   text: string; created_at: string; open: boolean };
 const KIND_SEV: Record<ReportMsg["kind"], SteercoEvent["sev"]> = { success: "green", alert: "amber", risk: "red" };
 const KIND_BADGE: Record<ReportMsg["kind"], string> = { success: "badge-green", alert: "badge-orange", risk: "badge-red" };
 
-const EMPTY_TPL: PlatformTemplate = { kpis: [], sla: [], incidents: { owner_squad_id: null } };
+const EMPTY_TPL: PlatformTemplate = { kpis: [], sla: [] };
+
+const same = (a?: string, b?: string) => (a || "").toLowerCase() === (b || "").toLowerCase();
+
+/** Copy into `d` the previous month's figures where `d` has none (KPI and their
+ *  sub-metrics, SLA, incidents). Events are the month's own: never copied. Returns
+ *  the new data and how many fields were taken. */
+export function takeOver(d: SteercoData, src: SteercoData): { data: SteercoData; n: number } {
+  let n = 0;
+  const kpis = (d.kpis ?? []).map((k) => {
+    const p = (src.kpis ?? []).find((x) => same(x.label, k.label));
+    if (!p) return k;
+    let value = k.value;
+    if (!(k.value || "").trim() && (p.value || "").trim()) { value = p.value; n++; }
+    const sub = (k.sub ?? []).map((s) => {
+      const ps = (p.sub ?? []).find((x) => same(x.label, s.label));
+      if (ps && !(s.value || "").trim() && (ps.value || "").trim()) { n++; return { ...s, value: ps.value }; }
+      return s;
+    });
+    return { ...k, value, ...(k.sub ? { sub } : {}) };
+  });
+  const cur = d.sla ?? { services: [], cells: [] };
+  const ps = src.sla ?? { services: [], cells: [] };
+  const cells = cur.services.map((svc, i) => {
+    const c = cur.cells[i] ?? { v: "", s: null };
+    const j = ps.services.findIndex((x) => same(x, svc));
+    const pv = j >= 0 ? (ps.cells[j]?.v ?? "") : "";
+    if ((c.v || "").trim() || !String(pv).trim()) return c;
+    n++;
+    return { ...c, v: pv };
+  });
+  let incidents = d.incidents;
+  if (!String(d.incidents ?? "").trim() && String(src.incidents ?? "").trim()) { incidents = src.incidents; n++; }
+  return { data: { ...d, kpis, sla: { services: cur.services, cells }, incidents }, n };
+}
 
 export default function SteercoWizard({ platformId, platformName, initialPeriod, readonly, onClose, onSaved }: {
   platformId: number; platformName: string; initialPeriod: string; readonly?: boolean;
   onClose: () => void; onSaved?: () => void;
 }) {
   const { t, lang } = useI18n();
-  const ro = !!readonly;
   const [period, setPeriod] = useState(initialPeriod);
   const [data, setData] = useState<SteercoData>(dataFromTemplate(EMPTY_TPL));
   const [tpl, setTpl] = useState<PlatformTemplate>(EMPTY_TPL);
-  const [editable, setEditable] = useState<EditableItems>({ kpis: [], sla: [], incidents: false, events: false });
-  const [mySquads, setMySquads] = useState<number[]>([]);
-  const [contributors, setContributors] = useState<Contributor[]>([]);
+  const [squads, setSquads] = useState<LinkedSquad[]>([]);
+  const [canRun, setCanRun] = useState(false);
+  const [state, setState] = useState<MonthState | null>(null);
   const [hist, setHist] = useState<HistMap>({});
+  // The month before the reported one (December of the year before for a January).
+  const [previous, setPrevious] = useState<SteercoData>({});
   const [existed, setExisted] = useState(false);      // a report already exists for this month
   const [loaded, setLoaded] = useState(false);
   const [step, setStep] = useState(0);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [conflict, setConflict] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  const [reloadTick, setReloadTick] = useState(0);
+  const [reopening, setReopening] = useState(false);
+  const [reason, setReason] = useState("");
   const [previewHtml, setPreviewHtml] = useState<string | null>(null);
   const [previewBusy, setPreviewBusy] = useState(false);
   const [previewErr, setPreviewErr] = useState<string | null>(null);
@@ -63,17 +105,18 @@ export default function SteercoWizard({ platformId, platformName, initialPeriod,
   // Load the picked month's snapshot + the 12-month history (for the context columns).
   useEffect(() => {
     let alive = true;
-    setLoaded(false); setErr(null);
+    setLoaded(false); setErr(null); setConflict(false); setNote(null);
     Promise.all([
       api.get<EntryPayload>(`/api/steerco/platform/${platformId}?period=${encodeURIComponent(period)}`),
-      api.get<{ months: { period: string; data: SteercoData }[] }>(`/api/steerco/platform/${platformId}/history?period=${encodeURIComponent(period)}`),
+      api.get<HistoryPayload>(`/api/steerco/platform/${platformId}/history?period=${encodeURIComponent(period)}`),
     ]).then(([cur, h]) => {
       if (!alive) return;
       setTpl(cur.template ?? EMPTY_TPL);
-      setEditable(cur.editable);
-      setMySquads(cur.editable_squad_ids ?? []);
-      setContributors(cur.contributors ?? []);
+      setSquads(cur.squads ?? []);
+      setCanRun(!!cur.can_run);
+      setState(cur);
       setExisted(!!cur.filled);
+      setPrevious(h.previous?.data ?? {});
       setData(cur.data && (cur.data.kpis?.length || cur.data.sla?.services?.length)
         ? cur.data : dataFromTemplate(cur.template ?? EMPTY_TPL));
       const map: HistMap = {};
@@ -82,7 +125,11 @@ export default function SteercoWizard({ platformId, platformName, initialPeriod,
     }).catch((e) => { if (alive) setErr(errorText(e)); })
       .finally(() => { if (alive) setLoaded(true); });
     return () => { alive = false; };
-  }, [platformId, period]);
+  }, [platformId, period, reloadTick]);
+
+  const validated = state?.status === "validated";
+  // Read-only: asked by the caller, a reader, or a validated month.
+  const ro = !!readonly || !canRun || validated;
 
   // The report year's 12 months, January to December: exactly what /history returns
   // and what the one-pager charts plot. The reported month is highlighted and
@@ -97,22 +144,16 @@ export default function SteercoWizard({ platformId, platformName, initialPeriod,
     <th className={m === period ? "sc-cur" : "sc-past"}>{mAbbr(m)}</th>
   );
 
-  // Who owes an item, as a name to show next to the fields somebody else fills.
-  const ownerName = (id: number | null | undefined) =>
-    contributors.find((c) => c.id === id)?.name ?? t("steerco.owner_none");
-  const canKpi = (i: number) => !ro && editable.kpis.includes(i);
-  const canSla = (i: number) => !ro && editable.sla.includes(i);
-  const canInc = !ro && editable.incidents;
-  const mine = (e: SteercoEvent) => mySquads.some((id) => String(id) === String(e.squad_id));
-
   // Live one-pager preview of the (still unsaved) snapshot, built when the user
-  // reaches the review step. Nothing is persisted until they submit.
+  // reaches the review step. Nothing is persisted until they save.
   useEffect(() => {
     if (step !== 4 || !loaded) return;
     let alive = true;
     setPreviewHtml(null); setPreviewErr(null); setPreviewBusy(true);
-    api.post<string>(`/api/steerco/platform/${platformId}/preview.html?period=${encodeURIComponent(period)}&lang=${lang}`, data)
-      .then((html) => { if (alive) setPreviewHtml(typeof html === "string" ? html : String(html)); })
+    const req = canRun
+      ? api.post<string>(`/api/steerco/platform/${platformId}/preview.html?period=${encodeURIComponent(period)}&lang=${lang}`, data)
+      : api.get<string>(`/api/steerco/onepager.html?platform_id=${platformId}&period=${encodeURIComponent(period)}&lang=${lang}`);
+    req.then((html) => { if (alive) setPreviewHtml(typeof html === "string" ? html : String(html)); })
       .catch((e) => { if (alive) setPreviewErr(errorText(e)); })
       .finally(() => { if (alive) setPreviewBusy(false); });
     return () => { alive = false; };
@@ -127,20 +168,6 @@ export default function SteercoWizard({ platformId, platformName, initialPeriod,
     { key: "review", label: t("steerco.wiz.step_review") },
   ];
   const last = steps.length - 1;
-
-  // Submit = save this month's snapshot, then close the wizard. The server keeps only
-  // the items we own out of this payload, so sending the whole form is safe.
-  async function save() {
-    setBusy(true); setErr(null);
-    try {
-      await api.put(`/api/steerco/platform/${platformId}?period=${encodeURIComponent(period)}`, withComputed(data));
-      onSaved?.();
-      onClose();
-    } catch (e) {
-      setErr(errorText(e));
-      setBusy(false);
-    }
-  }
 
   // ---- data mutators ----
   const kpis = data.kpis ?? [];
@@ -166,24 +193,76 @@ export default function SteercoWizard({ platformId, platformName, initialPeriod,
 
   // ---- history lookups (read-only context) ----
   const kpiHist = (label: string, m: string) =>
-    (hist[m]?.kpis ?? []).find((k) => (k.label || "").toLowerCase() === label.toLowerCase())?.value ?? "";
+    (hist[m]?.kpis ?? []).find((k) => same(k.label, label))?.value ?? "";
   const slaHist = (svc: string, m: string) => {
     const d = hist[m]; if (!d?.sla) return "";
-    const idx = d.sla.services.findIndex((s) => (s || "").toLowerCase() === svc.toLowerCase());
+    const idx = d.sla.services.findIndex((s) => same(s, svc));
     return idx >= 0 ? (d.sla.cells[idx]?.v ?? "") : "";
   };
 
   // ---- computed indicators (shown read-only, never typed in) ----
   const prev = prevPeriod(period);
-  const changeOf = (k: SteercoKpi) => kpiChange(k.value, kpiHist(k.label, prev));
+  // M-1 is in the year's history, except for a January (its December is `previous`).
+  const prevKpi = (label: string) => (hist[prev] ? kpiHist(label, prev)
+    : (previous.kpis ?? []).find((k) => same(k.label, label))?.value ?? "");
+  const changeOf = (k: SteercoKpi) => kpiChange(k.value, prevKpi(k.label));
   const withComputed = (d: SteercoData): SteercoData => ({
     ...d,
     kpis: (d.kpis ?? []).map((k) => ({ ...k, ...changeOf(k) })),
     ...(d.sla ? { sla: { ...d.sla, cells: (d.sla.cells ?? []).map((c) => ({ ...c, s: slaStatus(c.v) })) } } : {}),
   });
 
+  // Save this month's snapshot (with the version it was loaded at), then validate it
+  // when asked, then close. A 409 on save means another Steerco leader saved in
+  // between: nothing is overwritten, the form offers to reload.
+  async function save(andValidate: boolean) {
+    setBusy(true); setErr(null); setConflict(false);
+    const q = `period=${encodeURIComponent(period)}`;
+    try {
+      await api.put(`/api/steerco/platform/${platformId}?${q}`, { data: withComputed(data), version: state?.version ?? 0 });
+    } catch (e: any) {
+      setErr(errorText(e)); setConflict(e?.status === 409); setBusy(false);
+      return;
+    }
+    if (andValidate) {
+      try { await api.post(`/api/steerco/platform/${platformId}/validate?${q}`, {}); }
+      catch (e) {
+        // Saved but not validated: say so and stay, the figures are not lost.
+        setErr(errorText(e)); setBusy(false); onSaved?.(); setReloadTick((n) => n + 1);
+        return;
+      }
+    }
+    onSaved?.();
+    onClose();
+  }
+
+  // Reopen a validated month: back to draft, the reason goes to the audit log and
+  // the exported document then says "revised on".
+  async function reopen() {
+    setBusy(true); setErr(null);
+    try {
+      await api.post(`/api/steerco/platform/${platformId}/reopen?period=${encodeURIComponent(period)}`, { reason });
+      setReopening(false); setReason("");
+      onSaved?.();
+      setReloadTick((n) => n + 1);
+    } catch (e) { setErr(errorText(e)); }
+    finally { setBusy(false); }
+  }
+
+  const hasPrevious = (previous.kpis ?? []).some((k) => (k.value || "").trim())
+    || (previous.sla?.cells ?? []).some((c) => String(c.v || "").trim())
+    || !!String(previous.incidents ?? "").trim();
+  function takePrevious() {
+    const { data: next, n } = takeOver(data, previous);
+    setData(next);
+    setNote(n ? t("steerco.wiz.prev_taken", { n }) : t("steerco.wiz.prev_nothing"));
+  }
+
   const monthName = monthLongLabel(period, lang);
-  const ownedCount = editable.kpis.length + editable.sla.length + (editable.incidents ? 1 : 0);
+  const statusLabel = validated ? t("steerco.state.validated")
+    : existed ? t("steerco.wiz.status_draft") : t("steerco.wiz.status_new");
+  const fmtDate = (iso?: string | null) =>
+    iso ? new Date(iso).toLocaleDateString(lang === "fr" ? "fr-FR" : "en-GB") : "-";
 
   // What each step already holds, under its name in the side menu.
   const kpiFilled = kpis.filter((k) => (k.value || "").trim()).length;
@@ -194,7 +273,7 @@ export default function SteercoWizard({ platformId, platformName, initialPeriod,
     kpis: { text: `${kpiFilled}/${kpis.length}`, done: kpis.length > 0 && kpiFilled === kpis.length },
     sla: { text: `${slaFilled}/${sla.services.length}`, done: sla.services.length > 0 && slaFilled === sla.services.length },
     events: { text: t("steerco.wiz.meta_events", { n: evCount }), done: evCount > 0 },
-    review: { text: existed ? t("steerco.wiz.status_draft") : t("steerco.wiz.status_new"), done: false },
+    review: { text: statusLabel, done: validated },
   };
 
   return (
@@ -205,7 +284,12 @@ export default function SteercoWizard({ platformId, platformName, initialPeriod,
       footer={
         <div className="between" style={{ width: "100%", alignItems: "center" }}>
           <div className="inline" style={{ gap: 10 }}>
-            {err && <span className="small" style={{ color: "var(--red)" }}>{err}</span>}
+            {err && <span className="small" role="alert" style={{ color: "var(--red)" }}>{err}</span>}
+            {conflict && (
+              <button type="button" className="btn-secondary btn-sm" onClick={() => setReloadTick((n) => n + 1)}>
+                {t("steerco.wiz.reload")}
+              </button>
+            )}
           </div>
           <div className="inline" style={{ gap: 8 }}>
             <button className="btn-secondary btn-sm" disabled={step === 0} onClick={() => setStep((s) => Math.max(0, s - 1))}>‹ {t("common.prev")}</button>
@@ -213,7 +297,12 @@ export default function SteercoWizard({ platformId, platformName, initialPeriod,
               ? <button className="btn-sm" onClick={() => setStep((s) => Math.min(last, s + 1))}>{t("common.next")} ›</button>
               : (ro
                   ? <button className="btn-sm" onClick={onClose}>{t("action.close")}</button>
-                  : <button className="btn-sm" disabled={busy} onClick={save}>{busy ? t("common.sending") : t("steerco.wiz.submit")}</button>)}
+                  : <>
+                      <button className="btn-secondary btn-sm" disabled={busy} onClick={() => save(false)}>
+                        {busy ? t("common.saving") : t("steerco.wiz.save_draft")}
+                      </button>
+                      <button className="btn-sm" disabled={busy} onClick={() => save(true)}>{t("steerco.wiz.save_validate")}</button>
+                    </>)}
           </div>
         </div>
       }
@@ -225,16 +314,32 @@ export default function SteercoWizard({ platformId, platformName, initialPeriod,
                     // Persistent context: which platform + which month this report is for.
                     <div className="wiz-ctx" style={{ margin: 0 }}>
                       <span className="wiz-month">{platformName}, {monthName}</span>
-                      <span className="wiz-badge">{existed ? t("steerco.wiz.status_draft") : t("steerco.wiz.status_new")}</span>
+                      <span className="wiz-badge">{validated ? "🔒 " : ""}{statusLabel}</span>
                     </div>
                   }>
 
-      {/* What this contributor owns on a slide fed by several squads. */}
-      {!ro && contributors.length > 1 && (
-        <div className="small muted">
-          {t("steerco.wiz.shared_hint", { n: ownedCount, who: contributors.map((c) => c.name).join(", ") })}
+      {/* A validated month: read-only, and the one way back is a reopening with a reason. */}
+      {loaded && validated && (
+        <div className="banner stack" style={{ gap: 8 }}>
+          <div className="small">
+            🔒 {t("steerco.wiz.validated_banner", { who: state?.validated_by ?? "-", date: fmtDate(state?.validated_at) })}
+          </div>
+          {canRun && !readonly && (reopening ? (
+            <div className="inline" style={{ gap: 8, flexWrap: "wrap" }}>
+              <input autoFocus aria-label={t("steerco.wiz.reopen_reason")} placeholder={t("steerco.wiz.reopen_reason")}
+                     value={reason} onChange={(e) => setReason(e.target.value)} style={{ flex: 1, minWidth: 240 }} />
+              <button className="btn-sm" disabled={busy || reason.trim().length < 3} onClick={reopen}>{t("steerco.wiz.reopen")}</button>
+              <button className="btn-ghost btn-sm" onClick={() => { setReopening(false); setReason(""); }}>{t("action.cancel")}</button>
+            </div>
+          ) : (
+            <div><button className="btn-secondary btn-sm" onClick={() => setReopening(true)}>{t("steerco.wiz.reopen")}</button></div>
+          ))}
         </div>
       )}
+      {loaded && !validated && state?.revised_at && (
+        <div className="small muted">{t("steerco.wiz.reopened_hint")}</div>
+      )}
+      {note && <div className="small" role="status" style={{ color: "var(--green)" }}>{note}</div>}
 
       {!loaded ? <Spinner /> : (
         <>
@@ -244,9 +349,19 @@ export default function SteercoWizard({ platformId, platformName, initialPeriod,
               <div>
                 <div className="wiz-h">{t("steerco.wiz.month_label")}</div>
                 <div className="wiz-help">{t("steerco.wiz.month_help")}</div>
-                <MonthPicker value={period} disabled={ro} width={200} onChange={setPeriod} />
+                <MonthPicker value={period} width={200} onChange={setPeriod} />
               </div>
               <div className="wiz-help" style={{ marginBottom: 0 }}>{t("steerco.wiz.month_next_hint")}</div>
+              {!ro && (
+                <div className="stack" style={{ gap: 4 }}>
+                  <div>
+                    <button type="button" className="btn-secondary btn-sm" disabled={!hasPrevious} onClick={takePrevious}>
+                      {t("steerco.wiz.take_prev")}
+                    </button>
+                  </div>
+                  <div className="small muted">{hasPrevious ? t("steerco.wiz.take_prev_hint") : t("steerco.wiz.prev_none")}</div>
+                </div>
+              )}
             </div>
           )}
 
@@ -261,41 +376,36 @@ export default function SteercoWizard({ platformId, platformName, initialPeriod,
                     <col className="c-name" />
                     {months.map((m) => <col key={m} className={m === period ? "c-cur" : "c-m"} />)}
                     <col className="c-delta" />
-                    <col />
                   </colgroup>
                   <thead>
                     <tr>
                       <th className="sc-name">{t("steerco.wiz.col_kpi")}</th>
                       {months.map((m) => <MonthTh key={m} m={m} />)}
                       <th>{t("steerco.f.delta")}</th>
-                      <th>{t("steerco.owner")}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {kpis.map((k, i) => {
                       const ch = changeOf(k);
-                      const owned = canKpi(i);
                       return (
                       <Fragment key={i}>
                         <tr>
                           <td className="sc-name">{k.label}</td>
                           {months.map((m) => (m === period
-                            ? <td key={m} className="sc-cur"><input value={k.value} disabled={!owned}
-                                     title={owned ? "" : t("steerco.owned_by", { who: ownerName(tpl.kpis[i]?.owner_squad_id) })}
+                            ? <td key={m} className="sc-cur"><input value={k.value} disabled={ro}
                                      onChange={(e) => updKpi(i, { value: e.target.value })} /></td>
                             : <td key={m} className="sc-past">{kpiHist(k.label, m) || "-"}</td>))}
                           <td className={`sc-chg ${ch.trend}`} title={t("steerco.f.delta_auto")}>
                             {ch.delta ? `${TREND_ARROW[ch.trend]} ${ch.delta}` : "-"}
                           </td>
-                          <td className="small muted">{ownerName(tpl.kpis[i]?.owner_squad_id)}</td>
                         </tr>
                         {(k.sub ?? []).map((s, si) => (
                           <tr key={`${i}-${si}`} className="sc-sub">
                             <td className="sc-name">{s.label}</td>
                             {months.map((m) => (m === period
-                              ? <td key={m} className="sc-cur"><input value={s.value} disabled={!owned} onChange={(e) => updKpiSub(i, si, e.target.value)} /></td>
+                              ? <td key={m} className="sc-cur"><input value={s.value} disabled={ro} onChange={(e) => updKpiSub(i, si, e.target.value)} /></td>
                               : <td key={m}></td>))}
-                            <td colSpan={2}></td>
+                            <td></td>
                           </tr>
                         ))}
                       </Fragment>
@@ -320,33 +430,28 @@ export default function SteercoWizard({ platformId, platformName, initialPeriod,
                       <col className="c-name" />
                       {months.map((m) => <col key={m} className={m === period ? "c-cur" : "c-m"} />)}
                       <col className="c-status" />
-                      <col />
                     </colgroup>
                     <thead>
                       <tr>
                         <th className="sc-name">{t("steerco.wiz.col_service")}</th>
                         {months.map((m) => <MonthTh key={m} m={m} />)}
                         <th>{t("steerco.f.status")}</th>
-                        <th>{t("steerco.owner")}</th>
                       </tr>
                     </thead>
                     <tbody>
                       {sla.services.map((svc, i) => {
                         const cell = sla.cells[i] ?? blank;
                         const st = slaStatus(cell.v);
-                        const owned = canSla(i);
                         return (
                           <tr key={i}>
                             <td className="sc-name">{svc}</td>
                             {months.map((m) => (m === period
-                              ? <td key={m} className="sc-cur"><input value={cell.v} disabled={!owned} placeholder="99,4%"
-                                       title={owned ? "" : t("steerco.owned_by", { who: ownerName(tpl.sla[i]?.owner_squad_id) })}
+                              ? <td key={m} className="sc-cur"><input value={cell.v} disabled={ro} placeholder="99,4%"
                                        onChange={(e) => updCell(i, { v: clampPct(e.target.value) })} /></td>
                               : <td key={m} className="sc-past">{slaHist(svc, m) || "-"}</td>))}
                             <td className={`sc-rag ${st ?? "none"}`} title={t("steerco.f.status_auto")}>
                               {st ? `${SLA_ICON[st]} ${t(`steerco.rag.${st}`)}` : "-"}
                             </td>
-                            <td className="small muted">{ownerName(tpl.sla[i]?.owner_squad_id)}</td>
                           </tr>
                         );
                       })}
@@ -363,24 +468,20 @@ export default function SteercoWizard({ platformId, platformName, initialPeriod,
                     <colgroup>
                       <col className="c-name" />
                       {months.map((m) => <col key={m} className={m === period ? "c-cur" : "c-m"} />)}
-                      <col />
                     </colgroup>
                     <thead>
                       <tr>
                         <th className="sc-name"></th>
                         {months.map((m) => <MonthTh key={m} m={m} />)}
-                        <th>{t("steerco.owner")}</th>
                       </tr>
                     </thead>
                     <tbody>
                       <tr>
                         <td className="sc-name">{t("steerco.f.incidents_count")}</td>
                         {months.map((m) => (m === period
-                          ? <td key={m} className="sc-cur"><input type="number" value={data.incidents ?? ""} disabled={!canInc} placeholder="13"
-                                   title={canInc ? "" : t("steerco.owned_by", { who: ownerName(tpl.incidents?.owner_squad_id) })}
-                                   onChange={(e) => setData({ ...data, incidents: e.target.value })} /></td>
+                          ? <td key={m} className="sc-cur"><input type="number" value={data.incidents ?? ""} disabled={ro} placeholder="13"
+                                   onChange={(e) => setData((d) => ({ ...d, incidents: e.target.value }))} /></td>
                           : <td key={m} className="sc-past">{hist[m]?.incidents ?? "-"}</td>))}
-                        <td className="small muted">{ownerName(tpl.incidents?.owner_squad_id)}</td>
                       </tr>
                     </tbody>
                   </table>
@@ -393,19 +494,21 @@ export default function SteercoWizard({ platformId, platformName, initialPeriod,
           {step === 3 && (
             <div className="stack" style={{ gap: 16 }}>
               <div className="wiz-help" style={{ marginBottom: 0 }}>{t("steerco.wiz.events_hint")}</div>
-              {contributors.length > 1 && <div className="small muted">{t("steerco.events_shared")}</div>}
               {(["last_events", "next_events"] as const).map((which) => {
                 const list = evList(which);
                 return (
                   <div key={which} className="stack" style={{ gap: 8 }}>
                     <div className="between" style={{ alignItems: "center" }}>
                       <span className="wiz-h" style={{ marginBottom: 0 }}>{t(`steerco.f.${which}`)}</span>
-                      {!ro && editable.events && (
+                      {!ro && (
                         <div className="inline" style={{ gap: 6 }}>
-                          <button type="button" className="btn-secondary btn-sm" aria-expanded={pickFor === which}
-                            onClick={() => setPickFor(pickFor === which ? null : which)}>{t("steerco.msg.take")}</button>
+                          {/* Key messages of the squads concerned, when the platform has some. */}
+                          {squads.length > 0 && (
+                            <button type="button" className="btn-secondary btn-sm" aria-expanded={pickFor === which}
+                              onClick={() => setPickFor(pickFor === which ? null : which)}>{t("steerco.msg.take")}</button>
+                          )}
                           <button type="button" className="btn-secondary btn-sm"
-                            onClick={() => setEv(which, [...list, { date: "", text: "", sev: which === "last_events" ? "amber" : "ice", squad_id: mySquads[0] }])}>{t("steerco.f.add_event")}</button>
+                            onClick={() => setEv(which, [...list, { date: "", text: "", sev: which === "last_events" ? "amber" : "ice" }])}>{t("steerco.f.add_event")}</button>
                         </div>
                       )}
                     </div>
@@ -416,9 +519,6 @@ export default function SteercoWizard({ platformId, platformName, initialPeriod,
                           setEv(which, [...list, ...msgs.map((m): SteercoEvent => ({
                             date: new Date(m.created_at).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" }),
                             tag: t(`km.kind.${m.kind}`), text: m.text, sev: KIND_SEV[m.kind],
-                            // The line belongs to the squad that said it when the caller
-                            // writes for it, else to the caller's own squad.
-                            squad_id: mySquads.includes(m.squad_id) ? m.squad_id : mySquads[0],
                           }))]);
                           setPickFor(null);
                         }} />
@@ -447,20 +547,17 @@ export default function SteercoWizard({ platformId, platformName, initialPeriod,
                           )}
                           {list.map((ev, i) => {
                             const upd = (patch: Partial<SteercoEvent>) => setEv(which, list.map((x, j) => (j === i ? { ...x, ...patch } : x)));
-                            // Somebody else's line: visible (it is the same timeline)
-                            // but not editable, so nobody can rewrite a colleague's.
-                            const own = !ro && (mine(ev) || ev.squad_id == null);
                             return (
                               <tr key={i}>
-                                <td><input value={ev.date} disabled={!own} placeholder="14/07" onChange={(e) => upd({ date: e.target.value })} /></td>
-                                <td><input value={ev.tag ?? ""} disabled={!own} placeholder="Incident" onChange={(e) => upd({ tag: e.target.value })} /></td>
-                                <td><input value={ev.text} disabled={!own} placeholder={t("steerco.f.text")} onChange={(e) => upd({ text: e.target.value })} /></td>
+                                <td><input value={ev.date} disabled={ro} placeholder="14/07" onChange={(e) => upd({ date: e.target.value })} /></td>
+                                <td><input value={ev.tag ?? ""} disabled={ro} placeholder="Incident" onChange={(e) => upd({ tag: e.target.value })} /></td>
+                                <td><input value={ev.text} disabled={ro} placeholder={t("steerco.f.text")} onChange={(e) => upd({ text: e.target.value })} /></td>
                                 <td>
-                                  <select value={ev.sev ?? "ice"} disabled={!own} onChange={(e) => upd({ sev: e.target.value as any })}>
+                                  <select value={ev.sev ?? "ice"} disabled={ro} onChange={(e) => upd({ sev: e.target.value as any })}>
                                     {EVENT_SEVS.map((s) => <option key={s} value={s}>{t(`steerco.sev.${s}`)}</option>)}
                                   </select>
                                 </td>
-                                {!ro && <td>{own && <button type="button" className="icon-del" title={t("action.delete")} aria-label={t("action.delete")} onClick={() => setEv(which, list.filter((_, j) => j !== i))}>✕</button>}</td>}
+                                {!ro && <td><button type="button" className="icon-del" title={t("action.delete")} aria-label={t("action.delete")} onClick={() => setEv(which, list.filter((_, j) => j !== i))}>✕</button></td>}
                               </tr>
                             );
                           })}
@@ -473,7 +570,7 @@ export default function SteercoWizard({ platformId, platformName, initialPeriod,
             </div>
           )}
 
-          {/* ---- Step: review & submit ---- */}
+          {/* ---- Step: review & save ---- */}
           {step === 4 && (
             <div className="stack" style={{ gap: 16 }}>
               <div>
@@ -481,10 +578,10 @@ export default function SteercoWizard({ platformId, platformName, initialPeriod,
                 <div className="wiz-help">{t("steerco.wiz.review_hint")}</div>
               </div>
               <div className="wiz-recap">
-                <div className="rc"><div className="rc-n">{kpis.filter((k) => (k.value || "").trim()).length}/{kpis.length}</div><div className="rc-l">{t("steerco.f.kpis")}</div></div>
-                <div className="rc"><div className="rc-n">{(sla.cells || []).filter((c) => (c.v || "").trim()).length}/{sla.services.length}</div><div className="rc-l">{t("steerco.f.sla")}</div></div>
-                <div className="rc"><div className="rc-n">{(data.incidents || "").trim() || "-"}</div><div className="rc-l">{t("steerco.f.incidents")}</div></div>
-                <div className="rc"><div className="rc-n">{evList("last_events").length + evList("next_events").length}</div><div className="rc-l">{t("steerco.wiz.step_events")}</div></div>
+                <div className="rc"><div className="rc-n">{kpiFilled}/{kpis.length}</div><div className="rc-l">{t("steerco.f.kpis")}</div></div>
+                <div className="rc"><div className="rc-n">{slaFilled}/{sla.services.length}</div><div className="rc-l">{t("steerco.f.sla")}</div></div>
+                <div className="rc"><div className="rc-n">{String(data.incidents ?? "").trim() || "-"}</div><div className="rc-l">{t("steerco.f.incidents")}</div></div>
+                <div className="rc"><div className="rc-n">{evCount}</div><div className="rc-l">{t("steerco.wiz.step_events")}</div></div>
               </div>
 
               {/* Live preview of the one-pager this report will produce */}
@@ -497,11 +594,12 @@ export default function SteercoWizard({ platformId, platformName, initialPeriod,
                             style={{ width: "100%", height: 460, border: "1px solid var(--line)", borderRadius: 12, background: "#fff" }} />}
               </div>
 
-              {!ro && (
+              {canRun && !readonly && (
                 <details>
                   <summary className="small" style={{ cursor: "pointer", color: "var(--accent)" }}>{t("steerco.wiz.first_time")}</summary>
                   <div style={{ marginTop: 10 }}>
-                    <BackfillGrid platformId={platformId} period={period} template={tpl} editable={editable} />
+                    <BackfillGrid platformId={platformId} period={period} template={tpl}
+                                  onSaved={() => { onSaved?.(); setReloadTick((n) => n + 1); }} />
                   </div>
                 </details>
               )}
@@ -516,9 +614,8 @@ export default function SteercoWizard({ platformId, platformName, initialPeriod,
   );
 }
 
-/** Standalone one-pager preview for a platform's already-saved month (opened from the
- *  reporting launcher, next to "edit the report"). Uses the same contributor-safe
- *  preview endpoint, feeding it the saved snapshot. */
+/** Standalone one-pager preview for a platform's saved month, read-only: the
+ *  saved snapshot rendered as the committee will see it. */
 export function SteercoPreviewModal({ platformId, platformName, period, onClose }: {
   platformId: number; platformName: string; period: string; onClose: () => void;
 }) {
@@ -529,8 +626,7 @@ export function SteercoPreviewModal({ platformId, platformName, period, onClose 
   useEffect(() => {
     let alive = true;
     setHtml(null); setErr(null);
-    api.get<{ data: SteercoData }>(`/api/steerco/platform/${platformId}?period=${encodeURIComponent(period)}`)
-      .then((r) => api.post<string>(`/api/steerco/platform/${platformId}/preview.html?period=${encodeURIComponent(period)}&lang=${lang}`, r.data || {}))
+    api.get<string>(`/api/steerco/onepager.html?platform_id=${platformId}&period=${encodeURIComponent(period)}&lang=${lang}`)
       .then((h) => { if (alive) setHtml(typeof h === "string" ? h : String(h)); })
       .catch((e) => { if (alive) setErr(errorText(e)); });
     return () => { alive = false; };
@@ -547,9 +643,9 @@ export function SteercoPreviewModal({ platformId, platformName, period, onClose 
   );
 }
 
-/** The key messages written in the reportings of the platform's squads, to take
- *  over as events: filter by kind, tick, add. A message already on the list is
- *  shown but cannot be taken twice. */
+/** The key messages written in the reportings of the platform's squads concerned,
+ *  to take over as events: filter by kind, tick, add. A message already on the list
+ *  is shown but cannot be taken twice. */
 function MessagePicker({ platformId, period, taken, onAdd, onCancel }: {
   platformId: number; period: string; taken: string[];
   onAdd: (msgs: ReportMsg[]) => void; onCancel: () => void;

@@ -21,10 +21,10 @@ LONG = "Migration des environnements historiques vers la nouvelle plateforme ave
 
 def _platform(db, seeded, n_kpis, n_sla, n_events):
     sid = seeded["squad_a"]
-    tpl = default_template(sid)
-    tpl["kpis"] += [{"label": f"Indicateur supplementaire numero {k + 1}", "owner_squad_id": sid, "sub": []}
+    tpl = default_template()
+    tpl["kpis"] += [{"label": f"Indicateur supplementaire numero {k + 1}", "sub": []}
                     for k in range(max(0, n_kpis - len(tpl["kpis"])))]
-    tpl["sla"] += [{"label": f"Service critique {k + 1}", "owner_squad_id": sid}
+    tpl["sla"] += [{"label": f"Service critique {k + 1}"}
                    for k in range(max(0, n_sla - len(tpl["sla"])))]
     p = Platform(tribe_id=seeded["t1"], name="Plateforme de charge", display_order=1,
                  steerco_enabled=True, template=tpl)
@@ -88,7 +88,7 @@ def test_every_item_fits_or_goes_to_the_detail_slide(client, db, seeded, n_kpis,
         assert "en slide suivante" in text
     if n_kpis > 20:
         # On the slide (cut in the middle, the end kept) or on the detail slide.
-        base = default_template(None)
+        base = default_template()
         assert f'numero {n_kpis - len(base["kpis"])}' in text
         assert f'critique {n_sla - len(base["sla"])}' in text
     # Labels that share a long start stay distinguishable on the slide.

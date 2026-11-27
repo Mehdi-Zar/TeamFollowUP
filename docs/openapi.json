@@ -3,7 +3,7 @@
   "info": {
     "title": "TeamFollowUP",
     "description": "Outil de pilotage de tribe : consolidation, drill-down, saisie, organigramme, exports.",
-    "version": "3.2.2"
+    "version": "4.0.0"
   },
   "paths": {
     "/api/auth/config": {
@@ -3675,348 +3675,6 @@
         }
       }
     },
-    "/api/admin/report-config": {
-      "get": {
-        "tags": [
-          "admin"
-        ],
-        "summary": "Read Report Config",
-        "description": "GET /api/admin/report-config: the scheduled report of a scope.\n\nAdmin: the Direction's (every tribe, fixed addresses), or a tribe's with\n``?tribe_id=``. Tribe leader: their own tribe's (tab \"report\" required).\n``_tribe_id`` says which one it is, ``_choices`` what the screen can pick\n(squads, people and personas of the tribe). Settings of the first shape are\nconverted on the way (reportconfig.ensure_v2).",
-        "operationId": "read_report_config_api_admin_report_config_get",
-        "parameters": [
-          {
-            "name": "tribe_id",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Tribe Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      },
-      "put": {
-        "tags": [
-          "admin"
-        ],
-        "summary": "Update Report Config",
-        "description": "PUT /api/admin/report-config: update a scheduled report (same scopes as the\nGET). Audited. ``last_sent_day`` is scheduler bookkeeping, stripped from the\npayload so the UI can never overwrite it. In a tribe's schedule, the squads and\nthe people named are those of the tribe.",
-        "operationId": "update_report_config_api_admin_report_config_put",
-        "parameters": [
-          {
-            "name": "tribe_id",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Tribe Id"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "additionalProperties": true,
-                "title": "Payload"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/admin/report-config/plan": {
-      "post": {
-        "tags": [
-          "admin"
-        ],
-        "summary": "Report Plan",
-        "description": "POST /api/admin/report-config/plan: who receives which mail, for the\nsettings being edited (body ``{\"cfg\": {...}}``, not saved) or the saved ones:\none row per mail, the documents it carries, its \"To\" and copies (each tagged\nwith the line of the settings that put them there), and the people named\nwithout an address. Reads only.",
-        "operationId": "report_plan_api_admin_report_config_plan_post",
-        "parameters": [
-          {
-            "name": "tribe_id",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Tribe Id"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "additionalProperties": true,
-                "title": "Payload"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/admin/report-config/preview": {
-      "post": {
-        "tags": [
-          "admin"
-        ],
-        "summary": "Report Preview",
-        "description": "POST /api/admin/report-config/preview: the mail one line of the settings\n(``{\"line\": ..., \"cfg\": {...}}``, the settings being edited) sends, its first\none, as it will look: subject, recipients, documents and HTML body. Reads\nonly. 404 when that line sends nothing.",
-        "operationId": "report_preview_api_admin_report_config_preview_post",
-        "parameters": [
-          {
-            "name": "tribe_id",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Tribe Id"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "additionalProperties": true,
-                "title": "Payload"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/admin/report-config/test": {
-      "post": {
-        "tags": [
-          "admin"
-        ],
-        "summary": "Test Report Config",
-        "description": "POST /api/admin/report-config/test: the mail one line of the settings\nsends (body ``{\"line\": ...}``, its first mail), to the caller, now. 400 when\nSMTP is off. Audited.",
-        "operationId": "test_report_config_api_admin_report_config_test_post",
-        "parameters": [
-          {
-            "name": "tribe_id",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Tribe Id"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "additionalProperties": true,
-                "title": "Payload"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/admin/report-config/send-now": {
-      "post": {
-        "tags": [
-          "admin"
-        ],
-        "summary": "Send Report Now",
-        "description": "POST /api/admin/report-config/send-now: the schedule's mails now, out of\nits calendar (all of them, or those of one line with ``{\"line\": ...}``). 400\nwhen SMTP is off. Audited.",
-        "operationId": "send_report_now_api_admin_report_config_send_now_post",
-        "parameters": [
-          {
-            "name": "tribe_id",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Tribe Id"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "additionalProperties": true,
-                "title": "Payload"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/admin/report-config/send-squad-leaders": {
       "post": {
         "tags": [
@@ -4914,94 +4572,6 @@
         }
       }
     },
-    "/api/admin/import-steerco/template": {
-      "get": {
-        "tags": [
-          "admin"
-        ],
-        "summary": "Download Steerco Template",
-        "description": "GET /api/admin/import-steerco/template?platform_id= : download the Steerco Excel\ntemplate (Infos / KPIs / SLA / Incidents / Evenements) to fill in. Admin only.\n\nWith ``platform_id`` the workbook is built *for that platform*: its name is\npre-filled and the KPI / SLA rows come from its slide template, so the file asks\nfor exactly what will be rendered. Without it, the standard structure.",
-        "operationId": "download_steerco_template_api_admin_import_steerco_template_get",
-        "parameters": [
-          {
-            "name": "platform_id",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Platform Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/admin/import-steerco": {
-      "post": {
-        "tags": [
-          "admin"
-        ],
-        "summary": "Import Steerco Upload",
-        "description": "POST /api/admin/import-steerco : upload a filled Steerco Excel and write the\nplatform's monthly snapshots (12-month history + full current month). Admin only.\nIdempotent per (platform, period). 400 on wrong format / unknown platform. Audited.",
-        "operationId": "import_steerco_upload_api_admin_import_steerco_post",
-        "requestBody": {
-          "content": {
-            "multipart/form-data": {
-              "schema": {
-                "$ref": "#/components/schemas/Body_import_steerco_upload_api_admin_import_steerco_post"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/admin/pptx-template": {
       "get": {
         "tags": [
@@ -5092,6 +4662,463 @@
             "content": {
               "application/json": {
                 "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/diffusions": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "List All",
+        "description": "GET /api/admin/diffusions: the diffusions this user may set (every one for\nthe admin, its own tribe's otherwise), as cards. ``tribes`` lists the scopes\na new diffusion can take, ``direction`` whether the Direction is one of them,\n``smtp`` whether mails can go out at all. The schedules of the earlier\nshapes are converted on the way (reportconfig.ensure_diffusions).",
+        "operationId": "list_all_api_admin_diffusions_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Create",
+        "description": "POST /api/admin/diffusions: a new diffusion (body: its settings, with\n``tribe_id``, null for the Direction). Audited.",
+        "operationId": "create_api_admin_diffusions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "type": "object",
+                "title": "Payload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/diffusions/choices": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Choices",
+        "description": "GET /api/admin/diffusions/choices: what the editor offers to pick for a\nscope: its squads and tribe leaders, the people one can name (of the tribe,\nor every active account for the Direction) and the personas.",
+        "operationId": "choices_api_admin_diffusions_choices_get",
+        "parameters": [
+          {
+            "name": "tribe_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tribe Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/diffusions/plan": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Plan",
+        "description": "POST /api/admin/diffusions/plan: who receives which mail, for the settings\nbeing edited (``{\"cfg\": {...}}``, not saved): one row per mail, the\ndocuments it carries, its \"To\" and copies (each tagged with the line of the\nsettings that put them there), and the people named without an address.",
+        "operationId": "plan_api_admin_diffusions_plan_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "type": "object",
+                "title": "Payload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/diffusions/preview": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Preview",
+        "description": "POST /api/admin/diffusions/preview: one mail of the settings being edited\n(``{\"cfg\": {...}, \"key\": <mail key>}``, the first mail without a key), as it\nwill look: subject, recipients, documents and HTML body. 404 when the\nsettings send nothing.",
+        "operationId": "preview_api_admin_diffusions_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "type": "object",
+                "title": "Payload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/diffusions/{diffusion_id}": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Read",
+        "description": "GET /api/admin/diffusions/{id}: one diffusion's settings.",
+        "operationId": "read_api_admin_diffusions__diffusion_id__get",
+        "parameters": [
+          {
+            "name": "diffusion_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Diffusion Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Update",
+        "description": "PUT /api/admin/diffusions/{id}: update a diffusion (all its settings, or\nsome: ``{\"enabled\": false}`` pauses it). The scope and the bookkeeping\ncannot change. Audited.",
+        "operationId": "update_api_admin_diffusions__diffusion_id__put",
+        "parameters": [
+          {
+            "name": "diffusion_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Diffusion Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Delete",
+        "description": "DELETE /api/admin/diffusions/{id}: remove a diffusion, its \"what's new\"\nbaselines and its history. Audited.",
+        "operationId": "delete_api_admin_diffusions__diffusion_id__delete",
+        "parameters": [
+          {
+            "name": "diffusion_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Diffusion Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/diffusions/{diffusion_id}/history": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Read History",
+        "description": "GET /api/admin/diffusions/{id}/history: its latest sends, newest first\n(scheduled, sent now, tests): how many mails, which were refused and why.",
+        "operationId": "read_history_api_admin_diffusions__diffusion_id__history_get",
+        "parameters": [
+          {
+            "name": "diffusion_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Diffusion Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/diffusions/{diffusion_id}/test": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Test",
+        "description": "POST /api/admin/diffusions/{id}/test: one of its mails (``{\"key\": ...}``,\nthe first without), as saved, to the caller, now. 400 when SMTP is off.\nAudited.",
+        "operationId": "test_api_admin_diffusions__diffusion_id__test_post",
+        "parameters": [
+          {
+            "name": "diffusion_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Diffusion Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/diffusions/{diffusion_id}/send-now": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Send Now",
+        "description": "POST /api/admin/diffusions/{id}/send-now: all its mails, as saved, now, out\nof its calendar. 400 when SMTP is off. Audited.",
+        "operationId": "send_now_api_admin_diffusions__diffusion_id__send_now_post",
+        "parameters": [
+          {
+            "name": "diffusion_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Diffusion Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
               }
             }
           }
@@ -8364,14 +8391,42 @@
           "steerco"
         ],
         "summary": "List Platforms",
-        "description": "Platforms of the caller's scope, with contributors, template and what the\ncaller may fill. Readable by anyone signed in: a contributor needs to see the\nwhole slide, including the columns somebody else owes.",
+        "description": "Platforms the caller may read (one tribe with ``tribe_id``), with their\ntemplate and whether the caller runs them.",
         "operationId": "list_platforms_api_steerco_platforms_get",
+        "parameters": [
+          {
+            "name": "tribe_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tribe Id"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
               }
             }
           }
@@ -8382,19 +8437,19 @@
           "steerco"
         ],
         "summary": "Create Platform",
-        "description": "Declare a platform. Tribe leader or admin. Audited.\n\nThe tribe comes from the payload, else from the caller, else from the first\ncontributing squad. That last fallback is what makes the screen work for an\nadministrator: an admin belongs to no tribe, so without it every creation from\nthe admin console was refused as \"out of scope\" while naming the squads that\nobviously carried the answer.",
+        "description": "Declare a platform. Steerco leaders of the tribe. Audited.",
         "operationId": "create_platform_api_steerco_platforms_post",
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "additionalProperties": true,
                 "type": "object",
+                "additionalProperties": true,
                 "title": "Payload"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "201": {
@@ -8424,7 +8479,7 @@
           "steerco"
         ],
         "summary": "Update Platform",
-        "description": "Rename a platform, change its contributors, its order, its template. Audited.",
+        "description": "Rename a platform, change its squads concerned, its order, its template,\nwhether it is in the pack. Audited.",
         "operationId": "update_platform_api_steerco_platforms__platform_id__put",
         "parameters": [
           {
@@ -8475,7 +8530,7 @@
           "steerco"
         ],
         "summary": "Delete Platform",
-        "description": "Delete a platform and its monthly snapshots. Tribe leader or admin. Audited.",
+        "description": "Delete a platform and its monthly snapshots. Audited.",
         "operationId": "delete_platform_api_steerco_platforms__platform_id__delete",
         "parameters": [
           {
@@ -8564,7 +8619,7 @@
           "steerco"
         ],
         "summary": "Read Tribe Model",
-        "description": "GET /api/steerco/model: the tribe's model, the Steerco skeleton its tribe\nleader imposes (KPI, sub-metrics, SLA services; no owners).",
+        "description": "GET /api/steerco/model: the tribe's model, the Steerco skeleton every new\nplatform of the tribe starts from (KPI, sub-metrics, SLA services).",
         "operationId": "read_tribe_model_api_steerco_model_get",
         "parameters": [
           {
@@ -8670,7 +8725,7 @@
           "steerco"
         ],
         "summary": "Apply Tribe Model",
-        "description": "POST /api/steerco/platforms/{id}/apply-model: bring a platform back to its\ntribe's model. Items that stay keep their owner and their figures (matched by\nlabel); new ones go to the single contributor, else stay unassigned. Audited.",
+        "description": "POST /api/steerco/platforms/{id}/apply-model: bring a platform back to its\ntribe's model. Items that stay keep their figures (matched by label). Audited.",
         "operationId": "apply_tribe_model_api_steerco_platforms__platform_id__apply_model_post",
         "parameters": [
           {
@@ -8705,13 +8760,237 @@
         }
       }
     },
+    "/api/steerco/leaders": {
+      "get": {
+        "tags": [
+          "steerco"
+        ],
+        "summary": "List Leaders",
+        "description": "The tribe's Steerco leaders: its tribe leader (by default) and the designated\nusers. Readable by whoever runs the tribe's Steerco or may designate there.",
+        "operationId": "list_leaders_api_steerco_leaders_get",
+        "parameters": [
+          {
+            "name": "tribe_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tribe Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "steerco"
+        ],
+        "summary": "Designate Leader",
+        "description": "Designate a Steerco leader (``{\"tribe_id\", \"user_id\"}``). The administrator\nanywhere, the tribe leader on their own tribe; a Steerco leader cannot designate\nanother one. Giving back a tribe leader their default designation is the same\ncall. Audited.",
+        "operationId": "designate_leader_api_steerco_leaders_post",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/steerco/leaders/{user_id}": {
+      "delete": {
+        "tags": [
+          "steerco"
+        ],
+        "summary": "Remove Leader",
+        "description": "Withdraw a Steerco leader. A tribe leader's default designation can only be\nwithdrawn by the administrator (a tribe could otherwise lose, in one click,\nanyone able to run its Steerco). Audited.",
+        "operationId": "remove_leader_api_steerco_leaders__user_id__delete",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "User Id"
+            }
+          },
+          {
+            "name": "tribe_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tribe Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/steerco/leaders/badges": {
+      "get": {
+        "tags": [
+          "steerco"
+        ],
+        "summary": "Leader Badges",
+        "description": "Who is an active Steerco leader, by user id, in the tribes the caller may\ndesignate in (all of them for the administrator): the badge of Administration >\nUsers. Empty for anyone who designates nowhere.",
+        "operationId": "leader_badges_api_steerco_leaders_badges_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/steerco/board": {
+      "get": {
+        "tags": [
+          "steerco"
+        ],
+        "summary": "Board",
+        "description": "The Steerco leader's entry board: one row per platform the caller runs, one\ncell per month of ``year`` (January to December), each with its state.",
+        "operationId": "board_api_steerco_board_get",
+        "parameters": [
+          {
+            "name": "year",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "maximum": 2100,
+              "minimum": 2000,
+              "title": "Year"
+            }
+          },
+          {
+            "name": "tribe_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tribe Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/steerco/entries": {
       "get": {
         "tags": [
           "steerco"
         ],
         "summary": "List Entries",
-        "description": "Every steerco platform of the caller's tribe for a period (the dashboard's\nSteerco tab). The whole tribe reads it: a platform's dashboard is the tribe's.\nThe ``missing`` list names the contributors still owing an item, which is the\nwhole point of tracking a slide filled by several people.",
+        "description": "Every platform of the pack for a period, with where its month stands (the\nconsolidation screen).",
         "operationId": "list_entries_api_steerco_entries_get",
         "parameters": [
           {
@@ -8722,6 +9001,22 @@
               "type": "string",
               "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
               "title": "Period"
+            }
+          },
+          {
+            "name": "tribe_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tribe Id"
             }
           }
         ],
@@ -8753,7 +9048,7 @@
           "steerco"
         ],
         "summary": "Get Platform Entry",
-        "description": "One platform's monthly snapshot, with the template and what the caller owns.\n\nThe payload carries the whole slide, not only the caller's share: a contributor\nshould see the columns it does not own, greyed out and attributed, rather than a\nform that pretends the rest does not exist.",
+        "description": "One platform's monthly snapshot, with its template and its state.",
         "operationId": "get_platform_entry_api_steerco_platform__platform_id__get",
         "parameters": [
           {
@@ -8802,7 +9097,7 @@
           "steerco"
         ],
         "summary": "Upsert Platform Entry",
-        "description": "Write the caller's share of a platform's month (writer + contributor rights).\n\nThe payload may carry the whole slide; only the items the caller owns are taken\nfrom it, the rest is kept as stored. That is what lets two squad leaders fill\none slide at the same time without either of them erasing the other.",
+        "description": "Write a platform's month. Body: ``{\"data\": {...}, \"version\": n}``.\n\n``version`` is the one the form was loaded with: if another Steerco leader saved\nin between, the call is refused with 409 rather than replacing their figures\nwithout either of them knowing. A validated month is refused too (409).",
         "operationId": "upsert_platform_entry_api_steerco_platform__platform_id__put",
         "parameters": [
           {
@@ -8831,7 +9126,179 @@
               "schema": {
                 "type": "object",
                 "additionalProperties": true,
-                "title": "Data"
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/steerco/platform/{platform_id}/validate": {
+      "post": {
+        "tags": [
+          "steerco"
+        ],
+        "summary": "Validate Month",
+        "description": "Validate a platform's month: it becomes read-only, what the committee sees.\n400 when the month has nothing in it. Audited.",
+        "operationId": "validate_month_api_steerco_platform__platform_id__validate_post",
+        "parameters": [
+          {
+            "name": "platform_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Platform Id"
+            }
+          },
+          {
+            "name": "period",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+              "title": "Period"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/steerco/validate": {
+      "post": {
+        "tags": [
+          "steerco"
+        ],
+        "summary": "Validate All",
+        "description": "Validate the month of every platform of the pack the caller runs (of one\ntribe with ``tribe_id``). Empty months are left as they are and counted.",
+        "operationId": "validate_all_api_steerco_validate_post",
+        "parameters": [
+          {
+            "name": "period",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+              "title": "Period"
+            }
+          },
+          {
+            "name": "tribe_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tribe Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/steerco/platform/{platform_id}/reopen": {
+      "post": {
+        "tags": [
+          "steerco"
+        ],
+        "summary": "Reopen Month",
+        "description": "Reopen a validated month (``{\"reason\": \"...\"}``, required). Back to draft;\nthe exported document of that month then says \"revised on ...\". Audited with\nthe reason.",
+        "operationId": "reopen_month_api_steerco_platform__platform_id__reopen_post",
+        "parameters": [
+          {
+            "name": "platform_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Platform Id"
+            }
+          },
+          {
+            "name": "period",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+              "title": "Period"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "title": "Payload"
               }
             }
           }
@@ -8864,7 +9331,7 @@
           "steerco"
         ],
         "summary": "Get History",
-        "description": "The report year's 12 monthly snapshots, January to December (backfill grid).",
+        "description": "The report year's 12 monthly snapshots, January to December, plus the month\nbefore January (what \"take over the previous month\" copies for a January).",
         "operationId": "get_history_api_steerco_platform__platform_id__history_get",
         "parameters": [
           {
@@ -8913,7 +9380,7 @@
           "steerco"
         ],
         "summary": "Upsert History",
-        "description": "Backfill several months at once. Body: ``{\"months\": {\"2026-06\": {...}, ...}}``.\n\nEach month goes through the same ownership merge as a single save, so a\ncontributor pasting a year of its own figures cannot overwrite a colleague's\ncolumn in any of those months.",
+        "description": "Backfill several months at once. Body: ``{\"months\": {\"2026-06\": {...}, ...}}``.\nValidated months are left untouched and listed in ``skipped``.",
         "operationId": "upsert_history_api_steerco_platform__platform_id__history_put",
         "parameters": [
           {
@@ -8964,7 +9431,7 @@
           "steerco"
         ],
         "summary": "Get Reporting Messages",
-        "description": "The key messages the platform's squads wrote in their reportings of the\nperiod's year, newest first: what the events step offers to take over, so a\nfact said once in the reporting need not be typed again for the committee.\nThe same text said in several reportings of a squad comes once (the newest).",
+        "description": "The key messages the platform's squads concerned wrote in their reportings of\nthe period's year, newest first: what the events step offers to take over, so a\nfact said once in the reporting need not be typed again for the committee.\nThe same text said in several reportings of a squad comes once (the newest).",
         "operationId": "get_reporting_messages_api_steerco_platform__platform_id__messages_get",
         "parameters": [
           {
@@ -8987,6 +9454,94 @@
             }
           }
         ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/steerco/import/template": {
+      "get": {
+        "tags": [
+          "steerco"
+        ],
+        "summary": "Download Import Template",
+        "description": "GET /api/steerco/import/template?platform_id= : the Steerco workbook to fill.\nWith ``platform_id`` it is built for that platform (name pre-filled, its KPI and\nSLA rows); without, the standard structure.",
+        "operationId": "download_import_template_api_steerco_import_template_get",
+        "parameters": [
+          {
+            "name": "platform_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Platform Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/steerco/import": {
+      "post": {
+        "tags": [
+          "steerco"
+        ],
+        "summary": "Import Workbook",
+        "description": "POST /api/steerco/import : upload a filled workbook into the platform it names\n(one the caller runs). Idempotent per (platform, period); validated months are\nleft untouched and listed in ``skipped_validated``. 400 on a wrong file. Audited.",
+        "operationId": "import_workbook_api_steerco_import_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_import_workbook_api_steerco_import_post"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -9119,7 +9674,7 @@
           "steerco"
         ],
         "summary": "Preview Html",
-        "description": "Live preview of the one-pager for the wizard, using the still-unsaved snapshot\n(``data``) as the current month. Nothing is persisted. Open to any contributor of\nthe platform (they are the ones filling the report).",
+        "description": "Live preview of the one-pager for the wizard, using the still-unsaved snapshot\n(``data``) as the current month. Nothing is persisted. Steerco leaders only.",
         "operationId": "preview_html_api_steerco_platform__platform_id__preview_html_post",
         "parameters": [
           {
@@ -9200,7 +9755,7 @@
           "steerco"
         ],
         "summary": "Document Html",
-        "description": "Consolidated steerco (all enabled platforms) as HTML one-pagers.",
+        "description": "Consolidated steerco (all enabled platforms, of one tribe with ``tribe_id``)\nas HTML one-pagers.",
         "operationId": "document_html_api_steerco_document_html_get",
         "parameters": [
           {
@@ -9227,6 +9782,22 @@
                 }
               ],
               "title": "Lang"
+            }
+          },
+          {
+            "name": "tribe_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tribe Id"
             }
           }
         ],
@@ -9354,6 +9925,202 @@
                 }
               ],
               "title": "Template Id"
+            }
+          },
+          {
+            "name": "tribe_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tribe Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/steerco/mail": {
+      "get": {
+        "tags": [
+          "steerco"
+        ],
+        "summary": "Read Mail Settings",
+        "description": "The tribe's Steerco mail settings: the monthly reminder (on, day) and the\npack's recipients.",
+        "operationId": "read_mail_settings_api_steerco_mail_get",
+        "parameters": [
+          {
+            "name": "tribe_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tribe Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "steerco"
+        ],
+        "summary": "Update Mail Settings",
+        "description": "Set the reminder (``reminder_enabled``, ``reminder_day`` 1 to 28) and the\npack's ``recipients``. Audited.",
+        "operationId": "update_mail_settings_api_steerco_mail_put",
+        "parameters": [
+          {
+            "name": "tribe_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tribe Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/steerco/send": {
+      "post": {
+        "tags": [
+          "steerco"
+        ],
+        "summary": "Send Pack",
+        "description": "Send the month's pack (summary + PPTX) to the tribe's recipients. Refused\n(409) while a platform of the pack is not validated: what leaves for the\ncommittee is what was validated. Audited.",
+        "operationId": "send_pack_api_steerco_send_post",
+        "parameters": [
+          {
+            "name": "period",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+              "title": "Period"
+            }
+          },
+          {
+            "name": "tribe_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tribe Id"
+            }
+          },
+          {
+            "name": "lang",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Lang"
             }
           }
         ],
@@ -12153,7 +12920,7 @@
         ],
         "title": "Body_import_snapshot_api_admin_data_snapshots_import_post"
       },
-      "Body_import_steerco_upload_api_admin_import_steerco_post": {
+      "Body_import_workbook_api_steerco_import_post": {
         "properties": {
           "file": {
             "type": "string",
@@ -12165,7 +12932,7 @@
         "required": [
           "file"
         ],
-        "title": "Body_import_steerco_upload_api_admin_import_steerco_post"
+        "title": "Body_import_workbook_api_steerco_import_post"
       },
       "Body_pptx_template_upload_api_admin_pptx_template_post": {
         "properties": {
@@ -16730,10 +17497,13 @@
             "type": "boolean",
             "title": "Kpis Enabled"
           },
-          "steerco_enabled": {
-            "type": "boolean",
-            "title": "Steerco Enabled",
-            "default": false
+          "steerco_platforms": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Steerco Platforms",
+            "default": []
           },
           "budget_enabled": {
             "type": "boolean",
@@ -16981,10 +17751,13 @@
             "type": "boolean",
             "title": "Kpis Enabled"
           },
-          "steerco_enabled": {
-            "type": "boolean",
-            "title": "Steerco Enabled",
-            "default": false
+          "steerco_platforms": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Steerco Platforms",
+            "default": []
           },
           "budget_enabled": {
             "type": "boolean",

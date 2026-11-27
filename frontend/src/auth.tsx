@@ -12,6 +12,7 @@ import { createContext, useContext, useEffect, useRef, useState, ReactNode } fro
 import { setCustomRoleLabels, useI18n } from "./i18n";
 import { api, ApiError } from "./api";
 import { AuthConfig, Capability, Role, User } from "./types";
+import { NO_STEERCO, SteercoRights } from "./steerco";
 
 /** Everything the auth context exposes to the app (session, permissions, actions). */
 /** The two ways an admin sees the app as someone: look only, or act. */
@@ -33,6 +34,8 @@ interface AuthState {
   capabilities: Record<string, boolean> | null;
   /** The Administration tabs this user holds (Admin > Personas); none = no admin. */
   adminTabs: string[];
+  /** What this user may do in the Steerco menu: read, run (Steerco leader), designate. */
+  steerco: SteercoRights;
   /** May the user open the SSO access-request queue, and how many are pending. */
   canReviewAccess: boolean;
   pendingAccessCount: number;
@@ -60,6 +63,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [impersonationMode, setImpersonationMode] = useState<ImpersonationMode | null>(null);
   const [capabilities, setCapabilities] = useState<Record<string, boolean> | null>(null);
   const [adminTabs, setAdminTabs] = useState<string[]>([]);
+  const [steerco, setSteerco] = useState<SteercoRights>(NO_STEERCO);
   const [canReviewAccess, setCanReviewAccess] = useState(false);
   const [pendingAccessCount, setPendingAccessCount] = useState(0);
 
@@ -77,6 +81,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setCapabilities(p.capabilities ?? null);
       setCustomRoleLabels(p.persona_labels);
       setAdminTabs(p.admin_tabs ?? []);
+      setSteerco(p.steerco ?? NO_STEERCO);
       setCanReviewAccess(!!p.can_review_access);
       setPendingAccessCount(p.pending_access_count ?? 0);
     } catch {
@@ -84,6 +89,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setImpersonatorName(null);
       setCapabilities(null);
       setAdminTabs([]);
+      setSteerco(NO_STEERCO);
       setCanReviewAccess(false);
       setPendingAccessCount(0);
     }
@@ -223,6 +229,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         impersonationMode,
         capabilities,
         adminTabs,
+        steerco,
         canReviewAccess,
         pendingAccessCount,
         can,

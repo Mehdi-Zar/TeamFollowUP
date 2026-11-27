@@ -2,8 +2,7 @@ import pytest
 
 from app import status as st
 from app.report import build_report_data, render_html, render_pptx, send_due_weekly_reports
-from app.reportconfig import get_report, set_report
-from tests.conftest import login
+from tests.conftest import login, diffusion
 
 
 # ---- data + rendering ----------------------------------------------------------
@@ -308,28 +307,29 @@ def test_the_dependencies_export_shows_dependencies_inside_a_tribe(client, seede
 # ---- config sanitization -------------------------------------------------------
 
 def test_report_config_sanitizes(db, seeded):
-    cfg = set_report(db, {
+    cfg = diffusion(db, None, **{
         "enabled": True,
-        "recipients": "a@x.com\nbad\nb@y.com; a@x.com",  # dedup + drop invalid
+        "copies": [{"type": "email", "value": "a@x.com"}, {"type": "email", "value": "bad"},
+                   {"type": "email", "value": "b@y.com"}, {"type": "email", "value": "A@x.com"}],
         "weekdays": [99, 2, "x", 2], "hour": -3, "since_days": 999,
     })
     db.commit()
-    assert cfg["recipients"] == ["a@x.com", "b@y.com"]
+    assert [c["value"] for c in cfg["copies"]] == ["a@x.com", "b@y.com"]   # dedup + drop invalid
     assert cfg["weekdays"] == [2] and cfg["hour"] == 0 and cfg["since_days"] == 120
-    assert get_report(db)["enabled"] is True
+    assert diffusion(db, None)["enabled"] is True
 
 
 # ---- automatic send gating -----------------------------------------------------
 
 def test_send_due_skips_when_disabled(db, seeded):
-    set_report(db, {"enabled": False})
+    diffusion(db, None, enabled=False, recipients=["x@y.com"])
     db.commit()
     assert send_due_weekly_reports(db) == 0
 
 
 def test_send_due_skips_without_smtp(db, seeded):
     # Enabled report but SMTP off → nothing sent.
-    set_report(db, {"enabled": True, "weekday": 0, "hour": 0, "recipients": ["x@y.com"]})
+    diffusion(db, None, enabled=True, weekdays=[0], hour=0, recipients=["x@y.com"])
     db.commit()
     assert send_due_weekly_reports(db) == 0
 
@@ -379,21 +379,24 @@ def test_tribe_leader_scoped_to_own_tribe(client, seeded):
 
 def test_report_config_admin_roundtrip(client, seeded):
     login(client, seeded["admin"])
-    assert client.get("/api/admin/report-config").json()["enabled"] is False
-    out = client.put("/api/admin/report-config", json={
-        "enabled": True, "recipients": ["dir@x.com"], "weekdays": [2], "hour": 9,
+    assert client.get("/api/admin/diffusions").json()["diffusions"] == []
+    d = client.post("/api/admin/diffusions", json={"tribe_id": None, "name": "Direction"}).json()
+    assert d["enabled"] is False
+    out = client.put(f"/api/admin/diffusions/{d['id']}", json={
+        "enabled": True, "copies": [{"type": "email", "value": "dir@x.com"}], "weekdays": [2], "hour": 9,
     }).json()
-    assert out["enabled"] is True and out["weekdays"] == [2] and out["recipients"] == ["dir@x.com"]
+    assert out["enabled"] is True and out["weekdays"] == [2] and out["copies"][0]["value"] == "dir@x.com"
 
 
 def test_report_config_forbidden_for_member(client, seeded):
     login(client, seeded["member"])
-    assert client.get("/api/admin/report-config").status_code == 403
+    assert client.get("/api/admin/diffusions").status_code == 403
 
 
 def test_report_test_requires_smtp(client, seeded):
     login(client, seeded["admin"])
-    assert client.post("/api/admin/report-config/test", json={}).status_code == 400
+    d = client.post("/api/admin/diffusions", json={"tribe_id": None}).json()
+    assert client.post(f"/api/admin/diffusions/{d['id']}/test", json={}).status_code == 400
 
 
 def test_whats_new_since_last_report(db, seeded, monkeypatch):
@@ -408,8 +411,7 @@ def test_whats_new_since_last_report(db, seeded, monkeypatch):
     set_smtp(db, {"enabled": True, "host": "smtp.local"})
     now = dt.datetime(2026, 1, 5, 9, 0, tzinfo=dt.timezone.utc)  # Monday
     year = st.current_year_quarter(now)[0]
-    set_report(db, {"enabled": True, "recipients": ["copil@test"],
-                    "weekdays": [now.weekday()], "hour": 0})
+    diffusion(db, None, enabled=True, recipients=["copil@test"], weekdays=[now.weekday()], hour=0)
     db.add(RoadmapItem(squad_id=seeded["squad_a"], year=year, quarter=1,
                        title="API v2", status="at_risk", release_stage="EA"))
     db.commit()
@@ -436,7 +438,7 @@ def test_whats_new_since_last_report(db, seeded, monkeypatch):
     assert "API v2" in caps[-1]["body"] and "Livré" in caps[-1]["body"]
 
     # 3) Nothing changes; with only_when_changes the next send is skipped.
-    set_report(db, {"only_when_changes": True})
+    diffusion(db, None, only_when_changes=True)
     caps.clear()
     now3 = now2 + dt.timedelta(days=7)
     assert report_mod.send_due_weekly_reports(db, now=now3) == 0

@@ -9,10 +9,9 @@ import app.mail as mail
 import app.modulesconfig as modulesconfig
 from app import report as report_mod
 from app.reportcommon import rt
-from app.reportconfig import get_report, set_report
 from app.smtpconfig import set_smtp
 
-from .conftest import TestingSessionLocal
+from .conftest import TestingSessionLocal, diffusion
 
 
 def _capture(monkeypatch, ok=True):
@@ -29,8 +28,7 @@ def _capture(monkeypatch, ok=True):
 
 def _schedule(db, now, **extra):
     set_smtp(db, {"enabled": True, "host": "smtp.local"})
-    set_report(db, {"enabled": True, "recipients": ["copil@test"], "weekdays": [now.weekday()],
-                    "hour": 8, **extra})
+    diffusion(db, None, enabled=True, recipients=["copil@test"], weekdays=[now.weekday()], hour=8, **extra)
     db.commit()
 
 
@@ -55,7 +53,7 @@ def test_a_mail_server_down_does_not_lose_the_week(db, seeded, monkeypatch):
     monkeypatch.setattr(report_mod, "render_pptx", lambda d: b"")
     _capture(monkeypatch, ok=False)
     assert report_mod.send_due_weekly_reports(db, now=now) == 0
-    assert get_report(db).get("last_sent_day") != "2026-01-05"
+    assert diffusion(db, None).get("last_sent_day") != "2026-01-05"
     # An hour later the server is back: the report leaves, first of its kind.
     sent = _capture(monkeypatch, ok=True)
     assert report_mod.send_due_weekly_reports(db, now=now + dt.timedelta(hours=1)) == 1
@@ -154,14 +152,17 @@ def test_a_past_version_mail_says_it_is_a_version(db, seeded):
     assert "Dernière saisie" not in body and "aujourd'hui" not in body
 
 
-def test_the_scheduler_ticks_at_the_top_of_the_hour():
-    """A mail set for 8 h leaves at 8 h, whatever time the app started."""
-    from app.main import seconds_to_next_tick
-    t = dt.datetime(2026, 7, 6, 6, 40, 0, tzinfo=dt.timezone.utc).timestamp()   # 08:40 Paris
-    assert t + seconds_to_next_tick(t) == dt.datetime(2026, 7, 6, 7, 0, 30, tzinfo=dt.timezone.utc).timestamp()
+def test_the_scheduler_ticks_every_five_minutes():
+    """A mail set for 8 h 15 leaves at 8 h 15, whatever time the app started; the
+    hourly jobs keep to the first tick of the hour."""
+    from app.main import is_hourly_tick, seconds_to_next_tick
+    t = dt.datetime(2026, 7, 6, 6, 42, 0, tzinfo=dt.timezone.utc).timestamp()   # 08:42 Paris
+    assert t + seconds_to_next_tick(t) == dt.datetime(2026, 7, 6, 6, 45, 30, tzinfo=dt.timezone.utc).timestamp()
     t = dt.datetime(2026, 11, 27, 6, 59, 50, tzinfo=dt.timezone.utc).timestamp()
     assert seconds_to_next_tick(t) == 40
     t = dt.datetime(2026, 11, 27, 7, 0, 0, tzinfo=dt.timezone.utc).timestamp()
     assert seconds_to_next_tick(t) == 30
     t = dt.datetime(2026, 11, 27, 7, 0, 30, tzinfo=dt.timezone.utc).timestamp()   # just ticked
-    assert seconds_to_next_tick(t) == 3600
+    assert seconds_to_next_tick(t) == 300
+    assert is_hourly_tick(t)
+    assert not is_hourly_tick(t + 300)

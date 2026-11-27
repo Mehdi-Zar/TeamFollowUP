@@ -1,14 +1,14 @@
 """Steerco: platform snapshots, 12-month aggregation, backfill, lang-aware one-pager.
 
-The reporting unit is the platform, not the squad, because the committee wants one
-slide per platform and a platform can be fed by several squads. The tests that
-matter most here are the multi-contributor ones: two squad leaders filling the same
-slide must never overwrite each other, and every figure must have an owner.
+The reporting unit is the platform. Since 4.0 (ADR 0018) the figures are entered
+by the tribe's Steerco leaders (the tribe leader by default, plus the designated
+users), a month is validated then read-only, and reading is a persona capability
+closed by default.
 """
 from datetime import datetime, timezone
 import re
 
-from app.models import Platform, SteercoEntry
+from app.models import Platform, SteercoEntry, SteercoLeader
 from app.platforms import default_template
 from app.routers.steerco import (I18N, _aggregate, month_keys, _onepager,
                                  _render_pptx, _svg_line_chart)
@@ -23,16 +23,13 @@ def _enable(client):
 
 
 def _platform(db, seeded, name="Sovereign Platform", squads=("squad_a",), template=None) -> int:
-    """A platform fed by the named seeded squads, owning the standard slide."""
+    """A platform of tribe 1 with the named squads concerned and the standard slide."""
     ids = [seeded[s] for s in squads]
     from app.models import Squad
     p = Platform(tribe_id=seeded["t1"], name=name, display_order=1, steerco_enabled=True,
-                 template=template or default_template(ids[0]))
+                 template=template or default_template())
     p.contributors = [db.get(Squad, i) for i in ids]
     db.add(p)
-    db.flush()
-    for s in p.contributors:
-        s.steerco_enabled = True
     db.commit()
     return p.id
 
@@ -119,13 +116,10 @@ def test_change_vs_m1_and_sla_colour_are_computed(db, seeded):
 def test_sla_percentages_are_capped_at_100(client, db, seeded):
     """A SLA is a percentage: 100 is the ceiling, whatever is sent (typo, import)."""
     _enable(client)
-    pid = _platform(db, seeded, template={
-        "kpis": [], "sla": [{"label": "A", "owner_squad_id": seeded["squad_a"]},
-                            {"label": "B", "owner_squad_id": seeded["squad_a"]}],
-        "incidents": {"owner_squad_id": seeded["squad_a"]}})
-    login(client, seeded["sl_a"])
-    r = client.put(f"/api/steerco/platform/{pid}?period=2026-07", json={
-        "sla": {"services": ["A", "B"], "cells": [{"v": "994%"}, {"v": "99,4%"}]}})
+    pid = _platform(db, seeded, template={"kpis": [], "sla": [{"label": "A"}, {"label": "B"}]})
+    login(client, seeded["tribe"])
+    r = client.put(f"/api/steerco/platform/{pid}?period=2026-07", json={"data": {
+        "sla": {"services": ["A", "B"], "cells": [{"v": "994%"}, {"v": "99,4%"}]}}, "version": 0})
     assert r.status_code == 200, r.text
     assert [c["v"] for c in r.json()["data"]["sla"]["cells"]] == ["100%", "99,4%"]
     rd = _aggregate(db, pid, "2026-07")
@@ -281,227 +275,271 @@ def test_module_gate_blocks_when_disabled(client, seeded):
     assert client.get("/api/steerco/entries?period=2026-07").status_code == 404
 
 
+# ---- who runs, who reads (ADR 0018) ----------------------------------------------
+
+def test_the_tribe_leader_runs_the_steerco_of_their_tribe_by_default(client, db, seeded):
+    _enable(client)
+    login(client, seeded["tribe"])
+    st = client.get("/api/auth/me/permissions").json()["steerco"]
+    assert st["run"] is True and st["run_tribe_ids"] == [seeded["t1"]]
+    r = client.post("/api/steerco/platforms", json={"name": "Sovereign Platform"})
+    assert r.status_code == 201 and r.json()["tribe_id"] == seeded["t1"]
+    # Not on another tribe.
+    r = client.post("/api/steerco/platforms", json={"name": "X", "tribe_id": seeded["t2"]})
+    assert r.status_code == 403
+
+
+def test_a_squad_leader_designated_steerco_leader_keeps_their_role_and_runs_it(client, db, seeded):
+    """The designation adds to the role: a squad leader stays a squad leader."""
+    _enable(client)
+    pid = _platform(db, seeded)
+    login(client, seeded["sl_a"])
+    assert client.get("/api/steerco/board?year=2026").status_code == 403
+    assert client.put(f"/api/steerco/platform/{pid}?period=2026-07",
+                      json={"data": {"incidents": "3"}, "version": 0}).status_code == 403
+
+    login(client, seeded["tribe"])
+    r = client.post("/api/steerco/leaders", json={"tribe_id": seeded["t1"], "user_id": seeded["sl_a_id"]})
+    assert r.status_code == 201, r.text
+    names = [x["display_name"] for x in r.json()["leaders"]]
+    assert names == ["Tribe", "SL A"]                     # the tribe leader first, by default
+
+    login(client, seeded["sl_a"])
+    me = client.get("/api/auth/me").json()
+    assert me["role"] == "squad_leader"
+    r = client.put(f"/api/steerco/platform/{pid}?period=2026-07",
+                   json={"data": {"incidents": "3"}, "version": 0})
+    assert r.status_code == 200, r.text
+    rows = client.get("/api/steerco/board?year=2026").json()["platforms"]
+    assert rows[0]["months"][6]["fill"] == "partial"
+
+
+def test_the_users_screen_badges_the_steerco_leaders(client, db, seeded):
+    """Administration > Users shows who runs a Steerco, to whoever designates there."""
+    _enable(client)
+    db.add(SteercoLeader(user_id=seeded["sl_a_id"], tribe_id=seeded["t1"]))
+    db.commit()
+    login(client, seeded["tribe"])
+    badges = client.get("/api/steerco/leaders/badges").json()
+    assert set(badges) >= {str(seeded["sl_a_id"])}
+    assert str(seeded["sl_b_id"]) not in badges
+    login(client, seeded["sl_a"])                        # designates nowhere: nothing
+    assert client.get("/api/steerco/leaders/badges").json() == {}
+
+
+def test_a_steerco_leader_cannot_designate_another(client, db, seeded):
+    _enable(client)
+    db.add(SteercoLeader(user_id=seeded["sl_a_id"], tribe_id=seeded["t1"]))
+    db.commit()
+    login(client, seeded["sl_a"])
+    r = client.post("/api/steerco/leaders", json={"tribe_id": seeded["t1"], "user_id": seeded["sl_b_id"]})
+    assert r.status_code == 403
+    assert client.get(f"/api/steerco/leaders?tribe_id={seeded['t1']}").status_code == 200
+
+
+def test_only_the_admin_withdraws_the_tribe_leader_default(client, db, seeded):
+    _enable(client)
+    from app.models import User
+    tl = db.query(User).filter(User.email == seeded["tribe"]).one()
+    login(client, seeded["tribe"])
+    assert client.delete(f"/api/steerco/leaders/{tl.id}?tribe_id={seeded['t1']}").status_code == 403
+
+    login(client, "admin@test")
+    r = client.delete(f"/api/steerco/leaders/{tl.id}?tribe_id={seeded['t1']}")
+    assert r.status_code == 200
+    assert r.json()["leaders"][0]["active"] is False
+    login(client, seeded["tribe"])
+    assert client.post("/api/steerco/platforms", json={"name": "P"}).status_code == 403
+    # The tribe leader still designates (it is their tribe), and gets it back.
+    login(client, "admin@test")
+    r = client.post("/api/steerco/leaders", json={"tribe_id": seeded["t1"], "user_id": tl.id})
+    assert r.json()["leaders"][0]["active"] is True
+
+
+def test_reading_is_closed_by_default_and_opened_per_persona(client, db, seeded):
+    """The slide shows degraded SLAs and risks before the committee: no persona
+    reads it unless the administrator ticks "steerco" for it."""
+    _enable(client)
+    _platform(db, seeded)
+    login(client, seeded["member"])
+    assert client.get("/api/steerco/entries?period=2026-07").status_code == 403
+    assert client.get("/api/steerco/document.html?period=2026-07").status_code == 403
+
+    login(client, "admin@test")
+    personas = client.get("/api/admin/personas").json()
+    items = personas["personas"] if isinstance(personas, dict) else personas
+    member = next(p for p in items if p["key"] == "member")
+    assert member["caps"]["steerco"] is False
+    member["caps"]["steerco"] = True
+    r = client.put("/api/admin/personas", json={"personas": items})
+    assert r.status_code == 200, r.text
+
+    login(client, seeded["member"])
+    assert client.get("/api/steerco/entries?period=2026-07").status_code == 200
+    # Reading is not running.
+    assert client.get("/api/steerco/board?year=2026").status_code == 403
+
+
 def test_a_platform_groups_several_squads_into_one_slide(client, db, seeded):
-    """The whole point: two squads, one platform, one page in the consolidated doc."""
+    """Two squads concerned, one platform, one page in the consolidated doc."""
     _enable(client)
     login(client, seeded["tribe"])
     r = client.post("/api/steerco/platforms", json={
-        "name": "Sovereign Platform", "contributor_ids": [seeded["squad_a"], seeded["squad_b"]]})
+        "name": "Sovereign Platform", "squad_ids": [seeded["squad_a"], seeded["squad_b"]]})
     assert r.status_code == 201, r.text
     pid = r.json()["id"]
-    assert [c["name"] for c in r.json()["contributors"]] == ["Squad A", "Squad B"]
-    # Several contributors: ownership is a decision, so items start unassigned rather
-    # than being attributed to whoever happened to be first.
-    assert r.json()["template"]["kpis"][0]["owner_squad_id"] is None
+    assert [c["name"] for c in r.json()["squads"]] == ["Squad A", "Squad B"]
+    assert "owner_squad_id" not in r.json()["template"]["kpis"][0]
 
     client.put(f"/api/steerco/platform/{pid}?period=2026-07",
-               json={"kpis": [{"label": "Cloud Users", "value": "12"}]})
+               json={"data": {"kpis": [{"label": "Cloud Users", "value": "12"}]}, "version": 0})
     doc = client.get("/api/steerco/document.html?period=2026-07&lang=en")
     assert doc.status_code == 200
     assert doc.text.count("class='page'") + doc.text.count('class="page"') == 1
     assert "Sovereign Platform" in doc.text and "Squad A" not in doc.text
 
 
-def test_contributing_squads_get_the_steerco_flag(client, db, seeded):
-    """The reporting screen shows its Steerco step from this flag, so it must follow
-    platform membership by itself instead of being toggled by hand."""
+def test_the_squad_page_names_its_steerco_platforms(client, db, seeded):
     _enable(client)
     login(client, seeded["tribe"])
-    sid_a, sid_b = seeded["squad_a"], seeded["squad_b"]
-    r = client.post("/api/steerco/platforms", json={"name": "P", "contributor_ids": [sid_a]})
-    pid = r.json()["id"]
-    assert client.get(f"/api/squads/{sid_a}").json()["steerco_enabled"] is True
-    assert client.get(f"/api/squads/{sid_b}").json()["steerco_enabled"] is False
-
-    client.put(f"/api/steerco/platforms/{pid}", json={"contributor_ids": [sid_b]})
-    assert client.get(f"/api/squads/{sid_a}").json()["steerco_enabled"] is False   # released
-    assert client.get(f"/api/squads/{sid_b}").json()["steerco_enabled"] is True
-
-    client.delete(f"/api/steerco/platforms/{pid}")
-    assert client.get(f"/api/squads/{sid_b}").json()["steerco_enabled"] is False
-
-
-def test_a_platform_with_its_steerco_off_gives_the_squad_nothing_to_fill(client, db, seeded):
-    """Le drapeau dit « cette squad a quelque chose a saisir », pas « cette squad est
-    rattachee quelque part ». Une plateforme dont le steerco est coupe n'ouvre aucune
-    saisie, et l'etape du reporting n'aurait affiche qu'une liste vide."""
-    _enable(client)
-    login(client, seeded["tribe"])
-    sid = seeded["squad_a"]
     pid = client.post("/api/steerco/platforms",
-                      json={"name": "P", "contributor_ids": [sid]}).json()["id"]
-    assert client.get(f"/api/squads/{sid}").json()["steerco_enabled"] is True
-
+                      json={"name": "P", "squad_ids": [seeded["squad_a"]]}).json()["id"]
+    assert client.get(f"/api/squads/{seeded['squad_a']}").json()["steerco_platforms"] == ["P"]
     client.put(f"/api/steerco/platforms/{pid}", json={"steerco_enabled": False})
-    assert client.get(f"/api/squads/{sid}").json()["steerco_enabled"] is False
-
-    client.put(f"/api/steerco/platforms/{pid}", json={"steerco_enabled": True})
-    assert client.get(f"/api/squads/{sid}").json()["steerco_enabled"] is True
+    assert client.get(f"/api/squads/{seeded['squad_a']}").json()["steerco_platforms"] == []
 
 
 def test_an_admin_creates_a_platform_without_naming_a_tribe(client, db, seeded):
-    """An admin belongs to no tribe, so the tribe has to come from somewhere else.
-
-    Taking it from the first contributing squad is what makes the admin console
-    usable: the screen names the squads, which already carries the answer. Without
-    it every creation from an admin account was refused as out of scope.
-    """
+    """An admin belongs to no tribe: the tribe comes from the first squad concerned."""
     _enable(client)
     login(client, "admin@test")
     r = client.post("/api/steerco/platforms", json={
-        "name": "Sovereign Platform", "contributor_ids": [seeded["squad_a"]]})
+        "name": "Sovereign Platform", "squad_ids": [seeded["squad_a"]]})
     assert r.status_code == 201, r.text
     assert r.json()["tribe_id"] == seeded["t1"]
-
-    # Nothing to deduce it from: say so, rather than a confusing 403.
     r = client.post("/api/steerco/platforms", json={"name": "Orpheline"})
-    assert r.status_code == 400 and "tribu" in r.json()["detail"].lower()
+    assert r.status_code == 400 and "tribe" in r.json()["detail"].lower()
 
 
-def test_dropping_a_contributor_releases_the_items_it_owned(client, db, seeded):
-    """An item owned by a squad that no longer contributes is editable by nobody and
-    would silently stay empty for ever. It falls back to unassigned."""
-    _enable(client)
-    login(client, seeded["tribe"])
-    sid_a, sid_b = seeded["squad_a"], seeded["squad_b"]
-    pid = client.post("/api/steerco/platforms", json={
-        "name": "P", "contributor_ids": [sid_a, sid_b],
-        "template": {"kpis": [{"label": "Users", "owner_squad_id": sid_a},
-                              {"label": "K8aaS", "owner_squad_id": sid_b}],
-                     "sla": [{"label": "Incidents", "owner_squad_id": sid_a}],
-                     "incidents": {"owner_squad_id": sid_b}}}).json()["id"]
-    out = client.put(f"/api/steerco/platforms/{pid}", json={"contributor_ids": [sid_b]}).json()
-    owners = [k["owner_squad_id"] for k in out["template"]["kpis"]]
-    assert owners == [None, sid_b]
-    assert out["template"]["sla"][0]["owner_squad_id"] is None
-
-
-def test_a_squad_of_another_tribe_cannot_contribute(client, db, seeded):
-    """Its figures would end up on a committee deck that is not its own."""
+def test_a_squad_of_another_tribe_cannot_be_linked(client, db, seeded):
     _enable(client)
     login(client, "admin@test")
     r = client.post("/api/steerco/platforms", json={
-        "tribe_id": seeded["t1"], "name": "P", "contributor_ids": [seeded["squad_c"]]})
+        "tribe_id": seeded["t1"], "name": "P", "squad_ids": [seeded["squad_c"]]})
     assert r.status_code == 400
 
 
-def test_only_leadership_declares_platforms(client, db, seeded):
-    """A squad leader fills what it was assigned; it does not hand itself a column."""
+def test_a_squad_leader_does_not_declare_platforms(client, db, seeded):
     _enable(client)
     login(client, seeded["sl_a"])
     assert client.post("/api/steerco/platforms", json={"name": "P"}).status_code == 403
     pid = _platform(db, seeded)
-    assert client.put(f"/api/steerco/platforms/{pid}", json={"name": "X"}).status_code == 403
-    assert client.delete(f"/api/steerco/platforms/{pid}").status_code == 403
+    assert client.put(f"/api/steerco/platforms/{pid}", json={"name": "X"}).status_code in (403, 404)
+    assert client.delete(f"/api/steerco/platforms/{pid}").status_code in (403, 404)
 
 
-# ---- the multi-contributor write path -------------------------------------------
-
-def test_two_contributors_fill_one_slide_without_erasing_each_other(client, db, seeded):
-    """The reason platforms exist. Each leader posts the whole form, as the UI does,
-    and only the items it owns are taken from its payload."""
-    _enable(client)
-    sid_a, sid_b = seeded["squad_a"], seeded["squad_b"]
-    pid = _platform(db, seeded, squads=("squad_a", "squad_b"), template={
-        "kpis": [{"label": "Users", "owner_squad_id": sid_a},
-                 {"label": "K8aaS", "owner_squad_id": sid_b}],
-        "sla": [{"label": "Incidents", "owner_squad_id": sid_a},
-                {"label": "Gitlab", "owner_squad_id": sid_b}],
-        "incidents": {"owner_squad_id": sid_b}})
-
-    login(client, seeded["sl_a"])
-    client.put(f"/api/steerco/platform/{pid}?period=2026-07", json={
-        "kpis": [{"label": "Users", "value": "247"}, {"label": "K8aaS", "value": "999"}],
-        "sla": {"services": ["Incidents", "Gitlab"], "cells": [{"v": "99%"}, {"v": "1%"}]},
-        "incidents": "666"})
-    login(client, seeded["sl_b"])
-    client.put(f"/api/steerco/platform/{pid}?period=2026-07", json={
-        "kpis": [{"label": "Users", "value": "0"}, {"label": "K8aaS", "value": "8"}],
-        "sla": {"services": ["Incidents", "Gitlab"], "cells": [{"v": "0%"}, {"v": "95%"}]},
-        "incidents": "13"})
-
-    login(client, seeded["tribe"])
-    data = client.get(f"/api/steerco/platform/{pid}?period=2026-07").json()["data"]
-    assert [k["value"] for k in data["kpis"]] == ["247", "8"]         # each kept its own
-    assert [c["v"] for c in data["sla"]["cells"]] == ["99%", "95%"]
-    assert data["incidents"] == "13"                                  # owned by squad B
-
-
-def test_a_non_contributor_cannot_write(client, db, seeded):
-    _enable(client)
-    pid = _platform(db, seeded, squads=("squad_a",))
-    login(client, seeded["sl_b"])
-    r = client.put(f"/api/steerco/platform/{pid}?period=2026-07",
-                   json={"kpis": [{"label": "Cloud Users", "value": "1"}]})
-    assert r.status_code == 403
-
-
-def test_leadership_fills_what_nobody_owns(client, db, seeded):
-    """Unassigned items are nobody's job. The tribe leader can still fill them, else
-    a half-attributed template would freeze part of the slide."""
-    _enable(client)
-    pid = _platform(db, seeded, template={
-        "kpis": [{"label": "Users", "owner_squad_id": None}],
-        "sla": [], "incidents": {"owner_squad_id": None}})
-    login(client, seeded["sl_a"])
-    assert client.put(f"/api/steerco/platform/{pid}?period=2026-07",
-                      json={"kpis": [{"label": "Users", "value": "5"}]}).status_code == 200
-    assert client.get(f"/api/steerco/platform/{pid}?period=2026-07").json()["data"]["kpis"][0]["value"] == ""
-
-    login(client, seeded["tribe"])
-    client.put(f"/api/steerco/platform/{pid}?period=2026-07",
-               json={"kpis": [{"label": "Users", "value": "5"}]})
-    assert client.get(f"/api/steerco/platform/{pid}?period=2026-07").json()["data"]["kpis"][0]["value"] == "5"
-
+# ---- writing a month: version, validation, reopening -----------------------------
 
 def test_labels_come_from_the_template_not_from_the_payload(client, db, seeded):
     """A stale form must not rename the slide's rows: the template is the authority."""
     _enable(client)
-    pid = _platform(db, seeded, template={
-        "kpis": [{"label": "Users", "owner_squad_id": seeded["squad_a"]}],
-        "sla": [], "incidents": {"owner_squad_id": seeded["squad_a"]}})
-    login(client, seeded["sl_a"])
+    pid = _platform(db, seeded, template={"kpis": [{"label": "Users"}], "sla": []})
+    login(client, seeded["tribe"])
     r = client.put(f"/api/steerco/platform/{pid}?period=2026-07",
-                   json={"kpis": [{"label": "Renamed by a stale tab", "value": "3"}]})
+                   json={"data": {"kpis": [{"label": "Renamed by a stale tab", "value": "3"}]},
+                         "version": 0})
     assert r.json()["data"]["kpis"][0] == {"label": "Users", "value": "3"}
 
 
-def test_each_contributor_owns_its_own_events(client, db, seeded):
-    """Events are the one shared section: everybody adds lines, nobody deletes another's."""
+def test_a_save_on_a_stale_version_is_refused(client, db, seeded):
+    """Two Steerco leaders on the same month: the second save, made on what they
+    loaded before the first one, must not erase it silently."""
     _enable(client)
-    sid_a, sid_b = seeded["squad_a"], seeded["squad_b"]
-    pid = _platform(db, seeded, squads=("squad_a", "squad_b"), template={
-        "kpis": [], "sla": [], "incidents": {"owner_squad_id": sid_a}})
-    login(client, seeded["sl_a"])
-    client.put(f"/api/steerco/platform/{pid}?period=2026-07",
-               json={"last_events": [{"date": "01/07", "text": "Vu par A"}]})
-    login(client, seeded["sl_b"])
-    client.put(f"/api/steerco/platform/{pid}?period=2026-07",
-               json={"last_events": [{"date": "02/07", "text": "Vu par B"}]})
-
+    pid = _platform(db, seeded)
     login(client, seeded["tribe"])
+    first = client.put(f"/api/steerco/platform/{pid}?period=2026-07",
+                       json={"data": {"incidents": "3"}, "version": 0})
+    assert first.status_code == 200 and first.json()["version"] == 1
+    stale = client.put(f"/api/steerco/platform/{pid}?period=2026-07",
+                       json={"data": {"incidents": "9"}, "version": 0})
+    assert stale.status_code == 409 and "Tribe" in stale.json()["detail"]
+    ok = client.put(f"/api/steerco/platform/{pid}?period=2026-07",
+                    json={"data": {"incidents": "9"}, "version": 1})
+    assert ok.status_code == 200 and ok.json()["data"]["incidents"] == "9"
+
+
+def test_a_validated_month_is_read_only_until_reopened_with_a_reason(client, db, seeded):
+    _enable(client)
+    pid = _platform(db, seeded)
+    login(client, seeded["tribe"])
+    url = f"/api/steerco/platform/{pid}"
+    assert client.post(f"{url}/validate?period=2026-07").status_code == 400     # nothing in it
+    v = client.put(f"{url}?period=2026-07", json={"data": {"incidents": "3"}, "version": 0}).json()["version"]
+    r = client.post(f"{url}/validate?period=2026-07")
+    assert r.status_code == 200 and r.json()["status"] == "validated" and r.json()["validated_by"] == "Tribe"
+    assert client.put(f"{url}?period=2026-07",
+                      json={"data": {"incidents": "4"}, "version": r.json()["version"]}).status_code == 409
+    assert client.post(f"{url}/reopen?period=2026-07", json={"reason": ""}).status_code == 400
+    r = client.post(f"{url}/reopen?period=2026-07", json={"reason": "Erreur sur les incidents"})
+    assert r.status_code == 200 and r.json()["status"] == "draft" and r.json()["revised_at"]
+    client.put(f"{url}?period=2026-07", json={"data": {"incidents": "4"}, "version": r.json()["version"]})
+    # The document now says it was revised.
+    html = client.get(f"/api/steerco/onepager.html?platform_id={pid}&period=2026-07&lang=en").text
+    assert "revised on" in html
+    from app.models import AuditLog
+    reopen = db.query(AuditLog).filter(AuditLog.action == "steerco.reopen").one()
+    assert "Erreur sur les incidents" in str(reopen.detail)
+    assert v == 1
+
+
+def test_validate_the_whole_month_leaves_empty_platforms_alone(client, db, seeded):
+    _enable(client)
+    p1 = _platform(db, seeded, name="P1")
+    _platform(db, seeded, name="P2")
+    login(client, seeded["tribe"])
+    client.put(f"/api/steerco/platform/{p1}?period=2026-07", json={"data": {"incidents": "1"}, "version": 0})
+    r = client.post(f"/api/steerco/validate?period=2026-07&tribe_id={seeded['t1']}").json()
+    assert r["validated"] == ["P1"] and r["empty"] == ["P2"]
+
+
+def test_the_board_gives_each_month_its_state(client, db, seeded):
+    _enable(client)
+    pid = _platform(db, seeded, template={"kpis": [{"label": "Users"}], "sla": [{"label": "A"}]})
+    login(client, seeded["tribe"])
+    client.put(f"/api/steerco/platform/{pid}?period=2026-06",
+               json={"data": {"kpis": [{"value": "1"}], "sla": {"cells": [{"v": "99%"}]},
+                              "incidents": "0"}, "version": 0})
+    client.post(f"/api/steerco/platform/{pid}/validate?period=2026-06")
+    client.put(f"/api/steerco/platform/{pid}?period=2026-07",
+               json={"data": {"kpis": [{"value": "2"}]}, "version": 0})
+    months = client.get("/api/steerco/board?year=2026").json()["platforms"][0]["months"]
+    assert len(months) == 12
+    assert (months[5]["fill"], months[5]["status"]) == ("complete", "validated")
+    assert (months[6]["fill"], months[6]["filled_count"], months[6]["item_count"]) == ("partial", 1, 3)
+    assert months[7]["fill"] == "empty"
+
+
+def test_events_are_kept_as_entered(client, db, seeded):
+    _enable(client)
+    pid = _platform(db, seeded, template={"kpis": [], "sla": [{"label": "A"}]})
+    login(client, seeded["tribe"])
+    client.put(f"/api/steerco/platform/{pid}?period=2026-07", json={"data": {
+        "last_events": [{"date": "01/07", "text": "Vu", "tag": "Incident", "sev": "red"},
+                        {"date": "02/07", "text": "Autre", "sev": "bogus"}]}, "version": 0})
     events = client.get(f"/api/steerco/platform/{pid}?period=2026-07").json()["data"]["last_events"]
-    assert sorted(e["text"] for e in events) == ["Vu par A", "Vu par B"]
-    assert {str(e["squad_id"]) for e in events} == {str(sid_a), str(sid_b)}
+    assert [(e["text"], e["sev"]) for e in events] == [("Vu", "red"), ("Autre", "ice")]
 
 
-def test_the_entries_list_names_who_still_owes_a_figure(client, db, seeded):
-    """A slide filled by several people needs to say who is late, or the tribe leader
-    chases everybody at once."""
+def test_the_entries_list_says_where_each_platform_stands(client, db, seeded):
     _enable(client)
-    sid_a, sid_b = seeded["squad_a"], seeded["squad_b"]
-    pid = _platform(db, seeded, squads=("squad_a", "squad_b"), template={
-        "kpis": [{"label": "Users", "owner_squad_id": sid_a},
-                 {"label": "K8aaS", "owner_squad_id": sid_b}],
-        "sla": [], "incidents": {"owner_squad_id": sid_a}})
-    login(client, seeded["sl_a"])
-    client.put(f"/api/steerco/platform/{pid}?period=2026-07",
-               json={"kpis": [{"label": "Users", "value": "247"}], "incidents": "3"})
-
+    pid = _platform(db, seeded)
     login(client, seeded["tribe"])
+    client.put(f"/api/steerco/platform/{pid}?period=2026-07",
+               json={"data": {"kpis": [{"label": "Cloud Users", "value": "247"}], "incidents": "3"},
+                     "version": 0})
     row = client.get("/api/steerco/entries?period=2026-07").json()[0]
     assert row["platform_name"] == "Sovereign Platform" and row["filled"] is True
-    assert row["missing"] == ["Squad B"]
+    assert row["fill"] == "partial" and row["status"] == "draft"
 
 
 # ---- reporting flow --------------------------------------------------------------
@@ -509,11 +547,11 @@ def test_the_entries_list_names_who_still_owes_a_figure(client, db, seeded):
 def test_snapshot_backfill_history_and_document(client, db, seeded):
     _enable(client)
     pid = _platform(db, seeded)
-    login(client, seeded["sl_a"])
-    assert client.put(f"/api/steerco/platform/{pid}?period=2026-07", json={
+    login(client, seeded["tribe"])
+    assert client.put(f"/api/steerco/platform/{pid}?period=2026-07", json={"data": {
         "kpis": [{"label": "Cloud Users", "value": "247"}],
         "sla": {"services": ["Incidents"], "cells": [{"v": "99,4%", "s": "ok"}]},
-        "incidents": "13"}).status_code == 200
+        "incidents": "13"}, "version": 0}).status_code == 200
     # backfill two past months in one shot
     r = client.put(f"/api/steerco/platform/{pid}/history", json={"months": {
         "2026-06": {"kpis": [{"label": "Cloud Users", "value": "210"}], "incidents": "15"},
@@ -521,8 +559,10 @@ def test_snapshot_backfill_history_and_document(client, db, seeded):
     assert r.status_code == 200 and r.json()["count"] == 2
     hist = client.get(f"/api/steerco/platform/{pid}/history?period=2026-07").json()
     assert len(hist["months"]) == 12
+    # the month before January, for "take over the previous month" in January
+    assert client.get(f"/api/steerco/platform/{pid}/history?period=2026-01").json()["previous"]["period"] == "2025-12"
+    assert hist["previous"]["period"] == "2026-06"
 
-    # leadership one-pager, in both languages, plus the PPTX
     login(client, "admin@test")
     en = client.get(f"/api/steerco/onepager.html?platform_id={pid}&period=2026-07&lang=en")
     assert en.status_code == 200 and "KPI trend" in en.text and "247" in en.text
@@ -531,47 +571,39 @@ def test_snapshot_backfill_history_and_document(client, db, seeded):
     assert client.get("/api/steerco/document.pptx?period=2026-07&lang=en").status_code == 200
 
 
-def test_backfill_goes_through_the_same_ownership_merge(client, db, seeded):
-    """Pasting a year of figures must not be a back door onto a colleague's column."""
+def test_backfill_skips_validated_months(client, db, seeded):
     _enable(client)
-    sid_a, sid_b = seeded["squad_a"], seeded["squad_b"]
-    pid = _platform(db, seeded, squads=("squad_a", "squad_b"), template={
-        "kpis": [{"label": "Users", "owner_squad_id": sid_a},
-                 {"label": "K8aaS", "owner_squad_id": sid_b}],
-        "sla": [], "incidents": {"owner_squad_id": sid_b}})
-    login(client, seeded["sl_b"])
-    client.put(f"/api/steerco/platform/{pid}/history", json={"months": {
-        "2026-06": {"kpis": [{"label": "Users", "value": "1"}, {"label": "K8aaS", "value": "8"}]}}})
+    pid = _platform(db, seeded)
     login(client, seeded["tribe"])
-    data = client.get(f"/api/steerco/platform/{pid}?period=2026-06").json()["data"]
-    assert [k["value"] for k in data["kpis"]] == ["", "8"]
+    client.put(f"/api/steerco/platform/{pid}?period=2026-06", json={"data": {"incidents": "1"}, "version": 0})
+    client.post(f"/api/steerco/platform/{pid}/validate?period=2026-06")
+    r = client.put(f"/api/steerco/platform/{pid}/history", json={"months": {
+        "2026-06": {"incidents": "9"}, "2026-05": {"incidents": "2"}}}).json()
+    assert r["skipped"] == ["2026-06"] and r["count"] == 1
+    assert client.get(f"/api/steerco/platform/{pid}?period=2026-06").json()["data"]["incidents"] == "1"
 
 
 def test_entry_reports_monthly_fill_status(client, db, seeded):
-    """The reporting launcher relies on filled/updated_at/updated_by to show whether
-    this month's Steerco is done or still to do."""
     _enable(client)
     pid = _platform(db, seeded)
-    login(client, seeded["sl_a"])
+    login(client, seeded["tribe"])
     before = client.get(f"/api/steerco/platform/{pid}?period=2026-07").json()
-    assert before["filled"] is False and before["updated_at"] is None
+    assert before["filled"] is False and before["updated_at"] is None and before["version"] == 0
     client.put(f"/api/steerco/platform/{pid}?period=2026-07",
-               json={"kpis": [{"label": "Cloud Users", "value": "1"}]})
+               json={"data": {"kpis": [{"label": "Cloud Users", "value": "1"}]}, "version": 0})
     after = client.get(f"/api/steerco/platform/{pid}?period=2026-07").json()
-    assert after["filled"] is True and after["updated_at"] and after["updated_by"] == "SL A"
+    assert after["filled"] is True and after["updated_at"] and after["updated_by"] == "Tribe"
 
 
 def test_preview_uses_unsaved_data_without_persisting(client, db, seeded):
-    """The wizard preview renders the still-unsaved snapshot (contributor accessible)
-    and must not persist it."""
     _enable(client)
     pid = _platform(db, seeded)
-    login(client, seeded["sl_a"])
+    login(client, seeded["tribe"])
     r = client.post(f"/api/steerco/platform/{pid}/preview.html?period=2026-07&lang=en",
                     json={"kpis": [{"label": "Users", "value": "997"}],
                           "sla": {"services": ["Incidents"], "cells": [{"v": "99,4%", "s": "ok"}]},
                           "incidents": "3"})
-    assert r.status_code == 200 and "997" in r.text          # unsaved value shows in the preview
+    assert r.status_code == 200 and "997" in r.text
     assert client.get(f"/api/steerco/platform/{pid}?period=2026-07").json()["filled"] is False
 
 
@@ -581,6 +613,51 @@ def test_backfill_requires_edit_rights(client, db, seeded):
     login(client, seeded["member"])
     assert client.put(f"/api/steerco/platform/{pid}/history",
                       json={"months": {"2026-06": {"incidents": "3"}}}).status_code in (403, 404)
+
+
+# ---- mails -------------------------------------------------------------------------
+
+def test_the_pack_leaves_only_once_every_platform_is_validated(client, db, seeded, monkeypatch):
+    _enable(client)
+    pid = _platform(db, seeded)
+    sent = []
+    import app.mail as mail
+    monkeypatch.setattr(mail, "send_email", lambda cfg, to, subject, body, **kw: sent.append((to, kw.get("attachment"))) or True)
+    login(client, seeded["tribe"])
+    assert client.post(f"/api/steerco/send?period=2026-07&tribe_id={seeded['t1']}").status_code == 400  # no one
+    r = client.put(f"/api/steerco/mail?tribe_id={seeded['t1']}", json={"recipients": ["comite@example.com"]})
+    assert r.status_code == 200 and r.json()["recipients"] == ["comite@example.com"]
+    assert client.put(f"/api/steerco/mail?tribe_id={seeded['t1']}",
+                      json={"recipients": ["pas une adresse"]}).status_code == 400
+    client.put(f"/api/steerco/platform/{pid}?period=2026-07", json={"data": {"incidents": "1"}, "version": 0})
+    r = client.post(f"/api/steerco/send?period=2026-07&tribe_id={seeded['t1']}")
+    assert r.status_code == 409 and "Sovereign Platform" in r.json()["detail"]
+    client.post(f"/api/steerco/platform/{pid}/validate?period=2026-07")
+    r = client.post(f"/api/steerco/send?period=2026-07&tribe_id={seeded['t1']}")
+    assert r.status_code == 200, r.text
+    assert sent and sent[0][0] == "comite@example.com" and sent[0][1][0].endswith(".pptx")
+
+
+def test_the_monthly_reminder_goes_once_and_only_when_something_is_left(client, db, seeded, monkeypatch):
+    from datetime import date
+    from app import steercomail
+    _enable(client)
+    pid = _platform(db, seeded)
+    sent = []
+    import app.mail as mail
+    monkeypatch.setattr(mail, "send_email", lambda cfg, to, subject, body, **kw: sent.append((to, subject)) or True)
+    assert steercomail.send_due_reminders(db, date(2026, 8, 3)) == []          # before the day
+    assert steercomail.send_due_reminders(db, date(2026, 8, 5)) == ["Tribe One"]
+    assert [to for to, _ in sent] == ["tribe@test"]
+    sent.clear()
+    assert steercomail.send_due_reminders(db, date(2026, 8, 6)) == [] and not sent   # once
+    # Next month, everything validated: nothing to say.
+    login(client, seeded["tribe"])
+    client.put(f"/api/steerco/platform/{pid}?period=2026-08", json={"data": {"incidents": "1"}, "version": 0})
+    client.post(f"/api/steerco/platform/{pid}/validate?period=2026-08")
+    db.expire_all()
+    steercomail.send_due_reminders(db, date(2026, 9, 10))
+    assert not sent
 
 
 # ---- Excel collection ------------------------------------------------------------
@@ -611,8 +688,9 @@ def test_excel_template_and_import(client, seeded, db):
     from app.steerco_import import template_bytes
 
     pid = _platform(db, seeded, name="Sovereign Platform")
+    _enable(client)
     login(client, "admin@test")
-    r = client.get("/api/admin/import-steerco/template")
+    r = client.get("/api/steerco/import/template")
     assert r.status_code == 200 and r.content[:2] == b"PK"        # a real .xlsx (zip)
 
     # fill it: platform name + a couple of months of one KPI + current SLA + an event.
@@ -626,7 +704,7 @@ def test_excel_template_and_import(client, seeded, db):
     wb["Evenements passes"]["D2"] = "Attention"
     buf = io.BytesIO(); wb.save(buf); buf.seek(0)
 
-    r = client.post("/api/admin/import-steerco",
+    r = client.post("/api/steerco/import",
                     files={"file": ("steerco.xlsx", buf.getvalue(),
                                     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")})
     assert r.status_code == 200, r.text
@@ -657,8 +735,9 @@ def test_an_old_workbook_saying_squad_still_imports(client, seeded, db):
     wb["KPIs"]["H2"] = 7
     buf = io.BytesIO(); wb.save(buf)
 
+    _enable(client)
     login(client, "admin@test")
-    r = client.post("/api/admin/import-steerco",
+    r = client.post("/api/steerco/import",
                     files={"file": ("s.xlsx", buf.getvalue(), "application/octet-stream")})
     assert r.status_code == 200, r.text
 
@@ -677,15 +756,16 @@ def test_template_matches_what_the_platform_reports(client, db, seeded):
                 {"label": "Vault", "owner_squad_id": sid}],
         "incidents": {"owner_squad_id": sid}})
 
+    _enable(client)
     login(client, "admin@test")
-    r = client.get(f"/api/admin/import-steerco/template?platform_id={pid}")
+    r = client.get(f"/api/steerco/import/template?platform_id={pid}")
     assert r.status_code == 200
     wb = load_workbook(io.BytesIO(r.content))
     assert wb["Infos"]["B2"].value == "Sovereign Platform"                       # name pre-filled
     assert [wb["KPIs"].cell(i, 1).value for i in (2, 3)] == ["Cloud Users", "Terraform"]
     assert [wb["SLA"].cell(i, 1).value for i in (2, 3)] == ["Incidents", "Vault"]
     # without a platform, the standard structure is still served
-    generic = load_workbook(io.BytesIO(client.get("/api/admin/import-steerco/template").content))
+    generic = load_workbook(io.BytesIO(client.get("/api/steerco/import/template").content))
     assert generic["KPIs"]["A2"].value == "Cloud Users" and not generic["Infos"]["B2"].value
 
 
@@ -711,8 +791,9 @@ def test_import_never_deletes_what_was_entered_in_the_app(client, db, seeded):
     wb["KPIs"]["A7"] = "Nouveau KPI"; wb["KPIs"].cell(7, 8, 5)      # a row added by hand
     buf = io.BytesIO(); wb.save(buf)
 
+    _enable(client)
     login(client, "admin@test")
-    r = client.post("/api/admin/import-steerco",
+    r = client.post("/api/steerco/import",
                     files={"file": ("s.xlsx", buf.getvalue(), "application/octet-stream")})
     assert r.status_code == 200, r.text
     assert r.json()["kept_kpis"] == ["Terraform"]     # preserved AND reported to the admin
@@ -726,6 +807,32 @@ def test_import_never_deletes_what_was_entered_in_the_app(client, db, seeded):
     assert by_label["Nouveau KPI"] == "5"            # a row added in Excel is picked up
     assert data["sla"]["services"] == ["Vault"]      # service kept, footnote not read as one
     assert len(data["last_events"]) == 1             # empty event sheet does not wipe events
+
+
+def test_import_leaves_a_validated_month_as_the_committee_saw_it(client, db, seeded):
+    import io
+    from openpyxl import load_workbook
+    from app.steerco_import import template_bytes
+
+    pid = _platform(db, seeded, name="Sovereign Platform")
+    db.add(SteercoEntry(platform_id=pid, period="2026-06", status="validated",
+                        data={"kpis": [{"label": "Cloud Users", "value": "200"}]}))
+    db.commit()
+    wb = load_workbook(io.BytesIO(template_bytes("2026-07")))
+    wb["Infos"]["B2"] = "Sovereign Platform"; wb["Infos"]["B3"] = "2026-07"
+    wb["KPIs"].cell(2, 7, 999)                       # June column: validated, must not move
+    wb["KPIs"].cell(2, 8, 250)                       # July column: a draft, updated
+    buf = io.BytesIO(); wb.save(buf)
+
+    _enable(client)
+    login(client, seeded["tribe"])
+    r = client.post("/api/steerco/import",
+                    files={"file": ("s.xlsx", buf.getvalue(), "application/octet-stream")})
+    assert r.status_code == 200, r.text
+    assert "2026-06" in r.json()["skipped_validated"]
+    db.expire_all()
+    june = db.query(SteercoEntry).filter_by(platform_id=pid, period="2026-06").one()
+    assert june.data["kpis"][0]["value"] == "200"
 
 
 def test_import_rejects_a_malformed_report_month(seeded):
@@ -748,11 +855,12 @@ def test_import_unknown_platform_is_rejected(client, seeded):
     from openpyxl import load_workbook
     from app.steerco_import import template_bytes
 
+    _enable(client)
     login(client, "admin@test")
     wb = load_workbook(io.BytesIO(template_bytes()))
     wb["Infos"]["B2"] = "No Such Platform"; wb["Infos"]["B3"] = "2026-07"
     buf = io.BytesIO(); wb.save(buf)
-    r = client.post("/api/admin/import-steerco",
+    r = client.post("/api/steerco/import",
                     files={"file": ("s.xlsx", buf.getvalue(), "application/octet-stream")})
     assert r.status_code == 400 and "introuvable" in r.json()["detail"].lower()
 
@@ -762,7 +870,7 @@ def test_a_period_is_a_month(client, db, seeded):
     stored as a period no chart reads."""
     _enable(client)
     pid = _platform(db, seeded)
-    login(client, seeded["sl_a"])
+    login(client, seeded["tribe"])
     for bad in ("abc", "2026-13", "2026-7"):
         assert client.get(f"/api/steerco/platform/{pid}/history?period={bad}").status_code == 422
     r = client.put(f"/api/steerco/platform/{pid}/history", json={"months": {"nope": {}}})
@@ -807,7 +915,7 @@ def test_reporting_messages_offered_to_the_events_step(client, db, seeded):
         db.add(KeyMessage(squad_id=seeded[sq], year=year, kind="risk", text=text, display_order=i,
                           created_at=datetime(year, 3, 1 + i, tzinfo=timezone.utc)))
     db.commit()
-    login(client, seeded["sl_a"])
+    login(client, seeded["tribe"])
     r = client.get(f"/api/steerco/platform/{pid}/messages?period=2026-04")
     assert r.status_code == 200, r.text
     assert [m["text"] for m in r.json()] == ["vendor  slipping", "Go-live done"]

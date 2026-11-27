@@ -54,8 +54,8 @@ parasite (None, undefined, NaN, « {x} »), ni tiret cadratin ni point median.
 
 | Mail | Declencheur | Destinataires |
 |---|---|---|
-| Rapport de la tribe | le jour et l'heure choisis, **heure de Paris** | le tribe leader (document de la tribe ou un mail par squad), et en copie du meme mail qui le reglage nomme : responsables de squad, personas, personnes, adresses ; pieces jointes choisies par sorte de mail (voir [30](30-rapports-notifications-et-droits.md)) |
-| Rapport de la direction | le jour et l'heure choisis, heure de Paris | les adresses fixes : le document complet, toutes les tribes |
+| Diffusion d'une tribe | les jours et l'heure de la diffusion, **heure de Paris** ; plusieurs diffusions par tribe possibles | le tribe leader (mail de la tribe, un mail par squad, ou les deux), les gens des squads par role, et qui la diffusion nomme : personas, personnes, adresses ; pieces jointes choisies par sorte de mail (voir [30](30-rapports-notifications-et-droits.md)) |
+| Diffusion de la Direction | les jours et l'heure choisis, heure de Paris | les personnes et adresses nommees : le document complet, toutes les tribes |
 | Envoi immediat | bouton d'export | l'adresse saisie ; une version passee porte sa date dans l'objet, le fichier et le corps |
 | Avis de modification | **la soumission du reporting** (par defaut), et au choix chaque type de modification | liste fixe, tribe leader, leaders de la squad ; **jamais l'auteur** |
 | Fil | nouveau message, reponse | qui suit le fil (Preferences) |
@@ -80,7 +80,8 @@ pouvait partir a 8 h 40 apres un redemarrage a 10 h 40.
 
 - **Rapport programme** : si tous les envois echouent, rien n'est marque comme
   fait ; le planificateur reessaie a l'heure suivante et l'encart « Nouveautes »
-  ne perd pas la semaine.
+  ne perd pas la semaine. L'echec et sa raison sont notes dans l'historique de la
+  diffusion (une fois par jour), visible depuis sa carte.
 - **Avis de modification** : un avis refuse retourne dans la file et repart au
   passage suivant du planificateur (48 essais au plus).
 - **Boutons de test** (SMTP, rapport, avis) : la raison de l'echec est affichee.

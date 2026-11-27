@@ -31,7 +31,15 @@ router = APIRouter(prefix="/api/exports", tags=["exports"])
 # The Studio opens per persona (capability "exports", Admin > Personas). The slides
 # of a document (/document.html, the "Slides" button of the Export menu) stay open
 # to whoever may export it: they are the document, not the Studio.
-_studio = [Depends(require_capability("exports"))]
+def _studio_guard(db: Session = Depends(get_db), user: User = Depends(get_current_user)) -> User:
+    """The "exports" capability, or being a Steerco leader (who designs the slides
+    of their platforms, ADR 0018)."""
+    if not S._studio_open(db, user):
+        raise HTTPException(status_code=403, detail="Accès non autorisé pour votre rôle")
+    return user
+
+
+_studio = [Depends(_studio_guard)]
 
 PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
 
@@ -116,18 +124,18 @@ def _designable_scopes(db: Session, user: User) -> dict:
     tribes = db.scalars(select(Tribe).order_by(Tribe.display_order, Tribe.id)).all()
     if user.role == "admin":
         tids = {t.id for t in tribes}
-    elif user.role == "tribe_leader" and user.tribe_id:
+    elif user.role == "tribe_leader" and user.tribe_id and S._persona_studio(db, user):
         tids = {user.tribe_id}
     else:
         tids = set()
     out["tribes"] = [{"id": t.id, "name": t.name} for t in tribes if t.id in tids]
-    led = set(db.scalars(led_squad_ids(db, user)).all())
+    led = set(db.scalars(led_squad_ids(db, user)).all()) if S._persona_studio(db, user) or user.role == "admin" else set()
     for sq in db.scalars(select(Squad).order_by(Squad.display_order, Squad.id)):
         if sq.tribe_id in tids or sq.id in led:
             out["squads"].append({"id": sq.id, "name": sq.name, "tribe_id": sq.tribe_id,
                                   "simple": S.simple_only(db, user, "squad", sq.id)})
     for p in db.scalars(select(Platform).order_by(Platform.display_order, Platform.name)):
-        if p.tribe_id in tids:
+        if p.tribe_id in tids or S._steerco_runs(db, user, p.tribe_id):
             out["platforms"].append({"id": p.id, "name": p.name, "tribe_id": p.tribe_id})
     return out
 

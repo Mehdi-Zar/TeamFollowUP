@@ -21,10 +21,11 @@ Risks, Future Evolution**.
 | [0011](0011-api-keys-and-scopes.md) | API keys & scopes (read-only machine access) | Accepted |
 | [0012](0012-gcp-auth-keyless.md) | GCP auth for log export: keyless by default (ADC/WIF/impersonation, key last) | Accepted |
 | [0013](0013-tls-terminated-by-the-infrastructure.md) | TLS terminated by the infrastructure, never by the app | Accepted |
-| [0014](0014-platform-is-the-steerco-reporting-unit.md) | La plateforme est l'unite de reporting du Steerco | Accepted |
+| [0014](0014-platform-is-the-steerco-reporting-unit.md) | La plateforme est l'unite de reporting du Steerco | Accepted, propriete par element remplacee par 0018 |
 | [0015](0015-otd-has-two-scopes.md) | Un engagement OTD a deux portees, et deux liens vers les jalons | Accepted |
 | [0016](0016-a-version-is-a-day-replayed-from-frozen-submissions.md) | Une version est une journee, rejouee depuis les saisies figees | Accepted |
 | [0017](0017-templates-drive-the-renderers-and-the-preview-reads-the-deck.md) | Les modeles pilotent les renderers, et l'apercu lit le deck | Accepted |
+| [0018](0018-steerco-is-a-topic-of-its-own.md) | Le Steerco est un sujet a part, mene par des Steerco leaders | Accepted |
 
 ## Dependency map
 

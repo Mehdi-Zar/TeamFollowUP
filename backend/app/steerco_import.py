@@ -1,7 +1,7 @@
-"""Steerco data collection via Excel (Admin > Import), mirroring app/import_org.py.
+"""Steerco data collection via Excel (Steerco menu, Saisie tab), mirroring app/import_org.py.
 
-An admin downloads a blank workbook (:func:`template_bytes`), a platform fills it in,
-and the admin uploads it back (:func:`import_steerco`). The file is parsed in memory
+A Steerco leader downloads a blank workbook (:func:`template_bytes`), has it filled
+in, and uploads it back (:func:`import_steerco`). The file is parsed in memory
 and written straight to ``SteercoEntry`` rows (the year's monthly snapshots for the
 charts + the full current-month snapshot with its events). No image rebuild, and the
 import merges (see ``import_steerco``): it never deletes what was entered in-app.
@@ -461,24 +461,29 @@ def _merge_month(old: dict, new: dict) -> dict:
 
 
 def import_steerco(db: Session, content: bytes, user_id: int | None = None,
-                   tribe_id: int | None = None) -> dict:
+                   tribe_id: int | None = None, tribe_ids=None) -> dict:
     """Parse a filled workbook and merge it into the platform's Steerco entries.
 
     Idempotent per (platform, period) and **non-destructive**: values present in the
     file are written, everything else already reported is preserved (see the merge
     rules above). Returns a summary dict.
 
-    The merge is by label rather than by owner: this path is admin-only and bulk, so
-    the file is taken at face value. A contributor filling its own share goes through
-    the API, where ownership is enforced item by item.
+    The merge is by label: the file is taken at face value. A validated month is
+    never written (it is what the committee saw) and is listed in
+    ``skipped_validated``; reopen it first to import into it.
+
+    ``tribe_ids`` limits the platforms reachable (the tribes the Steerco leader
+    runs); None reaches every tribe.
     """
     parsed = parse_workbook(content)
     name = parsed["squad"]
     # Case-insensitive exact match. `%`/`_` in a name would be LIKE wildcards, so the
     # comparison is done on the lowered value rather than with ilike().
     q = db.query(Platform)
-    if tribe_id is not None:  # a tribe leader reaches their own tribe's platforms only
+    if tribe_id is not None:
         q = q.filter(Platform.tribe_id == tribe_id)
+    if tribe_ids is not None:  # a Steerco leader reaches the tribes they run only
+        q = q.filter(Platform.tribe_id.in_(list(tribe_ids) or [-1]))
     matches = [p for p in q.all() if p.name.strip().lower() == name.lower()]
     if not matches:
         raise ValueError(f"Plateforme introuvable : « {name} ». Vérifiez le nom exact dans l'app.")
@@ -486,6 +491,7 @@ def import_steerco(db: Session, content: bytes, user_id: int | None = None,
         raise ValueError(f"Plusieurs plateformes s'appellent « {name} ». Renommez-en une pour lever l'ambiguïté.")
     platform = matches[0]
     kept = set()          # labels the app had and the workbook did not mention
+    skipped = []          # validated months, left as the committee saw them
     for period, data in parsed["months"].items():
         entry = (db.query(SteercoEntry)
                  .filter(SteercoEntry.platform_id == platform.id,
@@ -495,13 +501,17 @@ def import_steerco(db: Session, content: bytes, user_id: int | None = None,
             db.add(SteercoEntry(platform_id=platform.id, period=period,
                                 data=_merge_month({}, data), updated_by_user_id=user_id))
             continue
+        if entry.status == "validated":
+            skipped.append(period)
+            continue
         in_file = {(k.get("label") or "").strip().lower() for k in (data.get("kpis") or [])}
         kept |= {k.get("label") for k in ((entry.data or {}).get("kpis") or [])
                  if k.get("label") and (k["label"]).strip().lower() not in in_file}
         entry.data = _merge_month(entry.data or {}, data)
         entry.updated_by_user_id = user_id
+        entry.version = (entry.version or 0) + 1
     db.flush()
     return {"platform": platform.name, "platform_id": platform.id, "period": parsed["period"],
             # KPIs the app already carried that the workbook did not cover: preserved,
             # and reported back so the admin sees the file was not the whole picture.
-            "kept_kpis": sorted(kept), **parsed["counts"]}
+            "kept_kpis": sorted(kept), "skipped_validated": sorted(skipped), **parsed["counts"]}

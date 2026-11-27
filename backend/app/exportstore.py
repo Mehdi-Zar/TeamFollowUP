@@ -177,20 +177,35 @@ def scope_tribe(db: Session, scope_type: str, scope_id: int | None) -> int | Non
     return None
 
 
+def _steerco_runs(db: Session, user: User, tribe_id: int | None = None) -> bool:
+    """A Steerco leader (ADR 0018), of ``tribe_id`` when given, the module on."""
+    from .modulesconfig import get_modules, is_active
+    if not is_active(get_modules(db), "steerco"):
+        return False
+    from . import steercoaccess
+    if tribe_id is None:
+        return steercoaccess.runs_any(db, user)
+    return steercoaccess.runs(db, user, tribe_id)
+
+
 def _studio_open(db: Session, user: User) -> bool:
-    """The persona opens the Studio (capability "exports", Admin > Personas)."""
+    """The persona opens the Studio (capability "exports", Admin > Personas). A
+    Steerco leader also gets in, for the slides of their platforms only."""
     from .personasconfig import can
-    return user.role == "admin" or can(db, user, "exports")
+    return user.role == "admin" or can(db, user, "exports") or _steerco_runs(db, user)
 
 
 def can_design(db: Session, user: User, scope_type: str, scope_id: int | None) -> bool:
     """May ``user`` create, edit or assign templates at this scope: the persona opens
-    the Studio, and the role covers the scope."""
+    the Studio, and the role covers the scope. A Steerco leader designs the slides
+    of the platforms they run, whatever their persona, and nothing else."""
     if not _studio_open(db, user):
         return False
     if user.role == "admin":
         return True
-    if scope_type == "global":
+    if scope_type == "platform" and scope_id             and _steerco_runs(db, user, scope_tribe(db, scope_type, scope_id)):
+        return True
+    if not _persona_studio(db, user) or scope_type == "global":
         return False
     if user.role == "tribe_leader" and user.tribe_id is not None:
         if scope_tribe(db, scope_type, scope_id) == user.tribe_id:
@@ -201,11 +216,18 @@ def can_design(db: Session, user: User, scope_type: str, scope_id: int | None) -
     return False
 
 
+def _persona_studio(db: Session, user: User) -> bool:
+    from .personasconfig import can
+    return can(db, user, "exports")
+
+
 def simple_only(db: Session, user: User, scope_type: str, scope_id: int | None) -> bool:
     """A squad leader designs in simple mode: switches and settings, nothing added."""
     if user.role == "admin":
         return False
     if user.role == "tribe_leader" and scope_tribe(db, scope_type, scope_id) == user.tribe_id:
+        return False
+    if scope_type == "platform" and scope_id and _steerco_runs(db, user, scope_tribe(db, scope_type, scope_id)):
         return False
     return True
 
@@ -214,7 +236,7 @@ def is_designer(db: Session, user: User) -> bool:
     """Does the Studio have anything for this person at all."""
     if not _studio_open(db, user):
         return False
-    if user.role in ("admin", "tribe_leader"):
+    if user.role in ("admin", "tribe_leader") or _steerco_runs(db, user):
         return True
     from .deps import led_squad_ids
     return bool(db.scalars(led_squad_ids(db, user)).first())

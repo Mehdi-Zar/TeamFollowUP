@@ -35,8 +35,6 @@ import { canEditSquad, contributesTo, leadsSquad } from "../perms";
 import { useSetPageChrome } from "../components/pageChrome";
 import { roadmapRag } from "../labels";
 import { SortSpec, useListView } from "../components/listView";
-import { currentSteercoPeriod, monthLongLabel } from "../steerco";
-import SteercoWizard, { SteercoPreviewModal } from "../components/SteercoWizard";
 import { BudgetPanel } from "./SquadDetailPage";
 
 
@@ -55,7 +53,6 @@ export default function EntryPage() {
   const roadmapOn = moduleOn("squad_content", "roadmap");
   const kpisOn = moduleOn("squad_content", "kpis");
   const progressOn = moduleOn("squad_content", "quarter_progress");
-  const steercoOn = moduleOn("steerco");
   const role = (effectiveRole ?? "member") as Role;
   const [squads, setSquads] = useState<Squad[]>([]);
   const [tribes, setTribes] = useState<Tribe[]>([]);
@@ -70,8 +67,6 @@ export default function EntryPage() {
   const [squad, setSquad] = useState<SquadDetail | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [recapError, setRecapError] = useState<string | null>(null);
-  // The Steerco step's state, told by its section once it has read the platforms.
-  const [steercoDone, setSteercoDone] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [recap, setRecap] = useState(false);
   // L'etape courante. On repart de la premiere en changeant de squad ou d'annee:
@@ -269,16 +264,6 @@ export default function EntryPage() {
       state: (squad.budget.spent != null || squad.budget.forecast != null ? "done" : "todo") as StepState,
       node: <BudgetPanel squad={squad} canEdit={canEditSquad(role, user?.id, squad)} onChange={reload}
                          canToggle={role === "admin" || role === "tribe_leader"} />,
-    }] : []),
-    // Le Steerco n'est une etape que pour une squad qui contribue a une
-    // plateforme: ailleurs, l'etape n'ouvrait que sur « demandez a votre tribe
-    // leader ». Une etape ou il n'y a rien a faire se traverse quand meme, et
-    // fait douter d'avoir oublie quelque chose.
-    ...(steercoOn && squad.steerco_enabled ? [{
-      key: "steerco",
-      // Done when every platform the squad feeds has this month's figures.
-      state: (steercoDone === null ? "optional" : steercoDone ? "done" : "todo") as StepState,
-      node: <SteercoSection squad={squad} readonly={!writeAllowed} t={t} onStatus={setSteercoDone} />,
     }] : []),
     {
       key: "submit",
@@ -1122,138 +1107,6 @@ export function KpisEditor({ squad, onChange, readonly, t, trend }: any) {
             </div>
           )}
       </>
-    </Card>
-  );
-}
-
-
-/**
- * Steerco input section. Steerco is reported per PLATFORM, and a squad contributes to
- * the platforms the tribe leader declared it on. Unlike the WEEKLY reporting this
- * section lives in, Steerco is a MONTHLY check-in: the launcher makes the cadence
- * explicit and shows, for each platform this squad feeds, whether the month is still
- * to do or already filled (with when/who), so a squad leader doing their weekly
- * reporting immediately knows what is left. The actual entry happens in a guided
- * popup wizard (one platform, one month at a time).
- *
- * A platform fed by several squads shows what the others still owe: the month is only
- * done when every contributor has filled its own items.
- */
-type PlatformStatus = {
-  id: number; name: string; filled: boolean; updated_at: string | null;
-  updated_by: string | null; missing: string[]; contributors: { id: number; name: string }[];
-};
-
-function SteercoSection({ squad, readonly, t, onStatus }: any) {
-  const { lang } = useI18n();
-  const [rows, setRows] = useState<PlatformStatus[] | null>(null);
-  const [open, setOpen] = useState<PlatformStatus | null>(null);
-  const [preview, setPreview] = useState<PlatformStatus | null>(null);
-  const [loadErr, setLoadErr] = useState<string | null>(null);
-  const period = currentSteercoPeriod();
-  const monthName = monthLongLabel(period, lang);
-
-  // The platforms this squad feeds, with this month's status for each. The list is
-  // the platforms where the squad is a contributor, not every platform of the tribe.
-  async function load() {
-    try {
-      const all = await api.get<any[]>("/api/steerco/platforms");
-      // Contribuer a une plateforme dont le steerco est coupe ne donne rien a
-      // saisir: la ligne aurait ouvert un wizard que l'API refuse.
-      const mine = all.filter((p) => p.steerco_enabled !== false
-        && (p.contributors ?? []).some((c: any) => c.id === squad.id));
-      const out = await Promise.all(mine.map(async (p) => {
-        const r = await api.get<any>(`/api/steerco/platform/${p.id}?period=${encodeURIComponent(period)}`);
-        return {
-          id: p.id, name: p.name, filled: !!r.filled, updated_at: r.updated_at ?? null,
-          updated_by: r.updated_by ?? null, missing: r.missing ?? [], contributors: p.contributors ?? [],
-        } as PlatformStatus;
-      }));
-      setRows(out);
-      // This month filled for all of them (the squad's part at least): the step is done.
-      onStatus?.(out.length > 0 ? out.every((r) => r.filled || !r.missing.includes(squad.name)) : null);
-      setLoadErr(null);
-    } catch (e) {
-      // A failed load is an error, not "no platform yet, ask your tribe leader".
-      setLoadErr(e instanceof Error && e.message ? e.message : t("common.error"));
-    }
-  }
-  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [squad.id]);
-
-  if (loadErr) return <ErrorBanner message={loadErr} />;
-  // No platform yet: declaring one is the tribe leader's call, so the card says who
-  // to ask rather than offering a button that would 403.
-  if (rows !== null && rows.length === 0) {
-    return (
-      <Card title={t("steerco.card_title")} hint={t("steerco.no_platform_hint")}>
-        <div className="inline" style={{ gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-          <span className="badge badge-navy">{t("steerco.badge")}</span>
-          <span className="small muted">{t("steerco.ask_tribe_leader")}</span>
-        </div>
-      </Card>
-    );
-  }
-
-  return (
-    <Card title={t("steerco.card_title")} hint={t("steerco.form_hint")}>
-      <div className="inline" style={{ gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
-        <span className="badge badge-navy">{t("steerco.monthly_tag")}</span>
-        <span className="small muted">{t("steerco.cadence_note")}</span>
-      </div>
-
-      {rows === null ? <div className="small muted">{t("common.loading")}</div> : rows.map((p) => {
-        // Done for THIS squad when its own items are in: another contributor
-        // having saved the platform used to read "already sent, nothing to do"
-        // right above "waiting on: this squad".
-        const mineDone = p.filled && !p.missing.includes(squad.name);
-        const when = p.updated_at ? new Date(p.updated_at).toLocaleDateString(lang === "fr" ? "fr-FR" : "en-GB", { day: "2-digit", month: "2-digit", year: "numeric" }) : "";
-        const by = p.updated_by ? t("steerco.done_by", { name: p.updated_by }) : "";
-        return (
-          <div key={p.id} className={`sc-status ${mineDone ? "done" : "todo"}`} style={{ marginBottom: 8 }}>
-            <span className="sc-status-ic">{mineDone ? "✓" : "○"}</span>
-            <div className="stack" style={{ gap: 2 }}>
-              <div className="strong">{p.name}, {mineDone ? t("steerco.done_title", { month: monthName }) : t("steerco.todo_title", { month: monthName })}</div>
-              <div className="small muted">
-                {mineDone
-                  ? (p.updated_at ? t("steerco.done_sub", { when, by }) : t("steerco.done_sub_nodate"))
-                  : t("steerco.todo_sub")}
-              </div>
-              {p.missing.length > 0 && (
-                <div className="small muted">{t("steerco.still_missing", { who: p.missing.join(", ") })}</div>
-              )}
-            </div>
-            <div className="inline" style={{ gap: 8, marginLeft: "auto" }}>
-              {p.filled && (
-                <button className="btn-secondary btn-sm" onClick={() => setPreview(p)}>
-                  {t("steerco.wiz.preview_btn")}
-                </button>
-              )}
-              <button className={`btn-sm ${p.filled ? "btn-secondary" : ""}`} onClick={() => setOpen(p)}>
-                {readonly ? t("steerco.wiz.open_view") : p.filled ? t("steerco.edit_report") : t("steerco.wiz.open")}
-              </button>
-            </div>
-          </div>
-        );
-      })}
-
-      {open && (
-        <SteercoWizard
-          platformId={open.id}
-          platformName={open.name}
-          initialPeriod={period}
-          readonly={readonly}
-          onClose={() => setOpen(null)}
-          onSaved={load}
-        />
-      )}
-      {preview && (
-        <SteercoPreviewModal
-          platformId={preview.id}
-          platformName={preview.name}
-          period={period}
-          onClose={() => setPreview(null)}
-        />
-      )}
     </Card>
   );
 }

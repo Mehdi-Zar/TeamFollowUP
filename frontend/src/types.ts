@@ -9,7 +9,7 @@
 export type Role = "admin" | "tribe_leader" | "squad_leader" | "contributor" | "member" | (string & {});
 
 /** Section-level access flags (persona capabilities) gating the main nav areas. */
-export type Capability = "dashboard" | "roadmap" | "org" | "feed" | "reporting" | "mysquads" | "leaves" | "exports";
+export type Capability = "dashboard" | "roadmap" | "org" | "feed" | "reporting" | "mysquads" | "leaves" | "exports" | "steerco";
 
 /** One milestone (jalon) rendered inside a roadmap matrix cell. */
 export interface RoadmapCellItem {
@@ -371,7 +371,8 @@ export interface Squad {
   mood_comment?: string | null;
   display_order: number;
   kpis_enabled: boolean;
-  steerco_enabled?: boolean;
+  /** The Steerco platforms (in the pack) this squad is linked to, by name. */
+  steerco_platforms?: string[];
   budget_enabled?: boolean;
   squad_type?: SquadType;
   products?: string[];

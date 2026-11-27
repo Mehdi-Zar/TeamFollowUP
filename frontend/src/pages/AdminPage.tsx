@@ -34,7 +34,6 @@ import { LeavesAdmin, ModulesAdmin, SettingsAdmin } from "./admin/configuration"
 import { ReportsMailPanel } from "../components/ReportsMail";
 import { ImportOrgAdmin, PptxTemplateAdmin } from "./admin/imports";
 import { PersonasAdmin, SquadsAdmin, TribeSelfAdmin, TribesAdmin, UsersAdmin } from "./admin/organisation";
-import { PlatformsAdmin } from "./admin/platforms";
 import { DataAdmin } from "./admin/data";
 import { BrandingAdmin } from "./admin/branding";
 import { AuditAdmin, LogExportAdmin, ModerationAdmin, OpsAdmin } from "./admin/oversight";
@@ -49,7 +48,6 @@ import { ADMIN_GROUPS, TAB_LABEL } from "./admin/tabs";
 const TAB_MODULE: Record<string, [ModuleKey] | [ModuleKey, string]> = {
   leaves: ["leaves"],
   moderation: ["feed"],
-  platforms: ["steerco"],
   report: ["review", "weekly_report"],
 };
 
@@ -134,11 +132,10 @@ export default function AdminPage() {
         {tab === "import" && <ImportOrgAdmin />}
         {tab === "tribe" && <TribeSelfAdmin perms={perms} />}
         {tab === "squads" && <SquadsAdmin perms={perms} />}
-        {tab === "platforms" && <PlatformsAdmin />}
         {tab === "users" && <UsersAdmin perms={perms} />}
         {tab === "personas" && <PersonasAdmin />}
         {tab === "modules" && <ModulesAdmin />}
-        {tab === "report" && <ReportsMailPanel initialTab="tribe" />}
+        {tab === "report" && <ReportsMailPanel />}
         {tab === "leaves" && <LeavesAdmin perms={perms} />}
         {tab === "moderation" && <ModerationAdmin />}
         {tab === "auth" && <AuthAdmin />}

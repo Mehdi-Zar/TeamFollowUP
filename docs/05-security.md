@@ -202,7 +202,7 @@ Three independent layers, all enforced **server-side** (the SPA only hides UI):
    borne aux squads que l'appelant voit aujourd'hui.
    **`mysquads` is a navigation capability only, and deliberately so.** The screen it opens
    drives routes that other sections also drive (`PUT /api/squads/{id}` carries the budget
-   toggle on the squad page and the Steerco toggle on the entry page), so gating that route on
+   toggle on the squad page), so gating that route on
    the capability would break unrelated features for a persona that merely has the menu entry
    hidden. What protects the actions themselves is layer 1 plus ownership:
    `require_tribe_or_admin` on squad create and delete, and on update a tribe-scope check with
@@ -225,7 +225,9 @@ donnerait un droit d'ecriture sur un objet du tribe leader en rebaptisant le sie
 Le rattachement des jalons suit la meme regle, et chaque portee ecrit sa propre
 colonne (`otd_id` contre `squad_otd_id`).
 
-**Studio des exports.** Concevoir un modele: l'admin partout; un tribe leader sur sa tribe, ses squads et ses plateformes; un squad leader sur une squad qu'il dirige, en mode simple (le serveur refuse un ajout de section, 403). Un modele ne decide que de la mise en page: l'apercu et le rendu passent par les gates de module, de capacite et de perimetre de l'export du document, et le budget reste filtre. Les specifications sont validees par forme (types connus, bornes, couleurs `#rrggbb`, polices d'une liste fermee, aucun HTML), les fichiers par leur contenu (PNG, JPEG, GIF, `.pptx` sans macros, archive controlee avant ouverture, 12 Mo). Un fichier d'une autre tribe n'est ni lu ni reference. Tout est audite.
+**Steerco (4.0, ADR 0018).** Le Steerco ne passe ni par la capacite `dashboard` ni par les droits de squad: il a ses propres gardes (`app/steercoaccess.py`). Ecrire (plateformes, saisie, validation, reouverture, import, envoi) est reserve aux Steerco leaders de la tribe: son tribe leader par defaut, les utilisateurs designes (table `steerco_leaders`), l'admin. Lire la consolidation et les documents demande la capacite `steerco`, fermee par defaut, ou d'etre Steerco leader. Designer est reserve a l'admin et au tribe leader de la tribe, et seul l'admin retire au tribe leader sa designation par defaut: une tribe ne peut pas perdre d'un clic toute personne capable de mener son Steerco. Un mois valide refuse toute ecriture (409), une reouverture exige un motif, et validations, reouvertures, designations et envois sont audites.
+
+**Studio des exports.** Concevoir un modele: l'admin partout; un tribe leader sur sa tribe, ses squads et ses plateformes (avec la capacite `exports`); un Steerco leader sur les plateformes des tribes qu'il mene, meme sans cette capacite; un squad leader sur une squad qu'il dirige, en mode simple (le serveur refuse un ajout de section, 403). Un modele ne decide que de la mise en page: l'apercu et le rendu passent par les gates de module, de capacite et de perimetre de l'export du document, et le budget reste filtre. Les specifications sont validees par forme (types connus, bornes, couleurs `#rrggbb`, polices d'une liste fermee, aucun HTML), les fichiers par leur contenu (PNG, JPEG, GIF, `.pptx` sans macros, archive controlee avant ouverture, 12 Mo). Un fichier d'une autre tribe n'est ni lu ni reference. Tout est audite.
 
 **Rattacher un jalon a un OTD depuis le jalon.** Meme lien que la fenetre de l'OTD; un squad leader rattache a l'OTD management fixe sur sa squad ou qui lui est assigne, pas a un engagement de toute la tribe, et ne detache pas un lien qu'il n'aurait pas pu poser.
 

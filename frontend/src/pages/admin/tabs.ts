@@ -8,7 +8,6 @@ export const TAB_LABEL: Record<string, string> = {
   import: "admin.tab.import",
   tribe: "admin.tab.my_tribe",
   squads: "admin.tab.squads",
-  platforms: "admin.tab.platforms",
   users: "admin.tab.users",
   personas: "admin.tab.personas",
   modules: "admin.tab.modules",
@@ -36,7 +35,7 @@ export const TAB_LABEL: Record<string, string> = {
 // L'import ferme la premiere famille: il sert une fois, au debut, et jamais plus.
 // Le mettre au milieu le faisait passer pour un reglage courant.
 export const ADMIN_GROUPS: { titleKey: string; items: string[] }[] = [
-  { titleKey: "admin.group.org", items: ["tribes", "tribe", "squads", "platforms", "users", "personas", "import"] },
+  { titleKey: "admin.group.org", items: ["tribes", "tribe", "squads", "users", "personas", "import"] },
   { titleKey: "admin.group.config", items: ["modules", "report", "leaves", "settings", "branding"] },
   { titleKey: "admin.group.access", items: ["auth", "directory", "smtp", "api", "trust"] },
   { titleKey: "admin.group.oversight", items: ["audit", "moderation", "logs", "data", "ops"] },

@@ -9,7 +9,7 @@ import { useI18n } from "../i18n";
 import PickOrType from "../components/PickOrType";
 import { usePeople } from "../components/usePeople";
 import { useAuth } from "../auth";
-import { useConfig, useModule } from "../config";
+import { useConfig } from "../config";
 import { Initiative, Squad, Tribe } from "../types";
 import { Spinner, ErrorBanner, EmptyState, Modal } from "../components/ui";
 import { HtmlPreviewButton } from "../components/HtmlPreview";
@@ -40,10 +40,6 @@ export default function InitiativesPage() {
   const isAdmin = effectiveRole === "admin";
   const canEdit = isAdmin || effectiveRole === "tribe_leader";
   const navigate = useNavigate();
-  // Mirror the Dashboard's Steerco tab here so it doesn't vanish when you switch to
-  // Initiatives; selecting it returns to the dashboard with that sub-view active.
-  const steercoTabOn = useModule()("steerco");  // the whole tribe reads the platforms' Steerco
-
   // The instance's default year (Administration), not the browser's clock.
   const { default_year } = useConfig();
   // A link may name the year (?year=, from a squad page): it wins over the default.
@@ -81,13 +77,11 @@ export default function InitiativesPage() {
     title: t("nav.dashboard"),
     tabs: [
       { key: "overview", label: t("dash.tab_overview") },
-      ...(steercoTabOn ? [{ key: "steerco", label: t("steerco.tab") }] : []),
       { key: "initiatives", label: t("nav.initiatives") },
     ],
     activeTab: "initiatives",
     onTab: (k) => {
       if (k === "overview") navigate(`/?year=${year}`);
-      else if (k === "steerco") navigate(`/?tab=steerco&year=${year}`);
     },
     actions: (
       <div className="inline" style={{ gap: 10, flexWrap: "wrap" }}>
@@ -108,7 +102,7 @@ export default function InitiativesPage() {
         )}
       </div>
     ),
-  }, [isAdmin, tribes, tribeId, year, t, tribeForNew, canEdit, steercoTabOn]);
+  }, [isAdmin, tribes, tribeId, year, t, tribeForNew, canEdit]);
 
   // Une initiative sans echeance n'est pas « en retard », elle est sans date: elle
   // passe apres celles qui en ont une, dans les deux sens du tri.

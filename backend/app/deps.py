@@ -141,7 +141,7 @@ def _check_idle(request: Request, db: Session, claims: dict) -> None:
 # simulation, and the routes that only compute something to look at.
 _RO_EXACT = {"/api/auth/stop-impersonation", "/api/auth/impersonate", "/api/auth/logout",
              "/api/exports/preview", "/api/exports/render",
-             "/api/admin/report-config/plan", "/api/admin/report-config/preview"}
+             "/api/admin/diffusions/plan", "/api/admin/diffusions/preview"}
 
 
 def _read_only_allowed(path: str) -> bool:

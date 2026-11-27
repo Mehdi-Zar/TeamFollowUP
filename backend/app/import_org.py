@@ -302,13 +302,11 @@ def import_org(db: Session, data: dict) -> dict:
         plat_row.description = p.get("description") or None
         plat_row.display_order = p.get("display_order", i)
         plat_row.contributors = contributors
-        ids = [sq.id for sq in contributors]
-        # Le gabarit suit les contributrices: une plateforme a une seule squad est
-        # prete a remplir, a plusieurs la propriete de chaque case est une decision.
+        # Une plateforme neuve part du modele de la tribu (ce que ses Steerco
+        # leaders imposent), une plateforme existante garde son gabarit.
         plat_row.template = plat.normalize_template(
-            plat_row.template or plat.default_template(ids[0] if len(ids) == 1 else None), ids)
+            plat_row.template or plat.template_from_model(plat.get_tribe_model(db, tribe.id), None))
         db.flush()
-        plat.sync_squad_flags(db, contributors)
 
     db.commit()
     summary = {

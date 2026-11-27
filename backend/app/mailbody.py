@@ -39,6 +39,7 @@ _T = {
         "km": "Messages clés", "watch": "Jalons à surveiller", "leader": "Squad leader",
         "otd_late_list": "Engagements en retard", "otd_due": "promis le {d}",
         "kpi_watch": "KPI à surveiller",
+        "nothing_to_flag": "Aucun point d'attention cette semaine.",
         "week": "semaine {w}", "generated": "données du {d}",
         "no_squad": "Aucune squad dans ce périmètre.",
         "version": "version du {d}", "not_reported": "Non renseigné",
@@ -58,6 +59,7 @@ _T = {
         "km": "Key messages", "watch": "Milestones to watch", "leader": "Squad leader",
         "otd_late_list": "Late commitments", "otd_due": "due {d}",
         "kpi_watch": "KPIs to watch",
+        "nothing_to_flag": "Nothing to flag this week.",
         "week": "week {w}", "generated": "data as of {d}",
         "no_squad": "No squad in this scope.",
         "version": "version of {d}", "not_reported": "Not reported",
@@ -179,53 +181,105 @@ def _squad_table(rows: list[dict], lang: str, past: bool = False) -> str:
     return "".join(out)
 
 
-def _squad_focus(r: dict, lang: str) -> str:
-    """One squad: leader, key messages and the milestones that need attention."""
-    det = r.get("detail") or {}
-    out = []
-    if r.get("leader"):
-        out.append(f'<p style="margin:0 0 10px">{_e(_t(lang, "leader"))}{_e(_sep(lang))}'
-                   f'<strong>{_e(r["leader"])}</strong></p>')
-    kms = det.get("key_messages") or []
-    if kms:
-        rag = {"risk": "red", "alert": "amber", "success": "green"}
-        kms = sorted(kms, key=lambda m: {"risk": 0, "alert": 1, "success": 2}.get(m.get("kind"), 3))
-        out.append(f'<p style="margin:12px 0 4px;font-weight:bold">{_e(_t(lang, "km"))}</p><ul style="margin:0;padding-left:18px">')
-        for m in kms[:6]:
-            out.append(f'<li style="margin:2px 0"><span style="color:{_RAG[rag.get(m.get("kind"), "grey")]};'
-                       f'font-weight:bold">{_e(rt(lang, "km_" + (m.get("kind") or "")))}</span>'
-                       f'{_e(_sep(lang))}{_e(m.get("text"))}</li>')
-        out.append("</ul>")
-    # The two signals a reader must get without opening the attachment, and the
-    # summary left out: a commitment past its date, a KPI off target.
-    late = [o for o in det.get("otds") or [] if o.get("status") == "late"]
-    if late:
-        out.append(f'<p style="margin:12px 0 4px;font-weight:bold">{_e(_t(lang, "otd_late_list"))}</p><ul style="margin:0;padding-left:18px">')
-        for o in late[:6]:
-            due = f' <span style="color:{GREY}">({_e(_t(lang, "otd_due", d=fmt_date(o["date"], lang)))})</span>' if o.get("date") else ""
-            out.append(f'<li style="margin:2px 0"><span style="color:{_RAG["red"]};font-weight:bold">'
-                       f'{_e(o.get("title"))}</span>{due}</li>')
-        out.append("</ul>")
-    off = [k for k in det.get("kpis") or [] if k.get("trend") in ("under_pressure", "missed")]
-    if off:
-        from .report import _kpi_value
-        out.append(f'<p style="margin:12px 0 4px;font-weight:bold">{_e(_t(lang, "kpi_watch"))}</p><ul style="margin:0;padding-left:18px">')
-        for k in sorted(off, key=lambda k: k.get("trend") != "missed")[:6]:
-            col = _RAG["red" if k.get("trend") == "missed" else "amber"]
-            out.append(f'<li style="margin:2px 0"><span style="color:{col};font-weight:bold">{_e(k.get("name"))}</span>'
-                       f'{_e(_sep(lang))}{_e(_kpi_value(k, lang))} '
-                       f'<span style="color:{GREY}">({_e(rt(lang, "kpi_" + k["trend"]))})</span></li>')
-        out.append("</ul>")
-    watch = [it for q in det.get("quarters") or [] for it in q.get("items") or []
-             if it.get("status") in ("blocked", "at_risk")]
-    if watch:
-        out.append(f'<p style="margin:12px 0 4px;font-weight:bold">{_e(_t(lang, "watch"))}</p><ul style="margin:0;padding-left:18px">')
-        for it in sorted(watch, key=lambda x: x.get("status") != "blocked")[:8]:
-            col = _RAG["red" if it.get("status") == "blocked" else "amber"]
-            out.append(f'<li style="margin:2px 0"><span style="color:{col};font-weight:bold">'
-                       f'{_e(_status_label(it.get("status"), lang))}</span>{_e(_sep(lang))}{_e(it.get("title"))}</li>')
-        out.append("</ul>")
-    return "".join(out)
+# The blocks a diffusion can put in its mail (reportconfig.BODY_SECTIONS). The
+# attention blocks read one squad's detail, or every squad of a tribe, each line
+# then starting with its squad's name.
+ATTENTION = ("key_messages", "late_otds", "kpi_watch", "milestones")
+Rows = list  # [(squad name or None, detail dict)]
+
+
+def _list(title: str, items: list[str]) -> str:
+    if not items:
+        return ""
+    lis = "".join(f'<li style="margin:2px 0">{x}</li>' for x in items)
+    return (f'<p style="margin:12px 0 4px;font-weight:bold">{_e(title)}</p>'
+            f'<ul style="margin:0;padding-left:18px">{lis}</ul>')
+
+
+def _who(name: str | None, lang: str) -> str:
+    return f"<strong>{_e(name)}</strong>{_e(_sep(lang))}" if name else ""
+
+
+def _cap(rows: Rows, one: int, many: int) -> int:
+    return one if len(rows) == 1 else many
+
+
+def _key_messages(rows: Rows, lang: str) -> str:
+    rag = {"risk": "red", "alert": "amber", "success": "green"}
+    order = {"risk": 0, "alert": 1, "success": 2}
+    found = sorted(((n, m) for n, det in rows for m in det.get("key_messages") or []),
+                   key=lambda x: order.get(x[1].get("kind"), 3))
+    return _list(_t(lang, "km"), [
+        f'{_who(n, lang)}<span style="color:{_RAG[rag.get(m.get("kind"), "grey")]};font-weight:bold">'
+        f'{_e(rt(lang, "km_" + (m.get("kind") or "")))}</span>{_e(_sep(lang))}{_e(m.get("text"))}'
+        for n, m in found[:_cap(rows, 6, 12)]])
+
+
+def _late_otds(rows: Rows, lang: str) -> str:
+    # The two signals a reader must get without opening the attachment: a
+    # commitment past its date (here), a KPI off target (below). A tribe OTD
+    # served by several squads is listed once.
+    seen, items = set(), []
+    for n, det in rows:
+        for o in det.get("otds") or []:
+            if o.get("status") != "late" or (o.get("id") is not None and o.get("id") in seen):
+                continue
+            seen.add(o.get("id"))
+            due = (f' <span style="color:{GREY}">({_e(_t(lang, "otd_due", d=fmt_date(o["date"], lang)))})</span>'
+                   if o.get("date") else "")
+            items.append(f'{_who(n, lang)}<span style="color:{_RAG["red"]};font-weight:bold">'
+                         f'{_e(o.get("title"))}</span>{due}')
+    return _list(_t(lang, "otd_late_list"), items[:_cap(rows, 6, 15)])
+
+
+def _kpi_watch(rows: Rows, lang: str) -> str:
+    from .report import _kpi_value
+    off = sorted(((n, k) for n, det in rows for k in det.get("kpis") or []
+                  if k.get("trend") in ("under_pressure", "missed")),
+                 key=lambda x: x[1].get("trend") != "missed")
+    return _list(_t(lang, "kpi_watch"), [
+        f'{_who(n, lang)}<span style="color:{_RAG["red" if k.get("trend") == "missed" else "amber"]};'
+        f'font-weight:bold">{_e(k.get("name"))}</span>{_e(_sep(lang))}{_e(_kpi_value(k, lang))} '
+        f'<span style="color:{GREY}">({_e(rt(lang, "kpi_" + k["trend"]))})</span>'
+        for n, k in off[:_cap(rows, 6, 15)]])
+
+
+def _milestones(rows: Rows, lang: str) -> str:
+    watch = sorted(((n, it) for n, det in rows for q in det.get("quarters") or []
+                    for it in q.get("items") or [] if it.get("status") in ("blocked", "at_risk")),
+                   key=lambda x: x[1].get("status") != "blocked")
+    return _list(_t(lang, "watch"), [
+        f'{_who(n, lang)}<span style="color:{_RAG["red" if it.get("status") == "blocked" else "amber"]};'
+        f'font-weight:bold">{_e(_status_label(it.get("status"), lang))}</span>{_e(_sep(lang))}{_e(it.get("title"))}'
+        for n, it in watch[:_cap(rows, 8, 20)]])
+
+
+_ATTENTION_FN = {"key_messages": _key_messages, "late_otds": _late_otds,
+                 "kpi_watch": _kpi_watch, "milestones": _milestones}
+
+
+def _attention(rows: Rows, wanted, lang: str, *, calm: bool = True) -> str:
+    """The attention blocks asked for, in a fixed order; one calm line when every
+    one of them is empty (a mail that says nothing reads like a bug)."""
+    asked = [k for k in ATTENTION if k in wanted]
+    out = "".join(_ATTENTION_FN[k](rows, lang) for k in asked)
+    if out or not asked or not calm:
+        return out
+    return f'<p style="margin:12px 0 0;color:#0F7B3F">{_e(_t(lang, "nothing_to_flag"))}</p>'
+
+
+def _status_line(r: dict, lang: str, past: bool) -> str:
+    """One squad's state in a line, then its leader."""
+    col, label = _status(r, lang)
+    age, stale = _age(r, lang)
+    update = ("" if past else
+              f', {_e(_t(lang, "h_update").lower())} '
+              f'<span style="color:{_RAG["amber"] if stale else "#1B2433"}">{_e(age)}</span>')
+    lead = (f'<p style="margin:0 0 10px">{_e(_t(lang, "leader"))}{_e(_sep(lang))}'
+            f'<strong>{_e(r["leader"])}</strong></p>' if r.get("leader") else "")
+    return (f'<p style="margin:0 0 10px;font-size:15px"><span style="color:{col};'
+            f'font-weight:bold">&#9679; {_e(label)}</span>, '
+            f'{_e(_t(lang, "progress").lower())} {_e(r.get("annual_pct", 0))}%{update}</p>' + lead)
 
 
 def changes_block(changes: dict | None, lang: str) -> str:
@@ -247,8 +301,11 @@ def changes_block(changes: dict | None, lang: str) -> str:
 
 def render_email(data: dict, *, changes: dict | None = None, notice_html: str = "",
                  link: str | None = None, footer: str = "", has_pptx: bool = True,
-                 week: int | None = None) -> str:
-    """The summary mail of a report (whole scope or one squad)."""
+                 week: int | None = None, sections: list[str] | None = None) -> str:
+    """The summary mail of a report (whole scope or one squad). ``sections``
+    (reportconfig.BODY_SECTIONS) chooses its blocks; None keeps the usual ones:
+    for a scope its figures and squads, for a squad its state and what needs
+    attention."""
     lang = data.get("lang", "fr")
     rows = [r for blk in data.get("tribes") or [] for r in blk.get("squads") or []]
     gen = data.get("generated_at")
@@ -269,22 +326,20 @@ def render_email(data: dict, *, changes: dict | None = None, notice_html: str = 
         names = ", ".join(missing[:8]) + (f" (+{len(missing) - 8})" if len(missing) > 8 else "")
         parts.append(f'<p style="margin:0 0 12px;color:{_RAG["amber"]}">'
                      f'{_e(_t(lang, "missing", n=len(missing), names=names))}</p>')
-    parts.append(changes_block(changes, lang))
-    if data.get("squad_scoped") and rows:
-        r = rows[0]
-        col, label = _status(r, lang)
-        age, stale = _age(r, lang)
-        update = ("" if past else
-                  f', {_e(_t(lang, "h_update").lower())} '
-                  f'<span style="color:{_RAG["amber"] if stale else "#1B2433"}">{_e(age)}</span>')
-        parts.append(
-            f'<p style="margin:0 0 10px;font-size:15px"><span style="color:{col};'
-            f'font-weight:bold">&#9679; {_e(label)}</span>, '
-            f'{_e(_t(lang, "progress").lower())} {_e(r.get("annual_pct", 0))}%{update}</p>')
-        parts.append(_squad_focus(r, lang))
+    squad = bool(data.get("squad_scoped") and rows)
+    if sections is None:
+        sections = (["changes", "kpis", *ATTENTION] if squad else ["changes", "kpis", "squads"])
+        calm = False
     else:
-        parts.append(_kpis(data.get("summary") or {}, lang))
+        calm = True
+    if "changes" in sections:
+        parts.append(changes_block(changes, lang))
+    if "kpis" in sections:
+        parts.append(_status_line(rows[0], lang, past) if squad else _kpis(data.get("summary") or {}, lang))
+    if "squads" in sections and not squad:
         parts.append(_squad_table(rows, lang, past))
+    focus = [(None, rows[0].get("detail") or {})] if squad else [(r.get("name"), r.get("detail") or {}) for r in rows]
+    parts.append(_attention(focus, sections, lang, calm=calm))
     if link:
         parts.append(button(link, _t(lang, "open")))
     if link:
@@ -329,6 +384,8 @@ _WHY = {
         "access": "Vous recevez ce mail car vous validez les demandes d'accès.",
         "account": "Vous recevez ce mail au sujet de votre compte.",
         "test": "Mail de test envoyé depuis Administration.",
+        "steerco_reminder": "Vous recevez ce mail car vous êtes Steerco leader de cette tribe. Le rappel se règle dans le menu Steerco, Paramétrage.",
+        "steerco_pack": "Un Steerco leader vous a envoyé la présentation Steerco depuis l'application.",
     },
     "en": {
         "schedule": "You receive this mail because the scheduled report includes you. It is set in the Reports by email menu.",
@@ -340,6 +397,8 @@ _WHY = {
         "access": "You receive this mail because you review access requests.",
         "account": "You receive this mail about your account.",
         "test": "Test mail sent from Administration.",
+        "steerco_reminder": "You receive this mail because you are a Steerco leader of this tribe. The reminder is set in the Steerco menu, Setup.",
+        "steerco_pack": "A Steerco leader sent you the Steerco presentation from the application.",
     },
 }
 

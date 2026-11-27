@@ -235,12 +235,12 @@ function SquadCard({ squadId, year, leaders, tribes, isAdmin, manager, autoOpen,
             {d.kpis_enabled ? t("mysquads.kpis_on") : t("mysquads.kpis_off")}
           </span>
         )}
-        {steercoOn && d.steerco_enabled && <span className="badge badge-navy">{t("steerco.badge")}</span>}
+        {steercoOn && !!d.steerco_platforms?.length && <span className="badge badge-navy">{t("steerco.badge")}</span>}
         {d.budget_enabled && <span className="badge badge-navy">{t("budget.title")}</span>}
       </div>
 
-      {steercoOn && d.steerco_enabled && (
-        <div className="small muted">{t("steerco.contributes")}</div>
+      {steercoOn && !!d.steerco_platforms?.length && (
+        <div className="small muted">{t("steerco.in_platforms", { list: d.steerco_platforms.join(", ") })}</div>
       )}
 
       {team && (
@@ -291,13 +291,12 @@ function EditSquadModal({ detail, year, initialStep, leaders, tribes, isAdmin, m
   onClose: () => void; onError: (m: string) => void;
 }) {
   const { t } = useI18n();
-  const { adminTabs, can, user } = useAuth();
+  const { can, user } = useAuth();
   // Errors stay in this window: the page banner is hidden behind the overlay, so a
   // refused save looked like a click that did nothing.
   const [err, setErr] = useState<string | null>(null);
   const onError = (m: string) => setErr(m);
   const kpisOn = useModule()("squad_content", "kpis");
-  const steercoOn = useModule()("steerco");
   const committeesOn = useModule()("committees");
   const [d, setD] = useState<SquadDetail>(detail);
   const [confirmDel, setConfirmDel] = useState(false);
@@ -537,18 +536,6 @@ function EditSquadModal({ detail, year, initialStep, leaders, tribes, isAdmin, m
                     <span className="track"><span className="knob" /></span>
                   </label>
                 </div>
-              </StepSection>
-              {/* The Steerco is managed in one place: Administration > Platforms and
-                  Steerco (which squads feed which platform, the skeleton). */}
-              <StepSection title={t("steerco.tab")}>
-                {steercoOn
-                  ? <div className="small muted">
-                      {t("mysquads.steerco_managed")}{" "}
-                      {adminTabs.includes("platforms")
-                        ? <Link to="/admin?section=platforms">{t("admin.tab.platforms")}</Link>
-                        : <span className="strong">{t("admin.tab.platforms")}</span>}
-                    </div>
-                  : <div className="small muted">{t("mysquads.module_off", { name: t("steerco.tab") })}</div>}
               </StepSection>
             </>
           )}

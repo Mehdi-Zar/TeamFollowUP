@@ -11,17 +11,15 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api, errorText } from "../api";
 import { useI18n } from "../i18n";
-import { useConfig, useModule } from "../config";
+import { useConfig } from "../config";
 import { useAuth } from "../auth";
 import { DashboardOut, SquadCard, Tribe } from "../types";
 import { Dot, FreshnessBadge, ProgressBar, Spinner, ErrorBanner, EmptyState } from "../components/ui";
 import ExportMenu from "../components/ExportMenu";
 import AbsencesWidget from "../components/AbsencesWidget";
 import { MoodBadge } from "../components/TeamMood";
-import SteercoConsolidation from "../components/SteercoConsolidation";
 import { useSetPageChrome } from "../components/pageChrome";
 import { ListControls, ListSearch, SortSpec, applyListView, useListView } from "../components/listView";
-import { currentSteercoPeriod } from "../steerco";
 
 type Health = "all" | "blocked" | "at_risk" | "on_track" | "empty";
 
@@ -44,27 +42,19 @@ function healthOf(c: SquadCard): "blocked" | "at_risk" | "on_track" | "empty" {
 export default function DashboardPage() {
   const { t, roadmap } = useI18n();
   const { default_year } = useConfig();
-  const moduleOn = useModule();
-  const { effectiveRole, adminTabs, can, user } = useAuth();
+  const { effectiveRole, can, user } = useAuth();
   const isAdmin = effectiveRole === "admin";
   const navigate = useNavigate();
   // Dashboard + Initiatives are merged under one menu: everyone gets the Initiatives
   // tab (read-only list, editable by the tribe leader); the overview stays as-is.
   const showInitiatives = true;
-  // The platforms' Steerco dashboards are the tribe's: the whole tribe reads them
-  // when the module is on (the squads fill the data from Reporting). Whoever manages
-  // the platforms gets a way to the one place where that is done.
-  const steercoTabOn = moduleOn("steerco");
-  const canManagePlatforms = adminTabs.includes("platforms");
-  // The active sub-view is driven by ?tab= so the tab survives navigating to the
-  // Initiatives page and back (the Initiatives tab bar links back to /?tab=steerco).
+  // The Steerco has its own menu since 4.0 (ADR 0018): an old /?tab=steerco link
+  // goes there.
   const [params, setParams] = useSearchParams();
-  // The Steerco tab only when its module is on: otherwise the overview (it used to
-  // wait forever, loading neither).
-  const tab: "overview" | "steerco" = params.get("tab") === "steerco" && steercoTabOn ? "steerco" : "overview";
-  // Steerco view filters, lifted here so the chrome ExportMenu can target them.
-  const [steercoPeriod, setSteercoPeriod] = useState<string>(currentSteercoPeriod());
-  const [steercoPlatform, setSteercoPlatform] = useState<string>("");   // "" = all platforms
+  useEffect(() => {
+    if (params.get("tab") === "steerco") navigate("/steerco?tab=month", { replace: true });
+  }, [params, navigate]);
+  const tab = "overview" as const;
   const [data, setData] = useState<DashboardOut | null>(null);
   const [error, setError] = useState<string | null>(null);
   // A link may name the year (?year=, from the initiatives tab): it wins.
@@ -95,7 +85,7 @@ export default function DashboardPage() {
 
   // (Re)load the dashboard whenever the year or (admin) tribe filter changes.
   useEffect(() => {
-    if (tab !== "overview" || !shownYear) return;  // the Steerco tab does not use it
+    if (!shownYear) return;
     const p = new URLSearchParams();
     p.set("year", String(shownYear));
     if (isAdmin && tribeFilter) p.set("tribe_id", tribeFilter);
@@ -150,7 +140,6 @@ export default function DashboardPage() {
     {
           tabs: [
             { key: "overview", label: t("dash.tab_overview") },
-            ...(steercoTabOn ? [{ key: "steerco", label: t("steerco.tab") }] : []),
             ...(showInitiatives ? [{ key: "initiatives", label: t("nav.initiatives") }] : []),
           ],
           activeTab: tab,
@@ -158,21 +147,10 @@ export default function DashboardPage() {
             // The year travels from tab to tab.
             const y = chromeYear;
             if (k === "initiatives") navigate(`/initiatives${y ? `?year=${y}` : ""}`);
-            else if (k === "steerco") setParams({ tab: "steerco", ...(y ? { year: String(y) } : {}) });
             else setParams(y ? { year: String(y) } : {});
           },
-          // Same toolbar model on every tab: subscribe button + export dropdown. On
-          // Steerco the export dropdown carries the one-pager document instead.
-          actions: tab === "steerco" ? (
-            <>
-              {canManagePlatforms && (
-                <button className="btn-secondary btn-sm" onClick={() => navigate("/admin?section=platforms")}>
-                  {t("steerco.manage_platforms")}
-                </button>
-              )}
-              <ExportMenu docs={["steerco", "report"]} steerco={{ period: steercoPeriod, platformId: steercoPlatform }} />
-            </>
-          ) : chromeYear ? (
+          // Same toolbar model on every tab: subscribe button + export dropdown.
+          actions: chromeYear ? (
             <>
               <div className="seg">
                 {/* The chosen year and its two neighbours, as on every other screen. */}
@@ -184,11 +162,9 @@ export default function DashboardPage() {
             </>
           ) : null,
     },
-    [chromeYear, showInitiatives, steercoTabOn, tab, steercoPeriod, steercoPlatform, canManagePlatforms, t]
+    [chromeYear, showInitiatives, tab, t]
   );
 
-  if (tab === "steerco" && steercoTabOn)
-    return <SteercoConsolidation period={steercoPeriod} setPeriod={setSteercoPeriod} platformId={steercoPlatform} setPlatformId={setSteercoPlatform} />;
   if (error && !data) return <ErrorBanner message={error} />;
   if (!data) return <Spinner />;
 

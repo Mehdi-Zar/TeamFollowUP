@@ -1,5 +1,63 @@
 # Changelog
 
+## 4.0.0 (2026-11-27)
+
+Version majeure : le Steerco devient un sujet a part, et les rapports par mail sont refaits. Des routes sont
+retirees ou deplacees (voir plus bas).
+
+- **Steerco, un menu a lui** (ADR 0018) : il sort de la Saisie hebdomadaire, du tableau de bord, d'Initiatives, de
+  Mes squads et d'Administration > Plateformes. Le menu **Steerco** a deux onglets : **Reporting du mois** (le
+  travail du mois en trois etapes : remplir les chiffres, les valider, envoyer la presentation) et
+  **Parametrage** (tous les reglages au meme endroit, avec une liste de mise en place qui dit ce qui reste a faire).
+- **Steerco leaders** : un role qui se cumule avec n'importe quel autre (un squad leader peut l'etre). Le tribe
+  leader l'est par defaut ; l'administrateur et le tribe leader en designent d'autres. Eux seuls remplissent,
+  valident et envoient. Un badge les signale dans Administration > Utilisateurs. Les responsables par ligne
+  disparaissent.
+- **Remplir a l'ecran ou depuis Excel** : chaque plateforme a son bouton Remplir, qui ouvre l'assistant en cinq
+  ecrans, avec « Copier les chiffres du mois precedent ». L'import Excel reste possible, en trois etapes simples.
+  Une vue annuelle montre l'etat de chaque plateforme mois par mois.
+- **Valider, rouvrir** : un mois valide est fige, c'est la version que voit le comite. Il se rouvre avec un motif,
+  et le document exporte porte alors sa date de revision. L'import ne touche pas un mois valide. Deux personnes qui
+  modifient le meme mois en meme temps ne s'ecrasent plus : la seconde est prevenue.
+- **Mails Steerco** : un rappel mensuel aux Steerco leaders (jour reglable, le 5 par defaut, seulement s'il reste
+  des plateformes non validees), et l'envoi de la presentation a une liste de destinataires, a la main, quand tout
+  est valide.
+- **Lecture seule** : la capacite de persona « Steerco (lecture) », fermee par defaut, ouvre le Reporting du mois
+  sans rien pouvoir modifier.
+- **Squads concernees** (facultatif) : une plateforme peut etre reliee a des squads ; leurs messages cles se
+  copient dans les evenements, et la plateforme apparait sur leur page.
+- **Mise en page** : le type de graphique KPI se regle dans la fiche de la plateforme ; la mise en page de la
+  diapositive reste dans le Studio, ouvert aux Steerco leaders pour leurs plateformes, meme sans la capacite
+  Exports.
+- **Textes plus clairs**, en francais comme en anglais : « presentation » au lieu de « pack », « diapositive » au
+  lieu de « one-pager », et un anglais simple, sans expressions idiomatiques.
+- **Bascule automatique** : chaque tribe leader devient Steerco leader de sa tribe, les squads contributrices
+  deviennent les squads concernees, tous les mois existants passent en brouillon. Routes : `/api/admin/import-steerco*`
+  devient `/api/steerco/import*` ; `steerco_enabled` n'est plus expose sur les squads.
+- **Rapports par mail, refaits** : chaque envoi programme est une **diffusion**, montree sur une carte (a qui, quoi,
+  quand, prochain envoi, dernier envoi) avec ses boutons Apercu, M'envoyer un test, Envoyer maintenant, Historique,
+  et un interrupteur Active / En pause. Plusieurs diffusions par tribe sont possibles (les leaders le lundi, un
+  comite le vendredi). Une diffusion s'edite dans une fenetre en quatre etapes (nom, quand, qui recoit, pieces
+  jointes), avec a droite qui recoit quoi et l'apercu du mail, recalcules a chaque clic avant d'enregistrer.
+- **Contenu du mail au choix** : une etape « Contenu du mail » liste les blocs a cocher a la main, dans l'ordre
+  du mail : nouveautes, chiffres cles, tableau des squads, messages cles, engagements en retard, KPI a surveiller,
+  jalons bloques ou a risque. Le recap
+  d'une tribe peut maintenant lister les points d'attention de toutes ses squads. Le « mail de la tribe » s'appelle
+  desormais « recap de la tribe ».
+- **Heure et minutes** : l'heure d'envoi se regle avec des boutons - et +, heures et minutes (par 5 minutes).
+  Le planificateur passe toutes les 5 minutes pour les rapports par mail ; apres un refus du serveur de mails, il
+  ne reessaie qu'une fois par heure.
+- **Destinataires plus simples** : le tribe leader recoit le mail de la tribe, un mail par squad, ou les deux ; les
+  gens des squads se cochent par role ; tous les autres (personne, persona ou adresse) s'ajoutent dans un seul champ
+  avec recherche.
+- **Historique des envois** : programme, a la main ou test, nombre de mails et de destinataires, mails refuses et
+  la raison donnee par le serveur de mails.
+- **Le tribe leader regle les diffusions de sa tribe** : l'onglet Rapports par mail peut etre donne a une persona
+  (coche par defaut pour le tribe leader). La Direction et les alertes de modification restent a l'admin.
+- Les reglages existants sont repris automatiquement en diffusions, avec leur calendrier, leurs destinataires, le
+  jour du dernier envoi et les nouveautes de la semaine. Routes `/api/admin/diffusions` (les anciennes
+  `/api/admin/report-config` disparaissent, sauf l'envoi aux squad leaders).
+
 ## 3.2.2 (2026-11-27)
 
 Corrections.

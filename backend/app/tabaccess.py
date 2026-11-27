@@ -37,7 +37,6 @@ ROUTE_TABS: list[tuple[str, str]] = [
     ("/api/admin/restart", "ops"),
     ("/api/admin/api-keys", "api"),
     ("/api/admin/import-org", "import"),
-    ("/api/admin/import-steerco", "platforms"),
     ("/api/admin/branding", "branding"),
     ("/api/admin/pptx-template", "branding"),
     ("/api/admin/data", "data"),

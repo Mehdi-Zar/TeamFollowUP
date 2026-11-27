@@ -138,26 +138,20 @@ def test_a_co_leader_writes_the_squad_s_own_commitment(client, db, seeded):
     assert client.delete(f"/api/otds/{otd_id}").status_code == 204
 
 
-def test_a_co_leader_reports_the_squad_s_steerco(client, db, seeded):
-    """Steerco ownership is per contributing squad, so co-leading is enough."""
+def test_co_leading_a_squad_does_not_give_the_steerco(client, db, seeded):
+    """Since 4.0 (ADR 0018) the figures are entered by the Steerco leaders only:
+    leading or co-leading a squad concerned by a platform gives nothing to fill."""
     from tests.test_steerco import _enable, _platform
 
     sl_b = db.scalar(select(User).where(User.email == seeded["sl_b"]))
     _enable(client)
     pid = _platform(db, seeded, squads=("squad_a",))
-
-    login(client, seeded["sl_b"])
-    assert client.put(f"/api/steerco/platform/{pid}?period=2026-07",
-                      json={"kpis": [{"label": "Cloud Users", "value": "1"}]}).status_code == 403
-
     login(client, seeded["tribe"])
     _add_coleader(client, seeded["squad_a"], sl_b.id)
 
     login(client, seeded["sl_b"])
-    r = client.put(f"/api/steerco/platform/{pid}?period=2026-07",
-                   json={"kpis": [{"label": "Cloud Users", "value": "1"}]})
-    assert r.status_code == 200, r.text
-    assert r.json()["data"]["kpis"][0]["value"] == "1"
+    assert client.put(f"/api/steerco/platform/{pid}?period=2026-07",
+                      json={"data": {"incidents": "1"}, "version": 0}).status_code == 403
 
 
 def test_the_squad_list_carries_the_co_leaders(client, db, seeded):

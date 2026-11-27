@@ -14,11 +14,11 @@ export const ALL_ROLES: Role[] = ["admin", "tribe_leader", "squad_leader", "cont
 // Admin tabs a role may open - mirrors backend app/rbac.py ADMIN_TABS.
 // Used so the admin "preview as role" reflects the scoped tab set.
 export const ADMIN_TABS_BY_ROLE: Record<string, string[]> = {
-  admin: ["tribes", "squads", "platforms", "users", "personas", "import",
+  admin: ["tribes", "squads", "users", "personas", "import",
           "modules", "report", "leaves", "settings", "branding",
           "auth", "directory", "api", "smtp", "trust",
           "audit", "moderation", "logs", "data", "ops"],
-  tribe_leader: ["tribe", "platforms", "users", "leaves", "report"],  // default; Admin > Personas decides
+  tribe_leader: ["tribe", "users", "leaves", "report"],  // default; Admin > Personas decides
   squad_leader: [],
   contributor: [],
   member: [],

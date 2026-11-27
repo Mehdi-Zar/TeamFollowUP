@@ -79,6 +79,10 @@ ne fait que les montrer. Un modèle Standard ne se modifie pas : on en dérive u
 - **Document consolidé** : la slide de chaque squad d'un document de tribe suit le
   modèle de la tribe ; la case « Prendre la slide de chaque squad quand elle a son
   modèle » fait l'inverse, section par section. Idem par plateforme pour le steerco.
+- **Steerco leaders** : un Steerco leader conçoit le périmètre `platform` des
+  plateformes de sa tribe, même sans la capacité Exports, et ne voit que ce
+  périmètre. Il y arrive par Steerco > Paramétrage > Les plateformes, bouton
+  « Modifier la mise en page (Studio) » (ADR 0018).
 - **Brouillon et publication** : on enregistre un brouillon ; les exports, les
   envois planifiés et les modèles qui suivent celui-ci utilisent la **version
   publiée**. Chaque publication est une version : on compare deux versions, ou le

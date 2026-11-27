@@ -31,9 +31,9 @@ type Props = {
   squadId?: number;
   sinceDays?: number;
   docs?: DocKind[];
-  // Steerco one-pager export: the current period and (optional) selected squad.
-  // When "" / omitted the squad, the consolidated all-squads document is exported.
-  steerco?: { period: string; platformId?: string };
+  // Steerco one-pager export: the current period, the (optional) selected platform
+  // and the tribe on screen. Without a platform, the tribe's whole pack is exported.
+  steerco?: { period: string; platformId?: string; tribeId?: number };
 };
 
 type View = "menu" | "emailReport";
@@ -75,7 +75,7 @@ export default function ExportMenu({ year, squadId, sinceDays = 7, docs, steerco
   const { t, lang } = useI18n();
   const { smtp_enabled } = useConfig();
   const m = useModule();
-  const { user, can } = useAuth();
+  const { user, can, steerco: steercoRights } = useAuth();
   // A document is offered when: (1) this menu is allowed to show it on the current
   // tab (`docs` whitelist, or all if omitted), (2) its module is on, AND (3) the
   // persona holds the capability of the section it exports - the same pair the API
@@ -86,7 +86,8 @@ export default function ExportMenu({ year, squadId, sinceDays = 7, docs, steerco
   const roadmapOn = allow("roadmap") && m("squad_content", "roadmap") && can("roadmap");
   const dependenciesOn = allow("dependencies") && m("squad_content", "roadmap") && can("roadmap");
   const dashboardOn = allow("dashboard") && m("dashboard") && can("dashboard");
-  const steercoOn = allow("steerco") && !!steerco && m("steerco") && can("dashboard");
+  // The Steerco pack follows the Steerco's own read right (ADR 0018), not the dashboard's.
+  const steercoOn = allow("steerco") && !!steerco && m("steerco") && steercoRights.read;
 
   const ref = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
@@ -119,9 +120,9 @@ export default function ExportMenu({ year, squadId, sinceDays = 7, docs, steerco
   const steercoPq = steerco ? encodeURIComponent(steerco.period) : "";
   const steercoHtml = steerco?.platformId
     ? `/api/steerco/onepager.html?platform_id=${steerco.platformId}&period=${steercoPq}&lang=${lang}`
-    : `/api/steerco/document.html?period=${steercoPq}&lang=${lang}`;
+    : `/api/steerco/document.html?period=${steercoPq}&lang=${lang}${steerco?.tribeId ? `&tribe_id=${steerco.tribeId}` : ""}`;
   const steercoPptx = `/api/steerco/document.pptx?period=${steercoPq}&lang=${lang}` +
-    (steerco?.platformId ? `&platform_id=${steerco.platformId}` : "");
+    (steerco?.platformId ? `&platform_id=${steerco.platformId}` : steerco?.tribeId ? `&tribe_id=${steerco.tribeId}` : "");
 
   // The versions belong to a year and a squad: a change of either empties the
   // list (and the chosen version) so the next opening fetches the right ones.

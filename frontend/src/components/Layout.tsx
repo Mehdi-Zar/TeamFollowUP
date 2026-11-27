@@ -38,6 +38,7 @@ import {
   IconLeave,
   IconOrg,
   IconRoadmap,
+  IconSteerco,
   IconStudio,
   IconTribes,
 } from "./icons";
@@ -66,6 +67,8 @@ const NAV: NavItem[] = [
   { to: "/saisie", labelKey: "nav.entry", titleKey: "nav.entry", Icon: IconEntry, visible: () => true, module: "reporting", cap: "reporting" },
   { to: "/fil", labelKey: "nav.feed", titleKey: "nav.feed", Icon: IconFeed, visible: () => true, module: "feed", cap: "feed" },
   { to: "/conges", labelKey: "nav.leaves", titleKey: "nav.leaves", Icon: IconLeave, visible: () => true, module: "leaves", cap: "leaves" },
+  // Steerco: a menu of its own (ADR 0018), for its Steerco leaders and its readers.
+  { to: "/steerco", labelKey: "nav.steerco", titleKey: "steerco.title", Icon: IconSteerco, visible: () => true, module: "steerco" },
   { to: "/mes-squads", labelKey: "nav.mysquads", titleKey: "mysquads.title", Icon: IconTribes, visible: () => true, cap: "mysquads" },
   { to: "/acces", labelKey: "nav.access", titleKey: "access.title", Icon: IconAccess, visible: () => true },
   // Studio des exports: opened per persona (capability "exports", on by default for
@@ -82,7 +85,7 @@ const COLLAPSE_KEY = "sidebar.collapsed";
  *  hosts the current page through <Outlet/>. Owns cross-page UI state (sidebar
  *  collapse, mobile drawer, admin impersonation picker, first-login welcome). */
 export default function Layout() {
-  const { user, logout, effectiveRole, isPreview, impersonate, stopImpersonation, impersonationMode, can, pendingAccessCount, adminTabs, canReviewAccess } = useAuth();
+  const { user, logout, effectiveRole, isPreview, impersonate, stopImpersonation, impersonationMode, can, pendingAccessCount, adminTabs, canReviewAccess, steerco } = useAuth();
   const { t, role: roleLabel, lang, setLang } = useI18n();
   // A save that failed after its field was left (see api.reportSaveError).
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -149,9 +152,12 @@ export default function Layout() {
   // whatever their role; the role table only drives the admin's "preview as".
   const navVisible = (n: NavItem) =>
     (n.to === "/admin" && !isPreview ? adminTabs.length > 0
-      : n.to === "/acces" ? canReviewAccess : n.visible(role)) &&
+      : n.to === "/acces" ? canReviewAccess
+      : n.to === "/steerco" ? (steerco.read || steerco.run || steerco.designate_tribe_ids.length > 0)
+      : n.to === "/exports" ? (can("exports") || steerco.run)
+      : n.visible(role)) &&
     (!n.module || moduleOn(modules, n.module, n.feature)) &&
-    (!n.cap || can(n.cap));
+    (!n.cap || n.to === "/exports" || can(n.cap));
   const navigate = useNavigate();
   const location = useLocation();
   const chrome = usePageChrome();

@@ -19,7 +19,10 @@ PERSONAS_KEY = "personas"
 # Section-access capabilities (the catalog shown in the admin matrix).
 # "exports" opens the Studio des exports (docs/35); what one may change there still
 # follows the role (exportstore.can_design).
-CAPABILITIES = ["dashboard", "roadmap", "org", "feed", "reporting", "mysquads", "leaves", "exports"]
+# "steerco" opens the Steerco menu to read (ADR 0018); running it is a designation
+# (app/steercoaccess.py), not a capability. Off by default for every persona.
+CAPABILITIES = ["dashboard", "roadmap", "org", "feed", "reporting", "mysquads", "leaves", "exports",
+                "steerco"]
 _CAP_SET = set(CAPABILITIES)
 
 BUILTINS = ["admin", "tribe_leader", "squad_leader", "contributor", "member"]
@@ -27,17 +30,19 @@ BUILTINS = ["admin", "tribe_leader", "squad_leader", "contributor", "member"]
 # Every Administration tab, in the order of the admin menu. The admin chooses, per
 # persona, which of them it gets (Admin > Personas); the server follows (tabaccess).
 # "tribe" is "My tribe" (one's own tribe); "tribes" is the list of all tribes.
-ADMIN_TAB_OPTIONS = ["tribes", "tribe", "squads", "platforms", "users", "personas", "import",
+ADMIN_TAB_OPTIONS = ["tribes", "tribe", "squads", "users", "personas", "import",
                      "modules", "report", "leaves", "settings", "branding",
                      "auth", "directory", "api", "smtp", "trust",
                      "audit", "moderation", "logs", "data", "ops"]
-_DEFAULT_TABS = {"tribe_leader": ["tribe", "platforms", "users", "leaves"]}
+_DEFAULT_TABS = {"tribe_leader": ["tribe", "users", "leaves", "report"]}
 # Tabs that are, by nature, the whole administration: the SSO configuration
 # (point the login at another identity provider, map a group to the admin role)
 # the trusted authorities (accept any certificate) and the directory (its SCIM
 # token creates accounts). Handing one out handed
 # out admin; they stay the administrator's and cannot be ticked for a persona.
-ADMIN_ONLY_TABS = ["auth", "directory", "trust", "report"]
+# "report" (the reports by email) can: a persona holding it sets up the
+# diffusions of its own tribe, the Direction's and the change alerts stay the admin's.
+ADMIN_ONLY_TABS = ["auth", "directory", "trust"]
 
 
 def _clean_tabs(raw) -> list[str]:

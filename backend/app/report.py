@@ -1494,7 +1494,8 @@ _PPTX_MIME = ("application", "vnd.openxmlformats-officedocument.presentationml.p
 def report_mail(db: Session, smtp: dict, to: str, subject: str, data: dict, *, why: str,
                 file_base: str, changes: dict | None = None, pptx: bytes = b"",
                 cc: list[str] | None = None, notice_html: str = "", week: int | None = None,
-                attach_pptx: bool = True, decks: list[tuple[str, bytes]] | None = None) -> bool:
+                attach_pptx: bool = True, decks: list[tuple[str, bytes]] | None = None,
+                sections: list[str] | None = None) -> bool:
     """Send one report mail: a summary every mail client renders, the full HTML
     document attached (it needs a browser), the PPTX next to it. ``decks`` (file
     name, bytes) replaces that single PPTX by the documents a schedule chose."""
@@ -1506,7 +1507,7 @@ def report_mail(db: Session, smtp: dict, to: str, subject: str, data: dict, *, w
     has_pptx = bool(decks) if decks is not None else (bool(pptx) and attach_pptx)
     link = app_link(db, path)
     body = render_email(data, changes=changes, notice_html=notice_html, link=link,
-                        footer=footer(lang, why), has_pptx=has_pptx, week=week)
+                        footer=footer(lang, why), has_pptx=has_pptx, week=week, sections=sections)
     atts = []
     if not link:
         atts.append((f"{file_base}.html", render_html(data, standalone=True, changes=changes).encode("utf-8"),
@@ -1571,13 +1572,13 @@ def send_squad_docs_to_leaders(db: Session, squads: list, now: datetime | None =
 
 
 def send_due_weekly_reports(db: Session, now: datetime | None = None) -> int:
-    """Send every scheduled report that is due: the Direction's (all tribes), then
-    each tribe's. Returns the number of emails sent.
+    """Send every diffusion that is due (reportconfig), the Direction's and the
+    tribes'. Returns the number of emails sent.
 
-    Each schedule is idempotent within a day (its own last_sent_day). Safe to call
-    repeatedly from the scheduler.
+    Each diffusion is idempotent within a day (its own last_sent_day). Safe to
+    call repeatedly from the scheduler.
     """
-    from .reportconfig import ensure_v2, get_report, tribe_schedules
+    from .reportconfig import ensure_diffusions, list_diffusions
     from .smtpconfig import get_smtp
     from .modulesconfig import get_modules, is_active
 
@@ -1587,13 +1588,14 @@ def send_due_weekly_reports(db: Session, now: datetime | None = None) -> int:
     smtp = get_smtp(db)
     if not smtp.get("enabled"):
         return 0
-    if ensure_v2(db):
+    if ensure_diffusions(db):
         db.commit()
     pptxtpl.use(pptxtpl.get(db))
-    sent = _send_schedule(db, smtp, get_report(db), None, now)
-    for tid in tribe_schedules(db):
-        if db.get(Tribe, tid) is not None:
-            sent += _send_schedule(db, smtp, get_report(db, tid), tid, now)
+    sent = 0
+    for cfg in list_diffusions(db):
+        if cfg["tribe_id"] is not None and db.get(Tribe, cfg["tribe_id"]) is None:
+            continue
+        sent += _send_schedule(db, smtp, cfg, now)
     return sent
 
 
@@ -1671,100 +1673,197 @@ class _Sender:
             return False
         return report_mail(self.db, self.smtp, ", ".join(to), d["subject"] + subject_suffix, d["data"],
                            why=why, file_base=d["file"], changes=d["changes"], cc=cc,
-                           week=self.week, decks=d["decks"])
+                           week=self.week, decks=d["decks"], sections=mail.get("body"))
 
 
-def _send_schedule(db: Session, smtp: dict, cfg: dict, tribe_id: int | None, now: datetime) -> int:
-    """One schedule (the Direction's when tribe_id is None, else a tribe's), when due.
+HISTORY_KEEP = 100
+
+
+def log_send(db: Session, diffusion_id: int | None, trigger: str, *, sent: int = 0, attempted: int = 0,
+             recipients: int = 0, failed: list[str] | None = None, missing: list[str] | None = None,
+             error: str | None = None, at: datetime | None = None) -> None:
+    """One line of a diffusion's history (models.ReportSend), the oldest beyond
+    HISTORY_KEEP dropped. A draft never saved (no id) has no history."""
+    from sqlalchemy import delete
+    from .models import ReportSend
+    if not diffusion_id:
+        return
+    trouble = bool(failed) or bool(attempted and not sent)
+    db.add(ReportSend(diffusion_id=int(diffusion_id), at=at or utcnow(), trigger=trigger, sent=sent,
+                      attempted=attempted, recipients=recipients, failed=failed or None,
+                      missing=missing or None, error=(error or None) if trouble else None))
+    db.flush()
+    old = db.scalars(select(ReportSend.id).where(ReportSend.diffusion_id == int(diffusion_id))
+                     .order_by(ReportSend.at.desc(), ReportSend.id.desc()).offset(HISTORY_KEEP)).all()
+    if old:
+        db.execute(delete(ReportSend).where(ReportSend.id.in_(old)))
+
+
+def history(db: Session, diffusion_id: int, limit: int = 30) -> list[dict]:
+    """The latest sends of a diffusion, newest first."""
+    from .models import ReportSend
+    rows = db.scalars(select(ReportSend).where(ReportSend.diffusion_id == int(diffusion_id))
+                      .order_by(ReportSend.at.desc(), ReportSend.id.desc()).limit(limit)).all()
+    return [{"at": _aware(r.at).isoformat(), "trigger": r.trigger, "sent": r.sent, "attempted": r.attempted,
+             "recipients": r.recipients, "failed": r.failed or [], "missing": r.missing or [],
+             "error": r.error} for r in rows]
+
+
+def last_sends(db: Session) -> dict[int, dict]:
+    """The latest send of every diffusion, by diffusion id (the cards)."""
+    from .models import ReportSend
+    out: dict[int, dict] = {}
+    for r in db.scalars(select(ReportSend).order_by(ReportSend.at.desc(), ReportSend.id.desc())).all():
+        if r.diffusion_id not in out:
+            out[r.diffusion_id] = {"at": _aware(r.at).isoformat(), "trigger": r.trigger, "sent": r.sent,
+                                   "attempted": r.attempted, "failed": r.failed or []}
+    return out
+
+
+def next_send(cfg: dict, now: datetime | None = None) -> datetime | None:
+    """When the scheduler will next send this diffusion (Paris time), None when
+    it is paused. Today counts while it has not gone out yet: past its hour, it
+    leaves at the next tick."""
+    from datetime import timedelta
+    if not cfg.get("enabled"):
+        return None
+    local = local_now(now or utcnow())
+    days = set(cfg.get("weekdays") or [0])
+    for i in range(8):
+        d = local + timedelta(days=i)
+        if d.weekday() not in days:
+            continue
+        if i == 0 and cfg.get("last_sent_day") == d.date().isoformat():
+            continue
+        return d.replace(hour=int(cfg.get("hour", 8)), minute=int(cfg.get("minute") or 0),
+                         second=0, microsecond=0)
+    return None
+
+
+def _addresses(mails: list[dict]) -> int:
+    return len({r["email"].lower() for m in mails for r in m["recipients"]})
+
+
+def _send_schedule(db: Session, smtp: dict, cfg: dict, now: datetime) -> int:
+    """One diffusion, when due.
 
     Each mail of the plan is its own document with its own "what's new" baseline:
     with "only when there is something new", a squad that did not move sends
     nothing while the others go out. The day, the weekday and the hour are Paris
     time. When the mail server refuses every mail, nothing is marked as done: the
-    next tick tries again, and no baseline moves past what nobody received.
+    next tick tries again, and no baseline moves past what nobody received (the
+    history notes the failure once a day).
     """
+    from .mail import last_error
     from .mailplan import plan_for
-    from .reportconfig import set_report
+    from .models import ReportSend
+    from .reportconfig import save_diffusion
 
     if not cfg.get("enabled"):
         return 0
     local = local_now(now)
-    if local.weekday() not in cfg["weekdays"] or local.hour < cfg["hour"]:
+    due = local.replace(hour=int(cfg["hour"]), minute=int(cfg.get("minute") or 0), second=0, microsecond=0)
+    if local.weekday() not in cfg["weekdays"] or local < due:
         return 0
     today = local.date().isoformat()
     if cfg.get("last_sent_day") == today:
         return 0
+    # The mail server refused everything earlier today: try again once an hour,
+    # not at every 5 minutes tick.
+    if local.minute >= 5 and local >= due + timedelta(minutes=5):
+        failed_today = db.scalars(
+            select(ReportSend).where(ReportSend.diffusion_id == cfg["id"], ReportSend.trigger == "schedule",
+                                     ReportSend.sent == 0, ReportSend.attempted > 0)
+            .order_by(ReportSend.at.desc()).limit(1)).first()
+        if failed_today and local_now(_aware(failed_today.at)).date().isoformat() == today:
+            return 0
     sender = _Sender(db, smtp, cfg, now)
     only_changes = bool(cfg.get("only_when_changes"))
+    why = "schedule" if cfg.get("tribe_id") is None else "tribe"
     sent = attempted = 0
+    failed: list[str] = []
+    out: list[dict] = []
     baselines: list[tuple[str, dict]] = []
-    for mail in plan_for(db, tribe_id, cfg):
+    mails = plan_for(db, cfg)
+    for mail in mails:
         d = sender.doc(mail)
         c = d["changes"]
         if c.get("first") or not (only_changes and c["count"] == 0):
             if any(r["role"] == "to" for r in mail["recipients"]):
                 attempted += 1
-                if sender.send(mail, why="schedule" if tribe_id is None else "tribe"):
+                if sender.send(mail, why=why):
                     sent += 1
+                    out.append(mail)
+                else:
+                    failed.append(mail["label"])
         baselines.append((mail["key"], d["sig"]))
+    missing = list(dict.fromkeys(x["name"] for m in mails for x in m["missing"]))
     if attempted and not sent:
         import logging
         logging.getLogger("trt.report").warning(
-            "scheduled report%s: every mail failed, retrying at the next tick",
-            "" if tribe_id is None else f" of tribe {tribe_id}")
+            "scheduled report diffusion %s: every mail failed, retrying at the next tick", cfg.get("id"))
+        last = db.scalars(select(ReportSend).where(ReportSend.diffusion_id == cfg["id"])
+                          .order_by(ReportSend.at.desc(), ReportSend.id.desc()).limit(1)).first()
+        if last is None or last.trigger != "schedule" or last.sent or \
+                local_now(_aware(last.at)).date().isoformat() != today:
+            log_send(db, cfg["id"], "schedule", attempted=attempted, failed=failed, missing=missing,
+                     error=last_error(), at=now)
+            db.commit()
         return 0
     for key, sig in baselines:
         set_baseline(db, key, sig)
     cfg["last_sent_day"] = today
-    set_report(db, cfg, tribe_id)
+    save_diffusion(db, cfg)
+    log_send(db, cfg["id"], "schedule", sent=sent, attempted=attempted, recipients=_addresses(out),
+             failed=failed, missing=missing, error=last_error() if failed else None, at=now)
     db.commit()
     return sent
 
 
-def send_plan_now(db: Session, tribe_id: int | None, line: str | None = None,
-                  now: datetime | None = None) -> dict:
-    """Send a schedule's mails now, out of its calendar (all of them, or those of
-    one line of the settings). Always sends, and moves no baseline: it is not the
-    scheduled send. Returns {"sent", "failed": [labels], "missing": [names], "smtp"}."""
-    from .mailplan import only_line, plan_for
-    from .reportconfig import get_report
+def send_plan_now(db: Session, cfg: dict, now: datetime | None = None) -> dict:
+    """Send a diffusion's mails now, out of its calendar. Always sends, and moves
+    no baseline: it is not the scheduled send. Returns {"sent", "failed":
+    [labels], "missing": [names], "smtp", "error"}, and notes it in the history."""
+    from .mail import last_error
+    from .mailplan import plan_for
     from .smtpconfig import get_smtp
     smtp = get_smtp(db)
     if not smtp.get("enabled"):
         return {"sent": 0, "failed": [], "missing": [], "smtp": False}
     pptxtpl.use(pptxtpl.get(db))
-    sender = _Sender(db, smtp, get_report(db, tribe_id), now or utcnow())
-    sent, failed, missing = 0, [], []
-    for mail in only_line(plan_for(db, tribe_id), line):
+    sender = _Sender(db, smtp, cfg, now or utcnow())
+    why = "schedule" if cfg.get("tribe_id") is None else "tribe"
+    sent = attempted = 0
+    failed: list[str] = []
+    missing: list[str] = []
+    out: list[dict] = []
+    for mail in plan_for(db, cfg):
         missing += [m["name"] for m in mail["missing"] if m["name"] not in missing]
         if not mail["recipients"]:
             continue
-        if sender.send(mail, why="schedule" if tribe_id is None else "tribe"):
+        attempted += 1
+        if sender.send(mail, why=why):
             sent += 1
+            out.append(mail)
         else:
             failed.append(mail["label"])
-    return {"sent": sent, "failed": failed, "missing": missing, "smtp": True}
+    error = last_error() if failed else None
+    log_send(db, cfg.get("id"), "now", sent=sent, attempted=attempted, recipients=_addresses(out),
+             failed=failed, missing=missing, error=error, at=now)
+    return {"sent": sent, "failed": failed, "missing": missing, "smtp": True, "error": error}
 
 
-def _line_sample(mails: list[dict], line: str | None) -> dict | None:
-    from .mailplan import only_line
-    # The first mail this line takes part in, with ALL its recipients: the
-    # preview shows who else is on it.
-    picked = only_line(mails, line)
-    if picked:
-        return next(m for m in mails if m["key"] == picked[0]["key"])
-    return mails[0] if mails else None
+def _pick(mails: list[dict], key: str | None) -> dict | None:
+    """The mail ``key`` names, else the first one."""
+    return next((m for m in mails if m["key"] == key), mails[0] if mails else None)
 
 
-def plan_preview(db: Session, tribe_id: int | None, line: str | None = None,
-                 cfg: dict | None = None) -> dict | None:
-    """The mail one line of the settings sends, as it will look (the first one of
-    that line): its subject, recipients and HTML body. None when it sends nothing."""
+def plan_preview(db: Session, cfg: dict, key: str | None = None) -> dict | None:
+    """One mail of a diffusion (``key``, else its first), as it will look: its
+    subject, recipients and HTML body. None when it sends nothing."""
     from .mailbody import app_link, footer, render_email
     from .mailplan import plan_for
-    from .reportconfig import get_report
-    cfg = cfg or get_report(db, tribe_id)
-    mail = _line_sample(plan_for(db, tribe_id, cfg), line)
+    mail = _pick(plan_for(db, cfg), key)
     if mail is None:
         return None
     sender = _Sender(db, {}, cfg, utcnow())
@@ -1772,28 +1871,30 @@ def plan_preview(db: Session, tribe_id: int | None, line: str | None = None,
     rows = [r for blk in d["data"].get("tribes") or [] for r in blk.get("squads") or []]
     path = f"/squads/{rows[0]['squad_id']}" if d["data"].get("squad_scoped") and rows else "/"
     html = render_email(d["data"], changes=d["changes"], link=app_link(db, path),
-                        footer=footer(sender.lang, "schedule" if tribe_id is None else "tribe"),
-                        has_pptx=bool(mail.get("docs")), week=sender.week)
-    return {"subject": d["subject"], "label": mail["label"], "html": html, "docs": mail.get("docs") or [],
+                        footer=footer(sender.lang, "schedule" if cfg.get("tribe_id") is None else "tribe"),
+                        has_pptx=bool(mail.get("docs")), week=sender.week, sections=mail.get("body"))
+    return {"key": mail["key"], "subject": d["subject"], "label": mail["label"], "html": html,
+            "docs": mail.get("docs") or [],
             "to": [r["email"] for r in mail["recipients"] if r["role"] == "to"],
             "cc": [r["email"] for r in mail["recipients"] if r["role"] == "cc"]}
 
 
-def plan_test(db: Session, tribe_id: int | None, to: str, line: str | None = None) -> dict:
-    """The mail one line sends (the first of that line), to one address, now."""
+def plan_test(db: Session, cfg: dict, to: str, key: str | None = None) -> dict:
+    """One mail of a diffusion (``key``, else its first), to one address, now."""
     from .mailplan import plan_for
-    from .reportconfig import get_report
     from .smtpconfig import get_smtp
     smtp = get_smtp(db)
     if not smtp.get("enabled"):
         return {"ok": False, "smtp": False}
-    mail = _line_sample(plan_for(db, tribe_id), line)
+    mail = _pick(plan_for(db, cfg), key)
     if mail is None:
         return {"ok": False, "smtp": True, "empty": True}
     pptxtpl.use(pptxtpl.get(db))
-    sender = _Sender(db, smtp, get_report(db, tribe_id), utcnow())
-    return {"ok": sender.send(mail, why="test", to=[to], subject_suffix=" (test)"), "smtp": True,
-            "label": mail["label"], "to": to}
+    sender = _Sender(db, smtp, cfg, utcnow())
+    ok = sender.send(mail, why="test", to=[to], subject_suffix=" (test)")
+    log_send(db, cfg.get("id"), "test", sent=int(ok), attempted=1, recipients=int(ok),
+             failed=[] if ok else [mail["label"]])
+    return {"ok": ok, "smtp": True, "label": mail["label"], "to": to}
 
 
 def build_dependencies_data(db: Session, scope_tribe: int | None, year: int | None = None,

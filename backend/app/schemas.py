@@ -580,9 +580,6 @@ class SquadUpdate(BaseModel):
     leader_user_id: Optional[int] = None
     display_order: Optional[int] = None
     kpis_enabled: Optional[bool] = None
-    # steerco_enabled is deliberately absent: it is derived from platform
-    # membership (app/platforms.py:sync_squad_flags) and would drift the moment a
-    # squad edit set it by hand. It stays readable on SquadOut.
     # Co-leaders hold the same rights as the leader over this squad. Replacing the
     # list is structural, like assigning the leader: a tribe leader's call.
     co_leader_user_ids: Optional[list[int]] = None
@@ -615,7 +612,9 @@ class SquadOut(ORMModel):
     leader_user_id: Optional[int] = None
     display_order: int
     kpis_enabled: bool
-    steerco_enabled: bool = False
+    # The Steerco platforms (in the pack) this squad is linked to, as their names:
+    # the squad page shows them as a read-only link to the Steerco menu.
+    steerco_platforms: list[str] = []
     budget_enabled: bool = False
     # Moral de l'equipe (good|mixed|bad), avec sa date: sans elle, un moral ancien
     # se lit comme un moral actuel.

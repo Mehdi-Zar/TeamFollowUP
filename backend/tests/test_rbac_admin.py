@@ -17,7 +17,7 @@ def test_permissions_tribe_leader(client, seeded):
     login(client, seeded["tribe"])
     p = client.get("/api/auth/me/permissions").json()
     # The weekly report of their tribe is theirs too (Admin > Personas can take it back).
-    assert p["admin_tabs"] == ["tribe", "platforms", "users", "leaves"]
+    assert p["admin_tabs"] == ["tribe", "users", "leaves", "report"]
     assert p["assignable_roles"] == ["squad_leader", "contributor", "member"]
     assert p["can_create_tribe"] is False
 
@@ -154,7 +154,7 @@ def test_impersonation_full_simulation(client, seeded):
 
     perms = client.get("/api/auth/me/permissions").json()
     assert perms["impersonating"] is True
-    assert perms["admin_tabs"] == ["tribe", "platforms", "users", "leaves"]  # tribe-leader tabs
+    assert perms["admin_tabs"] == ["tribe", "users", "leaves", "report"]  # tribe-leader tabs
     # And global config is now genuinely forbidden (acting as the tribe leader).
     assert client.get("/api/admin/smtp-config").status_code == 403
 
@@ -183,21 +183,24 @@ def test_admin_still_full_access(client, seeded):
 
 
 
-def test_the_reports_by_email_are_the_admins(client, seeded):
-    """Only the admin sets the scheduled reports, the Direction's and each tribe's."""
-    for who in (seeded["tribe"], seeded["sl_a"], seeded["member"]):
+def test_the_reports_by_email_are_the_admins_and_the_tribe_leaders(client, seeded):
+    """The admin sets every diffusion, the Direction's included; a tribe leader
+    those of their own tribe; nobody else any."""
+    for who in (seeded["sl_a"], seeded["member"]):
         login(client, who)
-        assert client.get("/api/admin/report-config").status_code == 403
-        assert client.put("/api/admin/report-config", json={"enabled": True}).status_code == 403
-    login(client, seeded["admin"])
-    r = client.put("/api/admin/report-config?tribe_id=" + str(seeded["t1"]),
-                   json={"enabled": True, "copies": [{"type": "email", "value": "tl@x.io"}],
-                         "squad_ids": [seeded["squad_a"], seeded["squad_c"]]})
+        assert client.get("/api/admin/diffusions").status_code == 403
+        assert client.post("/api/admin/diffusions", json={"tribe_id": seeded["t1"]}).status_code == 403
+    login(client, seeded["tribe"])
+    assert client.post("/api/admin/diffusions", json={"tribe_id": None}).status_code == 403
+    r = client.post("/api/admin/diffusions",
+                    json={"tribe_id": seeded["t1"], "enabled": True, "copies": [{"type": "email", "value": "tl@x.io"}],
+                          "squad_ids": [seeded["squad_a"], seeded["squad_c"]]})
     assert r.status_code == 200, r.text
     assert r.json()["squad_ids"] == [seeded["squad_a"]]                    # other tribe dropped
-    assert client.get("/api/admin/report-config").json()["enabled"] is False   # Direction untouched
-    mine = client.get("/api/admin/report-config?tribe_id=" + str(seeded["t1"])).json()
+    login(client, seeded["admin"])
+    mine = client.get(f"/api/admin/diffusions/{r.json()['id']}").json()
     assert mine["enabled"] is True and mine["copies"][0]["value"] == "tl@x.io"
+
 
 def test_an_untaken_admin_tab_is_closed_on_the_server_too(client, seeded):
     login(client, seeded["admin"])
@@ -208,7 +211,7 @@ def test_an_untaken_admin_tab_is_closed_on_the_server_too(client, seeded):
     assert client.put("/api/admin/personas", json={"personas": personas}).status_code == 200
     login(client, seeded["tribe"])
     assert client.get("/api/auth/me/permissions").json()["admin_tabs"] == ["tribe", "users"]
-    assert client.get("/api/admin/report-config").status_code == 403
+    assert client.get("/api/admin/diffusions").status_code == 403
     assert client.put("/api/leaves/config", json={"require_approval": False}).status_code in (403, 404)
     assert client.get("/api/admin/users").status_code == 200
 

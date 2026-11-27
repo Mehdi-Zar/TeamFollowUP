@@ -113,3 +113,16 @@ def login(client: TestClient, email: str, password: str = "pw") -> TestClient:
     resp = client.post("/api/auth/login", json={"email": email, "password": password})
     assert resp.status_code == 200, resp.text
     return client
+
+
+def diffusion(db, tribe_id=None, **patch) -> dict:
+    """The first diffusion of a scope (None = the Direction), created if there is
+    none, with ``patch`` applied and saved (tests). ``recipients`` (addresses)
+    become the copies."""
+    from app.reportconfig import create_diffusion, list_diffusions, normalize, save_diffusion
+    if "recipients" in patch:
+        patch["copies"] = [{"type": "email", "value": a} for a in patch.pop("recipients")]
+    mine = list_diffusions(db, tribe_id, every=False)
+    cfg = save_diffusion(db, normalize(mine[0], patch)) if mine else create_diffusion(db, tribe_id, patch)
+    db.flush()
+    return cfg

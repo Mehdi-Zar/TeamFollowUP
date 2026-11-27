@@ -10,6 +10,7 @@ import DirectorySearch from "../../components/DirectorySearch";
 import { Fragment, useEffect, useState } from "react";
 import { api } from "../../api";
 import { useI18n } from "../../i18n";
+import { useModule } from "../../config";
 import { Permissions, Persona, Role, Squad, Tribe, User } from "../../types";
 import { ErrorBanner } from "../../components/ui";
 import { ADMIN_TABS_BY_ROLE, ALL_ROLES } from "../../perms";
@@ -243,6 +244,13 @@ export function UsersAdmin({ perms }: { perms: Permissions }) {
   const [tribes, setTribes] = useState<Tribe[]>([]);
   const [personaLabels, setPersonaLabels] = useState<Record<string, string>>({});
   const labelFor = (key: string) => personaLabels[key] ?? roleLabel(key);
+  // Steerco leaders (ADR 0018), by user id: a designation shown as a badge, set in
+  // the Steerco menu. Empty while the module is off.
+  const steercoOn = useModule()("steerco");
+  const [steercoLeads, setSteercoLeads] = useState<Record<string, string[]>>({});
+  useEffect(() => {
+    if (steercoOn) api.get<Record<string, string[]>>("/api/steerco/leaders/badges").then(setSteercoLeads).catch(() => {});
+  }, [steercoOn]);
   const { error, wrap } = useErr();
   const [form, setForm] = useState({
     email: "", display_name: "", role: roleOptions[roleOptions.length - 1] as Role,
@@ -347,6 +355,11 @@ export function UsersAdmin({ perms }: { perms: Permissions }) {
                            onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} />
                   ) : u.display_name}
                   {u.is_break_glass && <span className="badge badge-orange" style={{ marginLeft: 8 }}>{t("admin.breakglass")}</span>}
+                  {steercoLeads[String(u.id)] && (
+                    <span className="badge badge-navy" style={{ marginLeft: 8 }} title={steercoLeads[String(u.id)].join(", ")}>
+                      {t("steerco.leaders.badge")}
+                    </span>
+                  )}
                 </td>
                 <td>{u.email}</td>
                 <td>

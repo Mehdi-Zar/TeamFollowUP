@@ -1,6 +1,6 @@
-"""Platforms and Steerco, managed in one place: the tribe leader imposes a model,
+"""Platforms and Steerco, managed in one place: the Steerco leaders impose a model,
 each platform starts from it and can be adjusted, figures follow their labels when
-the skeleton changes, and the whole tribe reads the dashboard."""
+the skeleton changes, and reading stays within the tribe."""
 from tests.conftest import login
 from tests.test_steerco import _enable, _platform
 
@@ -14,12 +14,11 @@ def test_a_new_platform_starts_from_the_tribe_model(client, seeded):
     login(client, seeded["tribe"])
     r = client.put("/api/steerco/model", json=_model(["Users", "Cost"], ["Portal"]))
     assert r.status_code == 200, r.text
-    p = client.post("/api/steerco/platforms", json={"name": "Data", "contributor_ids": [seeded["squad_a"]]})
+    p = client.post("/api/steerco/platforms", json={"name": "Data", "squad_ids": [seeded["squad_a"]]})
     assert p.status_code == 201, p.text
     tpl = p.json()["template"]
     assert [k["label"] for k in tpl["kpis"]] == ["Users", "Cost"]
     assert [s["label"] for s in tpl["sla"]] == ["Portal"]
-    assert all(k["owner_squad_id"] == seeded["squad_a"] for k in tpl["kpis"])   # sole contributor
     # A squad leader does not impose the model.
     login(client, seeded["sl_a"])
     assert client.put("/api/steerco/model", json=_model(["X"], [])).status_code == 403
@@ -30,12 +29,12 @@ def test_figures_follow_their_label_when_the_skeleton_changes(client, db, seeded
     from app.models import SteercoEntry
     _enable(client)
     pid = _platform(db, seeded)
-    login(client, seeded["sl_a"])
+    login(client, seeded["tribe"])
     data = client.get(f"/api/steerco/platform/{pid}?period=2026-07").json()["data"]
     for i, k in enumerate(data["kpis"]):
         k["value"] = str(100 + i)            # Cloud Users=100, Landing Zone=101, K8aaS=102...
-    assert client.put(f"/api/steerco/platform/{pid}?period=2026-07", json=data).status_code == 200
-    login(client, seeded["tribe"])
+    assert client.put(f"/api/steerco/platform/{pid}?period=2026-07",
+                      json={"data": data, "version": 0}).status_code == 200
     p = next(x for x in client.get("/api/steerco/platforms").json() if x["id"] == pid)
     tpl = p["template"]
     tpl["kpis"] = [k for k in tpl["kpis"] if k["label"] != "Landing Zone"]      # drop the 2nd
@@ -46,7 +45,7 @@ def test_figures_follow_their_label_when_the_skeleton_changes(client, db, seeded
     assert values["Cloud Users"] == "100" and values["K8aaS"] == "102" and "Landing Zone" not in values
 
 
-def test_apply_the_tribe_model_keeps_owners_and_figures(client, db, seeded):
+def test_apply_the_tribe_model_keeps_the_items_that_stay(client, db, seeded):
     _enable(client)
     pid = _platform(db, seeded)
     login(client, seeded["tribe"])
@@ -55,12 +54,18 @@ def test_apply_the_tribe_model_keeps_owners_and_figures(client, db, seeded):
     assert r.status_code == 200, r.text
     tpl = r.json()["template"]
     assert [k["label"] for k in tpl["kpis"]] == ["K8aaS", "New KPI"]
-    assert tpl["kpis"][0]["owner_squad_id"] == seeded["squad_a"]
+    assert [s["label"] for s in tpl["sla"]] == ["Gitlab"]
 
 
-def test_the_whole_tribe_reads_the_dashboard(client, db, seeded):
+def test_a_reader_reads_their_own_tribe_only(client, db, seeded):
     _enable(client)
     pid = _platform(db, seeded)
+    login(client, "admin@test")
+    items = client.get("/api/admin/personas").json()["personas"]
+    for p in items:
+        if p["key"] in ("member", "tribe_leader"):
+            p["caps"]["steerco"] = True
+    assert client.put("/api/admin/personas", json={"personas": items}).status_code == 200
     login(client, seeded["member"])
     r = client.get("/api/steerco/entries?period=2026-07")
     assert r.status_code == 200 and [e["platform_id"] for e in r.json()] == [pid]

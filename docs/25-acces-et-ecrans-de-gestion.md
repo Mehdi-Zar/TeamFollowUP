@@ -80,14 +80,10 @@ rien ne lit (voir [03](03-data-model.md)) : la colonne reste en base et l'import
 la remplit toujours, mais un reglage inerte a l'ecran fait douter de tous les
 autres.
 
-**Le steerco ne s'active pas, il se deduit.** Une squad est au steerco parce
-qu'elle alimente une plateforme (`app/platforms.py`, `sync_squad_flags`). Les
-plateformes qu'une squad alimente se reglent dans Administration > Plateformes et
-Steerco ; Mes squads y renvoie. Un interrupteur existe quand meme, parce qu'il fallait une facon de
-dire « plus de steerco ici » sans retirer les plateformes une par une : l'eteindre
-retire la squad de toutes celles qu'elle alimente, et c'est ecrit a cote. Il ne
-peut pas s'allumer seul, puisque l'allumer sans choisir de plateforme ne voudrait
-rien dire.
+**Le Steerco n'est plus dans Mes squads** (4.0, ADR 0018). Une squad peut etre une
+« squad concernee » par une plateforme : c'est facultatif, cela se regle dans
+Steerco > Parametrage > Les plateformes, et Mes squads comme la page de la squad
+l'affichent seulement, en lecture. Il n'y a plus d'interrupteur Steerco par squad.
 
 **Les initiatives** sont a l'etape OTD, avec les engagements : l'etape montre
 exactement ce que la frise exportee montre, et dans son ordre. En haut de la frise,

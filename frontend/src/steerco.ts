@@ -4,11 +4,10 @@
 // build the KPI/incident charts and the annual SLA row automatically. Keep field names
 // in sync with backend/app/routers/steerco.py.
 //
-// A platform is fed by one or more squads, and its TEMPLATE says which contributing
-// squad owns each KPI card and each SLA column. The snapshot is positional against
-// that template: data.kpis[i] is the value of template.kpis[i]. The form shows the
-// whole slide and only lets you type in the items you own, so two squad leaders can
-// fill one slide without ever overwriting each other.
+// Since 4.0 (ADR 0018) the Steerco is a topic of its own: the tribe's Steerco
+// leaders (the tribe leader by default, plus the designated users) enter every
+// figure, validate the months and send the pack. The snapshot is positional against
+// the platform's TEMPLATE: data.kpis[i] is the value of template.kpis[i].
 
 export type Trend = "up" | "down" | "flat";
 export type SlaStatus = "ok" | "warn" | "ko";
@@ -20,11 +19,8 @@ export type EventSev = "red" | "amber" | "green" | "ice";
 export type SteercoKpi = { label: string; value: string; unit?: string; trend?: Trend; delta?: string; sub?: { label: string; value: string }[] };
 /** One SLA cell: a displayed value + a RAG status COMPUTED from that value. */
 export type SlaCell = { v: string; s?: SlaStatus | null };
-/** A timeline event (last / next): date label, text, short tag, severity colour, and
- *  the contributing squad that wrote it. Events are the one shared section of a
- *  platform slide, so each line carries its author: everybody adds, nobody can
- *  rewrite a colleague's line. */
-export type SteercoEvent = { date: string; text: string; tag?: string; sev?: EventSev; squad_id?: number | string | null };
+/** A timeline event (last / next): date label, text, short tag, severity colour. */
+export type SteercoEvent = { date: string; text: string; tag?: string; sev?: EventSev };
 
 /** The monthly snapshot stored per (squad, period). */
 export type SteercoData = {
@@ -43,22 +39,39 @@ export const SLA_ICON: Record<SlaStatus, string> = { ok: "🟢", warn: "🟠", k
 // Severity and series colours live only in the backend renderer: the one-pager and
 // its charts are server-rendered (SVG / PPTX), the frontend only collects values.
 
-/** One item of a platform's slide: a label, and the contributing squad that owes
- *  the figure (null = nobody assigned yet, only leadership can fill it). */
-export type TemplateItem = { label: string; owner_squad_id: number | null; sub?: string[] };
-/** A platform's slide definition, owned by the tribe leader. */
-export type PlatformTemplate = { kpis: TemplateItem[]; sla: TemplateItem[]; incidents: { owner_squad_id: number | null } };
-/** Which items the signed-in user may type in, by index. */
-export type EditableItems = { kpis: number[]; sla: number[]; incidents: boolean; events: boolean };
+/** One item of a platform's slide: a label (and, for a KPI, its sub-metrics). */
+export type TemplateItem = { label: string; sub?: string[] };
+export type ChartMode = "auto" | "lines" | "small_multiples" | "table";
+export type Display = { kpi_chart: ChartMode; chart_kpis: string[] };
+/** A platform's slide definition, set by the Steerco leaders. */
+export type PlatformTemplate = { kpis: TemplateItem[]; sla: TemplateItem[]; display?: Display };
 /** A platform as the API returns it. */
 export type Platform = {
-  id: number; tribe_id: number; name: string; description?: string | null;
+  id: number; tribe_id: number; tribe_name?: string | null; name: string; description?: string | null;
   display_order: number; steerco_enabled: boolean;
   template: PlatformTemplate;
-  contributors: { id: number; name: string }[];
-  editable_squad_ids: number[];
-  can_manage: boolean;
-  editable: EditableItems;
+  /** The squads concerned (optional): their key messages feed the events step. */
+  squads: { id: number; name: string }[];
+  can_run: boolean;
+};
+
+/** Where a platform's month stands (life cycle + how much is filled). */
+export type MonthState = {
+  status: "draft" | "validated";
+  fill: "empty" | "partial" | "complete";
+  filled_count: number; item_count: number; version: number;
+  updated_at: string | null; updated_by: string | null;
+  validated_at: string | null; validated_by: string | null;
+  revised_at: string | null;
+};
+
+/** What the signed-in user may do in the Steerco (from /api/auth/me/permissions). */
+export type SteercoRights = {
+  read: boolean; run: boolean; all_tribes: boolean;
+  run_tribe_ids: number[]; read_tribe_ids: number[]; designate_tribe_ids: number[];
+};
+export const NO_STEERCO: SteercoRights = {
+  read: false, run: false, all_tribes: false, run_tribe_ids: [], read_tribe_ids: [], designate_tribe_ids: [],
 };
 
 /** The empty snapshot matching a template: labels in place, values empty.

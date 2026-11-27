@@ -184,21 +184,31 @@ simply never appears); `GET /export.csv`. Visibility is tribe-scoped (admins: al
 returned only to the person, their leader and admins.
 
 ### steerco (`/api/steerco`) - module `steerco` (off by default)
-The reporting unit is the **platform**, fed by one or more squads ([15](15-steerco.md)).
-Platforms: `GET /platforms` (any signed-in caller: a contributor must see the whole slide);
-`POST /platforms`, `PUT /platforms/{id}`, `DELETE /platforms/{id}` (**`require_tribe_or_admin`**,
-tribe-scoped; the tribe is taken from the payload, the caller, or the first contributing squad).
-Snapshots: `GET /platform/{id}?period=` (data + template + what the caller owns + who is missing);
-`PUT /platform/{id}?period=` (writes **only the items the caller owns**, the rest is kept);
-`GET /platform/{id}/history?period=`; `PUT /platform/{id}/history` (backfill, same ownership rule);
-`POST /platform/{id}/preview.html?period=` (renders the **unsaved** body, persists nothing,
-contributor accessible); Documents
-(**`require_tribe_or_admin`**, tribe-scoped): `GET /entries?period=`; `GET /onepager.html?platform_id=&period=`;
-`GET /document.html?period=`; `GET /document.pptx?period=` (`501` without `python-pptx`).
+A topic of its own since 4.0 ([ADR 0018](adr/0018-steerco-is-a-topic-of-its-own.md), [15](15-steerco.md)).
+**RUNNER** = a Steerco leader of the tribe (tribe leader by default, designated user, admin);
+**READER** = a runner, or a persona holding the `steerco` capability (its own tribe).
+Leaders: `GET /leaders?tribe_id=`; `POST /leaders` (`{tribe_id, user_id}`) and
+`DELETE /leaders/{user_id}?tribe_id=` (admin, or the tribe leader of that tribe; only the admin
+withdraws a tribe leader's default); `GET /leaders/badges` (who leads, for Administration > Users).
+Platforms: `GET /platforms?tribe_id=` (READER); `POST /platforms`, `PUT /platforms/{id}`
+(`squad_ids`: the squads concerned, optional), `PUT /platforms/{id}/display`,
+`POST /platforms/{id}/apply-model`, `DELETE /platforms/{id}`, `GET/PUT /model?tribe_id=` (RUNNER).
+Months: `GET /board?year=&tribe_id=` (RUNNER: platforms x months with each state);
+`GET /entries?period=&tribe_id=` (READER); `GET /platform/{id}?period=` (READER: data, template, state);
+`PUT /platform/{id}?period=` (RUNNER, body `{data, version}`: `409` on a stale version or a validated
+month); `POST /platform/{id}/validate?period=`, `POST /validate?period=&tribe_id=`,
+`POST /platform/{id}/reopen?period=` (`{reason}`, required) (RUNNER);
+`GET /platform/{id}/history?period=` (READER, with `previous`, the month before January);
+`PUT /platform/{id}/history` (RUNNER, validated months skipped); `GET /platform/{id}/messages?period=`
+(RUNNER); `POST /platform/{id}/preview.html?period=` (RUNNER, renders the **unsaved** body, persists
+nothing). Excel: `GET /import/template?platform_id=`, `POST /import` (RUNNER, validated months skipped).
+Documents (READER): `GET /onepager.html?platform_id=&period=`; `GET /document.html?period=&tribe_id=`;
+`GET /document.pptx?period=&tribe_id=` (`501` without `python-pptx`). Mails (RUNNER):
+`GET/PUT /mail?tribe_id=` (reminder day, recipients), `POST /send?period=&tribe_id=` (`409` while a
+platform of the pack is not validated).
 All documents accept `lang=fr|en` (default English). `period` is `YYYY-MM`; every window (charts,
 history, SLA average) is the report's calendar year, January to December, so the charts always start
-in January. Admin Excel template/import (`/api/admin/import-steerco*`) use the same year window. See
-[15](15-steerco.md).
+in January. See [15](15-steerco.md).
 
 ### admin (`/api/admin`) - `require_admin` (users also tribe_leader)
 Users: `GET/POST /users`, `PUT/DELETE /users/{id}`; Settings: `GET/PUT /settings`; Auth config:
@@ -206,13 +216,15 @@ Users: `GET/POST /users`, `PUT/DELETE /users/{id}`; Settings: `GET/PUT /settings
 config?: {...}}`; `config` layers unsaved form values over the stored ones so a change can be checked
 before it is committed, returns `{ok, checks[], hint}`, read-only);
 Modules: `GET/PUT /modules-config`; **Personas: `GET/PUT /personas`**;
-SMTP: `GET/PUT /smtp-config`, `POST /smtp-config/test`; Report (admin): `GET/PUT /report-config` (`?tribe_id=` pour une tribe, sinon la Direction),
-`POST /report-config/plan` et `/preview` (sur les reglages en cours, sans ecrire), `POST /report-config/test`,
-`/send-now`, `/send-squad-leaders`; Log export: `GET/PUT /log-export-config`,
+SMTP: `GET/PUT /smtp-config`, `POST /smtp-config/test`; Diffusions (admin, ou tribe leader pour sa tribe):
+`GET/POST /diffusions`, `GET /diffusions/choices`, `POST /diffusions/plan` et `/diffusions/preview` (sur les
+reglages en cours, sans ecrire), `GET/PUT/DELETE /diffusions/{id}`, `GET /diffusions/{id}/history`,
+`POST /diffusions/{id}/test` et `/send-now` ([30](30-rapports-notifications-et-droits.md));
+`POST /report-config/send-squad-leaders`; Log export: `GET/PUT /log-export-config`,
 `POST /log-export-config/test`, `POST /log-export-config/flush` (syslog / GCS / BigQuery; GCP auth is
 keyless by default - ADC/WIF/impersonation, JSON key last - see [ADR-0012](adr/0012-gcp-auth-keyless.md));
-Imports: `GET /import-org/template`, `POST /import-org` ([14](14-import-organisation.md)),
-`GET /import-steerco/template`, `POST /import-steerco` ([15](15-steerco.md)); API keys:
+Imports: `GET /import-org/template`, `POST /import-org` ([14](14-import-organisation.md))
+(the Steerco workbook moved to `/api/steerco/import` in 4.0); API keys:
 `GET/POST /api-keys`, `POST /api-keys/{id}/revoke`, `DELETE /api-keys/{id}`;
 Ops: `GET /runtime`, `POST /restart`, `GET /logs`,
 `GET /logs/download`, `POST /logs/clear`, `POST /log-level`;

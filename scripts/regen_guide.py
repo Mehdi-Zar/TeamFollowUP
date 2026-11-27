@@ -42,8 +42,8 @@ PAGES = [
     ("/", "Tableau de bord",
      "La sante de chaque squad d'un coup d'oeil : avancement annuel, jalons bloques "
      "ou a risque, fraicheur du reporting, moral de l'equipe. Une recherche, un tri "
-     "en boutons et un choix entre cartes et liste ; l'onglet Steerco consolide les "
-     "plateformes et l'onglet Initiatives liste les engagements de la tribe.",
+     "en boutons et un choix entre cartes et liste ; l'onglet Initiatives liste "
+     "les engagements de la tribe.",
      ".squad-grid-2, .otd-tbl, table"),
     ("/roadmap", "Roadmap",
      "La roadmap consolidee : les quatre trimestres en colonnes, les squads en "
@@ -54,7 +54,7 @@ PAGES = [
      "L'ecran ou le squad leader, ses co-leaders et les contributeurs mettent la "
      "squad a jour, etape par etape : les jalons, les engagements OTD de la "
      "squad (ceux du management s'y lisent), les KPI, le commentaire "
-     "d'avancement, les messages cles, le moral, le Steerco, puis la soumission "
+     "d'avancement, les messages cles, le moral, puis la soumission "
      "du cycle. Un bandeau rappelle quelle squad et quelle semaine on remplit, "
      "et la barre d'etapes dit ce qui est deja renseigne. L'avancement en "
      "pourcentage ne se saisit pas : il se calcule a partir des jalons termines.", ".step-rail"),
@@ -76,13 +76,24 @@ PAGES = [
      "contributeurs, options (KPI, budget), OTD du management, initiatives, "
      "equipe, budget et comites. Un squad leader n'y voit que les squads qu'il "
      "dirige : fiche, contributeurs, ses propres OTD, equipe, budget et comites.", ".card"),
+    ("/steerco", "Steerco",
+     "Le comite de pilotage, mene par les Steerco leaders de la tribe (le tribe "
+     "leader par defaut, et les personnes qu'il designe). Deux onglets. Reporting du mois : "
+     "le travail du mois en trois etapes numerotees (saisir les plateformes, "
+     "valider le mois, envoyer la presentation), la liste des plateformes avec leur etat "
+     "et leur apercu, et une vue de toute l'annee. Parametrage : tous les "
+     "reglages au meme endroit, avec une liste de mise en place (qui mene le "
+     "Steerco, le modele de la tribe, les plateformes, le rappel et les "
+     "destinataires, qui peut lire). Service optionnel, eteint dans une "
+     "installation neuve.",
+     ".sc-steps, .card"),
     ("/acces", "Acces",
      "La file des demandes d'acces a valider, et la liste des acces deja en place, "
      "que l'on peut reprendre ou rendre. Reserve aux administrateurs et aux tribe "
      "leaders.", ".card, .banner"),
     ("/admin", "Administration",
      "Quatre familles, dans l'ordre ou l'on se pose les questions en montant une "
-     "installation : l'organisation (tribes, squads, plateformes, comptes, "
+     "installation : l'organisation (tribes, squads, comptes, "
      "personas, import), les services et l'apparence, la connexion et la "
      "messagerie, puis l'exploitation (audit, journaux, sauvegardes, maintenance).",
      ".admin-nav, nav"),

@@ -2,52 +2,122 @@
 
 Ce document decrit qui recoit quel document, quand, et qui peut le regler.
 
-## 1. Le menu « Rapports par mail », reserve a l'admin
+## 1. Le menu « Rapports par mail » : des diffusions
 
 Les rapports envoyes par mail se reglent dans **Administration > Rapports par
-mail**, par l'administrateur seul (l'onglet `report` est reserve a l'admin,
-comme l'authentification ou l'annuaire). Il n'y a plus d'abonnement personnel :
-personne ne regle ce qu'il recoit lui-meme. Trois onglets :
+mail**. Il n'y a plus d'abonnement personnel : personne ne regle ce qu'il recoit
+lui-meme. Deux onglets :
 
-| Onglet | Ce qu'il regle |
-|---|---|
-| Tribes | le rapport programme d'une tribe (l'admin choisit la tribe) |
-| Direction | le document complet, toutes les tribes, a des adresses fixes |
-| A chaque modification | les avis de modification (section 3) |
+| Onglet | Ce qu'il regle | Qui |
+|---|---|---|
+| Rapports planifies | les **diffusions** : une carte par envoi programme | l'admin (toutes), le tribe leader (celles de sa tribe) |
+| Alertes de modification | les avis de modification (section 3) | l'admin |
 
-Deux sortes de planning, chacun avec son calendrier (jours, heure de Paris),
-l'option « seulement s'il y a du nouveau » et son `last_sent_day` : la Direction
-(`app_settings['weekly_report']`) et chaque tribe
-(`app_settings['weekly_report:tribe:<id>']`).
+Une **diffusion** est un envoi programme : un perimetre (une tribe, ou la
+Direction), un calendrier (jours, heure et minutes de Paris, par 5 minutes,
+reglees avec des boutons - et +), l'option « seulement s'il y a
+du nouveau », ses destinataires et ses pieces jointes. Il peut y en avoir
+**plusieurs par tribe** (les leaders le lundi, un comite le vendredi). Chacune est
+rangee dans `app_settings['report_diffusion:<id>']` avec son `last_sent_day`
+(`app/reportconfig.py`).
+
+L'onglet `report` peut maintenant etre donne a une persona (Administration >
+Personas et droits) : elle regle alors les diffusions de **sa** tribe, comme un
+tribe leader. Il est coche par defaut pour le tribe leader. La Direction et les
+alertes de modification restent a l'admin. Routes : `/api/admin/diffusions`
+(`app/routers/diffusions.py`).
+
+### La carte
+
+Chaque carte dit tout d'un coup d'oeil : nom, perimetre, interrupteur
+**Active / En pause**, jours et heure, pieces jointes, « A » et « Cc » (les
+premiers noms puis « et N autres »), nombre de mails, personnes sans adresse,
+**prochain envoi** et **dernier envoi** (point vert ou rouge, clic = historique).
+Boutons : Editer, Apercu, M'envoyer un test, Envoyer maintenant (deuxieme clic de
+confirmation), Supprimer (idem).
+
+### La fenetre d'edition
+
+Un **pas a pas**, une etape a la fois (Precedent / Suivant), avec le menu des
+etapes a gauche et ce que chacune contient deja : 1. pour quelle tribe (« Toutes
+les tribes » = la Direction, document complet) et le nom, facultatif ; 2. quand ;
+3. qui recoit ; 4. contenu du mail ; 5. pieces jointes. « + Nouvelle diffusion » ouvre directement
+l'etape 1. Une diffusion enregistree garde sa tribe et peut etre enregistree a
+n'importe quelle etape. A droite, toujours visibles, **qui
+recoit quoi** (un bloc par mail, cliquable) et l'**apercu du mail choisi**, tel
+qu'il sera recu (objet, A, Cc, pieces jointes, corps). Les deux sont recalcules a
+chaque clic, **avant d'enregistrer** (`POST /api/admin/diffusions/plan` et
+`/preview` avec les reglages en cours, sans rien ecrire). Un vrai mail part des
+reglages enregistres.
+
+### L'historique
+
+Chaque envoi est note dans la table `report_sends` : programme, envoye a la main
+ou test, nombre de mails, destinataires, mails refuses et la raison donnee par le
+serveur de mails. Quand le serveur refuse tout, le planificateur reessaie a chaque
+heure (pas a chaque passage de 5 minutes), mais l'echec n'est note qu'une fois par
+jour. Le planificateur passe toutes les 5 minutes pour les rapports par mail ; ses
+autres taches (purge, sauvegarde automatique, rappels Steerco) restent horaires.
+Un mail en retard (application arretee a l'heure prevue) part au passage suivant. Les 100 derniers envois de
+chaque diffusion sont gardes ; supprimer la diffusion efface son historique.
 
 ## 2. Qui recoit quoi, pour une tribe
 
-Le **tribe leader est le destinataire principal**. Il recoit au choix
-(`leader_mode`) :
+Le **tribe leader est le destinataire principal**. Il recoit, au choix et
+**cumulables** :
 
-- `tribe` : un mail avec le document de sa tribe ;
-- `per_squad` : un mail par squad.
+- `leader_tribe` : le mail de toute la tribe ;
+- `leader_squads` : un mail par squad.
 
-**Un seul mail, jamais deux pour une meme personne** : les responsables de
-squad mis en copie rejoignent le mail du tribe leader. En mode `tribe`, ils sont
-en copie du document de la tribe (ils voient donc toute la tribe) ; en mode
-`per_squad`, du mail de leur squad.
+Les gens de chaque squad, par role (`copy_leader`, `copy_co_leaders`,
+`copy_contributors`) :
 
-| Ligne | Reglage | Ce qu'elles recoivent |
+- quand le tribe leader recoit **seulement** le mail de la tribe, ils sont en
+  copie de ce mail (un seul mail, ils voient toute la tribe, comme avant) ;
+- sinon, chacun est sur le mail de **sa** squad (en copie quand le tribe leader
+  le recoit aussi, en « A » sinon).
+
+Les autres destinataires se nomment dans un seul champ (un nom, une persona ou
+une adresse) :
+
+| Type | Reglage | Ce qu'ils recoivent |
 |---|---|---|
-| Par role dans la squad | `copy_leader`, `copy_co_leaders`, `copy_contributors` | en copie du mail du tribe leader (voir ci-dessus) |
 | Par persona | `copies[]` type `persona` | les personnes de la tribe qui ont cette persona |
 | Par nom | `copies[]` type `user` | une personne de la tribe |
 | Par adresse | `copies[]` type `email` | une adresse libre |
 
-Pour chaque copie par persona, nom ou adresse, on choisit ce qu'elle recoit : le
-document de la tribe, ou les mails des squads (toutes, ou celles cochees). Ces
-mails de squad existent aussi en mode `tribe`, pour ces seules copies.
-`squad_ids` limite les squads concernees (vide = toutes).
+Pour chacun, on choisit ce qu'il recoit : le mail de la tribe, ou les mails des
+squads (toutes, ou celles cochees). `squad_ids` limite les squads concernees
+(vide = toutes).
+
+Pour la **Direction**, les destinataires sont nommes de la meme facon (personne,
+persona de toutes les tribes, adresse) et recoivent tous le document complet.
 
 ### Ce que contient chaque mail
 
-Le corps du mail est toujours le resume du rapport. Les **pieces jointes** se
+Le **corps du mail** se compose, par sorte de mail (`body`), de blocs a cocher
+(`reportconfig.BODY_SECTIONS`), dans cet ordre :
+
+| Bloc | Contenu |
+|---|---|
+| `changes` | nouveautes depuis le dernier envoi |
+| `kpis` | chiffres cles (pour une squad : statut, avancement, derniere saisie, squad leader) |
+| `squads` | tableau des squads (pas pour le recap d'une squad) |
+| `key_messages` | messages cles (risques, alertes, reussites) |
+| `late_otds` | engagements (OTD) en retard |
+| `kpi_watch` | KPI sous pression ou manques |
+| `milestones` | jalons bloques ou a risque |
+
+Dans le recap d'une tribe, chaque point d'attention commence par le nom de sa
+squad. Quand tous les points d'attention coches sont vides, le mail le dit
+(« Aucun point d'attention cette semaine »). L'etape « Contenu du mail » montre
+**une seule liste** de blocs, numerotes dans l'ordre du mail, a cocher a la main ;
+elle vaut pour tous les mails de la diffusion (le tableau des squads ne s'applique
+pas au recap d'une squad, les chiffres cles y deviennent l'etat de la squad). Une
+nouvelle diffusion a tous les blocs coches. Une diffusion enregistree avant ce
+choix garde son contenu d'avant (`DEFAULT_BODY`).
+
+Les **pieces jointes** se
 choisissent par sorte de mail (`docs`) : le mail de la tribe (`tribe`), les
 mails de squad (`squad`) et celui de la Direction (`all`). Quatre documents,
 joints en PowerPoint et mis en page par le Studio des exports :
@@ -67,29 +137,27 @@ mail joint le rapport hebdomadaire.
 - un mail sans personne en « A » passe ses copies en « A » ;
 - une adresse ne figure qu'une fois par mail ;
 - les personnes nommees sans adresse sont listees a l'ecran ;
-- « seulement s'il y a du nouveau » se decide **mail par mail** : chaque document
-  a sa propre reference, une squad qui n'a pas bouge ne declenche rien.
+- « seulement s'il y a du nouveau » se decide **mail par mail** : chaque mail a sa
+  propre reference (`d<id>:...`, propre a la diffusion), une squad qui n'a pas
+  bouge ne declenche rien.
 
-### L'ecran
+Le bouton **Envoyer au squad leader** de la page d'une squad reste, pour l'admin
+(`/api/admin/report-config/send-squad-leaders`).
 
-La liste des destinataires, mail par mail, avec les pieces jointes de chacun, est
-**recalculee a chaque modification, avant d'enregistrer**
-(`POST /api/admin/report-config/plan` avec les reglages en cours, sans rien
-ecrire). Chaque ligne du reglage montre ses destinataires et son **apercu**
-(`POST /preview`, lui aussi sur les reglages en cours). Un vrai mail part des
-reglages enregistres : **m'envoyer un test** (`/test`, a l'adresse de l'admin) et
-**envoyer maintenant** (`/send-now`, hors calendrier, sans toucher aux references
-« quoi de neuf »). Le bouton **Envoyer au squad leader** de la page d'une squad
-reste, pour l'admin (`/send-squad-leaders`).
+### Reprise des anciens reglages
 
-Les reglages de l'ancienne forme (`global_doc`, `per_squad`, `squad_leaders`,
-`tribe_leader_digest`, `attach_pptx`) sont convertis une fois
-(`reportconfig.ensure_v2`) : la liste fixe de l'admin devient la Direction ; « chaque
-squad leader recoit sa squad » et le recapitulatif par tribe deviennent, pour
-chaque tribe, un planning au meme calendrier, tribe leader destinataire et squad
-leaders (co-leaders compris) en copie ; la liste fixe d'une tribe devient des
-copies par adresse ; « PPTX joint » decoche devient « aucun document ». La table
-des anciens abonnements personnels reste en base mais n'est plus lue.
+Les reglages d'avant les diffusions (un planning par tribe
+`weekly_report:tribe:<id>` et celui de la Direction `weekly_report`, y compris la
+toute premiere forme `global_doc`, `per_squad`, `squad_leaders`,
+`tribe_leader_digest`, `attach_pptx`) sont convertis **une fois** en diffusions
+(`reportconfig.ensure_diffusions`, au premier affichage du menu ou au premier
+passage du planificateur). Chacun garde son calendrier, ses destinataires, le jour
+de son dernier envoi et ses references « quoi de neuf » : personne ne recoit un mail
+en double ni ne perd les nouveautes de la semaine. `leader_mode` « tribe » devient
+`leader_tribe`, « per_squad » devient `leader_squads`, les adresses fixes de la
+Direction deviennent des destinataires par adresse. Un planning jamais regle
+(desactive, sans destinataire) n'est pas repris. La table des anciens abonnements
+personnels reste en base mais n'est plus lue.
 
 ## 3. Le mail a chaque modification
 
@@ -114,8 +182,8 @@ et apparence, connexion et email, exploitation).
 **Tout se choisit**, y compris les onglets jusqu'ici reserves a l'administrateur
 (SMTP, SSO, sauvegardes, journaux...). Seule la colonne de l'administrateur est
 verrouillee, pour que l'application ne perde jamais l'acces a ses reglages. Par
-defaut, le tribe leader a ma tribe, plateformes, comptes, conges et rapport
-hebdomadaire ; les autres personas n'ont aucun onglet.
+defaut, le tribe leader a ma tribe, comptes, conges et rapports par mail ; les
+autres personas n'ont aucun onglet.
 
 Le serveur suit les cases (`app/tabaccess.py`) :
 
@@ -145,8 +213,8 @@ Le menu Administration apparait des qu'un persona a au moins un onglet.
 
 | Role | Fichier |
 |---|---|
-| Plannings et options | `backend/app/reportconfig.py`, `backend/app/mailplan.py` (qui recoit quoi), `backend/app/report.py` (`_send_schedule`, `send_plan_now`, `plan_preview`) |
-| Routes du rapport | `backend/app/routers/admin.py` (`/report-config`) |
+| Diffusions et reprise des anciens reglages | `backend/app/reportconfig.py`, `backend/app/mailplan.py` (qui recoit quoi), `backend/app/report.py` (`_send_schedule`, `send_plan_now`, `plan_preview`, `history`, `next_send`) |
+| Routes des diffusions | `backend/app/routers/diffusions.py` (`/api/admin/diffusions`) ; `routers/admin.py` garde `/report-config/send-squad-leaders` |
 | Mail de modification | `backend/app/changenotify.py`, `backend/app/changeconfig.py` |
 | Onglets par persona | `backend/app/personasconfig.py`, `backend/app/tabaccess.py`, `backend/app/deps.py` |
 | Ecrans | `frontend/src/components/ReportsMail.tsx` (menu Rapports par mail), `frontend/src/pages/admin/configuration.tsx`, `frontend/src/pages/admin/organisation.tsx` |

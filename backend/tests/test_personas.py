@@ -26,7 +26,11 @@ def test_the_default_capabilities_decide_who_reaches_the_reporting_screen(client
 def test_get_personas_returns_builtins_and_catalog(client, seeded):
     login(client, seeded["admin"])
     out = client.get("/api/admin/personas").json()
-    assert out["capabilities"] == ["dashboard", "roadmap", "org", "feed", "reporting", "mysquads", "leaves", "exports"]
+    assert out["capabilities"] == ["dashboard", "roadmap", "org", "feed", "reporting", "mysquads", "leaves", "exports",
+                                   "steerco"]
+    # Reading the Steerco is closed by default (ADR 0018): only the admin has it.
+    assert {p["key"]: p["caps"]["steerco"] for p in out["personas"]} == {
+        "admin": True, "tribe_leader": False, "squad_leader": False, "contributor": False, "member": False}
     keys = [p["key"] for p in out["personas"]]
     assert keys[:5] == ["admin", "tribe_leader", "squad_leader", "contributor", "member"]
     assert all(p["builtin"] for p in out["personas"])
@@ -127,7 +131,10 @@ def test_which_capabilities_are_enforced_server_side_matches_the_documentation()
         enforced |= set(re.findall(r'require_capability\(\s*["\'](\w+)["\']', src.read_text(encoding="utf-8")))
 
     assert enforced <= set(CAPABILITIES), f"unknown capability guarded: {enforced - set(CAPABILITIES)}"
-    assert sorted(set(CAPABILITIES) - enforced) == ["mysquads"], (
+    # "exports" and "steerco" are enforced by guards of their own, because each
+    # also opens to a Steerco leader whatever their persona (ADR 0018):
+    # exportstore._studio_open and steercoaccess.reader_dep, both calling can().
+    assert sorted(set(CAPABILITIES) - enforced) == ["exports", "mysquads", "steerco"], (
         "The set of capabilities enforced server-side changed. Update "
         "docs/05-security.md (layer 2) and docs/01-product-overview.md to match, "
         "then adjust this test."

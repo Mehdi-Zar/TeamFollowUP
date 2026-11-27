@@ -44,7 +44,7 @@ NEVER_ERASED = {"app_settings", "leave_types", "data_snapshots", "alembic_versio
 DOMAINS: dict[str, dict] = {
     "reporting": {
         "tables": ["report_snapshots", "quarter_progress", "key_messages",
-                   "report_baselines"],
+                   "report_baselines", "report_sends"],
         "implies": [],
     },
     "roadmap": {"tables": ["roadmap_items"], "implies": []},
@@ -53,7 +53,7 @@ DOMAINS: dict[str, dict] = {
     "kpis": {"tables": ["kpis"], "implies": []},
     "budgets": {"tables": ["squad_budgets"], "implies": []},
     "steerco": {
-        "tables": ["steerco_entries", "platform_contributors", "platforms"],
+        "tables": ["steerco_entries", "platform_contributors", "platforms", "steerco_leaders"],
         "implies": [],
     },
     "committees": {"tables": ["committees"], "implies": []},
