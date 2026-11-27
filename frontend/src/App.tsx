@@ -18,6 +18,7 @@ import { useI18n } from "./i18n";
 import { Spinner } from "./components/ui";
 import { useConfig, moduleOn } from "./config";
 import { Capability, ModuleKey } from "./types";
+import { opensCs } from "./cs";
 import Layout from "./components/Layout";
 import LoginPage from "./pages/LoginPage";
 import AccessPending from "./components/AccessPending";
@@ -38,6 +39,7 @@ const LeavesPage = lazy(() => import("./pages/LeavesPage"));
 const AccessRequestsPage = lazy(() => import("./pages/AccessRequestsPage"));
 const StudioPage = lazy(() => import("./pages/StudioPage"));
 const SteercoPage = lazy(() => import("./pages/SteercoPage"));
+const CsPage = lazy(() => import("./pages/CsPage"));
 import { PageChromeProvider } from "./components/pageChrome";
 
 /**
@@ -117,6 +119,16 @@ function SteercoGuard({ children }: { children: JSX.Element }) {
   return steerco.read || steerco.run || steerco.contribute || steerco.designate_tribe_ids.length ? children : <SectionClosed />;
 }
 
+/** Customer Success (ADR 0020): its module on, and the user a CS leader, a
+ *  contributor, a reader (capability "customer_success") or a designator. */
+function CsGuard({ children }: { children: JSX.Element }) {
+  const { modules } = useConfig();
+  const { customerSuccess, loading } = useAuth();
+  if (loading) return <Spinner />;
+  if (!moduleOn(modules, "customer_success")) return <Navigate to="/" replace />;
+  return opensCs(customerSuccess) ? children : <SectionClosed />;
+}
+
 /** The export Studio: the "exports" capability, or a Steerco leader (who designs
  *  the slides of the platforms they run, even without the capability). */
 function StudioGuard({ children }: { children: JSX.Element }) {
@@ -172,6 +184,7 @@ export default function App() {
         <Route path="/mes-squads" element={<Section cap="mysquads"><MySquadsPage /></Section>} />
         <Route path="/exports" element={<StudioGuard><StudioPage /></StudioGuard>} />
         <Route path="/steerco" element={<SteercoGuard><SteercoPage /></SteercoGuard>} />
+        <Route path="/customer-success" element={<CsGuard><CsPage /></CsGuard>} />
         <Route path="/admin" element={<Protected adminPage><AdminPage /></Protected>} />
       </Route>
 

@@ -26,6 +26,9 @@ erDiagram
   SQUADS ||--o{ COMMITTEES : "comitologie"
   PLATFORMS ||--o{ STEERCO_ENTRIES : "monthly steerco snapshot"
   TRIBES ||--o{ STEERCO_LEADERS : "designated steerco leaders"
+  TRIBES ||--o{ CS_PROJECTS : "customer success projects"
+  CS_PROJECTS ||--o{ CS_JOURNAL : "dated journal"
+  CS_PROJECTS ||--o{ CS_ITEMS : "points to follow"
   INITIATIVES ||--o{ OBJECTIVES : "contributes to"
   OBJECTIVES ||--o{ ROADMAP_ITEMS : "jalons"
   OTDS ||--o{ ROADMAP_ITEMS : groups
@@ -66,6 +69,11 @@ erDiagram
 | **platform_contributors** | platform_id→platforms, squad_id→squads (both ON DELETE CASCADE), pk(platform, squad) | the squads concerned by a platform (optional since 4.0: their key messages feed the events step, the platform shows on their page). Many-to-many: a squad may serve several platforms |
 | **steerco_entries** | id, platform_id→platforms (ON DELETE CASCADE), **period** ("YYYY-MM"), **data (JSON)**, updated_at, updated_by_user_id→users, **status** (draft\|validated), **version**, validated_at, validated_by_user_id→users, revised_at, **uniq(platform,period)** | one monthly steering-committee snapshot (KPI counts, the month's SLA per COTS, incident count, events), positional against the platform's template. Raw values only: variations, SLA colours and the calendar-year charts (January to December) are derived at render time. See [15](15-steerco.md) |
 | **steerco_leaders** | id, user_id→users (ON DELETE CASCADE), tribe_id→tribes (ON DELETE CASCADE), **excluded**, created_at, created_by_user_id→users (SET NULL), **uniq(user,tribe)** | the designated Steerco leaders of a tribe (ADR 0018). The tribe leader has no row: they are one by default, and an `excluded` row (admin only) withdraws it |
+| **cs_leaders** | id, user_id→users (ON DELETE CASCADE), tribe_id→tribes (ON DELETE CASCADE), **excluded**, created_at, created_by_user_id→users (SET NULL), **uniq(user,tribe)** | who runs a tribe's Customer Success projects (ADR 0020), same shape as `steerco_leaders`: the tribe leader holds it by default without a row, `excluded` takes it away. See [37](37-customer-success.md) |
+| **cs_projects** | id, tribe_id→tribes (ON DELETE CASCADE), title, client, requesters, **contacts (JSON)**, **tags (JSON)**, **stage**, health (green/amber/red), offer, delivery_mode, gcp_project, planned_delivery, actual_delivery, build_amount, quote_signed, cost_code, consumption_billing (uncapped/capped), consumption_cap, users_count, models, data_classification, max_duration, access_end, **milestones (JSON)**, **links (JSON)**, notes, created_at, updated_at, created_by_user_id→users (SET NULL) | a project the CS team delivers. Flat: client, offer and people are free text. `stage` is a key of the tribe's stage list (`app_settings['cs:<tribe_id>']`, see `app/csconfig.py`). The blocker, next action, last contact and badges are computed, never stored |
+| **cs_contributors** | id, user_id→users (ON DELETE CASCADE), project_id→cs_projects (ON DELETE CASCADE), created_at, **uniq(user,project)** | who fills in one project without running the topic |
+| **cs_journal** | id, project_id→cs_projects (ON DELETE CASCADE), **entry_date**, kind (request/decision/proposal/delivery/reminder/blocker/note), people, text, **links (JSON)**, **in_recap**, created_at, created_by_user_id→users (SET NULL) | one dated event; `entry_date` is typed (past dates rebuild the history), `in_recap` puts it in the recap mail |
+| **cs_items** | id, project_id→cs_projects (ON DELETE CASCADE), kind (action/risk/blocker), label, owner, due, opened_on, **done**, done_on, created_at | a point to follow: an open blocker makes the project "Blocked", the open action due first is its next action |
 | **report_baselines** | **scope_key (PK)** (global/tribe:id/sub:id), **signature (JSON)**, updated_at | last-emailed report state, diffed to compute "what changed" per recipient |
 | **api_keys** | id, name, **prefix** (uniq, public handle), **key_hash** (argon2), **scopes (JSON)**, tribe_id→tribes (NULL = all), created_by_user_id, created_at, expires_at, last_used_at, revoked_at | machine credentials for the read-only API (Admin → API); secret shown once |
 | **feed_posts** | id, tribe_id→tribes, author_user_id→users, content, kind (incident/info/success), squad_id→squads, is_pinned, created_at | |

@@ -56,6 +56,10 @@ DOMAINS: dict[str, dict] = {
         "tables": ["steerco_entries", "steerco_contributors", "platform_contributors", "platforms", "steerco_leaders"],
         "implies": [],
     },
+    "customer_success": {
+        "tables": ["cs_items", "cs_journal", "cs_contributors", "cs_projects", "cs_leaders"],
+        "implies": [],
+    },
     "committees": {"tables": ["committees"], "implies": []},
     "members": {"tables": ["members"], "implies": []},
     "org": {"tables": ["org_nodes"], "implies": []},
@@ -70,7 +74,7 @@ DOMAINS: dict[str, dict] = {
     "structure": {
         "tables": ["squad_coleaders", "squads", "tribes"],
         "implies": ["reporting", "roadmap", "objectives", "initiatives", "kpis", "budgets",
-                    "steerco", "committees", "members", "org", "leaves"],
+                    "steerco", "customer_success", "committees", "members", "org", "leaves"],
     },
     # Accounts go last: a user is referenced from everywhere, and the deletion
     # policy of app/userpurge.py is the authority on what is personal.

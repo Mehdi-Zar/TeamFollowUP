@@ -163,7 +163,13 @@ def permissions_payload(user: User, db=None) -> dict:
         "can_create_tribe": can_create_or_delete_tribe(user),
         "can_manage_users": can_manage_users(user),
         **({"steerco": _steerco_summary(db, user)} if db is not None else {}),
+        **({"customer_success": _cs_summary(db, user)} if db is not None else {}),
     }
+
+
+def _cs_summary(db, user: User) -> dict:
+    from .csaccess import summary
+    return summary(db, user)
 
 
 def _steerco_summary(db, user: User) -> dict:

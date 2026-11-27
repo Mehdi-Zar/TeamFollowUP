@@ -95,3 +95,11 @@ button:focus-visible, .btn:focus-visible, a:focus-visible, .squad-card:focus-vis
 .feed-kind.k-info::before { background: var(--accent); }
 /* Un badge-bouton (MySquads) garde son pointeur et un survol discret. */
 button.badge:hover { background: var(--surface-3); }
+
+/* Customer Success (docs/37): a project card and its stage bar. */
+.cs-card { border: 1px solid var(--line); background: var(--surface); font: inherit; color: inherit; }
+.cs-card:hover { border-color: var(--accent); }
+.cs-steps { display: flex; gap: 4px; }
+.cs-step { flex: 1; height: 6px; border-radius: 999px; }
+.cs-recap { border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; background: #fff; color: #1D2939; max-height: 52vh; overflow: auto; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }

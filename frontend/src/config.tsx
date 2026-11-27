@@ -15,7 +15,7 @@ import { Branding, ModuleKey, ModulesConfig, PublicConfig } from "./types";
 /** The favicon the app ships, used until one is uploaded in Administration > Apparence. */
 const DEFAULT_FAVICON = "/favicon.svg";
 
-/** Default module map: everything on except committees, steerco and squad KPIs. Used
+/** Default module map: everything on except committees, steerco, customer success and squad KPIs. Used
  *  until the server config loads, and as the fallback when config is missing. */
 export const DEFAULT_MODULES: ModulesConfig = {
   dashboard: { enabled: true },
@@ -26,6 +26,7 @@ export const DEFAULT_MODULES: ModulesConfig = {
   squad_content: { enabled: true, roadmap: true, kpis: false },
   committees: { enabled: false },
   steerco: { enabled: false },
+  customer_success: { enabled: false },
   notifications: { enabled: true, inapp: true, email: true },
   getting_started: { enabled: true },
   leaves: { enabled: true, overlap_alert: true },

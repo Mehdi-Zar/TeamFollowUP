@@ -15,6 +15,28 @@ has an entry, so a new message cannot be forgotten.
 import re
 
 EN: dict[str, str] = {
+    # Customer Success (ADR 0020).
+    "Réservé aux responsables Customer Success de cette tribe": "For this tribe's Customer Success leaders",
+    "Projet introuvable": "Project not found",
+    "Ce projet ne vous est ouvert qu'en lecture": "This project is open to you read only",
+    "Montant invalide": "Invalid amount",
+    "Le projet doit avoir un titre": "The project needs a title",
+    "Customer Success ne vous est pas ouvert": "Customer Success is not open to you",
+    "Seuls l'administrateur et le tribe leader désignent les responsables Customer Success": "Only the administrator and the tribe leader designate Customer Success leaders",
+    "Entrée introuvable": "Entry not found",
+    "Point introuvable": "Point not found",
+    "Un lien commence par https:// ou http://": "A link starts with https:// or http://",
+    "Étape inconnue": "Unknown stage",
+    "Météo inconnue": "Unknown health",
+    "Refacturation inconnue": "Unknown billing",
+    "Il faut au moins une étape": "At least one stage is needed",
+    "Cette personne n'appartient pas à la tribe du projet": "This person does not belong to the project's tribe",
+    "Type d'entrée inconnu": "Unknown entry type",
+    "L'entrée est vide": "The entry is empty",
+    "Type de point inconnu": "Unknown point type",
+    "Le point doit avoir un libellé": "The point needs a label",
+    "Liste de projets invalide": "Invalid project list",
+    "Nombre d'utilisateurs invalide": "Invalid number of users",
     # Rattacher un jalon a un OTD depuis le jalon.
     "Ce jalon est rattaché à un OTD que vous ne gérez pas": "This milestone is linked to an OTD you do not manage",
     "Cet OTD n'est pas celui de cette squad": "This OTD is not this squad's",
@@ -307,6 +329,8 @@ def _label(m: re.Match) -> dict:
 
 # Messages built with values. Named groups are reused in the English template.
 PATTERNS: list[tuple[re.Pattern, str]] = [
+    (re.compile(r"^Étape encore utilisée par un projet : (?P<names>.*)$", re.S), "Stage still used by a project: {names}"),
+    (re.compile(r"^Date invalide \((?P<field>.+)\) : AAAA-MM-JJ attendu$"), "Invalid date ({field}): YYYY-MM-DD expected"),
     (re.compile(r"^Fichier joint refusé \((?P<err>.*)\)$", re.S), "Attached file refused ({err})"),
     (re.compile(r"^Paramètre invalide : (?P<name>.+)$"), "Invalid parameter: {name}"),
     (re.compile(r"^D'autres modèles en dérivent : (?P<names>.*)$", re.S), "Other templates derive from it: {names}"),

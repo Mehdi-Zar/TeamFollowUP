@@ -24,6 +24,7 @@ export const MODULE_TREE: { key: ModuleKey; features: string[] }[] = [
   { key: "squad_content", features: ["roadmap", "kpis", "quarter_progress"] },  // objectives retired
   { key: "committees", features: [] },
   { key: "steerco", features: [] },
+  { key: "customer_success", features: [] },
   { key: "notifications", features: ["inapp", "email"] },
   { key: "getting_started", features: [] },
   { key: "leaves", features: ["overlap_alert"] },

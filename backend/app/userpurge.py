@@ -63,6 +63,9 @@ OWNED_BY_USER: set[tuple[str, str]] = {
     # And for running a tribe's Steerco: a designation of the person.
     ("steerco_leaders", "user_id"),
     ("steerco_contributors", "user_id"),
+    # And for running or filling in Customer Success projects (ADR 0020).
+    ("cs_leaders", "user_id"),
+    ("cs_contributors", "user_id"),
 }
 
 

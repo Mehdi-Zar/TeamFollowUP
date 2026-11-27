@@ -21,8 +21,9 @@ PERSONAS_KEY = "personas"
 # follows the role (exportstore.can_design).
 # "steerco" opens the Steerco menu to read (ADR 0018); running it is a designation
 # (app/steercoaccess.py), not a capability. Off by default for every persona.
+# "customer_success" opens the Customer Success projects to read (ADR 0020), same rule.
 CAPABILITIES = ["dashboard", "roadmap", "org", "feed", "reporting", "mysquads", "leaves", "exports",
-                "steerco"]
+                "steerco", "customer_success"]
 _CAP_SET = set(CAPABILITIES)
 
 BUILTINS = ["admin", "tribe_leader", "squad_leader", "contributor", "member"]

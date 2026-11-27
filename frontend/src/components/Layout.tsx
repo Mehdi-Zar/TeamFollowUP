@@ -12,6 +12,7 @@ import { useEffect, useRef, useState } from "react";
 import ErrorBoundary from "./ErrorBoundary";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { api } from "../api";
+import { opensCs } from "../cs";
 import { useAuth } from "../auth";
 import { useColorMode } from "../colorMode";
 import { IdleLogout } from "./IdleLogout";
@@ -39,6 +40,7 @@ import {
   IconOrg,
   IconRoadmap,
   IconSteerco,
+  IconCs,
   IconStudio,
   IconTribes,
 } from "./icons";
@@ -69,6 +71,8 @@ const NAV: NavItem[] = [
   { to: "/conges", labelKey: "nav.leaves", titleKey: "nav.leaves", Icon: IconLeave, visible: () => true, module: "leaves", cap: "leaves" },
   // Steerco: a menu of its own (ADR 0018), for its Steerco leaders and its readers.
   { to: "/steerco", labelKey: "nav.steerco", titleKey: "steerco.title", Icon: IconSteerco, visible: () => true, module: "steerco" },
+  // Customer Success: the projects a CS team delivers (ADR 0020).
+  { to: "/customer-success", labelKey: "nav.cs", titleKey: "cs.title", Icon: IconCs, visible: () => true, module: "customer_success" },
   { to: "/mes-squads", labelKey: "nav.mysquads", titleKey: "mysquads.title", Icon: IconTribes, visible: () => true, cap: "mysquads" },
   { to: "/acces", labelKey: "nav.access", titleKey: "access.title", Icon: IconAccess, visible: () => true },
   // Studio des exports: opened per persona (capability "exports", on by default for
@@ -85,7 +89,7 @@ const COLLAPSE_KEY = "sidebar.collapsed";
  *  hosts the current page through <Outlet/>. Owns cross-page UI state (sidebar
  *  collapse, mobile drawer, admin impersonation picker, first-login welcome). */
 export default function Layout() {
-  const { user, logout, effectiveRole, isPreview, impersonate, stopImpersonation, impersonationMode, can, pendingAccessCount, adminTabs, canReviewAccess, steerco } = useAuth();
+  const { user, logout, effectiveRole, isPreview, impersonate, stopImpersonation, impersonationMode, can, pendingAccessCount, adminTabs, canReviewAccess, steerco, customerSuccess } = useAuth();
   const { t, role: roleLabel, lang, setLang } = useI18n();
   // A save that failed after its field was left (see api.reportSaveError).
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -154,6 +158,7 @@ export default function Layout() {
     (n.to === "/admin" && !isPreview ? adminTabs.length > 0
       : n.to === "/acces" ? canReviewAccess
       : n.to === "/steerco" ? (steerco.read || steerco.run || steerco.contribute || steerco.designate_tribe_ids.length > 0)
+      : n.to === "/customer-success" ? opensCs(customerSuccess)
       : n.to === "/exports" ? (can("exports") || steerco.run)
       : n.visible(role)) &&
     (!n.module || moduleOn(modules, n.module, n.feature)) &&

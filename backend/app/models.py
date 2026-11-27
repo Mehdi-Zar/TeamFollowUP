@@ -1057,6 +1057,148 @@ class SteercoContributor(Base):
     platform: Mapped["Platform"] = relationship(back_populates="steerco_contributors")
 
 
+class CsLeader(Base):
+    """Who runs a tribe's Customer Success projects (ADR 0020): a designation.
+
+    Same shape as :class:`SteercoLeader`: the tribe leader holds it by default,
+    without a row, and an ``excluded`` row (set by the administrator) takes it away.
+    """
+    __tablename__ = "cs_leaders"
+    __table_args__ = (UniqueConstraint("user_id", "tribe_id", name="uq_cs_leader"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"),
+                                         nullable=False, index=True)
+    tribe_id: Mapped[int] = mapped_column(ForeignKey("tribes.id", ondelete="CASCADE"),
+                                          nullable=False, index=True)
+    excluded: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"),
+                                                           nullable=True)
+
+    user: Mapped["User"] = relationship(foreign_keys=[user_id])
+
+
+class CsProject(Base):
+    """A project the Customer Success team delivers (docs/37).
+
+    Projects are flat: the client, the offer and the people are free text, so that
+    entering one is as quick as a OneNote page. ``stage`` is a key of the tribe's
+    stage list (app/csconfig.py); the blocker, the next action and the last contact
+    are never stored, they are read from the items and the journal.
+
+    ``contacts``: [{"name", "role"}]. ``tags``: [str]. ``links``: [{"label", "url"}].
+    ``milestones``: {stage_key: {"planned": "YYYY-MM-DD", "actual": "YYYY-MM-DD"}}.
+    """
+    __tablename__ = "cs_projects"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tribe_id: Mapped[int] = mapped_column(ForeignKey("tribes.id", ondelete="CASCADE"),
+                                          nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    client: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    requesters: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    contacts: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    tags: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    stage: Mapped[str] = mapped_column(String(40), nullable=False, default="request")
+    # green | amber | red, set by hand; None until someone gives one.
+    health: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    offer: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    delivery_mode: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    gcp_project: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    planned_delivery: Mapped[date | None] = mapped_column(Date, nullable=True)
+    actual_delivery: Mapped[date | None] = mapped_column(Date, nullable=True)
+    build_amount: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    quote_signed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    cost_code: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # uncapped | capped; the cap itself is free text (an amount, a quota).
+    consumption_billing: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    consumption_cap: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    users_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    models: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    data_classification: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    max_duration: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    access_end: Mapped[date | None] = mapped_column(Date, nullable=True)
+    milestones: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    links: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"),
+                                                           nullable=True)
+
+    journal: Mapped[list["CsJournalEntry"]] = relationship(
+        back_populates="project", cascade="all, delete-orphan",
+        order_by="(CsJournalEntry.entry_date.desc(), CsJournalEntry.id.desc())")
+    items: Mapped[list["CsItem"]] = relationship(
+        back_populates="project", cascade="all, delete-orphan", order_by="CsItem.id")
+    contributors: Mapped[list["CsContributor"]] = relationship(
+        back_populates="project", cascade="all, delete-orphan")
+
+
+class CsContributor(Base):
+    """Who fills in one Customer Success project without running the topic."""
+    __tablename__ = "cs_contributors"
+    __table_args__ = (UniqueConstraint("user_id", "project_id", name="uq_cs_contributor"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"),
+                                         nullable=False, index=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("cs_projects.id", ondelete="CASCADE"),
+                                            nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    user: Mapped["User"] = relationship(foreign_keys=[user_id])
+    project: Mapped["CsProject"] = relationship(back_populates="contributors")
+
+
+class CsJournalEntry(Base):
+    """One dated event of a project: a request, a decision, a proposal, a reminder.
+
+    ``entry_date`` is typed by hand (a past date rebuilds the history); ``in_recap``
+    says whether the recap mail shows it. ``people`` is free text.
+    """
+    __tablename__ = "cs_journal"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("cs_projects.id", ondelete="CASCADE"),
+                                            nullable=False, index=True)
+    entry_date: Mapped[date] = mapped_column(Date, nullable=False)
+    kind: Mapped[str] = mapped_column(String(20), nullable=False, default="note")
+    people: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    text: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    links: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    in_recap: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"),
+                                                           nullable=True)
+
+    project: Mapped["CsProject"] = relationship(back_populates="journal")
+
+
+class CsItem(Base):
+    """A point to follow on a project: an action, a risk or a blocker.
+
+    An open blocker makes the project read "Blocked"; the open action due first is
+    its next action. Nothing else (no impact, no probability): kept simple on purpose.
+    """
+    __tablename__ = "cs_items"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("cs_projects.id", ondelete="CASCADE"),
+                                            nullable=False, index=True)
+    kind: Mapped[str] = mapped_column(String(20), nullable=False, default="action")
+    label: Mapped[str] = mapped_column(String(500), nullable=False)
+    owner: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    due: Mapped[date | None] = mapped_column(Date, nullable=True)
+    opened_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    done: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    done_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    project: Mapped["CsProject"] = relationship(back_populates="items")
+
+
 class DataSnapshot(Base):
     """A point-in-time copy of the business data, taken from the admin screen.
 

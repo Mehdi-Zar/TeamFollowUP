@@ -9,7 +9,7 @@
 export type Role = "admin" | "tribe_leader" | "squad_leader" | "contributor" | "member" | (string & {});
 
 /** Section-level access flags (persona capabilities) gating the main nav areas. */
-export type Capability = "dashboard" | "roadmap" | "org" | "feed" | "reporting" | "mysquads" | "leaves" | "exports" | "steerco";
+export type Capability = "dashboard" | "roadmap" | "org" | "feed" | "reporting" | "mysquads" | "leaves" | "exports" | "steerco" | "customer_success";
 
 /** One milestone (jalon) rendered inside a roadmap matrix cell. */
 export interface RoadmapCellItem {
@@ -510,6 +510,7 @@ export interface ModulesConfig {
   squad_content: { enabled: boolean; roadmap: boolean; kpis: boolean };
   committees: { enabled: boolean };
   steerco: { enabled: boolean };
+  customer_success: { enabled: boolean };
   notifications: { enabled: boolean; inapp: boolean; email: boolean };
   getting_started: { enabled: boolean };
   leaves: { enabled: boolean; overlap_alert: boolean };

@@ -1,5 +1,26 @@
 # Changelog
 
+## 4.2.0 (2026-11-27)
+
+- **Customer Success** (ADR 0020, doc 37) : un nouveau menu, desactive par defaut
+  (Administration > Modules), pour suivre les projets qu'une equipe Customer Success livre,
+  a la place de OneNote et des mails. Chaque projet a sa fiche (offre et livraison,
+  financier, perimetre technique, jalons prevus et reels, liens), un journal date (une
+  date passee est acceptee pour reprendre l'historique) et des points a suivre (action,
+  risque, blocage). Le blocage ouvert, la prochaine action et le dernier contact se
+  deduisent seuls.
+- **Tableau de bord** : projets ouverts, bloques, livres dans l'annee, montants des builds,
+  et trois badges qui filtrent les cartes (point en retard, fin d'acces proche, sans
+  nouvelles). Aucune alerte ni aucun mail.
+- **Recap a envoyer** : le mail recapitulatif construit a partir des projets (introduction,
+  tableau « En resume », puis le detail de chaque projet avec les entrees du journal
+  cochees « Dans le recap »), en francais ou en anglais, a copier dans Outlook. « Marquer
+  comme envoye » fait porter la mention « Nouveau » a ce qui arrive ensuite.
+- **Droits** : des responsables Customer Success par tribe (le tribe leader par defaut,
+  d'autres designes par l'administrateur ou le tribe leader), des contributeurs nommes
+  projet par projet, et la capacite de persona « Customer Success (lecture) », fermee par
+  defaut. Les etapes, les offres et les seuils se reglent dans le Parametrage.
+
 ## 4.1.0 (2026-11-27)
 
 - **Cases a cocher redessinees, partout** : un reglage oui/non est un interrupteur ; un

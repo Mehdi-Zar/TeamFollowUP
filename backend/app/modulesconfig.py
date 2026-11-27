@@ -41,6 +41,8 @@ def _defaults() -> dict:
         "committees": {"enabled": False},
         # Steering-committee inputs (squad leaders) + consolidated document. Off by default.
         "steerco": {"enabled": False},
+        # Customer Success projects (ADR 0020): a CS team tracks what it delivers. Off by default.
+        "customer_success": {"enabled": False},
         "notifications": {"enabled": True, "inapp": True, "email": True},
         "getting_started": {"enabled": True},
         "leaves": {"enabled": False, "overlap_alert": True},

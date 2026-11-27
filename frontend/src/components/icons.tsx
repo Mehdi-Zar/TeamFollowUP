@@ -79,6 +79,17 @@ export function IconSteerco(p: IconProps) {
   );
 }
 
+/** Customer Success: a handshake-like pair of linked hands, drawn as two joined arcs. */
+export function IconCs(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path d="M3 11l4-4 4 3 2-2 4 1 4 4" />
+      <path d="M7 15l3 3 2-2 2 2 3-3" />
+      <path d="M3 11l4 4M21 13l-4 2" />
+    </Svg>
+  );
+}
+
 export function IconStudio(p: IconProps) {
   return (
     <Svg {...p}>
