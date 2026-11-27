@@ -71,6 +71,11 @@ parasite (None, undefined, NaN, « {x} »), ni tiret cadratin ni point median.
 - Le mail dit qui, quoi et quand (heure de Paris), puis ce qui a change depuis
   l'avis precedent (jalon passe de « A risque » a « Livre », etc.).
 
+Le planificateur passe juste apres chaque heure pleine (HH:00:30), quelle que
+soit l'heure de demarrage de l'application : un mail regle sur 8 h part a 8 h.
+Avant la 3.2.2, il passait une heure apres le demarrage, et un mail de 8 h
+pouvait partir a 8 h 40 apres un redemarrage a 10 h 40.
+
 ## Quand le serveur de mails ne repond pas
 
 - **Rapport programme** : si tous les envois echouent, rien n'est marque comme

@@ -20,7 +20,7 @@ export default function AccessPending() {
         </p>
         {user && (
           <div className="small muted">
-            {t("access.signed_in_as")} <span className="strong">{user.email}</span>
+            {t("access.signed_in_as")} <span className="strong">{user.display_name || user.email}</span>
           </div>
         )}
         <div className="inline" style={{ justifyContent: "center", marginTop: 4 }}>

@@ -1,5 +1,23 @@
 # Changelog
 
+## 3.2.2 (2026-11-27)
+
+Corrections.
+
+- **Messages cles** : apres une soumission, ils ne se modifiaient et ne se supprimaient plus, et en ajouter un
+  faisait disparaitre tous les autres. La soumission les fige maintenant dans son historique et les recopie dans le
+  reporting suivant, ou ils restent modifiables et supprimables. Les squads qui sont aujourd'hui entre deux
+  reportings retrouvent leurs messages, modifiables.
+- **Personnes toujours affichees par leur nom** : quand le SSO (OIDC, SAML), SCIM ou l'import n'envoyaient pas de
+  nom, l'adresse mail etait enregistree a sa place, et les ecrans montraient tantot un nom, tantot un mail. Le nom
+  est maintenant pris du fournisseur (nom complet, sinon prenom et nom), sinon tire de l'email (« jean.dupont@… »
+  donne « Jean Dupont »), et le vrai nom le remplace a la connexion suivante. Les comptes existants sont corriges a
+  la mise a jour. Le nom se corrige aussi a la main dans Administration > Utilisateurs. L'historique des demandes
+  d'acces, les destinataires des avis de modification, les copies des rapports, l'auteur du modele PPTX et l'ecran
+  d'attente d'acces montrent le nom au lieu de l'adresse.
+- **Mails programmes a l'heure** : le planificateur passait une heure apres le demarrage de l'application, si bien
+  qu'un mail regle sur 8 h pouvait partir a 8 h 40. Il passe maintenant juste apres chaque heure pleine.
+
 ## 3.2.1 (2026-10-22)
 
 - **Steerco** : le mois se choisit dans un calendrier (annee avec fleches, puis grille des douze mois, bouton

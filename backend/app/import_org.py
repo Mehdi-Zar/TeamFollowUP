@@ -35,6 +35,7 @@ from sqlalchemy.orm import Session
 from .database import SessionLocal
 from .deps import ADMIN, SQUAD, TRIBE
 from . import platforms as plat
+from .memberlink import person_name
 from .models import Platform, Initiative, Otd, Squad, Tribe, User
 from .schemas import OTD_TITLE_MAX
 from .security import hash_password
@@ -89,7 +90,7 @@ def _get_or_create_user(db: Session, email: str | None, name: str | None,
         return None, False
     u = db.scalar(select(User).where(User.email == email))
     if u is None:
-        u = User(email=email, display_name=(name or email), role=role,
+        u = User(email=email, display_name=person_name(email, name), role=role,
                  status="active", tribe_id=tribe_id,
                  password_hash=hash_password(DEFAULT_PASSWORD))
         db.add(u)
@@ -102,8 +103,10 @@ def _get_or_create_user(db: Session, email: str | None, name: str | None,
     # admin section, the person running the import could lock themselves out of
     # it with their own file. Leading a squad and administering the app are not
     # exclusive, so the higher role wins.
-    if name:
-        u.display_name = name
+    if name and "@" not in name:
+        u.display_name = person_name(email, name)
+    elif "@" in (u.display_name or "") or not u.display_name:
+        u.display_name = person_name(email, u.display_name)
     # The higher role wins: the file never demotes (a tribe leader also listed as
     # a squad's leader stays tribe leader).
     rank = {"member": 0, "contributor": 1, "squad_leader": 2, "tribe_leader": 3, ADMIN: 4}

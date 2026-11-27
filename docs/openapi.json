@@ -3,7 +3,7 @@
   "info": {
     "title": "TeamFollowUP",
     "description": "Outil de pilotage de tribe : consolidation, drill-down, saisie, organigramme, exports.",
-    "version": "3.2.1"
+    "version": "3.2.2"
   },
   "paths": {
     "/api/auth/config": {
@@ -2381,7 +2381,7 @@
           "snapshots"
         ],
         "summary": "Submit Cycle",
-        "description": "Freeze the squad's current reporting cycle into a new snapshot.\n\nPOST /api/squads/{squad_id}/snapshots\nAccess: writer role + edit rights on the squad; additionally gated by the\n`reporting` capability. Business rules: defaults to the current year, and\nauto-labels the cycle \"<year>-W<week>\" when no label is provided.\nSide effects: writes a \"cycle.submit\" audit entry, and closes the open key\nmessages of that year (the next reporting starts with none).",
+        "description": "Freeze the squad's current reporting cycle into a new snapshot.\n\nPOST /api/squads/{squad_id}/snapshots\nAccess: writer role + edit rights on the squad; additionally gated by the\n`reporting` capability. Business rules: defaults to the current year, and\nauto-labels the cycle \"<year>-W<week>\" when no label is provided.\nSide effects: writes a \"cycle.submit\" audit entry, and closes the open key\nmessages of that year and carries them over, editable, into the next one.",
         "operationId": "submit_cycle_api_squads__squad_id__snapshots_post",
         "parameters": [
           {

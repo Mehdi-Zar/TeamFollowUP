@@ -127,7 +127,7 @@ def _slide_text(client, sa):
     return "\n".join(out)
 
 
-def test_key_messages_unlimited_per_reporting_and_each_reporting_starts_afresh(seeded, client):
+def test_key_messages_unlimited_and_carried_over_editable_after_a_submission(seeded, client):
     sa = seeded["squad_a"]
     base = f"/api/squads/{sa}/key-messages?year={YEAR}"
     login(client, seeded["sl_a"])
@@ -145,21 +145,28 @@ def test_key_messages_unlimited_per_reporting_and_each_reporting_starts_afresh(s
     snap = client.get(f"/api/squads/{sa}/snapshots/{r.json()['id']}").json()
     assert [m["text"] for m in snap["payload"]["key_messages"]] == texts
 
-    # Between two reportings the documents keep the last submitted messages, read only.
+    # The submitted messages carry over into the next reporting, editable: the
+    # submission keeps them as sent, the squad updates or deletes the copies.
     kms = client.get(f"/api/squads/{sa}?year={YEAR}").json()["key_messages"]
-    assert [m["text"] for m in kms] == texts and all(m["snapshot_id"] for m in kms)
+    assert [m["text"] for m in kms] == texts and not any(m["snapshot_id"] for m in kms)
     assert client.put(f"/api/squads/{sa}/key-messages/{kms[0]['id']}",
-                      json={"text": "change"}).status_code == 409
-    assert client.delete(f"/api/squads/{sa}/key-messages/{kms[0]['id']}").status_code == 409
+                      json={"text": "Modifie"}).status_code == 200
+    assert client.delete(f"/api/squads/{sa}/key-messages/{kms[1]['id']}").status_code == 204
+    # Adding one keeps the others (it used to make them all disappear).
+    assert client.post(base, json={"kind": "success", "text": "Nouveau"}).status_code == 201
+    kms = client.get(f"/api/squads/{sa}?year={YEAR}").json()["key_messages"]
+    assert [m["text"] for m in kms] == ["Modifie", texts[2], texts[3], "Nouveau"]
+    snap = client.get(f"/api/squads/{sa}/snapshots/{r.json()['id']}").json()
+    assert [m["text"] for m in snap["payload"]["key_messages"]] == texts
+    slide = _slide_text(client, sa)
+    assert "Nouveau" in slide and "Modifie" in slide and texts[1] not in slide
 
-    # The new reporting starts with none of its own: four new ones are accepted,
-    # and they replace the old ones everywhere.
+    # Deleting them all leaves none: the old ones do not come back.
+    for m in kms:
+        assert client.delete(f"/api/squads/{sa}/key-messages/{m['id']}").status_code == 204
+    assert client.get(f"/api/squads/{sa}?year={YEAR}").json()["key_messages"] == []
     for i in range(1, 5):
         assert client.post(base, json={"kind": "success", "text": f"Nouveau {i}"}).status_code == 201
-    kms = client.get(f"/api/squads/{sa}?year={YEAR}").json()["key_messages"]
-    assert [m["text"] for m in kms] == [f"Nouveau {i}" for i in range(1, 5)]
-    slide = _slide_text(client, sa)
-    assert "Nouveau 4" in slide and "Message numero 1" not in slide
 
     # No cap any more: a fifth and a sixth are accepted, the squad slide keeps
     # four and says where the rest went, and the detail slide carries them all.

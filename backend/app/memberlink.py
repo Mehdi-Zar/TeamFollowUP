@@ -43,6 +43,24 @@ def name_from_email(email: str) -> str:
     return " ".join(p.capitalize() for p in parts) or email
 
 
+def person_name(email: str | None, *candidates: str | None) -> str:
+    """The name an account shows: the first candidate that is a name (not blank,
+    not an address), else one read from the email. Identity providers often send
+    no name, or the login in its place: the email used to be stored as the name,
+    so the same screen showed some people by name and others by address."""
+    for c in candidates:
+        c = " ".join((c or "").split())
+        if c and "@" not in c:
+            return c[:255]
+    return name_from_email(email or "")[:255] if email else ""
+
+
+def looks_unnamed(display_name: str | None) -> bool:
+    """True when a stored name is no name: blank, or an address."""
+    v = (display_name or "").strip()
+    return not v or "@" in v
+
+
 def account_for(db: Session, squad: Squad, email: str | None) -> User | None:
     """The account of the squad's tribe with this email, if any.
 

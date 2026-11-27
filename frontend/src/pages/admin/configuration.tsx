@@ -273,6 +273,7 @@ export const WEEKDAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
  *  email" menu (components/ReportsMail.tsx). */
 export function ChangeNotifyAdmin() {
   const { t } = useI18n();
+  const people = usePeople();
   const [chg, setChg] = useState<any | null>(null);
   const [squads, setSquads] = useState<Squad[]>([]);
   const [saved, setSaved] = useState(false);
@@ -390,7 +391,7 @@ export function ChangeNotifyAdmin() {
               {/* The whole setting, said in one sentence. */}
               <div className="banner small" style={{ background: "var(--ice-soft)" }}>
                 {changeSummary(t, chosenEvents, chosenSquads.map((id) => squads.find((s) => s.id === id)?.name ?? `#${id}`),
-                               chgList, !!chg.tribe_leaders, !!chg.squad_leaders, chg.min_interval_minutes ?? 0)}
+                               chgList.map((a: string) => nameOf(people, a)), !!chg.tribe_leaders, !!chg.squad_leaders, chg.min_interval_minutes ?? 0)}
               </div>
               <div className="inline"><button className="btn-secondary btn-sm" onClick={testChange}>{t("reporting.test_change")}</button></div>
             </>
@@ -403,6 +404,12 @@ export function ChangeNotifyAdmin() {
       </div>
     </div>
   );
+}
+
+/** A recipient by name when the address is an account's, else the address. */
+function nameOf(people: { name: string; email: string | null }[], addr: string): string {
+  const a = addr.toLowerCase();
+  return people.find((p) => (p.email ?? "").toLowerCase() === a)?.name || addr;
 }
 
 /** The change mail's setting in one sentence: who gets what, when. */
@@ -450,7 +457,7 @@ export function RecipientList({ label, list, onChange, autos = [], onAuto, t }: 
       <div className="stack" style={{ gap: 4 }}>
         {list.map((addr) => (
           <div key={addr} className="between small" style={{ borderBottom: "1px solid var(--line)", paddingBottom: 3 }}>
-            <span>{addr}</span>
+            <span title={addr}>{nameOf(people, addr)}</span>
             <button type="button" className="btn-ghost btn-sm" aria-label={`${t("action.delete")} ${addr}`}
                     onClick={() => onChange(list.filter((x) => x !== addr))}>✕</button>
           </div>

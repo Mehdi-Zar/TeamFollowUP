@@ -59,7 +59,7 @@ docker compose exec -T db psql -U tribe -d tribe < backup_YYYY-MM-DD.sql
 
 ## Scheduled jobs (in-process)
 
-The weekly-report scheduler runs **inside the app process** (async loop, hourly). It is **safe only
+The weekly-report scheduler runs **inside the app process** (async loop, just after every full hour, HH:00:30, whenever the app started). It is **safe only
 with a single app replica**. If scaling horizontally, externalize it (see [ADR-0009](adr/0009-in-process-scheduler.md)
 and roadmap). Manual trigger: `POST /api/admin/progress/run-weekly` (admin).
 

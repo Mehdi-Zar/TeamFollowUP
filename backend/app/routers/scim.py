@@ -34,6 +34,7 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..deps import record_audit
 from ..directoryconfig import get_directory, scim_token_ok
+from ..memberlink import person_name
 from ..models import Tribe, User, utcnow
 
 router = APIRouter(prefix="/scim/v2", tags=["scim"], include_in_schema=True)
@@ -173,10 +174,12 @@ def _email_of(body: dict) -> str | None:
     return un if "@" in un else None
 
 
-def _display_of(body: dict, fallback: str) -> str:
+def _display_of(body: dict, email: str, current: str | None = None) -> str:
+    """The account's name from a SCIM body: the IdP's name, else the one already
+    stored, else one read from the email (never the address itself)."""
     name = body.get("name") or {}
     joined = " ".join(x for x in (name.get("givenName"), name.get("familyName")) if x)
-    return (body.get("displayName") or name.get("formatted") or joined or fallback).strip()[:255]
+    return person_name(email, body.get("displayName"), name.get("formatted"), joined, current)
 
 
 def _as_bool(v) -> bool:
@@ -344,7 +347,7 @@ async def create_user(request: Request, db: Session = Depends(get_db), cfg: dict
     role = cfg.get("scim_default_role") or "member"
     if role == "admin":
         role = "member"
-    u = User(email=email, display_name=_display_of(body, email.split("@")[0]), role=role,
+    u = User(email=email, display_name=_display_of(body, email), role=role,
              tribe_id=tribe_id, status="active" if _as_bool(body.get("active", True)) else "disabled",
              scim_external_id=(str(body["externalId"])[:255] if body.get("externalId") else None))
     db.add(u)
@@ -374,7 +377,7 @@ async def replace_user(user_id: str, request: Request, db: Session = Depends(get
     u = _get_user(db, user_id)
     body = await _body(request)
     _apply_email(db, u, _email_of(body))
-    u.display_name = _display_of(body, u.display_name)
+    u.display_name = _display_of(body, u.email, u.display_name)
     if "externalId" in body:
         u.scim_external_id = str(body["externalId"])[:255] if body["externalId"] else None
     if "active" in body:

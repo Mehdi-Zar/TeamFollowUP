@@ -329,6 +329,8 @@ _WHY = {
         "access": "Vous recevez ce mail car vous validez les demandes d'accès.",
         "account": "Vous recevez ce mail au sujet de votre compte.",
         "test": "Mail de test envoyé depuis Administration.",
+        "steerco_reminder": "Vous recevez ce mail car vous êtes Steerco leader de cette tribe. La relance se règle dans le menu Steerco, onglet Steerco leaders.",
+        "steerco_pack": "Un Steerco leader vous a envoyé le pack Steerco depuis l'application.",
     },
     "en": {
         "schedule": "You receive this mail because the scheduled report includes you. It is set in the Reports by email menu.",
@@ -340,6 +342,8 @@ _WHY = {
         "access": "You receive this mail because you review access requests.",
         "account": "You receive this mail about your account.",
         "test": "Test mail sent from Administration.",
+        "steerco_reminder": "You receive this mail because you are a Steerco leader of this tribe. The reminder is set in the Steerco menu, Steerco leaders tab.",
+        "steerco_pack": "A Steerco leader sent you the Steerco pack from the application.",
     },
 }
 

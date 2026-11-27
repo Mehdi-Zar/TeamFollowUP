@@ -111,10 +111,10 @@ flowchart TB
 ```mermaid
 sequenceDiagram
   participant U as Uvicorn startup
-  participant L as async loop (every 3600s)
+  participant L as async loop (at HH:00:30)
   participant DB as Postgres
   U->>L: spawn task (after 20s)
-  loop hourly
+  loop every hour, just after the full hour
     L->>DB: ensure_weekly() (weekly progress points)
     L->>DB: send_due_weekly_reports() (scheduled email, idempotent per ISO week)
     L->>DB: carry_over_otds() (January 1st only)

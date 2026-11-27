@@ -91,7 +91,7 @@ def decision_history(db: Session, actor: User, limit: int = 60) -> list[dict]:
                 and tribe_of.get(r.entity_id) in (None, actor.tribe_id)][:limit]
 
     # Resolve the names in one pass rather than per row.
-    actor_ids = {r.user_id for r in rows if r.user_id}
+    actor_ids = {r.user_id for r in rows if r.user_id} | {r.entity_id for r in rows if r.entity_id}
     actors = {u.id: u.display_name for u in db.scalars(select(User).where(User.id.in_(actor_ids)))} if actor_ids else {}
     squads = {s.id: s.name for s in db.scalars(select(Squad))}
     from .models import Tribe
@@ -105,6 +105,8 @@ def decision_history(db: Session, actor: User, limit: int = 60) -> list[dict]:
             "action": r.action,
             "at": r.timestamp,
             "actor": actors.get(r.user_id) if r.user_id else None,
+            # The person the entry is about, by name like everywhere else.
+            "name": actors.get(r.entity_id) if r.entity_id else None,
             "email": detail.get("email"),
             "role": detail.get("role"),
             "tribe": tribes.get(detail.get("tribe_id")),

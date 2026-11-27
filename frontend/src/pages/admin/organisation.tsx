@@ -334,7 +334,18 @@ export function UsersAdmin({ perms }: { perms: Permissions }) {
             {v.rows.map((u) => (
               <tr key={u.id}>
                 <td className="strong">
-                  {u.display_name}
+                  {canManage(u) ? (
+                    // The name every screen and document shows: corrected here
+                    // when the identity provider gave none.
+                    <input key={`${u.id}-${u.display_name}`} className="w-auto" aria-label={t("admin.user")}
+                           defaultValue={u.display_name}
+                           onBlur={(e) => {
+                             const v = e.target.value.trim();
+                             if (v && v !== u.display_name) update(u, { display_name: v });
+                             else e.target.value = u.display_name;
+                           }}
+                           onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} />
+                  ) : u.display_name}
                   {u.is_break_glass && <span className="badge badge-orange" style={{ marginLeft: 8 }}>{t("admin.breakglass")}</span>}
                 </td>
                 <td>{u.email}</td>

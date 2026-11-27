@@ -27,7 +27,7 @@ from ..authconfig import (email_domain_allowed, get_auth_config, login_screen,
 from ..config import settings
 from ..database import get_db
 from ..deps import get_current_user, get_current_user_any_status, record_audit
-from ..memberlink import link_members_to
+from ..memberlink import link_members_to, looks_unnamed, person_name
 from ..models import User, utcnow
 from ..schemas import AuthConfig, LoginIn, UserOut
 from ..security import bump_session, burn_verify_time, create_session_token, verify_password
@@ -392,7 +392,8 @@ def _provision(db: Session, *, subject: str | None, email: str, name: str, group
         # Second gate: when approval is required, the account starts pending (no
         # access) until a manager validates it.
         status = "pending" if cfg.get("require_approval", True) else "active"
-        user = User(email=email or subject, display_name=name or email, role=proposed,
+        user = User(email=email or subject, display_name=person_name(email or subject, name),
+                    role=proposed,
                     status=status, auth_subject=subject)
         db.add(user)
         db.flush()
@@ -407,6 +408,12 @@ def _provision(db: Session, *, subject: str | None, email: str, name: str, group
             raise HTTPException(status_code=403, detail="Votre accès à cette application a été révoqué.")
         if subject and not user.auth_subject:
             user.auth_subject = subject
+        # An account first stored with its address as its name takes the real
+        # one as soon as the identity provider sends it.
+        if looks_unnamed(user.display_name):
+            fixed = person_name(user.email, name)
+            if fixed and fixed != user.display_name:
+                user.display_name = fixed
         # Only (re)map the role for already-validated accounts; never silently
         # elevate or re-activate a pending/disabled one from IdP group claims.
         if user.status == "active":
@@ -493,7 +500,9 @@ async def oidc_callback(request: Request, db: Session = Depends(get_db)):
     info = token.get("userinfo") or {}
     sub = info.get("sub")
     email = (info.get("email") or "").lower().strip()
-    name = info.get("name") or info.get("preferred_username") or email
+    name = person_name(email, info.get("name"),
+                       " ".join(x for x in (info.get("given_name"), info.get("family_name")) if x),
+                       info.get("preferred_username"))
     groups = info.get(cfg.get("oidc_groups_claim") or "groups")
     if not email and not sub:
         raise HTTPException(status_code=400, detail="Réponse OIDC sans identité exploitable")
@@ -577,7 +586,13 @@ async def saml_acs(request: Request, db: Session = Depends(get_db)):
     attrs = auth.get_attributes()
     nameid = auth.get_nameid()
     email = (_first(attrs.get("email")) or nameid or "").lower().strip()
-    name = _first(attrs.get("displayName")) or _first(attrs.get("name")) or email
+    claims = "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/"
+    given = _first(attrs.get("givenName")) or _first(attrs.get(claims + "givenname"))
+    family = _first(attrs.get("sn")) or _first(attrs.get("surname")) or _first(attrs.get(claims + "surname"))
+    name = person_name(email, _first(attrs.get("displayName")),
+                       _first(attrs.get("http://schemas.microsoft.com/identity/claims/displayname")),
+                       " ".join(x for x in (given, family) if x),
+                       _first(attrs.get("name")), _first(attrs.get(claims + "name")))
     groups = attrs.get(cfg.get("saml_groups_attr") or "groups")
     user = _provision(db, subject=nameid, email=email, name=name, groups=groups, cfg=cfg, source="saml")
     db.commit()

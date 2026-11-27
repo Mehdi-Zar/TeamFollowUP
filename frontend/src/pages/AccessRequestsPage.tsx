@@ -178,7 +178,7 @@ function HistoryRow({ h, t, roleLabel, formatDateTime }: {
   return (
     <div className="item-row" style={{ alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
       <span className="small strong" style={{ color: tone, minWidth: 84 }}>{t(`access.history_${kind}`)}</span>
-      <span className="strong">{h.email || "?"}</span>
+      <span className="strong" title={h.email ?? undefined}>{h.name || h.email || "?"}</span>
       {!arrived && h.role && <span className="pill-cat">{roleLabel(h.role)}</span>}
       {placement && <span className="small muted">{placement}</span>}
       {arrived && <span className="small muted">{t(`access.history_via_${h.action.endsWith("oidc") ? "oidc" : "saml"}`)}</span>}

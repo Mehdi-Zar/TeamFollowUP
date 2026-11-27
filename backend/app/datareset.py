@@ -53,7 +53,7 @@ DOMAINS: dict[str, dict] = {
     "kpis": {"tables": ["kpis"], "implies": []},
     "budgets": {"tables": ["squad_budgets"], "implies": []},
     "steerco": {
-        "tables": ["steerco_entries", "platform_contributors", "platforms"],
+        "tables": ["steerco_entries", "platform_contributors", "platforms", "steerco_leaders"],
         "implies": [],
     },
     "committees": {"tables": ["committees"], "implies": []},

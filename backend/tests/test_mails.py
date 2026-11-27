@@ -152,3 +152,16 @@ def test_a_past_version_mail_says_it_is_a_version(db, seeded):
     body = render_email(data)
     assert "version du 23/08/2026" in body
     assert "Dernière saisie" not in body and "aujourd'hui" not in body
+
+
+def test_the_scheduler_ticks_at_the_top_of_the_hour():
+    """A mail set for 8 h leaves at 8 h, whatever time the app started."""
+    from app.main import seconds_to_next_tick
+    t = dt.datetime(2026, 7, 6, 6, 40, 0, tzinfo=dt.timezone.utc).timestamp()   # 08:40 Paris
+    assert t + seconds_to_next_tick(t) == dt.datetime(2026, 7, 6, 7, 0, 30, tzinfo=dt.timezone.utc).timestamp()
+    t = dt.datetime(2026, 11, 27, 6, 59, 50, tzinfo=dt.timezone.utc).timestamp()
+    assert seconds_to_next_tick(t) == 40
+    t = dt.datetime(2026, 11, 27, 7, 0, 0, tzinfo=dt.timezone.utc).timestamp()
+    assert seconds_to_next_tick(t) == 30
+    t = dt.datetime(2026, 11, 27, 7, 0, 30, tzinfo=dt.timezone.utc).timestamp()   # just ticked
+    assert seconds_to_next_tick(t) == 3600

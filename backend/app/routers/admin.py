@@ -1212,7 +1212,7 @@ async def pptx_template_upload(file: UploadFile = File(...), db: Session = Depen
     export. Replaces any previous one. 400 if the file is not a usable .pptx. Admin only."""
     content = await file.read()
     try:
-        info = pptxtpl.save(db, file.filename or "template.pptx", content, uploaded_by=admin.email)
+        info = pptxtpl.save(db, file.filename or "template.pptx", content, uploaded_by=admin.display_name or admin.email)
     except ValueError as exc:
         db.rollback()
         raise HTTPException(status_code=400, detail=str(exc))

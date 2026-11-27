@@ -245,11 +245,22 @@ async def _apply_outbound_trust():
         db.close()
 
 
+def seconds_to_next_tick(now=None) -> float:
+    """Seconds until the next HH:00:30 (UTC and Paris hours start together):
+    the scheduler ticks just after each full hour, whenever the app started."""
+    import time as _time
+    now = _time.time() if now is None else now
+    nxt = (int(now) // 3600) * 3600 + 30
+    if nxt <= now:
+        nxt += 3600
+    return nxt - now
+
+
 @app.on_event("startup")
 async def _start_weekly_progress_scheduler():
     """Lightweight in-process scheduler.
 
-    Runs hourly and, when due, sends the weekly HTML/PPTX report by email on the
+    Runs at the top of every hour and, when due, sends the weekly HTML/PPTX report by email on the
     configured weekday/hour, then purges old
     records. All steps are idempotent and self-healing. Disabled in tests via
     DISABLE_SCHEDULER=1.
@@ -344,9 +355,11 @@ async def _start_weekly_progress_scheduler():
             except Exception as exc:  # never crash the loop
                 logging.getLogger("trt.progress").warning("weekly scheduler error: %s", exc)
                 _tick_metric("error")
-            # ALWAYS wait a full hour before the next attempt - even when another
-            # replica held the lock (no tight busy-loop on the non-leader replicas).
-            await asyncio.sleep(3600)
+            # Wait for the top of the next hour (always ahead, so no tight
+            # busy-loop on the non-leader replicas either). The tick used to
+            # come a full hour after the previous one, counted from the start of
+            # the app: a mail set for 8 h left at 8 h 40 after a restart at 10 h 40.
+            await asyncio.sleep(seconds_to_next_tick())
 
     asyncio.create_task(loop())
 

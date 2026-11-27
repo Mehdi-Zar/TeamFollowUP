@@ -205,6 +205,8 @@ export interface AccessHistoryEntry {
   action: "access.approve" | "access.deny" | "user.provisioned.oidc" | "user.provisioned.saml";
   at: string;
   actor?: string | null;
+  /** The person the entry is about, by name (the address only when unnamed). */
+  name?: string | null;
   email?: string | null;
   role?: Role | null;
   tribe?: string | null;

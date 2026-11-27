@@ -257,10 +257,13 @@ export d'une seule squad est le meme deck sans elle.
 Les messages cles appartiennent a un reporting, **sans limite de nombre**. Les
 4 premiers (les plus graves en tete) vont sur la slide de la squad, les suivants
 sur sa slide de detail (voir 8 bis) ; l'ecran de saisie le dit des le quatrieme.
-La soumission ferme les messages du reporting (colonne
-`key_messages.snapshot_id`) et le suivant repart sans message. Entre les deux,
-les documents montrent ceux du dernier reporting soumis, en lecture seule ; des
-que le nouveau reporting a ses propres messages, ils les remplacent partout. Les
+La soumission fige les messages du reporting tels qu'envoyes (colonne
+`key_messages.snapshot_id`, l'historique de la soumission) et les recopie dans
+le reporting suivant, ou la squad les modifie ou les supprime. Les documents
+montrent toujours les messages du reporting en cours ; une squad qui les
+supprime tous n'en montre plus (les anciens ne reviennent pas). Avant la 3.2.2,
+le reporting suivant repartait sans message et ceux de la soumission restaient
+en lecture seule, puis disparaissaient tous au premier ajout. Les
 autres donnees de la saisie (jalons, engagements, KPI, avancement, moral) ne
 sont pas remises a zero : elles continuent d'un reporting a l'autre.
 

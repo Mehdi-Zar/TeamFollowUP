@@ -159,17 +159,33 @@ def test_nothing_is_dropped_and_nothing_is_written_below_8_points(db, fake):
     assert not dropped, dropped[:5]
 
 
+def _late_frame(sh, width) -> bool:
+    """Le cadre d'une boite en retard: trait rouge plein de 1,5 pt, fond blanc,
+    large comme une boite (la pastille « en retard » a le meme trait)."""
+    from pptx.util import Inches
+    try:
+        return (sh.width >= Inches(1) and sh.line.width == width and str(sh.line.color.rgb) == "B42318"
+                and str(sh.fill.fore_color.rgb) == "FFFFFF")
+    except (AttributeError, TypeError, ValueError):
+        return False
+
+
 def _box_top(slide):
     """Le haut des boites de jalons, qui separe la bande des engagements du reste.
 
-    Une boite est le seul rectangle arrondi en pointille de la slide.
+    Une boite est un rectangle arrondi en pointille, ou a cadre rouge plein
+    (1,5 pt) quand elle est en retard. Ne compter que les pointilles faisait
+    echouer le test des que des echeances du jeu de demonstration etaient
+    passees (fin d'annee) : les titres des boites en retard passaient pour des
+    engagements.
     """
     from pptx.enum.shapes import MSO_SHAPE, MSO_SHAPE_TYPE
     from pptx.enum.dml import MSO_LINE_DASH_STYLE
+    from pptx.util import Pt
     tops = [sh.top for sh in slide.shapes
             if sh.shape_type == MSO_SHAPE_TYPE.AUTO_SHAPE
             and sh.auto_shape_type == MSO_SHAPE.ROUNDED_RECTANGLE
-            and sh.line.dash_style == MSO_LINE_DASH_STYLE.DASH]
+            and (sh.line.dash_style == MSO_LINE_DASH_STYLE.DASH or _late_frame(sh, Pt(1.5)))]
     return min(tops) if tops else None
 
 

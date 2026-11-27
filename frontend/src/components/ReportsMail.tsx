@@ -260,7 +260,7 @@ function TribeLines({ cfg, set, choices, lineActions }: {
   const copyName = (c: Copy) =>
     c.type === "persona" ? personaName(choices.personas?.find((p) => p.key === c.value) ?? { key: c.value, label: c.value })
       : c.type === "user" ? (choices.users?.find((u) => u.id === Number(c.value))?.name ?? `#${c.value}`)
-        : c.value;
+        : (choices.users?.find((u) => (u.email ?? "").toLowerCase() === String(c.value).toLowerCase())?.name || c.value);
 
   return (
     <>

@@ -45,10 +45,9 @@ export default function KeyMessagesPanel({ squad, canEdit, onChange, editTo, edi
   const [err, setErr] = useState<string | null>(null);
   const fail = (e: unknown) => setErr(errorText(e));
   const kinds: KeyMessageKind[] = ["success", "alert", "risk"];
-  // Each reporting starts with no message. Until it has some, the squad shows
-  // those of the last submitted reporting, read only: they stay as they were sent.
+  // A submission carries its messages over into the next reporting, where they
+  // stay editable: what the squad sees here is always the reporting in progress.
   const open = squad.key_messages.filter((m) => m.snapshot_id == null);
-  const fromLast = open.length === 0 && squad.key_messages.length > 0;
   const add = () => {
     if (!text.trim()) return;
     setErr(null);
@@ -76,7 +75,6 @@ export default function KeyMessagesPanel({ squad, canEdit, onChange, editTo, edi
       <div className="small muted" style={{ marginBottom: 8 }}>{t("km.hint")}</div>
       {err && <ErrorBanner message={err} />}
       {squad.key_messages.length === 0 && <div className="small muted">{t("km.none")}</div>}
-      {fromLast && <div className="small muted" style={{ marginBottom: 6 }}>{t("km.from_last")}</div>}
       {squad.key_messages.map((m) => (
         <div key={m.id} className="item-row">
           {editId === m.id ? (

@@ -15,6 +15,14 @@ nom. Avec un annuaire configuré, un champ **« Rechercher dans l'annuaire »** 
 | Mes squads > Équipe (ajout d'un membre) | email, prénom, nom, et la fonction si le rôle est vide |
 | Administration > Utilisateurs > Nouvel utilisateur | nom affiché, email |
 
+Un compte s'affiche toujours par son nom, jamais par son adresse. Quand le SSO
+(OIDC, SAML), SCIM ou l'import n'envoient pas de nom, il est tiré de l'email
+(« jean.dupont@… » donne « Jean Dupont ») ; le vrai nom le remplace dès que le
+fournisseur l'envoie, à la connexion suivante. Le nom se corrige aussi à la main
+dans Administration > Utilisateurs. Avant la 3.2.2, l'adresse était enregistrée
+comme nom, et les écrans montraient les uns par leur nom, les autres par leur
+mail.
+
 La recherche part dès deux caractères, après une courte pause de frappe. Chaque
 personne trouvée indique sa fonction, son service, et « a un compte » quand un
 compte existe déjà pour son email. Sans annuaire configuré, rien ne change à l'écran.
